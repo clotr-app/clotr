@@ -109,7 +109,15 @@ switched on), before you send it:
 Known limits are listed on the "What Clotr stores" page and in [docs/security-review.md](docs/security-review.md).
 
 ## Install
-### From a release (Chrome, Brave, Edge)
+<a href="https://chromewebstore.google.com/detail/gkgpgejhhmmhklaghdnbjbalkmpjnmab"><img src="docs/brand/stores/chrome-web-store.png" alt="Available in the Chrome Web Store" height="56"></a>
+<a href="https://microsoftedge.microsoft.com/addons/detail/hbangnmofjeaieaeamlncpcfmhbclbkj"><img src="docs/brand/stores/edge-addons.png" alt="Get it from Microsoft Edge" height="56"></a>
+
+Brave uses the Chrome Web Store. Firefox is on its way to Firefox Add-ons; until then, the Firefox build from
+Releases (below).
+
+Then pin Clotr to the toolbar. A welcome page opens with a practice box.
+
+### From a release (testers and developers)
 1. Download the latest `clotr-<version>.zip` from Releases and unzip it (or clone this repository).
 2. Open `chrome://extensions` (or `brave://extensions`), turn on **Developer mode** (top right).
 3. Click **Load unpacked** and choose the unzipped folder (the one with `manifest.json`; in a clone, `extension/`).
