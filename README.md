@@ -171,6 +171,20 @@ are reproducible: rebuilding a release from its code gives a byte-identical zip,
 - **Nothing to poison.** No training data to tamper with, no prompt to trick.
 - **Small enough for an old laptop.** The whole extension is well under a megabyte.
 
+## What's next: more than an extension
+Today, Clotr is this browser extension. Next, it grows into the Clotr suite: privacy and scam tools with the same
+engine, still with no AI inside and nothing sent anywhere. In development now, with no date yet:
+
+- **Look back.** Open the export ChatGPT, Claude or Gemini gives you, and see which of your chats already hold a
+  password, a card or ID number, or your address, so you know what to delete. Read on your computer, never uploaded.
+- **Extension check.** See which of your other browser extensions can read your AI chats, and whether any of them has
+  been publicly reported for collecting them.
+- **Clotr Antibody.** Help at the moment a scam asks for something: a code, your card's numbers, gift cards, or a
+  command to paste into your computer.
+- **Clotr for Windows.** All of it in one app on your PC, with scans of the folders you pick, on your computer.
+
+They'll come to the extension as free updates, and Clotr for Windows will be free for people too.
+
 ## For organizations
 Clotr is free at work too. An office can roll it out to every computer through browser policy, with ready-made
 presets for developers, for offices that handle client names (law, accounting, agencies) and for clinics, plus a
