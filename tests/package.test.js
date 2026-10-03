@@ -94,11 +94,11 @@ test("Firefox zip gets the Firefox manifest; checksums of both builds sit side b
 
 test("a file git doesn't track (personal notes, a saved chat) never ships", () => {
   const stray = path.join(EXT, "zz-private-notes.txt");
-  fs.writeFileSync(stray, "my phone 937-555-0147\n");
+  fs.writeFileSync(stray, "my phone 555-555-0147\n");
   try {
     const r = build({ outDir: tmp() });
     assert.ok(!r.files.includes("zz-private-notes.txt"), "untracked file was packaged");
-    assert.ok(!fs.readFileSync(r.out).includes("937-555-0147"), "its contents are in the zip");
+    assert.ok(!fs.readFileSync(r.out).includes("555-555-0147"), "its contents are in the zip");
   } finally {
     fs.rmSync(stray, { force: true });
   }

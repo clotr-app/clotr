@@ -5,7 +5,7 @@
 //
 // How to use (M8, 2026-09-24):
 // 1. Load the site with this script injected; focus the chat box.
-// 2. Type (don't send): "zqxprobe1234 please call me at 937-555-0147 tomorrow".
+// 2. Type (don't send): "zqxprobe1234 please call me at 555-555-0147 tomorrow".
 // 3. Wait ~10 s, then read `window.__hits` (should be []) and `window.__sends` (requests seen).
 // 4. Positive control: press Enter once; the real send must appear in `window.__hits`,
 //    which proves the monitor sees this site's traffic.

@@ -1,5 +1,5 @@
 // Clotr: finding the chat box and editing it the way the page's own framework expects.
-// Classic content script (loaded after ui-styles.js, before content.js); shares Clotr.editor.
+// Classic content script (loaded after ui-styles.js, before warning-ui.js and content.js); shares Clotr.editor.
 (() => {
   "use strict";
   const LOG = "[Clotr]";

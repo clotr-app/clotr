@@ -1,6 +1,7 @@
 // Clotr: lays out and draws the mind map (D75) that insights.js builds, plus its table view.
-// Extension pages only; not a content script. layoutRadial() is pure (unit-tested); the rest
-// builds SVG and table rows with createElement (no innerHTML).
+// Extension pages only; not a content script. The layout (layoutRadial(), layoutList() and
+// mindMapLayout()) is pure and unit-tested; the drawing builds SVG and table rows with
+// createElement (no innerHTML).
 "use strict";
 
 (() => {
@@ -46,44 +47,32 @@
     return tree;
   }
 
-  // Line styles per branch: the same colors as the charts' Sent / Hidden, plus two of their own.
-  const STROKE = {
-    has: { stroke: "var(--series-2)" },
-    near: { stroke: "var(--series-1)", "stroke-dasharray": "5 4" },
-    open: { stroke: "var(--good-ink)", "stroke-dasharray": "1 4", "stroke-linecap": "round" },
-    blind: { stroke: "var(--medium-fg)", "stroke-dasharray": "8 3 2 3" },
-  };
-  const RISK_RING = { high: "var(--high-fg)", medium: "var(--medium-fg)", low: "var(--low-fg)" };
-
-  function svgEl(tag, attrs = {}, text) {
-    const node = document.createElementNS("http://www.w3.org/2000/svg", tag);
-    for (const [k, v] of Object.entries(attrs)) node.setAttribute(k, String(v));
-    if (text != null) node.textContent = text;
-    return node;
-  }
-
   const walk = (node, fn, parent = null) => {
     fn(node, parent);
     for (const c of node.children || []) walk(c, fn, node);
   };
   const clip = (text, n) => (text.length > n ? `${text.slice(0, n - 1)}…` : text);
+  const levels = (n) => (n.children?.length ? 1 + Math.max(...n.children.map(levels)) : 0);
+  const PAD = 8; // room around the drawing, inside its frame
 
-  // Draws a laid-out tree into `svg` (its data-room or first viewBox sets the space). compact: the
-  // popup's version (not focusable, drawn still). onSelect(node): a branch or AI service/kind was
-  // chosen. In the report the map moves (D75): it grows out of "You" once, and on a redraw (the
-  // toggle, a resize, new history) every node glides from where it was; new ones come out of their
-  // parent. Hover or focus lights a node's line back to "You" and dims the rest. No motion for
-  // people who ask their system for less.
-  const MOVE_MS = 440;
-  function renderMindMap(svg, tree, { compact = false, onSelect } = {}) {
-    svg.dataset.room ??= svg.getAttribute("viewBox") || "0 0 960 720";
-    const [, , W, H] = svg.dataset.room.split(/\s+/).map(Number);
+  // Where everything in the drawing goes, for a tree laid out by layoutRadial() or layoutList().
+  // Pure: reads the tree, changes nothing and touches no page. `width` and `height` are the room
+  // to draw in; `compact` is the popup's small version. Returns:
+  // - you: "You", { x, y, r };
+  // - items: every other node in drawing order (a parent before its children), each with its place
+  //   (x, y), its line from its parent ({ from, via, to, width }: a curve bent towards `via`), its
+  //   shape (the popup's "junction" dot, a branch's "pill" with its name and count, a leaf's "dot"
+  //   or a "ring" around a count), and its label ({ x, y, anchor, text } beside the shape, or null);
+  //   a shape and its label are placed around (0, 0), the node's own place;
+  // - frame: [x, y, width, height], a first guess at the box it all fits in (text widths guessed
+  //   from the number of characters; the drawing then measures the real one).
+  function mindMapLayout(tree, { width: W, height: H, compact = false }) {
     const cx = W / 2,
       cy = H / 2;
-    const deep = (n) => (n.children?.length ? 1 + Math.max(...n.children.map(deep)) : 0);
-    const rings = deep(tree) > 2 ? [0, 0.3, 0.64, 1] : compact ? [0, 0.45, 1] : [0, 0.42, 1];
+    const deep = levels(tree) > 2;
+    const rings = deep ? [0, 0.3, 0.64, 1] : compact ? [0, 0.45, 1] : [0, 0.42, 1];
     // Room at the sides for the outermost labels, never more than a third of the width.
-    const labelChars = compact ? 18 : deep(tree) > 2 ? 26 : 18;
+    const labelChars = compact ? 18 : deep ? 26 : 18;
     const rx = W / 2 - Math.min(W / 3, labelChars * (compact ? 4 : 6)),
       ry = H / 2 - (compact ? 22 : 40);
     const list = tree.layout === "list";
@@ -101,22 +90,190 @@
       box.y1 = Math.max(box.y1, y1);
     };
     const charW = compact ? 5.6 : 6.6;
-    const motion = !compact && !globalThis.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
-    const before = svg.clotrPlaces || null; // id → [x, y] from the last drawing
-    const places = new Map();
 
-    // Everything inside a node is drawn around (0, 0); the node itself is moved to its place.
-    const label = (g, n, x, y, r, text, cls) => {
+    // A label beside a shape of radius r, on its outer side (under or over it when the node is
+    // straight below or above "You").
+    const label = (n, x, y, r, text) => {
       const c = Math.cos(n.angle);
       const anchor = c > 0.08 ? "start" : c < -0.08 ? "end" : "middle";
       const s = Math.sin(n.angle);
       const lx = anchor === "start" ? r + 4 : anchor === "end" ? -r - 4 : 0;
       const ly = anchor === "middle" ? (s > 0 ? r + 12 : -r - 5) : 4;
-      g.append(svgEl("text", { x: lx, y: ly, "text-anchor": anchor, class: cls }, text));
       const w = text.length * charW;
       const left = x + (anchor === "start" ? lx : anchor === "end" ? lx - w : lx - w / 2);
       grow(left, y + ly - 12, left + w, y + ly + 4);
+      return { x: lx, y: ly, anchor, text };
     };
+
+    const items = [];
+    walk(tree, (n, parent) => {
+      if (!parent) return;
+      const [x, y] = at(n);
+      const [px, py] = at(parent);
+      // Curve out along the child's direction, from the parent's ring.
+      // (In the outline: down from the parent, then across.)
+      const f = rings[Math.max(0, n.depth - 1)] + 0.5 * (rings[n.depth] - rings[n.depth - 1] || 0);
+      const via = list ? [px, y] : [cx + rx * f * Math.cos(n.angle), cy + ry * f * Math.sin(n.angle)];
+      const width = n.type === "leaf" || n.type === "more" ? 1 : 1.5 + Math.min(5, (n.count || 0) * 0.8);
+      let shape,
+        text = null;
+      if (n.type === "branch" && compact) {
+        // The popup's map: a junction dot on the line (the key under the map names the branch).
+        shape = { type: "junction", r: 4.5 };
+        grow(x - 5, y - 5, x + 5, y + 5);
+      } else if (n.type === "branch") {
+        const count = String(n.count);
+        const w = (n.label.length + count.length + 1) * 7 + 20,
+          h = 26;
+        const shift = list ? w / 2 - 12 : 0; // the outline's pills start at their line
+        shape = { type: "pill", width: w, height: h, shift, name: n.label, count };
+        grow(x + shift - w / 2, y - h / 2, x + shift + w / 2, y + h / 2);
+      } else if (n.type === "leaf" || n.type === "more") {
+        shape = { type: "dot", r: 3.5 };
+        text = label(n, x, y, 3.5, clip(n.count > 1 ? `${n.label} ×${n.count}` : n.label, 36));
+      } else {
+        const r = compact ? 10 : 15;
+        shape = { type: "ring", r, mark: n.type === "cant-see" ? "?" : n.count ? String(n.count) : "" };
+        const name = n.label.replace(/^www\./, "");
+        text = label(n, x, y, r, clip(n.mentioned ? `${name} 💬` : name, labelChars));
+      }
+      items.push({ node: n, parent, x, y, line: { from: [px, py], via, to: [x, y], width }, shape, label: text });
+    });
+
+    const [ux, uy] = at(tree);
+    return {
+      you: { x: ux, y: uy, r: compact ? 14 : 24 },
+      items,
+      frame: [
+        Math.floor(box.x0 - PAD),
+        Math.floor(box.y0 - PAD),
+        Math.ceil(box.x1 - box.x0 + 2 * PAD),
+        Math.ceil(box.y1 - box.y0 + 2 * PAD),
+      ],
+    };
+  }
+
+  // Line styles per branch: the same colors as the charts' Sent / Hidden, plus two of their own.
+  const STROKE = {
+    has: { stroke: "var(--series-2)" },
+    near: { stroke: "var(--series-1)", "stroke-dasharray": "5 4" },
+    open: { stroke: "var(--good-ink)", "stroke-dasharray": "1 4", "stroke-linecap": "round" },
+    blind: { stroke: "var(--medium-fg)", "stroke-dasharray": "8 3 2 3" },
+  };
+  const RISK_RING = { high: "var(--high-fg)", medium: "var(--medium-fg)", low: "var(--low-fg)" };
+
+  function svgEl(tag, attrs = {}, text) {
+    const node = document.createElementNS("http://www.w3.org/2000/svg", tag);
+    for (const [k, v] of Object.entries(attrs)) node.setAttribute(k, String(v));
+    if (text != null) node.textContent = text;
+    return node;
+  }
+
+  // One node of the layout as an SVG group: what it is and its count (data attributes), its words for
+  // screen readers, its shape and its label, drawn around (0, 0); renderMindMap() moves it to its place.
+  function drawNode({ node: n, shape, label }, chosen) {
+    const g = svgEl("g", { class: `mind-node mind-${n.type}` });
+    g.dataset.id = n.id;
+    g.dataset.nodeType = n.type;
+    g.dataset.branch = n.branch;
+    if (n.type === "service") g.dataset.service = n.key;
+    if (n.type === "kind") g.dataset.kind = n.key;
+    g.dataset.count = String(n.count || 0);
+    if (chosen === n.id) g.classList.add("chosen");
+    const text = n.detail || n.label;
+    g.setAttribute("aria-label", text);
+    g.append(svgEl("title", {}, text));
+
+    const color = STROKE[n.branch].stroke;
+    if (shape.type === "junction") {
+      g.append(
+        svgEl("circle", { cx: 0, cy: 0, r: shape.r, fill: "var(--surface)", stroke: color, "stroke-width": 2.5 }),
+      );
+    } else if (shape.type === "pill") {
+      // "Already has" and its count, set apart: the count is the figure, the name says what it counts.
+      const { width: w, height: h, shift } = shape;
+      g.append(
+        svgEl("rect", {
+          x: shift - w / 2,
+          y: -h / 2,
+          width: w,
+          height: h,
+          rx: h / 2,
+          fill: "var(--surface)",
+          stroke: color,
+          "stroke-width": 2,
+        }),
+      );
+      const t = svgEl(
+        "text",
+        { x: shift, y: 4, "text-anchor": "middle", class: "mind-branch-label" },
+        `${shape.name} `,
+      );
+      t.append(svgEl("tspan", { class: "mind-branch-count" }, shape.count));
+      g.append(t);
+    } else if (shape.type === "dot") {
+      g.append(svgEl("circle", { cx: 0, cy: 0, r: shape.r, fill: color }));
+    } else {
+      const ring = n.branch === "has" ? RISK_RING[n.severity] || STROKE.has.stroke : color;
+      g.append(
+        svgEl("circle", { cx: 0, cy: 0, r: shape.r, fill: "var(--surface)", stroke: ring, "stroke-width": 2.5 }),
+      );
+      if (shape.mark) g.append(svgEl("text", { x: 0, y: 4, "text-anchor": "middle", class: "mind-count" }, shape.mark));
+    }
+    if (label) {
+      const cls = shape.type === "dot" ? "mind-leaf-label" : "mind-label";
+      g.append(svgEl("text", { x: label.x, y: label.y, "text-anchor": label.anchor, class: cls }, label.text));
+    }
+    return g;
+  }
+
+  // The frame that fits what was really drawn (text widths depend on the font); `estimate` stands
+  // in while nothing is on screen (a hidden card).
+  function measuredFrame(svg, estimate) {
+    try {
+      const b = svg.getBBox();
+      if (b.width > 0 && b.height > 0)
+        return [
+          Math.floor(b.x - PAD),
+          Math.floor(b.y - PAD),
+          Math.ceil(b.width + 2 * PAD),
+          Math.ceil(b.height + 2 * PAD),
+        ];
+    } catch {
+      /* not rendered */
+    }
+    return estimate;
+  }
+
+  // Moves the SVG's frame to `to` over `ms`, easing out.
+  const ease = (t) => 1 - (1 - t) ** 3;
+  function easeView(svg, to, ms) {
+    const from = svg.viewBox.baseVal;
+    const start = from?.width ? [from.x, from.y, from.width, from.height] : to;
+    const t0 = performance.now();
+    cancelAnimationFrame(svg.clotrFrame);
+    const frame = (now) => {
+      const t = Math.min(1, (now - t0) / ms);
+      svg.setAttribute("viewBox", to.map((v, i) => start[i] + (v - start[i]) * ease(t)).join(" "));
+      if (t < 1) svg.clotrFrame = requestAnimationFrame(frame);
+    };
+    svg.clotrFrame = requestAnimationFrame(frame);
+  }
+
+  // Draws a laid-out tree into `svg` (its data-room or first viewBox sets the space). compact: the
+  // popup's version (not focusable, drawn still). onSelect(node): a branch or AI service/kind was
+  // chosen. In the report the map moves (D75): it grows out of "You" once, and on a redraw (the
+  // toggle, a resize, new history) every node glides from where it was; new ones come out of their
+  // parent. Hover or focus lights a node's line back to "You" and dims the rest. No motion for
+  // people who ask their system for less.
+  const MOVE_MS = 440;
+  function renderMindMap(svg, tree, { compact = false, onSelect } = {}) {
+    svg.dataset.room ??= svg.getAttribute("viewBox") || "0 0 960 720";
+    const [, , W, H] = svg.dataset.room.split(/\s+/).map(Number);
+    const { you, items, frame: estimate } = mindMapLayout(tree, { width: W, height: H, compact });
+    const motion = !compact && !globalThis.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
+    const before = svg.clotrPlaces || null; // id → [x, y] from the last drawing
+    const places = new Map();
 
     // Which nodes and lines light up with a node: its line back to "You", and everything under it.
     const parentOf = new Map();
@@ -157,92 +314,24 @@
 
     const lines = svgEl("g", { class: "mind-lines" });
     const nodes = [];
-    walk(tree, (n, parent) => {
-      if (!parent) return;
-      const [x, y] = at(n);
+    for (const item of items) {
+      const { node: n, parent, x, y, line } = item;
       places.set(n.id, [x, y]);
-      const [px, py] = at(parent);
-      // Curve out along the child's direction, from the parent's ring.
-      // (In the outline: down from the parent, then across.)
-      const f = rings[Math.max(0, n.depth - 1)] + 0.5 * (rings[n.depth] - rings[n.depth - 1] || 0);
-      const qx = list ? px : cx + rx * f * Math.cos(n.angle),
-        qy = list ? y : cy + ry * f * Math.sin(n.angle);
-      const width = n.type === "leaf" || n.type === "more" ? 1 : 1.5 + Math.min(5, (n.count || 0) * 0.8);
       const path = svgEl("path", {
-        d: `M ${px} ${py} Q ${qx} ${qy} ${x} ${y}`,
+        d: `M ${line.from[0]} ${line.from[1]} Q ${line.via[0]} ${line.via[1]} ${line.to[0]} ${line.to[1]}`,
         fill: "none",
-        "stroke-width": width,
+        "stroke-width": line.width,
         ...STROKE[n.branch],
       });
       path.dataset.id = n.id;
       lines.append(path);
 
-      const g = svgEl("g", { class: `mind-node mind-${n.type}` });
-      g.dataset.id = n.id;
-      g.dataset.nodeType = n.type;
-      g.dataset.branch = n.branch;
-      if (n.type === "service") g.dataset.service = n.key;
-      if (n.type === "kind") g.dataset.kind = n.key;
-      g.dataset.count = String(n.count || 0);
-      if (svg.clotrChosen === n.id) g.classList.add("chosen");
-      const text = n.detail || n.label;
-      g.setAttribute("aria-label", text);
-      g.append(svgEl("title", {}, text));
-
-      if (n.type === "branch" && compact) {
-        // The popup's map: a junction dot on the line; the key under the map names the branch and its count.
-        g.append(
-          svgEl("circle", {
-            cx: 0,
-            cy: 0,
-            r: 4.5,
-            fill: "var(--surface)",
-            stroke: STROKE[n.branch].stroke,
-            "stroke-width": 2.5,
-          }),
-        );
-        grow(x - 5, y - 5, x + 5, y + 5);
-        choosable(g, n);
-      } else if (n.type === "branch") {
-        // "Already has" and its count, set apart: the count is the figure, the name says what it counts.
-        const count = String(n.count);
-        const w = (n.label.length + count.length + 1) * (compact ? 5.8 : 7) + (compact ? 14 : 20),
-          h = compact ? 18 : 26;
-        const shift = list ? w / 2 - 12 : 0; // the outline's pills start at their line
-        g.append(
-          svgEl("rect", {
-            x: shift - w / 2,
-            y: -h / 2,
-            width: w,
-            height: h,
-            rx: h / 2,
-            fill: "var(--surface)",
-            stroke: STROKE[n.branch].stroke,
-            "stroke-width": 2,
-          }),
-        );
-        const t = svgEl("text", { x: shift, y: 4, "text-anchor": "middle", class: "mind-branch-label" }, `${n.label} `);
-        t.append(svgEl("tspan", { class: "mind-branch-count" }, count));
-        g.append(t);
-        grow(x + shift - w / 2, y - h / 2, x + shift + w / 2, y + h / 2);
-        choosable(g, n);
-      } else if (n.type === "leaf" || n.type === "more") {
-        g.append(svgEl("circle", { cx: 0, cy: 0, r: 3.5, fill: STROKE[n.branch].stroke }));
-        label(g, n, x, y, 3.5, clip(n.count > 1 ? `${n.label} ×${n.count}` : n.label, 36), "mind-leaf-label");
-        g.setAttribute("role", "img");
-      } else {
-        const r = compact ? 10 : 15;
-        const ring = n.branch === "has" ? RISK_RING[n.severity] || STROKE.has.stroke : STROKE[n.branch].stroke;
-        g.append(svgEl("circle", { cx: 0, cy: 0, r, fill: "var(--surface)", stroke: ring, "stroke-width": 2.5 }));
-        const mark = n.type === "cant-see" ? "?" : n.count ? String(n.count) : "";
-        if (mark) g.append(svgEl("text", { x: 0, y: 4, "text-anchor": "middle", class: "mind-count" }, mark));
-        const name = n.label.replace(/^www\./, "");
-        label(g, n, x, y, r, clip(n.mentioned ? `${name} 💬` : name, labelChars), "mind-label");
-        choosable(g, n);
-      }
+      const g = drawNode(item, svg.clotrChosen);
+      if (item.shape.type === "dot") g.setAttribute("role", "img");
+      else choosable(g, n);
 
       // Start where it was last time; a new node starts at its parent (on the first drawing, at "You").
-      const from = before?.get(n.id) || (before && before.get(parent.id)) || at(tree);
+      const from = before?.get(n.id) || (before && before.get(parent.id)) || [you.x, you.y];
       const place = (p) => (g.style.transform = `translate(${p[0]}px, ${p[1]}px)`);
       if (motion) {
         place(from);
@@ -254,63 +343,24 @@
         g.style.opacity = "";
       };
       nodes.push(g);
-    });
+    }
 
-    const youR = compact ? 14 : 24;
-    const you = svgEl("g", { class: "mind-you" });
-    you.dataset.you = "";
-    const [ux, uy] = at(tree);
-    you.append(svgEl("circle", { cx: ux, cy: uy, r: youR, fill: "var(--ink)" }));
-    you.append(
+    const youNode = svgEl("g", { class: "mind-you" });
+    youNode.dataset.you = "";
+    youNode.append(svgEl("circle", { cx: you.x, cy: you.y, r: you.r, fill: "var(--ink)" }));
+    youNode.append(
       svgEl(
         "text",
-        { x: ux, y: uy + 4, "text-anchor": "middle", fill: "var(--page)", class: "mind-you-label" },
+        { x: you.x, y: you.y + 4, "text-anchor": "middle", fill: "var(--page)", class: "mind-you-label" },
         tree.label,
       ),
     );
-    svg.replaceChildren(lines, you, ...nodes);
+    svg.replaceChildren(lines, youNode, ...nodes);
     svg.clotrPlaces = places;
 
-    const pad = 8;
-    const estimate = [
-      Math.floor(box.x0 - pad),
-      Math.floor(box.y0 - pad),
-      Math.ceil(box.x1 - box.x0 + 2 * pad),
-      Math.ceil(box.y1 - box.y0 + 2 * pad),
-    ];
-    // The frame fits what was really drawn (text widths depend on the font); the estimate stands
-    // in while nothing is on screen (a hidden card).
-    const measured = () => {
-      try {
-        const b = svg.getBBox();
-        if (b.width > 0 && b.height > 0)
-          return [
-            Math.floor(b.x - pad),
-            Math.floor(b.y - pad),
-            Math.ceil(b.width + 2 * pad),
-            Math.ceil(b.height + 2 * pad),
-          ];
-      } catch {
-        /* not rendered */
-      }
-      return estimate;
-    };
-    const ease = (t) => 1 - (1 - t) ** 3;
-    const easeView = (to, ms) => {
-      const from = svg.viewBox.baseVal;
-      const start = from?.width ? [from.x, from.y, from.width, from.height] : to;
-      const t0 = performance.now();
-      cancelAnimationFrame(svg.clotrFrame);
-      const frame = (now) => {
-        const t = Math.min(1, (now - t0) / ms);
-        svg.setAttribute("viewBox", to.map((v, i) => start[i] + (v - start[i]) * ease(t)).join(" "));
-        if (t < 1) svg.clotrFrame = requestAnimationFrame(frame);
-      };
-      svg.clotrFrame = requestAnimationFrame(frame);
-    };
     if (!motion) {
       svg.setAttribute("viewBox", estimate.join(" "));
-      const fit = measured();
+      const fit = measuredFrame(svg, estimate);
       svg.setAttribute("viewBox", fit.join(" "));
       // The popup's map keeps its own size: one unit is one pixel, so its words read like the popup's.
       if (compact) {
@@ -325,7 +375,7 @@
     lines.style.opacity = "0";
     svg.dataset.moving = "";
     if (!before) svg.setAttribute("viewBox", estimate.join(" "));
-    else easeView(estimate, MOVE_MS);
+    else easeView(svg, estimate, MOVE_MS);
     // Two frames: the starting places are painted before the move begins, so it transitions.
     requestAnimationFrame(() =>
       requestAnimationFrame(() => {
@@ -336,7 +386,7 @@
     clearTimeout(svg.clotrSettle);
     const settleMs = MOVE_MS + (before ? 0 : 3 * 70) + 80;
     svg.clotrSettle = setTimeout(() => {
-      easeView(measured(), 220);
+      easeView(svg, measuredFrame(svg, estimate), 220);
       svg.clotrSettle = setTimeout(() => delete svg.dataset.moving, 260);
     }, settleMs);
     return tree;
@@ -377,5 +427,12 @@
     );
   }
 
-  globalThis.ClotrMindMap = { layoutRadial, layoutList, renderMindMap, mindMapRows, renderMindMapTable };
+  globalThis.ClotrMindMap = {
+    layoutRadial,
+    layoutList,
+    mindMapLayout,
+    renderMindMap,
+    mindMapRows,
+    renderMindMapTable,
+  };
 })();

@@ -21,7 +21,10 @@ computer**:
 - if you turn on **Bandage** (cover names) for a site: the same 90-second window after you send, but only to find its
   own labels (like `[Phone 1]`) in the AI's reply and lay small "hotspots" over them so you can point at one to see
   the real detail. The label-to-detail map lives only in that tab's memory while the page is open; it is never
-  stored, and the real detail is never written into the AI's page.
+  stored, and the real detail is never written into the AI's page. While Bandage is on, Clotr also reads the
+  conversation shown on that page, only to find the labels it gave before (after a reload, for example), so a new
+  detail never gets a label already used in what the page has loaded (some sites load older messages only when you
+  scroll up); nothing from it is kept.
 
 On email and chat websites you switched on, Clotr reads only what you type or attach there. It never reads other
 people's messages on those sites, and Bandage and the reply check are always off there.
@@ -86,4 +89,4 @@ If this policy changes, the new version will be published here with a new date, 
 
 ## Contact
 Questions: write to the contact email on Clotr's Chrome Web Store page, or open an issue at
-https://github.com/BilliamBaSH/clotr/issues.
+https://github.com/clotr-app/clotr/issues.

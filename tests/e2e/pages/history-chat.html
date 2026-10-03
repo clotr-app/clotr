@@ -1,0 +1,62 @@
+<!doctype html>
+<!-- Stand-in for a chat site that shows the conversation and brings it back after a reload, as every real AI chat
+     does from its server: your messages and the AI's replies stay on the page (kept in this tab's sessionStorage, one
+     list per conversation address) and come back a moment after the page loads. Bandage after a reload (BN18, BN19).
+     Its sidebar opens another conversation without a reload, the old one's messages staying a moment (BN20). -->
+<html lang="en">
+<head><meta charset="utf-8"><title>Gemini (Clotr test page)</title></head>
+<body>
+  <main id="chat"></main>
+  <form id="composer">
+    <textarea id="prompt" aria-label="Enter a prompt here" rows="4" cols="60"></textarea>
+    <button type="submit" aria-label="Send message">Send</button>
+  </form>
+  <script>
+    window.__sent = [];
+    const chat = document.getElementById("chat");
+    const key = () => `chat:${location.pathname}`;
+    const saved = () => JSON.parse(sessionStorage.getItem(key()) || "[]");
+    function show(who, text) {
+      const d = document.createElement("div");
+      d.className = who === "ai" ? "msg reply" : "msg mine";
+      d.textContent = text;
+      chat.append(d);
+    }
+    function add(who, text) {
+      sessionStorage.setItem(key(), JSON.stringify([...saved(), { who, text }]));
+      show(who, text);
+    }
+    // The AI "answers": its reply appears in the conversation, and stays there.
+    window.__reply = (text) => add("ai", text);
+    // The conversation so far comes back from the "server" a moment after the page loads.
+    setTimeout(() => {
+      for (const m of saved()) show(m.who, m.text);
+      window.__historyShown = true;
+    }, 700);
+    // The sidebar: another conversation opens at its own address (history.pushState, no reload). As on real sites,
+    // the old conversation's messages can stay on the page for a moment (`lingerMs`) before the new one replaces them.
+    window.__openChat = (id, lingerMs = 0) => {
+      history.pushState({}, "", `/app/${id}`);
+      window.__chatShown = null;
+      const swap = () => {
+        chat.replaceChildren();
+        for (const m of saved()) show(m.who, m.text);
+        window.__chatShown = id;
+      };
+      if (lingerMs) setTimeout(swap, lingerMs);
+      else swap();
+    };
+    const box = document.getElementById("prompt");
+    function send() {
+      if (!box.value) return;
+      window.__sent.push(box.value);
+      add("user", box.value);
+      box.value = "";
+    }
+    document.getElementById("composer").addEventListener("submit", (e) => { e.preventDefault(); send(); });
+    box.addEventListener("keydown", (e) => {
+      if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); send(); }
+    });
+  </script>
+</body>
+</html>

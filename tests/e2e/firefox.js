@@ -125,7 +125,7 @@ async function main() {
     });
     await check("FF2", "Warn never blocks: Enter sends (Firefox)", async () => {
       await page.focus("#prompt-textarea");
-      await page.keyboard.type("call me at 937-555-0123 ");
+      await page.keyboard.type("call me at 555-555-0123 ");
       await sleep(2000);
       await page.keyboard.press("Enter");
       await sleep(500);
@@ -134,7 +134,7 @@ async function main() {
     });
     await check("FF4", "Bandage: cover a phone number and show the peek bubble (Firefox)", async () => {
       await page.focus("#prompt-textarea");
-      await page.keyboard.type("call me at 937-555-0123 ");
+      await page.keyboard.type("call me at 555-555-0123 ");
       let host = false;
       for (let t = 0; t < 5000 && !host; t += 250) {
         await sleep(250);
@@ -152,8 +152,13 @@ async function main() {
       for (let i = 0; i < 5; i++) await page.keyboard.press("Tab");
       await sleep(800); // Enter is ignored for 0.6 s after focus lands in a warning (D36/D41)
       await page.keyboard.press("Enter");
-      await sleep(500);
-      const text = await page.$eval("#prompt-textarea", (t) => t.value);
+      // The cover name lands once the choice is saved: wait for it (a fixed 0.5 s missed it on a slow CI runner,
+      // the public repo's 1.1.1 PR, 2026-10-01), still failing if it never comes.
+      let text = "";
+      for (let t = 0; t < 5000 && !text.includes("[Phone 1]"); t += 250) {
+        await sleep(250);
+        text = await page.$eval("#prompt-textarea", (el) => el.value);
+      }
       if (!text.includes("[Phone 1]")) throw new Error(`box after "Yes, use cover names": ${JSON.stringify(text)}`);
       await page.keyboard.press("Enter"); // send it
       await sleep(500);

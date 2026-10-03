@@ -58,6 +58,14 @@ Checked on real sites (logged out, fake data): ChatGPT, Gemini and Grok send not
   click. e2e BN8 checks the reply's HTML stays exactly as the site wrote it.
 - **Reading replies for labels.** With Bandage on, the reply window (D63) also looks for Clotr's own labels, for 90
   seconds after a send; nothing from a reply is kept.
+- **Reading the conversation for labels (1.2.0).** With Bandage on, Clotr also reads the conversation the page shows
+  (the whole page once per chat, then only what changes, at most twice a second), only to find its own labels so a new
+  detail never reuses one after a reload; nothing from it is kept, and a label from before the reload never shows a
+  detail (`readBandageLabels` in `detector.js`; e2e BN18, BN19).
+- **Switching chats without a reload (found in the 1.2.0 review, fixed).** A hotspot didn't remember its chat: after
+  you opened another chat from the site's sidebar, a label still on the page from the chat you left could show the
+  new chat's detail for the same label. Each hotspot now keeps its chat and shows only that chat's detail, and all of
+  them go the moment the chat changes (e2e BN20, failed before the fix).
 - **The live line (developer copies only).** The unpacked build reloads when `local-update.txt` changes; it's
   git-ignored and packaging takes only tracked files, so it can't ship. Only someone who can already write to the
   extension's folder can trigger a reload.
@@ -111,6 +119,10 @@ misspellings, brackets, zero-width characters, key and email look-alikes).
 
 ## Accepted limits
 - **A hostile AI site can defeat Clotr on its own pages**: remove the warning (Clotr then says so and stops holding messages there, S21), imitate Clotr's warning, or cover its buttons so a click lands elsewhere. Planting fake *sent* entries by scripting its chat box doesn't work (S23). Clotr's warnings never ask you to type anything, so an imitation can't collect details. It can't learn anything it doesn't already receive, since it is the site the text is going to, with two narrow exceptions that need you to act: text it adds to your chat box while you type is checked with yours (you would see it in your box), and a reply is checked once per message you send, so it can test one guess per message against your vault (S24). Mitigation would need browser support that doesn't exist for extensions.
+- **Bandage sees only what the page has loaded.** Some sites load older messages only when you scroll up. A label
+  in a message that isn't loaded yet can't be seen, so after a reload (or when you open an older chat) a new detail
+  can get that label again: one label, two details, in one chat. Clotr doesn't scroll sites to load more; scrolling
+  up to the start of the chat first avoids it.
 - **Fingerprints of short values are guessable** by someone with full access to this browser profile (D22), disclosed on "What Clotr stores".
 - **Update tooling trusts `main`.** `tools/auto-update.ps1` / `.sh` fast-forward a clone of `main`, and an unpacked install reloads itself: whoever can push to `main` can ship code to that computer within the hour. Recommended (a GitHub setting only the owner can change): protect `main` (require a PR and green CI; no force pushes). See D44.
 

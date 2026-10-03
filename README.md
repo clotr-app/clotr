@@ -2,10 +2,12 @@
 
 ![Clotr: clot your data leaks. A mind map from You to AI chats, email, and Discord and Slack, where a bandage stops each detail (bank account, password, home address, card number, phone number, date of birth) before it goes out](docs/brand/readme-header.png)
 
-[![Tests](https://github.com/BilliamBaSH/clotr/actions/workflows/test.yml/badge.svg)](https://github.com/BilliamBaSH/clotr/actions/workflows/test.yml)
-[![no AI inside, rule-checked](https://img.shields.io/badge/no%20AI%20inside-rule--checked-blue)](https://github.com/BilliamBaSH/clotr/blob/main/tests/rules.test.js)
-[![OpenSSF Scorecard](https://api.scorecard.dev/projects/github.com/BilliamBaSH/clotr/badge)](https://scorecard.dev/viewer/?uri=github.com/BilliamBaSH/clotr)
+[![Tests](https://github.com/clotr-app/clotr/actions/workflows/test.yml/badge.svg)](https://github.com/clotr-app/clotr/actions/workflows/test.yml)
+[![no AI inside, rule-checked](https://img.shields.io/badge/no%20AI%20inside-rule--checked-blue)](https://github.com/clotr-app/clotr/blob/main/tests/rules.test.js)
+[![OpenSSF Scorecard](https://api.scorecard.dev/projects/github.com/clotr-app/clotr/badge)](https://scorecard.dev/viewer/?uri=github.com/clotr-app/clotr)
 License: [AGPL-3.0-or-later](LICENSE) · [What changed](CHANGELOG.md)
+
+**No AI inside. No network. No accounts. Open code. Free for people.**
 
 **Clotr catches a password, a key or a personal detail before you send it**: in AI chats like ChatGPT, Claude,
 Gemini, Copilot or Perplexity, and in your email or chat apps (Gmail, Outlook, Discord, Slack, WhatsApp and more)
@@ -17,7 +19,7 @@ out to a whole office.
 > be free for people. It runs only on your computer, never sends anything anywhere, and its code is open, so you don't
 > have to take my word for it. If it misses something, or warns you about nothing, please tell me. The more you use Clotr, the more you report bugs, the better it gets. For free.
 > — Alex ([BilliamBaSH](https://github.com/BilliamBaSH)) ·
-> [the whole story](https://clotr-app.github.io/#who)
+> [the whole story](https://clotr.app/#who)
 
 It is built for people who don't think of "my phone number, spelled out" as sensitive: it catches personal
 details however they're written (digits, number words, misspellings, mixes), and it explains itself in plain words.
@@ -86,7 +88,7 @@ switched on), before you send it:
 ![The dashboard: leaks stopped this week, what was found per day, and on which site](docs/store/5-dashboard.png)
 
 ## What's inside
-**No AI inside, no network, no accounts, open code, free for people.**
+**No AI inside. No network. No accounts. Open code. Free for people.**
 
 | What's in Clotr | How you know |
 |---|---|
@@ -145,7 +147,7 @@ Then pin Clotr to the toolbar. A welcome page opens with a practice box.
 
 ## Reporting problems
 Open an issue: *False alarm*, *Missed something* or *Bug*. Never paste the real sensitive value; describe its shape
-instead (for example "a phone number written as nine three seven…"). Security problems: see
+instead (for example "a phone number written as five five five…"). Security problems: see
 [SECURITY.md](SECURITY.md) (reported privately, not as an issue).
 
 ## How Clotr works
@@ -197,7 +199,7 @@ Clotr is free and open-source software: you may use, study, change and share it 
 over a network, you must share its source code under the same license.
 
 Want to build Clotr's code into a closed-source product or service instead? A **commercial license** is available:
-open a *Commercial license* issue. The name Clotr and its logo aren't covered by the license: a changed version you
+email [billiambash.clotr@gmail.com](mailto:billiambash.clotr@gmail.com?subject=Clotr%3A%20team%20pack%20or%20commercial%20license). The name Clotr and its logo aren't covered by the license: a changed version you
 share needs its own name and icon, so people can tell it apart from Clotr.
 
 Copyright © 2026 BilliamBaSH.
@@ -205,4 +207,4 @@ Copyright © 2026 BilliamBaSH.
 ## For developers
 `npm install`, then `npm test` (detection and rule checks), `npm run lint` (formatting and lint; `npm run format` fixes
 formatting) and `npm run test:e2e` (drives a real browser with the extension loaded). `npm run package` builds the
-release zip and its SHA-256 in `dist/SHA256SUMS.txt`. How to help: [CONTRIBUTING.md](CONTRIBUTING.md). How it's put together: [docs/architecture.md](docs/architecture.md). Design decisions: [docs/design-notes.md](docs/design-notes.md). Security: [SECURITY.md](SECURITY.md).
+release zip and its SHA-256 in `dist/SHA256SUMS.txt`. How to help: [CONTRIBUTING.md](CONTRIBUTING.md). How it's put together: [docs/architecture.md](docs/architecture.md). Design decisions: [docs/design-notes.md](docs/design-notes.md). Versions: [VERSIONING.md](VERSIONING.md). Security: [SECURITY.md](SECURITY.md).

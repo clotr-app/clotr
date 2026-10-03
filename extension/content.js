@@ -6,6 +6,8 @@
 // waits; warn → a corner notice that doesn't block; log → counted quietly; off → ignored.
 // Nothing leaves the browser: no network calls. Settings and event metadata
 // (never the detected values) are kept in chrome.storage.local.
+// What the person sees (the dialog, the notice, the offers) is drawn by warning-ui.js; this file decides
+// when to show it and what each choice does.
 (() => {
   "use strict";
 
@@ -15,7 +17,7 @@
   if (globalThis.__clotrActive) return;
   globalThis.__clotrActive = true;
 
-  const { detect, redact, generalize, generalForms, responseFor, fingerprint, setVault, readAttachment, msg } =
+  const { detect, redact, generalize, responseFor, fingerprint, setVault, readAttachment, readBandageLabels, msg } =
     globalThis.Clotr;
   const { realTarget, findEditor, getText, replaceText } = globalThis.Clotr.editor;
   const IS_TOP = window === window.top;
@@ -65,11 +67,8 @@
   function retire() {
     retired = true;
     clearTimeout(scanTimer);
-    clearTimeout(offerTimer);
-    closeDialog();
-    closeNotice();
-    closeReloadPrompt();
-    retireBandage();
+    stopWatchingLabels();
+    ui.retire();
     console.info(LOG, "the updated Clotr took over this page");
   }
 
@@ -85,34 +84,44 @@
   // Reported to the background (per tab, any frame), which the popup and toolbar read.
   const health = { editor: false, editFailed: false, uiRemoved: false };
 
-  // Clotr's own boxes (dialog, notice, reload prompt) sit directly under <html>. If one vanishes
-  // without Clotr removing it, the page is removing Clotr's warnings (hostile, or a framework
-  // rebuilding the page): stop holding messages there so nobody is stuck (D30, HP1) and say so.
-  const ownRemovals = new WeakMap(); // node → removals by Clotr not yet seen by the observer
-  const CLOTR_HOSTS = new Set(["CLOTR-GUARD", "CLOTR-NOTICE", "CLOTR-RELOAD"]);
-  function removeOwn(node) {
-    if (!node?.isConnected) return;
-    ownRemovals.set(node, (ownRemovals.get(node) || 0) + 1);
-    node.remove();
-  }
-  new MutationObserver((records) => {
-    for (const r of records) {
-      for (const node of r.removedNodes) {
-        if (!CLOTR_HOSTS.has(node.nodeName)) continue;
-        const mine = ownRemovals.get(node) || 0;
-        if (mine) {
-          ownRemovals.set(node, mine - 1);
-          continue;
-        }
-        if (!health.uiRemoved && !retired) {
-          console.info(LOG, "this page removed Clotr's warning; messages won't be held here");
-          reportHealth({ uiRemoved: true });
-        }
-        // The dialog had the keyboard: give it back to the chat box so the user can carry on.
-        if (node.nodeName === "CLOTR-GUARD" && activeEditor?.isConnected) activeEditor.focus();
-      }
+  // ---------- The warning UI (warning-ui.js) ----------
+  // It draws what the person sees; the callbacks below are what their choices do. Created here, after the hello
+  // above, so an older copy's warnings stepping aside aren't taken for the page removing Clotr's.
+  const ui = globalThis.Clotr.ui.create({
+    safely,
+    orphaned,
+    retired: () => retired,
+    editor: () => activeEditor,
+    largeText: () => largeText,
+    everyday: () => everyday,
+    bandageUnasked: () => bandage === undefined,
+    canRemember: () => Boolean(saltValue),
+    isVaultType: (id) => VAULT_TYPES.has(id),
+    isGuided: (id) => Boolean(guided[id]),
+    markGuided,
+    responseOf: (id) => responseOf(id),
+    setResponse,
+    setToLog,
+    addToVault,
+    answerBandage,
+    removedByPage,
+    // A hotspot keeps the chat it was made for: its detail comes from that chat only (BN20).
+    currentChat: () => bandageChat(),
+    realValue: (label, chat) => chat?.byLabel.get(label),
+    realText: bandageRealText,
+  });
+
+  // One of Clotr's own boxes vanished without Clotr removing it: the page is removing Clotr's warnings
+  // (hostile, or a framework rebuilding the page). Stop holding messages there so nobody is stuck (D30, HP1)
+  // and say so.
+  function removedByPage(node) {
+    if (!health.uiRemoved && !retired) {
+      console.info(LOG, "this page removed Clotr's warning; messages won't be held here");
+      reportHealth({ uiRemoved: true });
     }
-  }).observe(document.documentElement || document, { childList: true });
+    // The dialog had the keyboard: give it back to the chat box so the user can carry on.
+    if (node.nodeName === "CLOTR-GUARD" && activeEditor?.isConnected) activeEditor.focus();
+  }
   function reportHealth(change) {
     Object.assign(health, change);
     message({ type: "clotr:health", ...change }).catch(() => {}); // orphaned copy: nothing to report
@@ -140,23 +149,7 @@
   function showChatBox() {
     const box = activeEditor?.isConnected ? activeEditor : findChatBox();
     if (!box) return { found: false };
-    box.scrollIntoView({ block: "center", behavior: "instant" });
-    const r = box.getBoundingClientRect();
-    const host = document.createElement("clotr-flash");
-    const shadow = host.attachShadow({ mode: "closed" });
-    const style = document.createElement("style");
-    style.textContent = globalThis.Clotr.styles.flash;
-    const ring = document.createElement("div");
-    ring.className = "ring";
-    Object.assign(ring.style, {
-      left: `${r.left - 6}px`,
-      top: `${r.top - 6}px`,
-      width: `${r.width + 12}px`,
-      height: `${r.height + 12}px`,
-    });
-    shadow.append(style, ring);
-    document.documentElement.append(host);
-    setTimeout(() => host.remove(), 1900);
+    ui.outline(box);
     noteEditor();
     return { found: true };
   }
@@ -289,12 +282,15 @@
 
   // First-time tips (D21, D43): kinds of data the user has already been guided about.
   let guided = {};
+  function markGuided(id) {
+    guided = { ...guided, [id]: Date.now() };
+    message({ type: "clotr:guided", id }).catch(() => {});
+  }
   // Helping someone (settings → "Larger warnings"): bigger text and buttons in Clotr's boxes.
   let largeText = false;
   let replyCheck = true; // Settings → "Check the AI's replies for my details" (D63)
   let bandage; // Bandage on this site (D93): true on, false the user said no, undefined not asked yet
   let everyday = false; // an email or chat app you switched on (D134): your words go to people, not to an AI
-  const sized = (cls) => (largeText ? `${cls} large` : cls);
 
   // Settings come from the background (storage is locked to Clotr's own pages, S20): only what
   // this frame needs, its own site's pause and mode included. Fetched at start, when the background
@@ -309,6 +305,7 @@
         largeText = r.largeText === true;
         replyCheck = r.replyCheck !== false;
         bandage = typeof r.bandage === "boolean" ? r.bandage : undefined;
+        safely(watchLabels)(); // on: read the labels the conversation already holds (after a reload); off: stop
         everyday = r.everyday === true;
         if (!replyCheck) closeReplyWindow(); // switched off: a reply already on its way isn't read either
         responses = r.responses || {};
@@ -325,8 +322,8 @@
         console.info(LOG, isPaused() ? "paused on this site" : "resumed on this site");
         reportTabState();
         if (isPaused()) {
-          closeDialog();
-          closeNotice();
+          ui.closeDialog();
+          ui.closeNotice();
           pending = [];
           warnings = [];
           fileWarnings = [];
@@ -408,8 +405,6 @@
   let fileWarnings = []; // detections in attached files, not yet acknowledged
   const flagged = new Map(); // value → { id, name }: shown to the user and still in the text
   const offered = new Set(); // values already offered for the vault on this page
-  let noticeKind = null; // what the corner notice shows: "warn" | "file" | "offer"
-  let noticeOpenedAt = 0; // when the current warning first appeared (fast-send check, D52)
   // Types that come from the vault itself (nothing to learn there).
   const VAULT_TYPES = new Set(["my_name", "family_name", "employer", "my_id", "watch_list"]);
   let scanTimer = null;
@@ -419,10 +414,21 @@
   // ---------- Bandage (D93): cover names while you type ----------
   // On a site where the user said yes, personal details become labels in brackets ([Phone 1], [Me]) as soon as typing
   // pauses, the same label for the same detail within one chat. Passwords and keys are never covered: they keep their
-  // warning. The label ↔ detail map lives only in this page's memory, keyed by fingerprint; nothing is stored.
-  const bandageChats = new Map(); // conversation path → { byKey: fingerprint → label, byLabel: label → detail, counts }
+  // warning. The label ↔ detail map lives only in this page's memory, keyed by fingerprint; nothing is stored. A reload
+  // forgets it, but the conversation still holds the labels given before: Clotr reads them from the page and numbers
+  // new details after them, so one label never stands for two details (D27; "after a reload" below).
+  const bandageChats = new Map(); // conversation path → newBandageChat()
+  const newBandageChat = () => ({
+    byKey: new Map(), // fingerprint → label
+    byLabel: new Map(), // label → detail, for the labels this page gave
+    counts: {}, // label kind (bl_phone…) → the highest number given here or found on the page
+    given: new Set(), // ids (readBandageLabels) of the labels this page gave
+    seen: new Set(), // ids of the labels found on the page
+    read: false, // the whole page has been read for labels since this chat began (or Bandage came on)
+  });
   const bandageFailed = new Set(); // details this chat box wouldn't let Clotr cover: they get the normal warning
   let bandagePath = null;
+  let bandageCurrent = null; // the chat bandageChat() gave last: another one means the conversation changed
   let bandaging = false; // a swap is under way: a send waits for it
   let bandageHeldSend = false; // a send was held for the swap: say so once it's done
   let bandageRounds = [];
@@ -457,58 +463,185 @@
       }
       bandagePath = path;
     }
-    if (!bandageChats.has(path)) bandageChats.set(path, { byKey: new Map(), byLabel: new Map(), counts: {} });
-    return bandageChats.get(path);
+    if (!bandageChats.has(path)) bandageChats.set(path, newBandageChat());
+    const chat = bandageChats.get(path);
+    if (chat !== bandageCurrent) {
+      const left = bandageCurrent;
+      bandageCurrent = chat;
+      if (left) bandageSwitched(chat);
+    }
+    return chat;
   }
 
-  // Label words, per kind of detail; anything else personal is an ID.
+  // The conversation changed without a reload (the site's sidebar, back and forward, a new chat; not the first send
+  // moving a new chat to its own address, which keeps its chat). The same label stands for a different detail in each
+  // chat, and the old chat's messages can stay on the page for a moment, so every hotspot goes now: they were all made
+  // for the chat you left (each also keeps its own chat, so none can show this one's details). The page is read whole
+  // again for this chat's labels, and the answer being waited for belongs to the chat you left: its labels aren't
+  // marked here.
+  function bandageSwitched(chat) {
+    ui.clearSpots();
+    chat.read = false;
+    labelWatch.nodes.clear();
+    if (labelWatch.observer && !labelWatch.timer) labelWatch.timer = setTimeout(safely(bandageReadPage), LABEL_READ_MS);
+    replyChat = null;
+    replyNodes.clear();
+  }
+
+  // Label words, per kind of detail; anything else personal is an ID. The kind (the word's message key) numbers the
+  // labels in any language, so a "[Teléfono 1]" from before makes the next phone "[Phone 2]".
   function bandageWord(id) {
     switch (id) {
       case "my_name":
-        return msg("bl_me", "Me");
+        return ["bl_me", msg("bl_me", "Me")];
       case "employer":
-        return msg("bl_company", "My company");
+        return ["bl_company", msg("bl_company", "My company")];
       case "family_name":
-        return msg("bl_family", "Family");
+        return ["bl_family", msg("bl_family", "Family")];
       case "street_address":
-        return msg("bl_address", "Address");
+        return ["bl_address", msg("bl_address", "Address")];
       case "phone_number":
-        return msg("bl_phone", "Phone");
+        return ["bl_phone", msg("bl_phone", "Phone")];
       case "email":
-        return msg("bl_email", "Email");
+        return ["bl_email", msg("bl_email", "Email")];
       case "date_of_birth":
-        return msg("bl_birth", "Birth date");
+        return ["bl_birth", msg("bl_birth", "Birth date")];
       case "credit_card":
-        return msg("bl_card", "Card");
+        return ["bl_card", msg("bl_card", "Card")];
       case "bank_account":
-        return msg("bl_account", "Account");
+        return ["bl_account", msg("bl_account", "Account")];
       case "public_ip":
-        return msg("bl_ip", "IP address");
+        return ["bl_ip", msg("bl_ip", "IP address")];
       case "watch_list":
-        return msg("bl_term", "Term");
+        return ["bl_term", msg("bl_term", "Term")];
       default:
-        return msg("bl_id", "ID");
+        return ["bl_id", msg("bl_id", "ID")];
     }
   }
+
+  // The same id for one label in any language or case (detector.js); the label itself if it isn't one.
+  const labelId = (label) => readBandageLabels(label)[0]?.id ?? label;
 
   function bandageLabel(r, value) {
     const chat = bandageChat();
     const key = saltValue ? fingerprint(saltValue, r.id, value) : `${r.id}\0${value}`;
     if (chat.byKey.has(key)) return chat.byKey.get(key);
+    bandageReadPage(); // first, what the page shows now: a label the conversation already holds is never given again
     let label = null;
     // A birth date with a written year keeps its decade, so the AI can still reason about age.
     const year = r.id === "date_of_birth" && value.match(/\b(19|20)\d\d\b/);
     if (year) label = `[${msg("bl_bornIn", "born in the $1s", String(Math.floor(Number(year[0]) / 10) * 10))}]`;
-    if (!label || chat.byLabel.has(label)) {
-      const word = bandageWord(r.id);
-      const n = (chat.counts[word] || 0) + 1;
-      chat.counts[word] = n;
+    if (!label || chat.byLabel.has(label) || chat.seen.has(labelId(label))) {
+      const [kind, word] = bandageWord(r.id);
+      const n = (chat.counts[kind] || 0) + 1;
+      chat.counts[kind] = n;
       // "Me" and "My company" stand alone; everything else is numbered.
       label = (r.id === "my_name" || r.id === "employer") && n === 1 ? `[${word}]` : `[${word} ${n}]`;
     }
     chat.byKey.set(key, label);
     chat.byLabel.set(label, value);
+    chat.given.add(labelId(label));
     return label;
+  }
+
+  // ---------- Bandage after a reload: the labels the conversation already holds (D27) ----------
+  // Nothing is stored, so after a reload Clotr no longer knows which detail an earlier label stood for, but the page
+  // still shows those labels (your messages and the AI's replies). While Bandage is on here, Clotr reads them: the whole
+  // page once per chat, then only what changed (the observer just collects changed nodes; they're read at most twice a
+  // second, and right before a new label is given). Each kind's numbering continues after the highest number found, and
+  // a label this page didn't give gets a hotspot whose bubble says Clotr didn't keep its detail, never another one.
+  const labelWatch = { observer: null, nodes: new Set(), timer: 0 };
+  const LABEL_READ_MS = 500;
+  const MAX_CHANGED = 500; // more changed nodes than this before a read: read the whole page instead
+  const NO_TEXT = new Set(["SCRIPT", "STYLE", "NOSCRIPT", "TEMPLATE"]);
+
+  function watchLabels() {
+    const on = bandageOn() && !retired;
+    if (!on || labelWatch.observer) {
+      if (!on) stopWatchingLabels();
+      return;
+    }
+    if (!document.body) {
+      document.addEventListener("DOMContentLoaded", safely(watchLabels), { once: true });
+      return;
+    }
+    for (const chat of bandageChats.values()) chat.read = false; // what changed while it was off is read again
+    labelWatch.observer = new MutationObserver(
+      safely((records) => {
+        bandageChat(); // the page changed: if its chat did too, the old chat's hotspots go now (bandageSwitched)
+        for (const rec of records) {
+          const nodes = rec.type === "characterData" ? [rec.target] : rec.addedNodes;
+          for (const n of nodes) {
+            const root = n.nodeType === 3 ? n.parentNode : n.nodeType === 1 ? n : null;
+            if (root) labelWatch.nodes.add(root);
+          }
+        }
+        if (labelWatch.nodes.size > MAX_CHANGED) {
+          labelWatch.nodes.clear();
+          bandageChat().read = false;
+        }
+        if (!labelWatch.timer) labelWatch.timer = setTimeout(safely(bandageReadPage), LABEL_READ_MS);
+      }),
+    );
+    labelWatch.observer.observe(document.body, { childList: true, subtree: true, characterData: true });
+    labelWatch.timer = setTimeout(safely(bandageReadPage), 0);
+  }
+
+  function stopWatchingLabels() {
+    labelWatch.observer?.disconnect();
+    labelWatch.observer = null;
+    labelWatch.nodes.clear();
+    clearTimeout(labelWatch.timer);
+    labelWatch.timer = 0;
+  }
+
+  // Reads the labels the page gained since the last read (the whole page the first time in a chat).
+  function bandageReadPage() {
+    clearTimeout(labelWatch.timer);
+    labelWatch.timer = 0;
+    if (!bandageOn() || retired || !document.body) return;
+    const chat = bandageChat();
+    const roots = chat.read ? [...labelWatch.nodes] : [document.body];
+    chat.read = true;
+    labelWatch.nodes.clear();
+    let spots = 0;
+    for (const root of roots) {
+      try {
+        if (root.isConnected) spots += bandageReadLabels(root, chat);
+      } catch (err) {
+        console.warn(LOG, "Bandage couldn't read the labels on the page", err);
+      }
+    }
+    if (spots) ui.placeSpots();
+  }
+
+  // Notes the labels in `root`'s text: each kind's highest number, and which ones this page didn't give. The text is
+  // read whole, so a label a site splits across elements still counts. Returns the hotspots added.
+  function bandageReadLabels(root, chat) {
+    let older = false;
+    for (const f of readBandageLabels(root.textContent)) {
+      if (f.n) chat.counts[f.kind] = Math.max(chat.counts[f.kind] || 0, f.n);
+      chat.seen.add(f.id);
+      if (!chat.given.has(f.id)) older = true;
+    }
+    return older ? bandageSpotOlder(root, chat) : 0;
+  }
+
+  // A hotspot over each visible label in `root` that this page didn't give: its bubble says the detail wasn't kept.
+  function bandageSpotOlder(root, chat) {
+    let added = 0;
+    const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
+    for (let t = walker.nextNode(); t; t = walker.nextNode()) {
+      const parent = t.parentElement;
+      if (!t.nodeValue.includes("[") || !parent || NO_TEXT.has(parent.nodeName)) continue;
+      const older = readBandageLabels(t.nodeValue).filter((f) => !chat.given.has(f.id) && !ui.hasSpot(t, f.index));
+      if (!older.length || !validReplyNode(parent) || unseenText(parent)) continue;
+      for (const f of older) {
+        if (!ui.addSpot(t, f.index, f.label, root, chat, true)) return added; // enough of them already
+        added++;
+      }
+    }
+    return added;
   }
 
   // What Bandage covers: personal details and watch words the user hasn't marked fine to share.
@@ -546,12 +679,7 @@
       report(results, "redacted", "bandage");
       if (bandageHeldSend) {
         bandageHeldSend = false;
-        showOffer({
-          title: msg("bandageHeldTitle", "🩹 Details covered"),
-          text: msg("bandageHeldText", "Your details have cover names now. Press Enter again to send."),
-          yes: msg("ok", "OK"),
-          no: null,
-        });
+        ui.tellCovered();
       }
     } else if (stuck || getText(editor) === text) {
       bandageHeldSend = false;
@@ -563,36 +691,24 @@
 
   function setBandageHere(on) {
     bandage = on;
+    safely(watchLabels)();
     message({ type: "clotr:setBandage", on }).catch(() => {});
   }
 
-  // The first time a personal detail shows up on a site: offer Bandage in the warning (D93).
-  function bandageOffer() {
-    const yes = el("button", { className: "primary", textContent: msg("bandageYes", "Yes, use cover names") });
-    const no = el("button", { textContent: msg("bandageNo", "No thanks") });
-    yes.addEventListener("click", () => {
-      setBandageHere(true);
+  // The answer to the Bandage offer in the warning (D93), the first time a personal detail shows up on a site.
+  function answerBandage(on) {
+    setBandageHere(on);
+    if (on) {
       console.info(LOG, "Bandage on for this site");
       if (activeEditor?.isConnected) {
         scan(activeEditor);
         activeEditor.focus();
-      } else closeNotice();
-    });
-    no.addEventListener("click", () => {
-      setBandageHere(false);
+      } else ui.closeNotice();
+    } else {
       console.info(LOG, "Bandage declined for this site");
-      if (warnings.length) showNotice(warnings);
-      else closeNotice();
-    });
-    return el("div", { className: "tip" }, [
-      el("p", {
-        textContent: msg(
-          "bandageOffer",
-          "🩹 Want Clotr to swap details like this for a cover name, like [Phone 1], on this site from now on? The AI still follows what you mean. It just never sees the real thing.",
-        ),
-      }),
-      el("div", { className: "actions" }, [no, yes]),
-    ]);
+      if (warnings.length) warn(warnings);
+      else ui.closeNotice();
+    }
   }
 
   // ---------- Detection ----------
@@ -600,12 +716,6 @@
   // Keeps only the matches in `results` that pass `keep`, dropping empty results.
   function filterMatches(results, keep) {
     return results.map((r) => ({ ...r, matches: r.matches.filter((m) => keep(r, m)) })).filter((r) => r.matches.length);
-  }
-
-  // Never echo a full secret back into the page.
-  function mask(value) {
-    if (value.length <= 8) return "•".repeat(value.length);
-    return `${value.slice(0, 4)}…${value.slice(-2)}`;
   }
 
   // ---------- Editor helpers (editor.js) ----------
@@ -634,76 +744,12 @@
       return;
     }
     reportHealth({ editFailed: true });
-    const names = [...new Set(results.map((r) => r.name))].join(", ");
-    showOffer({
-      title: msg("coverFailTitle", "⚠️ Clotr couldn't hide it here"),
-      text: msg(
-        "coverFailText",
-        "This chat box wouldn't let Clotr change your message, so it still has $1 in it. Please delete it yourself before you send.",
-        names,
-      ),
-      yes: msg("coverFailOk", "OK, I'll delete it"),
-      no: null,
-    });
+    ui.tellCoverFailed(results);
   }
 
-  // ---------- Dialog (closed shadow DOM so site CSS/scripts can't interfere) ----------
-  // Built with DOM APIs only: Google sites enforce Trusted Types, which rejects innerHTML.
-
-  let host = null;
-  let shadow = null;
-
-  const DIALOG_CSS = globalThis.Clotr.styles.dialog;
-
-  function el(tag, props = {}, children = []) {
-    const node = document.createElement(tag);
-    Object.assign(node, props);
-    node.append(...children);
-    return node;
-  }
-
-  function isDialogOpen() {
-    return Boolean(host && host.isConnected);
-  }
-
-  // ---------- Bulk pastes: summarize instead of listing every value ----------
-
-  const BULK_ITEMS = 6; // more values than this → counts per type, no values
-  const BULK_LINES = 20; // this many lines → mention the size
-
-  const totalMatches = (results) => results.reduce((n, r) => n + r.matches.length, 0);
-
-  // "Large paste: 400 lines, with Email Address ×37, Phone Number ×12." or null.
-  function bulkSummary(results, file = null) {
-    const lines = file ? file.lines : activeEditor ? getText(activeEditor).split("\n").length : 0;
-    if (!file && totalMatches(results) <= BULK_ITEMS && lines < BULK_LINES) return null;
-    const counts = results.map((r) => `${r.name} ×${r.matches.length}`).join(", ");
-    if (file?.count > 1)
-      return msg("bulkFiles", "$1 files you attached ($2) contain $3.", file.count, file.name, counts);
-    if (file)
-      return msg(
-        "bulkFile",
-        "The file “$1” you attached ($2) contains $3.",
-        file.name,
-        lines === 1 ? msg("linesOne", "1 line") : msg("linesMany", "$1 lines", lines),
-        counts,
-      );
-    return lines >= BULK_LINES
-      ? msg("bulkPaste", "Large paste: $1 lines, with $2.", lines, counts)
-      : msg("bulkMessage", "This message has $1.", counts);
-  }
-
-  // One line per type; with many values, a count and a couple of masked examples.
-  function describeValues(r) {
-    const shown = r.matches.slice(0, 3).map(mask).join(", ");
-    return r.matches.length > 3 ? `×${r.matches.length}: ${shown}, …` : shown;
-  }
-
-  // ---------- The choices, in plain words (D40) ----------
+  // ---------- What the person's choices do (warning-ui.js draws them) ----------
   // Every warning offers: this time only (Hide it / Leave it in), and from now on, for this
-  // item (vault fingerprint: "fine to share" or "always watch") or for this kind of data.
-
-  const kindsOf = (results) => [...new Set(results.map((r) => r.name))].join(", ");
+  // item (vault fingerprint: "fine to share" or "always watch") or for this kind of data (D40).
 
   function addToVault(results, mode) {
     const entries = results.flatMap((r) =>
@@ -718,149 +764,21 @@
     message({ type: "clotr:vaultAdd", entries }).catch((err) => console.warn(LOG, "could not add to vault", err));
   }
 
-  // "More choices": each one is today's answer plus a lasting one. `cover` is null for a file; `general` swaps
-  // details for a general version ("March 1948", "Springfield") and hides the rest.
-  function moreChoices(results, { leave, cover, general = null }) {
-    const perItem =
-      !orphaned() && saltValue && totalMatches(results) <= BULK_ITEMS && !results.some((r) => VAULT_TYPES.has(r.id));
-    const one = totalMatches(results) === 1;
-    const choice = (text, fn) => {
-      const b = el("button", { className: "choice", textContent: text });
-      b.addEventListener("click", fn);
-      return b;
-    };
-    const forms = general ? generalForms(results, navigator.language) : [];
-    const shown = [...new Set(forms.map((f) => f.general))].slice(0, 3).join('", "');
-    const buttons = [
-      ...(forms.length
-        ? [
-            choice(
-              forms.length === totalMatches(results)
-                ? forms.length === 1
-                  ? msg("choiceGeneralOne", 'Say "$1" instead', shown)
-                  : msg("choiceGeneralMany", 'Keep it general: "$1"', shown)
-                : msg("choiceGeneralMixed", 'Say "$1" instead, and hide the rest', shown),
-              general,
-            ),
-          ]
-        : []),
-      ...(perItem
-        ? [
-            choice(
-              one
-                ? msg("choiceAllowOne", "Leave it in, and don't warn me about this one again")
-                : msg("choiceAllowMany", "Leave it in, and don't warn me about these again"),
-              () => {
-                addToVault(results, "allow");
-                leave();
-              },
-            ),
-          ]
-        : []),
-      choice(msg("choiceLogKinds", "Leave it in, and stop warning me about: $1", kindsOf(results)), () => {
-        setToLog(results.map((r) => r.id));
-        leave();
-      }),
-      ...(perItem && cover
-        ? [
-            choice(
-              one
-                ? msg("choiceProtectOne", "Hide it, and always watch for this one, however it's written")
-                : msg("choiceProtectMany", "Hide them, and always watch for these, however they're written"),
-              () => {
-                addToVault(results, "protect");
-                cover();
-              },
-            ),
-          ]
-        : []),
-    ];
-    return el("details", { className: "more" }, [
-      el("summary", { textContent: msg("moreChoices", "More choices") }),
-      el("div", { className: "choices" }, buttons),
-    ]);
-  }
-
-  function showDialog(results) {
-    if (!host) {
-      host = document.createElement("clotr-guard");
-      shadow = host.attachShadow({ mode: "closed" });
-    }
-
-    const items = results.map((r) =>
-      el("li", {}, [
-        el("span", { className: `sev ${r.severity}`, textContent: msg(`sev_${r.severity}`, r.severity) }),
-        `${r.name}: `,
-        el("code", { textContent: describeValues(r) }),
-      ]),
-    );
-    const bulk = bulkSummary(results);
-
-    const redactBtn = el("button", { className: "primary", textContent: msg("coverIt", "Hide it") });
+  // "Ask before sending": one decision for everything found, the warn-level items included.
+  function askFirst(results) {
     // Opened by a send attempt: leaving it in sends the message (D121).
     const resend = heldVia;
-    const allowBtn = el("button", {
-      textContent: resend ? msg("leaveItSend", "Leave it in and send") : msg("leaveIt", "Leave it in"),
-    });
-    const backBtn = el("button", {
-      className: "link",
-      textContent: msg("backToMessage", "Go back to my message (Esc)"),
-    });
-
-    const box = el("div", { className: sized("box"), tabIndex: -1 }, [
-      el("h2", { textContent: msg("dialogTitle", "⚠️ This looks private") }),
-      el("p", {
-        textContent: everyday
-          ? msg("dialogLeadHere", "If you send this, the people who read it here will see:")
-          : msg("dialogLead", "If you send this, the AI service will see:"),
-      }),
-      ...(bulk ? [el("p", { className: "bulk", textContent: bulk })] : []),
-      el("ul", {}, items),
-      el("div", {
-        className: "note",
-        textContent: msg(
-          "dialogNote",
-          "Clotr checked this on your computer, and nothing's been sent yet. Hide it swaps it for a label like $1.",
-          `[REDACTED ${results[0].name.toUpperCase()}]`,
-        ),
-      }),
-      el("div", { className: "actions" }, [allowBtn, redactBtn]),
-      moreChoices(results, {
-        leave: () => answer(false),
-        cover: () => answer(true),
-        general: () => answer(true, true),
-      }),
-      el("div", { className: "keys" }, [el("span", { textContent: msg("enterCovers", "Enter: Hide it") }), backBtn]),
-    ]);
-    box.setAttribute("role", "alertdialog");
-    box.setAttribute("aria-modal", "true");
-
-    // Back to the message without choosing (D41): the dialog comes back when you send.
-    const back = () => {
-      closeDialog();
-      backToEdit = true;
-      activeEditor?.focus();
-    };
-    backBtn.addEventListener("click", back);
-    box.addEventListener("keydown", (e) => {
-      if (e.key !== "Escape" && e.key !== "Backspace") return;
-      if (e.target instanceof HTMLTextAreaElement || e.target instanceof HTMLInputElement) return;
-      e.preventDefault();
-      e.stopPropagation();
-      back();
-    });
-
     const answer = (doRedact, general = false) => {
       if (doRedact) {
-        closeDialog();
-        closeNotice();
+        ui.closeDialog();
+        ui.closeNotice();
         flagged.clear(); // removed by Clotr, not by hand: nothing to learn
         coverIn(activeEditor, results, general);
       } else {
         report(results, "allowed");
         for (const r of results) for (const m of r.matches) allowedValues.add(m);
-        closeDialog();
-        closeNotice();
+        ui.closeDialog();
+        ui.closeNotice();
         activeEditor?.focus();
         noteIgnored(results);
       }
@@ -877,478 +795,44 @@
           0,
         );
     };
-    redactBtn.addEventListener("click", () => answer(true));
-    allowBtn.addEventListener("click", () => answer(false));
-
-    const overlay = el("div", { className: "overlay" }, [box]);
-    // Clicking outside doesn't dismiss: the user has to choose.
-    overlay.addEventListener("click", (e) => {
-      if (e.target === overlay) shakeDialog();
-    });
-
-    guardKeys(box, { enter: redactBtn });
-    shadow.replaceChildren(el("style", { textContent: DIALOG_CSS }), overlay);
-    if (!host.isConnected) document.documentElement.append(host);
-    // Pull focus out of the chat box so further typing/Enter can't slip through.
-    box.focus();
-  }
-
-  // Keys typed by habit never make a choice (D36): Space never
-  // presses a button or ticks a box in Clotr's UI, and Enter does nothing in the first moment
-  // after the UI appears (or while held down). After that, Enter presses the button the user
-  // moved to with Tab, or else `enter`: the forward choice (D41). Mouse clicks always work.
-  const KEY_GRACE_MS = 600;
-  function guardKeys(container, { enter = null } = {}) {
-    const shownAt = Date.now();
-    let tabbed = false;
-    let deliberate = false; // reached with Clotr's keyboard shortcut
-    const stop = (e) => {
-      e.preventDefault();
-      e.stopPropagation();
-    };
-    container.addEventListener(
-      "keydown",
-      (e) => {
-        if (e.key === "Tab") {
-          tabbed = true;
-          return;
-        }
-        if ((e.key === " " || e.key === "Spacebar") && !deliberate) return stop(e);
-        if (e.key !== "Enter") return;
-        if (e.repeat || (!deliberate && Date.now() - shownAt < KEY_GRACE_MS)) return stop(e);
-        const focused = container.getRootNode().activeElement;
-        const control = focused instanceof HTMLButtonElement || focused?.tagName === "SUMMARY";
-        if (control && focused !== enter && (tabbed || deliberate)) return; // presses (or opens) what the user moved to
-        stop(e);
-        if (enter) enter.click();
+    ui.showDialog(results, {
+      resend: Boolean(resend),
+      leave: () => answer(false),
+      cover: () => answer(true),
+      general: () => answer(true, true),
+      // Back to the message without choosing (D41): the dialog comes back when you send.
+      back: () => {
+        ui.closeDialog();
+        backToEdit = true;
+        activeEditor?.focus();
       },
-      true,
-    );
-    container.addEventListener(
-      "keyup",
-      (e) => {
-        if ((e.key === " " || e.key === "Spacebar") && !deliberate) stop(e);
+    });
+  }
+
+  // The corner warning (doesn't block, doesn't take focus). `file` = { name, lines } for an attached file: it can't
+  // be redacted, only removed by the user.
+  function warn(results, file = null) {
+    ui.showNotice(results, file, {
+      leave: () => {
+        allowWarnings();
+        activeEditor?.focus();
+        noteIgnored(results);
       },
-      true,
-    );
-    return () => {
-      deliberate = true;
-    }; // reaching a button with the keyboard shortcut is a deliberate choice
-  }
-
-  function closeDialog() {
-    removeOwn(host);
-  }
-
-  // ---------- Warn notice (doesn't block, doesn't take focus) ----------
-
-  let noticeHost = null;
-  let noticeShadow = null;
-  let noticeFocus = null; // () => focuses the notice's main button (keyboard shortcut Alt+Shift+C)
-  const SHORTCUT_HINT = msg(
-    "keyboardHint",
-    "Keyboard: Alt+Shift+C jumps here, Enter chooses, Esc goes back to your message.",
-  );
-
-  // Keyboard users reach the notice with Clotr's shortcut; Esc returns to the chat box.
-  function keyboardReach(box, main) {
-    const arm = guardKeys(box, { enter: main });
-    box.addEventListener("keydown", (e) => {
-      if (e.key !== "Escape" && e.key !== "Backspace") return;
-      e.preventDefault();
-      e.stopPropagation();
-      activeEditor?.focus();
-    });
-    box.append(el("p", { className: "sr-only", textContent: SHORTCUT_HINT }));
-    noticeFocus = () => {
-      arm();
-      main.focus();
-    };
-  }
-
-  const NOTICE_CSS = globalThis.Clotr.styles.notice;
-
-  function isNoticeOpen() {
-    return Boolean(noticeHost && noticeHost.isConnected);
-  }
-
-  // ---------- "Why am I seeing this?" and first-time tips (D21, D43) ----------
-
-  let whyOpen = false;
-  let tip = null; // the first-time tip in the current notice: { id, name, match, single, status }
-  const YOURS = new Set(["phone_number", "email", "street_address"]); // kinds of data that can be "mine"
-  const REPORT_URL = "https://github.com/BilliamBaSH/clotr/issues/new";
-  const aName = (name) => `${/^[AEIOU]/i.test(name) ? "an" : "a"} ${name}`; // "an Email Address"
-
-  // Kinds a fake bank or "support" call asks for (codes, passwords, cards): the plain truth, once.
-  const SCAM_TARGETS = new Set(["password", "credit_card", "us_ssn", "bank_account"]);
-  const scamLine = (results) =>
-    results.some((r) => SCAM_TARGETS.has(r.id))
-      ? msg("whyScam", "No real bank, company or help line will ever ask you for this. ")
-      : "";
-
-  function whyText(results, file) {
-    const names = [...new Set(results.map((r) => r.name))].join(", ");
-    if (file?.count > 1)
-      return (
-        msg("whyFoundFiles", "Clotr found what looks like: $1, in the files $2. ", names, file.name) +
-        scamLine(results) +
-        msg(
-          "whyBody",
-          "Whatever you send an AI can stay on its servers, be read by the people who run it, or be used to train it. Nothing has left your computer yet, and it's your call: hide it, leave it in, or use More choices to decide how Clotr handles this from now on.",
-        )
-      );
-    return (
-      (file
-        ? msg("whyFoundFile", "Clotr found what looks like: $1, in the file “$2”. ", names, file.name)
-        : msg("whyFound", "Clotr found what looks like: $1. ", names)) +
-      scamLine(results) +
-      msg(
-        "whyBody",
-        "Whatever you send an AI can stay on its servers, be read by the people who run it, or be used to train it. Nothing has left your computer yet, and it's your call: hide it, leave it in, or use More choices to decide how Clotr handles this from now on.",
-      )
-    );
-  }
-
-  // The first time Clotr warns about a kind of data, it asks how to treat it from now on,
-  // and for your own kinds of data whether this one is yours. Shown once per kind; kept
-  // while the notice is open (it's rebuilt on every pause in typing).
-  function firstTimeTip(results) {
-    if (orphaned()) return null;
-    if (!tip || !results.some((r) => r.id === tip.id)) {
-      const fresh = results.find((r) => !guided[r.id] && !VAULT_TYPES.has(r.id));
-      if (!fresh) {
-        tip = null;
-        return null;
-      }
-      tip = { id: fresh.id, name: fresh.name, match: fresh.matches[0], single: fresh.matches.length === 1, status: "" };
-      guided = { ...guided, [fresh.id]: Date.now() };
-      message({ type: "clotr:guided", id: fresh.id }).catch(() => {});
-    }
-    const t = tip;
-    const boxEl = el("div", { className: "tip" });
-    const done = (text) => {
-      t.status = text;
-      boxEl.replaceChildren(el("p", { textContent: text }));
-    };
-    if (t.status) {
-      done(t.status);
-      return boxEl;
-    }
-    const current = responseOf(t.id);
-    const choice = (value, label, after) => {
-      const b = el("button", { className: value === current ? "chosen" : "", textContent: label });
-      b.setAttribute("aria-pressed", String(value === current));
-      b.addEventListener("click", () => {
-        setResponse([t.id], value);
-        done(after);
-      });
-      return b;
-    };
-    const parts = [
-      el("p", {}, [
-        el("b", { textContent: msg("tipNew", "New: ") }),
-        msg("tipHow", "How should Clotr handle $1 from now on?", aName(t.name), t.name),
-      ]),
-      el("div", { className: "choices" }, [
-        choice(
-          "warn",
-          msg("tipWarn", "Warn me"),
-          msg("tipWarnDone", "Got it. Clotr will keep warning you about $1.", aName(t.name), t.name),
-        ),
-        choice(
-          "log",
-          msg("tipLog", "Just count it"),
-          msg(
-            "tipLogDone",
-            "Got it. Clotr will just count $1 quietly. You can change that in Settings whenever you like.",
-            aName(t.name),
-            t.name,
-          ),
-        ),
-        choice(
-          "block",
-          msg("tipBlock", "Ask before sending"),
-          msg(
-            "tipBlockDone",
-            "Got it. Clotr will ask you before $1 gets sent. You can change that in Settings whenever you like.",
-            aName(t.name),
-            t.name,
-          ),
-        ),
-      ]),
-    ];
-    if (YOURS.has(t.id) && t.single && saltValue) {
-      const vault = (mode, after) => () => {
-        message({
-          type: "clotr:vaultAdd",
-          entries: [{ kind: "value", type: t.id, fp: fingerprint(saltValue, t.id, t.match), mode, added: Date.now() }],
-        }).catch((err) => console.warn(LOG, "could not add to vault", err));
-        done(after);
-      };
-      const mine = el("button", { textContent: msg("tipMine", "Always watch it") });
-      mine.addEventListener(
-        "click",
-        vault(
-          "protect",
-          msg("tipMineDone", "Saved to your vault. Clotr will always watch for this $1, however it's written.", t.name),
-        ),
-      );
-      const share = el("button", { textContent: msg("tipShare", "It's fine to share") });
-      share.addEventListener(
-        "click",
-        vault("allow", msg("tipShareDone", "Saved. This $1 is fine to share, so Clotr will only count it.", t.name)),
-      );
-      parts.push(
-        el("p", { textContent: msg("tipYours", "Is this $1 yours?", t.name) }),
-        el("div", { className: "choices" }, [mine, share]),
-      );
-    }
-    boxEl.replaceChildren(...parts);
-    return boxEl;
-  }
-
-  // `file` = { name, lines } for an attached file: it can't be redacted, only removed by the user.
-  function showNotice(results, file = null) {
-    if (!noticeHost) {
-      noticeHost = document.createElement("clotr-notice");
-      noticeShadow = noticeHost.attachShadow({ mode: "closed" });
-    }
-    const bulk = bulkSummary(results, file);
-    // One <code> per item: an item never breaks, but the line wraps between items
-    // instead of running past the notice's edge.
-    const what = bulk
-      ? []
-      : results
-          .flatMap((r) => r.matches.map((m) => `${r.name} (${mask(m)})`))
-          .flatMap((item, i) => [...(i ? [", "] : []), el("code", { textContent: item })]);
-    const redactBtn = el("button", { className: "primary", textContent: msg("coverIt", "Hide it") });
-    const keepBtn = el("button", { textContent: file ? msg("ok", "OK") : msg("leaveIt", "Leave it in") });
-    const whyBtn = el("button", { className: "link", textContent: msg("why", "Why am I seeing this?") });
-    whyBtn.setAttribute("aria-expanded", String(whyOpen));
-    // "Wrong?" opens a prefilled GitHub issue with only the kind of data: never the value or
-    // the site. It's a page the user chooses to open; Clotr itself sends nothing.
-    const reportBtn = el("button", {
-      className: "link",
-      textContent: msg("reportFalseAlarm", "Wrong? Report a false alarm"),
-    });
-    reportBtn.addEventListener("click", () => {
-      const kinds = [...new Set(results.map((r) => r.name))].join(", ");
-      const url = `${REPORT_URL}?template=false-alarm.yml&title=${encodeURIComponent(`False alarm: ${kinds}`)}&kind=${encodeURIComponent(kinds)}`;
-      window.open(url, "_blank", "noopener");
-    });
-    const why = el("div", { className: "why", hidden: !whyOpen }, [
-      el("p", { textContent: whyText(results, file) }),
-      reportBtn,
-    ]);
-    whyBtn.addEventListener("click", () => {
-      whyOpen = !whyOpen;
-      why.hidden = !whyOpen;
-      whyBtn.setAttribute("aria-expanded", String(whyOpen));
-    });
-    const offerBandage =
-      bandage === undefined && !file && !bulk && !orphaned() && results.some((r) => r.group !== "credentials");
-    const tipBox = offerBandage ? bandageOffer() : !file && !bulk ? firstTimeTip(results) : null;
-    const box = el("div", { className: sized("notice") }, [
-      el("b", { textContent: msg("noticeTitle", "⚠️ Heads up") }),
-      el(
-        "p",
-        {},
-        bulk
-          ? [
-              bulk,
-              everyday
-                ? msg("noticeSharedBulkHere", " If you send it, the people who read it here get it.")
-                : msg("noticeSharedBulk", " If you send it, this AI gets it."),
-            ]
-          : [
-              msg("noticeContains", "Your message contains "),
-              ...what,
-              everyday
-                ? msg("noticeSharedHere", ". If you send it, the people who read it here get it.")
-                : msg("noticeShared", ". If you send it, this AI gets it."),
-            ],
-      ),
-      ...(file
-        ? [
-            el("p", {
-              className: "hint",
-              textContent:
-                file.count > 1
-                  ? msg("noticeFilesHint", "To keep them private, take those files off before you send.")
-                  : msg("noticeFileHint", "To keep it private, take the file off before you send."),
-            }),
-          ]
-        : []),
-      ...(orphaned()
-        ? [
-            el("p", {
-              className: "hint",
-              textContent: msg("noticeUpdated", "Clotr just updated. Reload this page so it can save your choices."),
-            }),
-          ]
-        : []),
-      el("div", { className: "actions" }, file ? [keepBtn] : [keepBtn, redactBtn]),
-      moreChoices(results, {
-        leave: () => keep(),
-        cover: file ? null : () => cover(),
-        general: file ? null : () => cover(true),
-      }),
-      whyBtn,
-      why,
-      ...(tipBox ? [tipBox] : []),
-    ]);
-    box.setAttribute("role", "status");
-    box.setAttribute("aria-live", "polite");
-
-    function cover(general = false) {
-      closeNotice();
-      flagged.clear();
-      coverIn(activeEditor, results, general);
-      warnings = [];
-      console.info(
-        LOG,
-        general ? "user generalized it (notice)" : "user hid it (notice)",
-        results.map((r) => r.id),
-      );
-    }
-    function keep() {
-      allowWarnings();
-      activeEditor?.focus();
-      noteIgnored(results);
-    }
-    redactBtn.addEventListener("click", cover);
-    keepBtn.addEventListener("click", keep);
-
-    keyboardReach(box, file ? keepBtn : redactBtn);
-    if (!isNoticeOpen() || noticeKind !== (file ? "file" : "warn")) noticeOpenedAt = Date.now();
-    noticeKind = file ? "file" : "warn";
-    noticeShadow.replaceChildren(el("style", { textContent: NOTICE_CSS }), box);
-    if (!noticeHost.isConnected) document.documentElement.append(noticeHost);
-  }
-
-  // ---------- "Clotr was updated: reload this page" (D37) ----------
-  // Shown by an orphaned copy that no updated copy replaced. The page is greyed out until
-  // the user answers; "Later" keeps the old copy warning (never holding a message).
-
-  let reloadHost = null;
-  let reloadAsked = false;
-  const RELOAD_CSS = globalThis.Clotr.styles.reload;
-
-  function showReloadPrompt() {
-    if (reloadAsked || retired || !IS_TOP) return;
-    reloadAsked = true;
-    reloadHost = document.createElement("clotr-reload");
-    const root = reloadHost.attachShadow({ mode: "closed" });
-    const draft = activeEditor?.isConnected ? getText(activeEditor).trim() : "";
-    const reloadBtn = el("button", {
-      className: "primary",
-      textContent: draft ? msg("reloadCopy", "Copy my message and reload") : msg("reloadPage", "Reload this page"),
-    });
-    const laterBtn = el("button", { textContent: msg("later", "Later") });
-    const status = el("p", { className: "bulk", role: "status" });
-    const box = el("div", { className: sized("box"), tabIndex: -1 }, [
-      el("h2", { textContent: msg("reloadTitle", "🔄 Clotr was updated") }),
-      el("p", {
-        textContent: msg("reloadLead", "Clotr needs this page reloaded to keep protecting you here."),
-      }),
-      ...(draft
-        ? [
-            el("p", {
-              textContent: msg(
-                "reloadDraft",
-                "Reloading can wipe what you're writing, so Clotr copies it first. Paste it back with Ctrl+V.",
-              ),
-            }),
-          ]
-        : []),
-      el("div", {
-        className: "note",
-        textContent: msg("reloadNote", "Until you do, Clotr still warns you here. It just can't save your choices."),
-      }),
-      status,
-      el("div", { className: "actions" }, [laterBtn, reloadBtn]),
-    ]);
-    box.setAttribute("role", "alertdialog");
-    box.setAttribute("aria-modal", "true");
-    const later = () => {
-      closeReloadPrompt();
-      activeEditor?.focus();
-    };
-    let copyFailed = false;
-    reloadBtn.addEventListener("click", async () => {
-      if (draft && !copyFailed) {
-        const copied = await navigator.clipboard.writeText(draft).then(
-          () => true,
-          () => false,
+      cover: (general = false) => {
+        ui.closeNotice();
+        flagged.clear();
+        coverIn(activeEditor, results, general);
+        warnings = [];
+        console.info(
+          LOG,
+          general ? "user generalized it (notice)" : "user hid it (notice)",
+          results.map((r) => r.id),
         );
-        if (!copied) {
-          // never lose the user's message: let them copy it themselves first
-          copyFailed = true;
-          status.textContent = msg(
-            "reloadCopyFailed",
-            "Clotr couldn't copy your message. Copy it yourself first (select it, then Ctrl+C), then reload.",
-          );
-          reloadBtn.textContent = msg("reloadAnyway", "Reload anyway");
-          return;
-        }
-      }
-      location.reload();
+      },
     });
-    laterBtn.addEventListener("click", later);
-    // Enter goes forward (reload), Esc or Backspace goes back to the page (D41).
-    box.addEventListener("keydown", (e) => {
-      if (e.key === "Escape" || e.key === "Backspace") {
-        e.preventDefault();
-        e.stopPropagation();
-        later();
-      }
-    });
-    box.addEventListener("keyup", (e) => e.stopPropagation());
-    guardKeys(box, { enter: reloadBtn });
-    const overlay = el("div", { className: "overlay" }, [box]);
-    root.replaceChildren(el("style", { textContent: DIALOG_CSS + RELOAD_CSS }), overlay);
-    document.documentElement.append(reloadHost);
-    box.focus();
-  }
-
-  function closeReloadPrompt() {
-    removeOwn(reloadHost);
   }
 
   // ---------- Learning offers (local only): "add to your vault?", "warn less?" ----------
-
-  let offerTimer = null;
-  function showOffer({ title, text, yes, no, onYes, onNo }) {
-    if (!noticeHost) {
-      noticeHost = document.createElement("clotr-notice");
-      noticeShadow = noticeHost.attachShadow({ mode: "closed" });
-    }
-    const yesBtn = el("button", { className: "primary", textContent: yes });
-    const noBtn = no ? el("button", { textContent: no }) : null;
-    const box = el("div", { className: sized("notice offer") }, [
-      el("b", { textContent: title }),
-      el("p", { textContent: text }),
-      el("div", { className: "actions" }, noBtn ? [noBtn, yesBtn] : [yesBtn]),
-    ]);
-    box.setAttribute("role", "status");
-    const done = (fn) => () => {
-      clearTimeout(offerTimer);
-      closeNotice();
-      fn?.();
-      activeEditor?.focus();
-    };
-    yesBtn.addEventListener("click", done(onYes));
-    noBtn?.addEventListener("click", done(onNo));
-    keyboardReach(box, yesBtn);
-    noticeKind = "offer";
-    noticeShadow.replaceChildren(el("style", { textContent: NOTICE_CSS }), box);
-    if (!noticeHost.isConnected) document.documentElement.append(noticeHost);
-    clearTimeout(offerTimer);
-    offerTimer = setTimeout(() => {
-      if (noticeKind === "offer") closeNotice();
-    }, 30000);
-  }
 
   // The user deleted flagged items by hand before sending: offer to always watch for them.
   function offerVault(removed) {
@@ -1357,44 +841,27 @@
     );
     if (!items.length || !saltValue) return;
     items.forEach((f) => offered.add(f.value));
-    const what = items.map((f) => `${f.name} (${mask(f.value)})`).join(", ");
-    showOffer({
-      title: msg("offerVaultTitle", "💡 Always watch for this?"),
-      text:
-        items.length === 1
-          ? msg(
-              "offerVaultOne",
-              "You took $1 out before sending. Want Clotr to always catch it, however it's written? Add it to your vault. Only a fingerprint is saved, never the thing itself.",
-              what,
-            )
-          : msg(
-              "offerVaultMany",
-              "You took $1 out before sending. Want Clotr to always catch them, however they're written? Add them to your vault. Only fingerprints are saved, never the things themselves.",
-              what,
-            ),
-      yes: msg("offerVaultYes", "Add to my vault"),
-      no: msg("noThanks", "No thanks"),
-      onYes: () =>
-        message({
-          type: "clotr:vaultAdd",
-          entries: items.map((f) => ({
-            kind: "value",
-            type: f.id,
-            fp: fingerprint(saltValue, f.id, f.value),
-            mode: "protect",
-            learned: true,
-            added: Date.now(),
-          })),
-        })
-          .then(() =>
-            console.info(
-              LOG,
-              "learned vault items",
-              items.map((f) => f.id),
-            ),
-          )
-          .catch((err) => console.warn(LOG, "could not add to vault", err)),
-    });
+    ui.offerVault(items, () =>
+      message({
+        type: "clotr:vaultAdd",
+        entries: items.map((f) => ({
+          kind: "value",
+          type: f.id,
+          fp: fingerprint(saltValue, f.id, f.value),
+          mode: "protect",
+          learned: true,
+          added: Date.now(),
+        })),
+      })
+        .then(() =>
+          console.info(
+            LOG,
+            "learned vault items",
+            items.map((f) => f.id),
+          ),
+        )
+        .catch((err) => console.warn(LOG, "could not add to vault", err)),
+    );
   }
 
   // The user kept (ignored) a warning. After a few of the same type, offer to relax it.
@@ -1405,32 +872,18 @@
       .then((r) => {
         const id = r?.offer;
         const p = id && results.find((x) => x.id === id);
-        if (!p || !["warn", "block"].includes(responseOf(id)) || isDialogOpen()) return;
-        showOffer({
-          title: msg("relaxTitle", "💡 Warn less about $1?", p.name),
-          text: msg(
-            "relaxText",
-            'You\'ve kept $1 $2 times lately. Switch it to "Just count": still counted in your history, but no more notices. You can change it back in Settings.',
-            p.name,
-            r.count,
-          ),
-          yes: msg("tipLog", "Just count it"),
-          no: msg("keepWarning", "Keep warning"),
-          onYes: () => {
+        if (!p || !["warn", "block"].includes(responseOf(id)) || ui.isDialogOpen()) return;
+        ui.offerRelax(
+          p.name,
+          r.count,
+          () => {
             setToLog([id]);
             message({ type: "clotr:relaxAnswer", id, accepted: true }).catch(() => {});
           },
-          onNo: () => message({ type: "clotr:relaxAnswer", id, accepted: false }).catch(() => {}),
-        });
+          () => message({ type: "clotr:relaxAnswer", id, accepted: false }).catch(() => {}),
+        );
       })
       .catch((err) => console.warn(LOG, "could not record choice", err));
-  }
-
-  function closeNotice() {
-    noticeKind = null;
-    tip = null;
-    whyOpen = false;
-    removeOwn(noticeHost);
   }
 
   // The user kept the warned items (clicked "Leave it in" or sent anyway): count them as allowed.
@@ -1446,15 +899,7 @@
     );
     warnings = [];
     fileWarnings = [];
-    closeNotice();
-  }
-
-  function shakeDialog() {
-    const box = shadow && shadow.querySelector(".box");
-    if (!box) return;
-    box.classList.remove("shake");
-    void box.offsetWidth; // restart the animation
-    box.classList.add("shake");
+    ui.closeNotice();
   }
 
   // ---------- Scanning & blocking ----------
@@ -1465,7 +910,7 @@
     if (lost) {
       noteOrphaned();
       // No updated copy took over (D39 couldn't start it here): ask for a reload (D37).
-      if (!reloadAsked) setTimeout(safely(showReloadPrompt), 0);
+      if (!ui.reloadAsked()) setTimeout(safely(ui.showReloadPrompt), 0);
     }
     if (isPaused()) return;
     const draft = getText(editor);
@@ -1500,7 +945,7 @@
     for (const [value, f] of flagged) {
       if (text.includes(value)) continue;
       flagged.delete(value);
-      // Edited into another value of the same type ("937-555-5636" → "…5637") isn't a removal.
+      // Edited into another value of the same type ("555-555-5636" → "…5637") isn't a removal.
       if (text.trim() && !all.some((r) => r.id === f.id)) removed.push({ value, ...f });
     }
     for (const r of all)
@@ -1515,19 +960,19 @@
         "detected",
         pending.concat(warnings).map((r) => r.id),
       );
-      closeNotice();
-      showDialog(pending.concat(warnings));
+      ui.closeNotice();
+      askFirst(pending.concat(warnings));
     } else {
-      if (isDialogOpen()) closeDialog();
+      if (ui.isDialogOpen()) ui.closeDialog();
       if (warnings.length) {
         console.info(
           LOG,
           "warning about",
           warnings.map((r) => r.id),
         );
-        showNotice(warnings);
-      } else if (isNoticeOpen() && noticeKind === "warn") {
-        closeNotice();
+        warn(warnings);
+      } else if (ui.isNoticeOpen() && ui.noticeKind() === "warn") {
+        ui.closeNotice();
       }
       if (!warnings.length && removed.length && !lost) offerVault(removed);
     }
@@ -1546,15 +991,15 @@
 
   function shouldHold({ unsure = false, via = null } = {}) {
     if (isPaused() || health.uiRemoved) return false; // a page removing Clotr's dialog must not leave you stuck
-    if (isDialogOpen()) {
+    if (ui.isDialogOpen()) {
       if (!orphaned()) return true;
-      closeDialog(); // opened before the update: an orphaned copy never holds a message
+      ui.closeDialog(); // opened before the update: an orphaned copy never holds a message
     }
     if (!activeEditor || !activeEditor.isConnected) return false;
     clearTimeout(scanTimer);
     backToEdit = false; // a send attempt brings the dialog back
     // Was a warning on screen long enough to read before this send? (fast paste-and-Enter)
-    const seen = isNoticeOpen() && noticeKind === "warn" && Date.now() - noticeOpenedAt >= SEEN_MS;
+    const seen = ui.isNoticeOpen() && ui.noticeKind() === "warn" && Date.now() - ui.noticeOpenedAt() >= SEEN_MS;
     heldVia = via || activeEditor;
     try {
       scan(activeEditor);
@@ -1589,7 +1034,7 @@
   // warning instead, now that there's time to read it.
   function confirmSent(editor, results, tell = true) {
     const before = getText(editor).replace(/\s+/g, " ").trim();
-    closeNotice(); // the half-shown warning; it comes back if the message didn't go
+    ui.closeNotice(); // the half-shown warning; it comes back if the message didn't go
     warnings = [];
     setTimeout(
       safely(() => {
@@ -1636,32 +1081,15 @@
 
   function justSent(results) {
     if (orphaned()) return;
-    const items = results.flatMap((r) => r.matches.map((m) => `${r.name} (${mask(m)})`));
     const types = [...new Set(results.map((r) => r.id))];
-    showOffer({
-      title: everyday ? msg("justSentTitleHere", "⚠️ Just sent") : msg("justSentTitle", "⚠️ Just sent to this AI"),
-      text: everyday
-        ? msg(
-            "justSentTextHere",
-            "Your message had $1 in it. If that was a mistake, delete or unsend it if you can. Next time, Clotr can ask you first.",
-            items.join(", "),
-          )
-        : msg(
-            "justSentText",
-            "Your message had $1 in it. If that was a mistake, delete the message in the chat. Next time, Clotr can ask you first.",
-            items.join(", "),
-          ),
-      yes: msg("askFirstNextTime", "Ask me first next time"),
-      no: msg("ok", "OK"),
-      onYes: () => setResponse(types, "block"),
-    });
+    ui.tellJustSent(results, () => setResponse(types, "block"));
   }
 
   function block(event, why) {
     event.preventDefault();
     event.stopImmediatePropagation();
     console.info(LOG, "blocked send via", why);
-    shakeDialog();
+    ui.shakeDialog();
   }
 
   function safely(fn) {
@@ -1751,6 +1179,7 @@
   const typedHere = new Set(); // fingerprints of everything detected in the chat box on this page
   const mentioned = new Set(); // fingerprints already pointed out
   const replyNodes = new Set();
+  let replyChat = null; // the Bandage chat the message was sent in: its labels are marked while it's still the chat
   let replyWindowUntil = 0;
   let replyTimer = null;
   let replyObserver = null;
@@ -1774,6 +1203,7 @@
     const wantsReplyCheck = replyCheck && saltValue && vaultEntries.length;
     const wantsBandage = bandageOn() && bandageChat().byLabel.size;
     if (!wantsReplyCheck && !wantsBandage) return;
+    replyChat = wantsBandage ? bandageChat() : null;
     replyWindowUntil = Date.now() + REPLY_WINDOW_MS;
     replyChecked = false;
     if (replyObserver || !document.body) return;
@@ -1815,8 +1245,9 @@
     replyNodes.clear();
     // Bandage looks at every pause until the window ends: an AI can go quiet for seconds before its answer (Copilot
     // builds a new chat's own page first, BN17), and finding Clotr's own labels tells the page nothing.
-    const labelsToFind = bandageOn() && bandageChat().byLabel.size > 0;
-    if (labelsToFind) bandageMarkLabels(nodes);
+    // Only while the chat the message was sent in is still the page's chat (bandageSwitched).
+    const labelsToFind = bandageOn() && replyChat === bandageChat() && replyChat.byLabel.size > 0;
+    if (labelsToFind) bandageMarkLabels(nodes, replyChat);
     if (!replyCheck || replyChecked) {
       if (!labelsToFind) closeReplyWindow();
       return;
@@ -1836,41 +1267,24 @@
     if (!own.length) return;
     for (const r of own) for (const m of r.matches) mentioned.add(fpOf(r, m));
     report(own, "mentioned"); // kind and fingerprint only, for the mind map (D63, D75); even when a warning has priority
-    if (isDialogOpen() || (isNoticeOpen() && noticeKind !== "offer")) return; // a warning has priority
-    const names = [...new Set(own.map((r) => r.name))].join(", ");
+    if (ui.isDialogOpen() || (ui.isNoticeOpen() && ui.noticeKind() !== "offer")) return; // a warning has priority
     console.info(
       LOG,
       "a reply mentions your own details",
       own.map((r) => r.id),
     );
-    showOffer({
-      title: msg("replyTitle", "ℹ️ The AI's reply mentions your $1", names),
-      text: msg(
-        "replyText",
-        "You didn't type it here, so this AI probably has it from an earlier chat or its memory. You can delete old chats and turn its memory off in the AI's settings.",
-      ),
-      yes: msg("ok", "OK"),
-      no: null,
-    });
+    ui.tellReplyMentions(own);
   }
 
   // ---------- Bandage step 2 (D93, D99): hover a label in the AI's answer to see the real detail ----------
   // The AI's page is never changed: rewriting a reply's text under a site's own framework (React and the like) can
-  // break the chat (D30). Clotr finds each known label with a live Range and lays its own invisible, focusable
-  // hotspot over it, in a closed-shadow layer. Pointing at one, or tabbing to it, opens a small Clotr bubble with the
-  // real detail; "Copy with real names" copies the whole answer with the details back. The label ↔ detail map is
-  // only the in-memory one from step 1 (bandageChat().byLabel): nothing new is stored.
+  // break the chat (D30). Clotr finds each known label with a live Range, and warning-ui.js lays its own invisible,
+  // focusable hotspot over it, with a small bubble that shows the real detail. The label ↔ detail map is only the
+  // in-memory one from step 1 (bandageChat().byLabel): nothing new is stored.
   const LABEL_RE = /\[[^[\]]{1,60}\]/g;
-  const peekSpots = []; // { node, start, range, label, root, btn }
-  let spotHost = null;
-  let spotLayer = null;
-  let spotFrame = 0;
-  let spotTimer = 0; // re-places the hotspots once a second while there are any: layouts shift without a scroll
 
-  function bandageMarkLabels(nodes) {
-    if (retired) return; // the updated copy marks labels now
-    const chat = bandageChat();
-    if (!chat.byLabel.size) return;
+  function bandageMarkLabels(nodes, chat) {
+    if (retired || !chat.byLabel.size) return; // retired: the updated copy marks labels now
     for (const root of nodes) {
       try {
         bandageFindLabels(root, chat);
@@ -1878,7 +1292,7 @@
         console.warn(LOG, "Bandage couldn't look for labels in a reply", err);
       }
     }
-    if (peekSpots.length) placeSpots();
+    if (ui.hasSpots()) ui.placeSpots();
   }
 
   // Text nobody sees: a screen-reader-only copy of a message ("You said: …", in a 1-pixel clipped box) or a hidden
@@ -1903,151 +1317,16 @@
       if (unseenText(t.parentElement)) continue;
       LABEL_RE.lastIndex = 0;
       for (let m = LABEL_RE.exec(text); m; m = LABEL_RE.exec(text)) {
-        if (!chat.byLabel.has(m[0]) || peekSpots.some((sp) => sp.node === t && sp.start === m.index)) continue;
-        const range = document.createRange();
-        range.setStart(t, m.index);
-        range.setEnd(t, m.index + m[0].length);
-        peekSpots.push({ node: t, start: m.index, range, label: m[0], root, btn: null });
+        if (!chat.byLabel.has(m[0]) || ui.hasSpot(t, m.index)) continue;
+        ui.addSpot(t, m.index, m[0], root, chat);
       }
     }
   }
 
-  function dropSpot(i) {
-    const sp = peekSpots[i];
-    if (peekTarget === sp) closePeek();
-    sp.btn?.remove();
-    peekSpots.splice(i, 1);
-  }
-
-  // Puts each hotspot over its label (once per frame; after scrolls, resizes and new replies). A label whose text
-  // changed or left the page loses its hotspot.
-  function placeSpots() {
-    cancelAnimationFrame(spotFrame);
-    spotFrame = requestAnimationFrame(
-      safely(() => {
-        for (let i = peekSpots.length - 1; i >= 0; i--) {
-          const sp = peekSpots[i];
-          if (!sp.node.isConnected || sp.range.toString() !== sp.label) dropSpot(i);
-        }
-        if (!peekSpots.length) {
-          removeOwn(spotHost);
-          spotHost = null;
-          clearInterval(spotTimer);
-          spotTimer = 0;
-          return;
-        }
-        // A sidebar opening or an image loading moves the labels without a scroll or resize event.
-        if (!spotTimer) spotTimer = setInterval(() => document.visibilityState === "visible" && placeSpots(), 1000);
-        if (!spotHost?.isConnected) {
-          spotHost = document.createElement("clotr-spots");
-          const root = spotHost.attachShadow({ mode: "closed" });
-          spotLayer = el("div", { className: "layer" });
-          root.append(el("style", { textContent: globalThis.Clotr.styles.spots }), spotLayer);
-          document.documentElement.append(spotHost);
-          for (const sp of peekSpots) sp.btn = null; // the old layer went away with its buttons
-        }
-        for (const sp of peekSpots) {
-          if (!sp.btn) {
-            sp.btn = el("button", { type: "button", className: "spot" });
-            sp.btn.setAttribute("aria-label", msg("bandagePeekLabel", "Show the real detail for $1", sp.label));
-            sp.btn.addEventListener("pointerenter", () => showPeek(sp));
-            sp.btn.addEventListener("pointerleave", schedulePeekClose);
-            sp.btn.addEventListener("focus", () => showPeek(sp));
-            sp.btn.addEventListener("blur", schedulePeekClose);
-            sp.btn.addEventListener("click", () => showPeek(sp));
-            spotLayer.append(sp.btn);
-          }
-          const r = sp.range.getBoundingClientRect();
-          sp.btn.hidden = !(r.width && r.height && r.bottom > 0 && r.top < innerHeight);
-          Object.assign(sp.btn.style, {
-            left: `${r.left}px`,
-            top: `${r.top}px`,
-            width: `${r.width}px`,
-            height: `${r.height}px`,
-          });
-        }
-        if (peekTarget) positionPeek();
-      }),
-    );
-  }
-  addEventListener("scroll", () => peekSpots.length && placeSpots(), { capture: true, passive: true });
-  addEventListener("resize", () => peekSpots.length && placeSpots(), { passive: true });
-
-  // The answer's text with every label's real detail back in (for the clipboard only, never for the page).
-  function bandageRealText(root) {
-    const chat = bandageChat();
-    return (root.textContent || "").replace(LABEL_RE, (m) => chat.byLabel.get(m) ?? m);
-  }
-
-  let peekHost = null;
-  let peekBox = null;
-  let peekTarget = null;
-  let peekCloseTimer = null;
-
-  function closePeek() {
-    clearTimeout(peekCloseTimer);
-    removeOwn(peekHost);
-    peekHost = null;
-    peekBox = null;
-    peekTarget = null;
-  }
-  // An updated Clotr took over this page (retire): the hotspots and an open bubble go with this copy, or they'd stay
-  // on the page with nothing to move or close them (BN16).
-  function retireBandage() {
-    closePeek();
-    clearInterval(spotTimer);
-    spotTimer = 0;
-    cancelAnimationFrame(spotFrame);
-    removeOwn(spotHost);
-    spotHost = null;
-    peekSpots.length = 0;
-  }
-  // A short delay before closing: moving the pointer from the label into the bubble (to reach its button) crosses
-  // the gap between them.
-  function schedulePeekClose() {
-    clearTimeout(peekCloseTimer);
-    peekCloseTimer = setTimeout(safely(closePeek), 300);
-  }
-  function cancelPeekClose() {
-    clearTimeout(peekCloseTimer);
-  }
-
-  function positionPeek() {
-    if (!peekBox || !peekTarget) return;
-    const r = peekTarget.range.getBoundingClientRect();
-    Object.assign(peekBox.style, {
-      left: `${Math.max(4, Math.min(r.left, innerWidth - 336))}px`,
-      top: `${r.bottom + 6}px`,
-    });
-  }
-
-  function showPeek(sp) {
-    cancelPeekClose();
-    if (peekTarget === sp && peekHost?.isConnected) return;
-    const value = bandageChat().byLabel.get(sp.label);
-    if (!value || !sp.node.isConnected) return;
-    closePeek();
-    peekTarget = sp;
-    peekHost = document.createElement("clotr-peek");
-    const root = peekHost.attachShadow({ mode: "closed" });
-    const copied = el("p", { className: "copied", hidden: true, textContent: msg("bandageCopied", "Copied.") });
-    const copy = el("button", { type: "button", textContent: msg("bandageCopyReal", "Copy with real names") });
-    copy.addEventListener("click", async () => {
-      try {
-        await navigator.clipboard.writeText(bandageRealText(sp.root));
-        copied.hidden = false;
-      } catch (err) {
-        console.warn(LOG, "Bandage couldn't copy the answer", err);
-      }
-    });
-    peekBox = el("div", { className: "box" }, [el("div", { className: "value", textContent: value }), copy, copied]);
-    peekBox.addEventListener("pointerenter", cancelPeekClose);
-    peekBox.addEventListener("pointerleave", schedulePeekClose);
-    peekBox.addEventListener("focusin", cancelPeekClose);
-    peekBox.addEventListener("focusout", schedulePeekClose);
-    root.append(el("style", { textContent: globalThis.Clotr.styles.peek }), peekBox);
-    document.documentElement.append(peekHost);
-    positionPeek();
+  // The answer's text with every label's real detail back in, from the chat the answer belongs to (for the clipboard
+  // only, never for the page).
+  function bandageRealText(root, chat) {
+    return (root.textContent || "").replace(LABEL_RE, (m) => chat?.byLabel.get(m) ?? m);
   }
 
   // ---------- Attached files (warn only; the upload itself isn't held, D19) ----------
@@ -2102,8 +1381,8 @@
         .slice(0, 3)
         .map((n) => `“${n}”`)
         .join(", ") + (names.length > 3 ? ` ${msg("andMore", "and $1 more", names.length - 3)}` : "");
-    if (!isDialogOpen())
-      showNotice(found, names.length === 1 ? { name: names[0], lines } : { name: shown, lines, count: names.length });
+    if (!ui.isDialogOpen())
+      warn(found, names.length === 1 ? { name: names[0], lines } : { name: shown, lines, count: names.length });
   }
 
   window.addEventListener(
@@ -2135,9 +1414,9 @@
   // The background asks before an update reload. Only a frame showing a dialog or a
   // warning answers; if none does, the reload goes ahead.
   chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
-    if (msg?.type === "clotr:busy?" && (isDialogOpen() || (isNoticeOpen() && noticeKind !== "offer")))
+    if (msg?.type === "clotr:busy?" && (ui.isDialogOpen() || (ui.isNoticeOpen() && ui.noticeKind() !== "offer")))
       sendResponse(true);
-    if (msg?.type === "clotr:focusNotice" && IS_TOP && isNoticeOpen() && noticeFocus) noticeFocus();
+    if (msg?.type === "clotr:focusNotice" && IS_TOP) ui.focusNotice();
     if (msg?.type === "clotr:settingsChanged" && !retired) loadSettings();
     if (msg?.type === "clotr:showChatBox" && IS_TOP && !retired) {
       try {

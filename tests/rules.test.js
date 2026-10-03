@@ -42,7 +42,7 @@ test("every script parses as a classic script (no import/export)", () => {
 
 test("manifest: MV3, valid version, files exist", () => {
   assert.equal(manifest.manifest_version, 3);
-  assert.match(manifest.version, /^\d+\.\d+\.\d+$/);
+  assert.match(manifest.version, /^\d+\.\d+\.\d+(\.[1-9]\d*)?$/); // a fourth number for a build (D140)
   const files = [
     manifest.background.service_worker,
     manifest.action.default_popup,
@@ -85,6 +85,42 @@ test("scope: everyday sites (email, chat apps) are specific https hosts and neve
       assert.ok(!builtIn.has(new URL(m.replace(/\*$/, "")).hostname), `${s.name}: ${m} is built in`);
     }
   }
+});
+
+// Where a function's body starts and ends in a source (braces counted, strings skipped).
+function functionSpan(src, name) {
+  const m = new RegExp(`function\\s+${name}\\s*\\(`).exec(src);
+  if (!m) return null;
+  let i = src.indexOf("{", m.index);
+  const start = i;
+  for (let depth = 0, quote = null; i < src.length; i++) {
+    const c = src[i];
+    if (quote) {
+      if (c === "\\") i++;
+      else if (c === quote) quote = null;
+    } else if (c === '"' || c === "'" || c === "`") quote = c;
+    else if (c === "{") depth++;
+    else if (c === "}" && --depth === 0) return [start, i];
+  }
+  return null;
+}
+
+// Firefox only shows the browser's prompt when the ask comes in the click's own turn: after any `await` it refuses,
+// and the button does nothing. So `protectSite` (popup.js) must not wait for anything before it asks.
+const waitsBeforeAsking = (body) => {
+  const ask = body.search(/(\bawait\s+)?\b(chrome|browser)\s*\.\s*permissions\s*\.\s*request\b/);
+  return ask < 0 ? null : /\bawait\b/.test(body.slice(0, ask));
+};
+test("scope: protectSite asks first, in the click's own turn", () => {
+  const src = code("popup.js");
+  const [a, b] = functionSpan(src, "protectSite");
+  const waits = waitsBeforeAsking(src.slice(a, b));
+  assert.notEqual(waits, null, "popup.js: protectSite no longer asks");
+  assert.equal(waits, false, "popup.js: protectSite waits for something before it asks");
+  // The check itself.
+  assert.equal(waitsBeforeAsking("{ await x(); await chrome.permissions.request({ origins }); }"), true);
+  assert.equal(waitsBeforeAsking("{ const p = chrome.permissions.request({ origins }); await p; }"), false);
+  assert.equal(waitsBeforeAsking("{ return Boolean(await chrome.permissions.request({ origins })); }"), false);
 });
 
 test("no innerHTML-style HTML injection (Trusted Types)", () => {
@@ -141,6 +177,25 @@ test("user-added sites get the same scripts as built-in ones", () => {
     assert.ok(manifest.content_scripts[0].js.includes(f), `content scripts don't include ${f}`);
     assert.ok(popup.includes(`<script src="${f}">`), `popup.html doesn't load ${f}`);
   }
+});
+
+// The background registers Clotr for sites people add (`clotr-user-sites`) and starts it in open tabs with that
+// same CONTENT_JS list, never a list of its own, so every way Clotr reaches a page loads the same scripts in the
+// manifest's order. The warning UI comes after what it reads (the styles, the chat-box helpers), before content.js.
+test("the dynamic registration and every injection use CONTENT_JS, in the manifest's order", () => {
+  const bg = code("background.js");
+  assert.match(bg, /\{\s*CONTENT_JS,[\s\S]*?\}\s*=\s*globalThis\.ClotrSites;/, "CONTENT_JS comes from sites.js");
+  const script = /const script = \{[\s\S]*?\};/.exec(bg)?.[0] || "";
+  assert.match(script, /id: USER_SCRIPT_ID,/, "the user-site registration");
+  assert.match(script, /\bjs: CONTENT_JS,/, "the user-site registration loads CONTENT_JS");
+  assert.match(bg, /registerContentScripts\(\[script\]\)/);
+  assert.match(bg, /updateContentScripts\(\[script\]\)/);
+  const injections = bg.match(/executeScript\(\{[^;]*\}\)/g) || [];
+  assert.ok(injections.length >= 2, `found ${injections.length} injections into open tabs`);
+  for (const call of injections) assert.match(call, /\bfiles: CONTENT_JS \}/, call);
+  const js = manifest.content_scripts[0].js;
+  assert.deepEqual(js.slice(-3), ["editor.js", "warning-ui.js", "content.js"]);
+  assert.ok(js.indexOf("ui-styles.js") < js.indexOf("warning-ui.js"), "the styles load before the warning UI");
 });
 
 test("built-in AI-site list (ai-sites.json) matches the manifest", () => {
@@ -232,7 +287,7 @@ test("no invisible or bidi-control characters in shipped files", () => {
 // a detected value, the draft, or a file name.
 test("console output never includes detected values, drafts or file names", () => {
   const bad = [];
-  for (const f of ["content.js", "vault.js", "popup.js", "background.js", "stored.js"]) {
+  for (const f of ["content.js", "warning-ui.js", "vault.js", "popup.js", "background.js", "stored.js"]) {
     const text = fs.readFileSync(path.join(EXT, f), "utf8");
     for (const m of text.matchAll(/console\.(log|info|warn|error|debug)\(/g)) {
       // The whole call, even when it spans several lines: up to its closing parenthesis, skipping strings.
@@ -390,11 +445,68 @@ test("Spanish: counts that can be 1 aren't written before a plural word", () => 
   }
 });
 
-// CHANGELOG.md is the public "what changed": it names the version being built, so it can't fall behind.
-test("CHANGELOG.md has an entry for the manifest's version", () => {
-  const { version_name } = JSON.parse(fs.readFileSync(path.join(EXT, "manifest.json"), "utf8"));
+// The golden rule (D144): the public repo lives at clotr-app/clotr; its old address only forwards, and only as long as
+// no new repository takes the old name. New links never use the old address (history files keep what they said).
+test("links point to the public repo's home, clotr-app/clotr, never its old address", () => {
+  const root = path.join(__dirname, "..");
+  const history =
+    /^(CHANGELOG\.md|DECISIONS\.md|TESTING\.md|QUESTIONS\.md|docs[\\/]security-review\.md|docs[\\/]release-review[\\/])/;
+  const skip = /^(node_modules|dist|\.git|tests[\\/]e2e[\\/]output|extension[\\/]bravelogs)([\\/]|$)/;
+  const hits = [];
+  const walk = (dir) => {
+    for (const e of fs.readdirSync(path.join(root, dir), { withFileTypes: true })) {
+      const rel = path.join(dir, e.name);
+      if (skip.test(rel) || history.test(rel)) continue;
+      if (e.isDirectory()) walk(rel);
+      else if (/\.(js|json|html|md|ya?ml|ps1|sh|txt|css)$/.test(e.name)) {
+        if (/github\.com\/BilliamBaSH\/clotr\b/.test(fs.readFileSync(path.join(root, rel), "utf8"))) hits.push(rel);
+      }
+    }
+  };
+  walk("");
+  assert.deepEqual(hits, [], `these link the old address; use github.com/clotr-app/clotr: ${hits.join(", ")}`);
+});
+
+// Versions (D140): three numbers for a release (major.minor.patch, chosen when it's cut), a fourth for a build
+// between releases (1.1.1.1, 1.1.1.2 …), so unpacked copies still reload and tell builds apart while the public
+// list of versions grows only at releases.
+test("the manifest's version is a release (three numbers) or a build between releases (a fourth)", () => {
+  assert.match(manifest.version, /^\d+\.\d+\.\d+(\.[1-9]\d*)?$/);
+});
+
+// CHANGELOG.md is the public "what changed": its newest section is the version being built, so it can't fall
+// behind. A build between releases collects its notes under "## Unreleased" until the release names them.
+test("CHANGELOG.md's newest section is the manifest's version, or Unreleased for a build", () => {
+  const { version, version_name } = JSON.parse(fs.readFileSync(path.join(EXT, "manifest.json"), "utf8"));
   const log = fs.readFileSync(path.join(__dirname, "..", "CHANGELOG.md"), "utf8");
-  assert.ok(log.includes(`## ${version_name}`), `CHANGELOG.md has no "## ${version_name}" section`);
+  const newest = (log.match(/^## .*/m) || [""])[0];
+  if (version.split(".").length === 4) assert.equal(newest, "## Unreleased", "a build's notes go under ## Unreleased");
+  else assert.ok(newest.startsWith(`## ${version_name} `), `CHANGELOG.md's newest section isn't "## ${version_name}"`);
+});
+
+// The public versioning standard (D143): it exists, names the three kinds of release, and the public README links
+// it. Its numbering is the one the checks above enforce. Here it sits in public/ and the exporter writes the README's
+// link; the export copies public/ to the public repo's root, so there it is VERSIONING.md and README.md has the link.
+test("the public versioning standard is there and linked", () => {
+  const root = path.join(__dirname, "..");
+  const inPublic = path.join(root, "public", "VERSIONING.md");
+  const std = fs.readFileSync(fs.existsSync(inPublic) ? inPublic : path.join(root, "VERSIONING.md"), "utf8");
+  for (const kind of ["**Minor**", "**Patch**", "**Major**", "MAJOR.MINOR.PATCH"])
+    assert.ok(std.includes(kind), `VERSIONING.md lost "${kind}"`);
+  const exporter = path.join(root, "tools", "export-public.js");
+  assert.match(
+    fs.readFileSync(fs.existsSync(exporter) ? exporter : path.join(root, "README.md"), "utf8"),
+    /\[VERSIONING\.md\]\(VERSIONING\.md\)/,
+  );
+});
+
+// The history reads newest first, each release above the one before it.
+test("CHANGELOG.md's versions go down from top to bottom", () => {
+  const log = fs.readFileSync(path.join(__dirname, "..", "CHANGELOG.md"), "utf8");
+  const versions = [...log.matchAll(/^## (\d+)\.(\d+)(?:\.(\d+))?/gm)].map((m) => [+m[1], +m[2], +(m[3] || 0)]);
+  const below = (a, b) => a[0] - b[0] || a[1] - b[1] || a[2] - b[2];
+  for (let i = 1; i < versions.length; i++)
+    assert.ok(below(versions[i], versions[i - 1]) < 0, `${versions[i].join(".")} is listed under an older version`);
 });
 
 // Every e2e check has its own ID: --only and the test notes refer to them.
@@ -556,4 +668,14 @@ test("welcome page: the note opens with the maintainer's own sentence", () => {
   );
   const es = JSON.parse(fs.readFileSync(path.join(EXT, "_locales", "es", "messages.json"), "utf8"));
   assert.ok(es.vault_noteBody.message.includes("Tony Stark"), "the Spanish note says the same");
+});
+
+// The trust ladder's five promises: the same sentence, word for word, wherever someone new to Clotr
+// first reads about it, so no two places can drift apart or quietly contradict each other.
+const FIVE_PROMISES = "No AI inside. No network. No accounts. Open code. Free for people.";
+test("the five promises are word for word in README.md and the welcome page", () => {
+  const readme = fs.readFileSync(path.join(__dirname, "..", "README.md"), "utf8");
+  assert.ok(readme.includes(FIVE_PROMISES), "README.md is missing the five promises, word for word");
+  const html = fs.readFileSync(path.join(EXT, "vault.html"), "utf8");
+  assert.ok(html.includes(FIVE_PROMISES), "the welcome page is missing the five promises, word for word");
 });

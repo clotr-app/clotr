@@ -15,7 +15,7 @@ The full review, with every issue found and fixed and the accepted limits, is in
 
 ## Reporting a vulnerability
 Please don't open a public issue for a security problem. Use GitHub's
-[**Report a vulnerability**](https://github.com/BilliamBaSH/clotr/security/advisories/new) form
+[**Report a vulnerability**](https://github.com/clotr-app/clotr/security/advisories/new) form
 (Security tab → Advisories), which only the maintainer can see, so it can be fixed before it's public. Include the browser and version, Clotr's version (in
 `chrome://extensions`) and the steps. Never include real personal data or real keys.
 

@@ -438,7 +438,7 @@ Send it by email to the team at google. Email marketing at hubspot works well.
 ---
 I was born in nineteen ninety and moved in two thousand five. Call me double quick, it's five minutes.
 ---
-My zip code is 45402 and the area code is 937. I got error code 1234 and status code 404.
+My zip code is 45402 and the area code is 555. I got error code 1234 and status code 404.
 ---
 I like five hundred piece puzzles and triple chocolate cake. It cost five hundred dollars and took two thousand hours.
 ---
@@ -630,7 +630,7 @@ Our remote access VPN uses port 1194 UDP; clients time out after 60 seconds.
 ---
 In the Android app, versionCode 42 and versionName 3.1.4 fail to upload to Play Console.
 ---
-The CSV import fails on row 3,412 where the phone column has 937-555-01 (too short).
+The CSV import fails on row 3,412 where the phone column has 555-555-01 (too short).
 ---
 Performance: p95 latency went from 120 ms to 480 ms after deploy 2024.05.12-3.
 ---
@@ -677,3 +677,107 @@ the score went from +3 to +7
 version 10.2.3 and build 10.0.19041.1
 ---
 the local news and internal memo
+---
+Mix two to four for one to two minutes
+---
+Mix two to four for one to two minutes.
+---
+for two to four for one to two for three
+---
+Mix 2 to 4 for 1 to 2 minutes
+---
+for 2 to 4 for 1 to 2 for 3
+---
+Group the kids by age: two to four, five to seven, eight to ten.
+---
+Kids from five to eight, eight to twelve, and twelve to fifteen.
+---
+Knead for two to three, rest for one to two, bake for four to five
+---
+three to four for two to three for one to two
+---
+one to two, two to three, three to four, four to five
+---
+Sizes two to four, six, eight to ten, twelve
+---
+Sizes run two to four, six to eight, ten to twelve.
+---
+Rest one to two minutes, then do three to five sets of six to eight reps.
+---
+Simmer for two to three minutes, then four to five more.
+---
+Take one to two tablets every four to six hours, no more than eight in a day.
+---
+work nine to five, five to six days a week
+---
+Stir for two to four, then for one to two, then three to four.
+---
+Water every two to three days for four to six weeks.
+---
+Steep three to five minutes; two to three for green tea.
+---
+Cook for one to two, two to three, or three to four minutes.
+---
+I scored two to one, then three to two, then four to three.
+---
+Final scores: two to one, three to two, four to three
+---
+It finished two to one, three to two, four
+---
+Boil eggs six to seven for soft, nine to ten for hard
+---
+Sear two to three per side, rest five to ten
+---
+Bake at three fifty for twenty to twenty five minutes
+---
+Do eight to twelve reps for three to four sets, rest sixty to ninety seconds
+---
+Sleep seven to nine hours, nap twenty to thirty
+---
+Feed puppies three to four times a day until six to twelve months
+---
+Plant seeds one to two inches deep, four to six inches apart
+---
+two for one, three for five, four for six
+---
+He went two for four, three for five, one for three
+---
+buy two for ten, three for twelve
+---
+Ten to two, five to six, nine to five
+---
+Lift two to three, rest one to two, repeat four to five
+---
+Grill four to five, flip, four to five more, rest five
+---
+four to six, six to eight, eight to ten, ten to twelve
+---
+two to three, two to three, two to three, two to three
+---
+Roast twenty to twenty five, rest five to ten, carve
+---
+Add one to two cups, then two to three more, then four
+---
+Ages three to five, six to eight, nine to eleven, twelve to fourteen
+---
+Shifts run seven to three, three to eleven, eleven to seven
+---
+Open nine to five, closed one to two for lunch
+---
+Size four to six, eight to ten, twelve to fourteen
+---
+Proof one to two, shape, proof again forty five to sixty
+---
+Sets: five to eight, eight to twelve, twelve to fifteen
+---
+two to four. four to six. six to eight. eight to ten.
+---
+1 to 2, 2 to 3, 3 to 4, 4 to 5
+---
+2-4 for 1-2 minutes
+---
+2 to 3 eggs, 1 to 2 cups, 4 to 5 minutes
+---
+cook two to three, two to three, then one
+---
+nine to five, nine to five, nine to five

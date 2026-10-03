@@ -41,10 +41,14 @@ function facts(target, rows) {
   $(target).replaceChildren(...rows.flatMap(([k, v]) => [el("dt", { textContent: k }), el("dd", { textContent: v })]));
 }
 
-function render(all) {
+// "Your settings": what you changed from the defaults, how long history is kept, and the sites you added.
+function renderSettings(all) {
   const responses = Object.entries(all.responses || {});
   const siteModes = Object.entries(all.siteModes || {});
   const paused = Object.keys(all.paused || {}).filter((h) => all.paused[h]);
+  const everyday = Object.entries(all.siteKinds || {})
+    .filter(([, k]) => k === "everyday")
+    .map(([h]) => h);
   facts("settings", [
     [
       msg("sj_changed", "Changed from the default (warn)"),
@@ -77,15 +81,13 @@ function render(all) {
     ],
     [
       msg("sj_everydaySites", "Email and chat sites you switched on"),
-      Object.entries(all.siteKinds || {}).some(([, k]) => k === "everyday")
-        ? Object.entries(all.siteKinds)
-            .filter(([, k]) => k === "everyday")
-            .map(([h]) => h)
-            .join(", ")
-        : msg("sj_none", "None"),
+      everyday.length ? everyday.join(", ") : msg("sj_none", "None"),
     ],
   ]);
+}
 
+// "Your vault": one row per item, each a fingerprint or a format, never what was typed.
+function renderVault(all) {
   const vault = all.vault || [];
   $("vault-count").textContent = vault.length
     ? vault.length === 1
@@ -112,7 +114,10 @@ function render(all) {
       ]),
     ),
   );
+}
 
+// "History": how many records and over what time, then the newest 100.
+function renderHistory(all) {
   const events = all.events || [];
   $("history-count").textContent = events.length
     ? `${events.length} ${events.length === 1 ? "record" : "records"}, from ${when(events[0].t)} to ${when(events.at(-1).t)}. Clotr keeps them for the period set in the full report (1 year unless you changed it), up to 10,000.`
@@ -132,7 +137,22 @@ function render(all) {
         ]),
       ),
   );
+}
 
+// AI replies that brought up your details, as "site: kind" with a count when there's more than one.
+function mentionsText(mentions) {
+  const counts = {};
+  for (const e of mentions) {
+    const key = `${e.site}: ${pretty(e.type)}`;
+    counts[key] = (counts[key] || 0) + 1;
+  }
+  return Object.entries(counts)
+    .map(([k, c]) => (c > 1 ? `${k} ×${c}` : k))
+    .join(" · ");
+}
+
+// "Other bookkeeping": the fingerprint secret (described, never shown), counters and notes Clotr keeps.
+function renderOther(all) {
   facts("other", [
     [
       msg("sj_salt", "Fingerprint secret"),
@@ -161,16 +181,7 @@ function render(all) {
     ],
     [
       msg("sj_mentions", "AI replies that brought up your details (kind and fingerprint, never the text)"),
-      (all.mentions || []).length
-        ? Object.entries(
-            (all.mentions || []).reduce(
-              (n, e) => ({ ...n, [`${e.site}: ${pretty(e.type)}`]: (n[`${e.site}: ${pretty(e.type)}`] || 0) + 1 }),
-              {},
-            ),
-          )
-            .map(([k, c]) => (c > 1 ? `${k} ×${c}` : k))
-            .join(" · ")
-        : msg("sj_none", "None"),
+      (all.mentions || []).length ? mentionsText(all.mentions) : msg("sj_none", "None"),
     ],
     [
       msg("sj_spotted", "AI tools you opened Clotr on that it doesn't protect (names only)"),
@@ -178,9 +189,21 @@ function render(all) {
     ],
     [msg("sj_lastUpdate", "Last update"), all.lastUpdate ? `${all.lastUpdate.from} → ${all.lastUpdate.to}` : "—"],
   ]);
+}
 
+// "Show the raw data": every stored record exactly as kept, with the fingerprint secret hidden.
+function renderRaw(all) {
   const shown = { ...all, ...(all.salt ? { salt: "(hidden)" } : {}) };
   $("raw").textContent = JSON.stringify(shown, null, 2);
+}
+
+// Every section, from one read of the whole storage (again whenever it changes).
+function render(all) {
+  renderSettings(all);
+  renderVault(all);
+  renderHistory(all);
+  renderOther(all);
+  renderRaw(all);
 }
 
 // "What Clotr can reach": read from the installed manifest, so it can't drift from what the browser enforces.

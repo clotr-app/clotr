@@ -7,7 +7,7 @@
 
 (function () {
   // The address in words (shown in the menu and printed on the Share guide) and the forms built from it.
-  const REPORT_ADDRESS = "github.com/BilliamBaSH/clotr/issues";
+  const REPORT_ADDRESS = "github.com/clotr-app/clotr/issues";
   const REPORT_URL = `https://${REPORT_ADDRESS}/new`;
   // A private path, off for now (empty hides the "Send privately by email" choice, D119).
   const REPORT_EMAIL = "";

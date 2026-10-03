@@ -7,7 +7,7 @@ module.exports = async function (env) {
   await check("PERF1", "Enter responds fast after a big paste (40k characters of spelled-out numbers)", () =>
     withSite(ctx, "chatgpt", async (page) => {
       await resetState(ctx, {}); // defaults: a warning, so Enter sends
-      await typeText(page, "one two three four five six seven eight nine ten ".repeat(800) + " call 937-555-0123");
+      await typeText(page, "one two three four five six seven eight nine ten ".repeat(800) + " call 555-555-0123");
       expect(await waitFor(() => readNotice(page), 8000), "no notice");
       const t0 = Date.now();
       await pressEnter(page);
@@ -29,7 +29,7 @@ module.exports = async function (env) {
       const send = async (i) => {
         await typeText(
           page,
-          `message ${i}: call 937-555-${1000 + i} or mail p${i}@example.com, key AKIA${String(i).padStart(4, "0")}HPQ7XZ2R6TWL`,
+          `message ${i}: call 555-555-${1000 + i} or mail p${i}@example.com, key AKIA${String(i).padStart(4, "0")}HPQ7XZ2R6TWL`,
         );
         await pressEnter(page);
       };

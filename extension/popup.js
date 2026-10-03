@@ -50,6 +50,7 @@ let state = {
   largeText: false,
   bandage: {},
   siteKinds: {},
+  siteScopes: {},
 };
 let site = { kind: "none" }; // none | protected | spotted | not-ai
 let rangeDays = readPref("rangeDays", 7);
@@ -190,17 +191,19 @@ async function noteSpotted(host) {
 
 // `kind`: "ai" for an AI tool, "everyday" for an email or chat app (D134: no cover names, no reply check there).
 async function protectSite(url, kind = "ai") {
-  // Record the section first: the browser's prompt (for exactly this one host) may close
-  // the popup, and background.js finishes the setup from storage either way.
+  // Record the section and the ask in the click's own turn, nothing waited for before either: the browser's prompt
+  // (for exactly this one host) may close the popup, and background.js finishes the setup from storage either way;
+  // Firefox refuses the prompt after any await. So the popup's own copies are used, not a fresh read.
   const scope = Sites.protectScope(url);
   const perm = Sites.permissionFor(scope);
-  const { siteScopes = {} } = await chrome.storage.local.get("siteScopes");
+  const siteScopes = { ...state.siteScopes };
   if (scope === perm)
     delete siteScopes[perm]; // the whole host
   else siteScopes[perm] = [...new Set([...(siteScopes[perm] || []), scope])];
-  await setSiteKinds([new URL(url).hostname], kind);
-  await chrome.storage.local.set({ siteScopes });
-  const granted = await chrome.permissions.request({ origins: [perm] });
+  const siteKinds = { ...state.siteKinds, [new URL(url).hostname]: kind };
+  Object.assign(state, { siteScopes, siteKinds });
+  chrome.storage.local.set({ siteScopes, siteKinds }).catch(() => {});
+  const granted = await chrome.permissions.request({ origins: [perm] }).catch(() => false);
   if (granted) await refreshSites();
 }
 
@@ -1238,6 +1241,7 @@ async function init() {
     "spotted",
     "bandage",
     "siteKinds",
+    "siteScopes",
   ]);
   unlockedUntil = await Helper.unlockedUntil();
   const policy = Sites.mergePolicy((await chrome.storage.managed?.get(null).catch(() => ({}))) || {});
@@ -1258,6 +1262,7 @@ async function init() {
     userSites: await Sites.userSitePatterns(),
     builtInTools: await loadBuiltInTools(),
     siteKinds: stored.siteKinds || {},
+    siteScopes: stored.siteScopes || {},
   };
   await detectSite();
   renderAll();
@@ -1276,7 +1281,7 @@ chrome.storage.onChanged.addListener((changes, area) => {
     return;
   }
   if (area !== "local") return;
-  for (const key of ["events", "paused", "responses", "vault", "siteModes"]) {
+  for (const key of ["events", "paused", "responses", "vault", "siteModes", "siteScopes", "siteKinds"]) {
     if (changes[key]) state[key] = changes[key].newValue || (["events", "vault"].includes(key) ? [] : {});
   }
   if (changes.advanced) state.advanced = changes.advanced.newValue === true;

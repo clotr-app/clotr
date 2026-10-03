@@ -28,7 +28,7 @@ module.exports = async function (env) {
       withSite(ctx, "chatgpt", async (page) => {
         await resetState(ctx, {});
         await store.set(ctx, { guided: {} });
-        await typeText(page, "call me at 937-555-0123");
+        await typeText(page, "call me at 555-555-0123");
         const n = await waitForNotice(page);
         expect(n?.text.includes("How should Clotr handle a Phone Number from now on?"), `notice: ${n?.text}`);
         await typeText(page, " soon"); // the notice is rebuilt as you type: the tip stays
@@ -63,7 +63,7 @@ module.exports = async function (env) {
     withSite(ctx, "chatgpt", async (page) => {
       await resetState(ctx, {});
       await store.set(ctx, { guided: {} });
-      await typeText(page, "call me at 937-555-0199");
+      await typeText(page, "call me at 555-555-0199");
       expect(await waitForNotice(page), "no notice");
       await clickDialogButton(page, "It's fine to share", readNotice);
       const vault = await waitFor(
@@ -87,7 +87,7 @@ module.exports = async function (env) {
     async () => {
       await withSite(ctx, "chatgpt", async (page) => {
         await resetState(ctx, {});
-        await typeText(page, "call me at 937-555-0123");
+        await typeText(page, "call me at 555-555-0123");
         expect(await waitForNotice(page), "no notice");
         await clickDialogButton(page, "Why am I seeing this?", readNotice);
         const n = await readNotice(page);
@@ -115,7 +115,7 @@ module.exports = async function (env) {
         const n = await readNotice(page);
         expect(/help line will ever ask/.test(n.text), `why: ${n.text}`);
         await withSite(ctx, "chatgpt", async (other) => {
-          await typeText(other, "call me at 937-555-0123");
+          await typeText(other, "call me at 555-555-0123");
           expect(await waitForNotice(other), "no notice");
           await clickDialogButton(other, "Why am I seeing this?", readNotice);
           const p = await readNotice(other);
@@ -130,7 +130,7 @@ module.exports = async function (env) {
     () =>
       withSite(ctx, "chatgpt", async (page) => {
         await resetState(ctx, {});
-        await typeText(page, "call me at 937-555-0123");
+        await typeText(page, "call me at 555-555-0123");
         expect(await waitForNotice(page), "no notice");
         await evalInClotr(
           page,
@@ -140,7 +140,7 @@ module.exports = async function (env) {
         await clickDialogButton(page, "Wrong? Report a false alarm", readNotice);
         const [url] = await evalInClotr(page, "globalThis.__opened");
         expect(
-          url?.startsWith("https://github.com/BilliamBaSH/clotr/issues/new?template=false-alarm.yml"),
+          url?.startsWith("https://github.com/clotr-app/clotr/issues/new?template=false-alarm.yml"),
           `url: ${url}`,
         );
         const decoded = decodeURIComponent(url || "");

@@ -45,7 +45,7 @@ module.exports = async function (env) {
     family_name: "Emma",
     employer: "Initech",
     street_address: "123 Oak Street",
-    phone_number: "(937) 555-5636",
+    phone_number: "(555) 555-5636",
     email: "jane.doe@gmail.com",
     my_id: "AB-123456",
     watch_list: "Project Falcon\nEMP-#####",
@@ -226,12 +226,12 @@ module.exports = async function (env) {
   await check("V2", "A vault item still warns when its type is set to Log only", async () => {
     await store.set(ctx, { responses: { phone_number: "log" } });
     await withSite(ctx, "chatgpt", async (page) => {
-      await typeText(page, "call 937.555.5636");
+      await typeText(page, "call 555.555.5636");
       const n = await waitForNotice(page);
       expect(n?.text.includes("Phone Number"), `your phone wasn't caught: ${n?.text}`);
       await clickDialogButton(page, "Leave it in", readNotice);
       await clearEditor(page);
-      await typeText(page, "or 937-555-1234");
+      await typeText(page, "or 555-555-1234");
       await expectNoUI(page, "other phone numbers are Log only");
     });
   });
@@ -250,7 +250,7 @@ module.exports = async function (env) {
     await sleep(300);
     await store.set(ctx, { events: [] });
     await withSite(ctx, "chatgpt", async (page) => {
-      await typeText(page, "call me at nine three seven five five five five six three six");
+      await typeText(page, "call me at five five five five five five five six three six");
       await expectNoUI(page, "your phone is OK to share");
     });
     const logged = await store.events(ctx);
@@ -292,7 +292,7 @@ module.exports = async function (env) {
       withSite(ctx, "chatgpt", async (page) => {
         await resetState(ctx, {});
         // Sending empties the box: no offer afterwards.
-        await typeText(page, "call me at 937-555-1111 later");
+        await typeText(page, "call me at 555-555-1111 later");
         expect(await waitForNotice(page), "no notice");
         await sleep(1600); // an informed send (no "Just sent" follow-up)
         await pressEnter(page);
@@ -301,15 +301,15 @@ module.exports = async function (env) {
         await expectNoUI(page, "after sending");
         // Redact button: no offer.
         await clearEditor(page);
-        await typeText(page, "call me at 937-555-2222 later");
+        await typeText(page, "call me at 555-555-2222 later");
         await waitForNotice(page);
         await clickDialogButton(page, "Hide it", readNotice);
         await expectNoUI(page, "after Redact");
         // Deleted by hand: offer.
         await clearEditor(page);
-        await typeText(page, "call me at 937-555-5636 later");
+        await typeText(page, "call me at 555-555-5636 later");
         await waitForNotice(page);
-        await deleteByHand(page, "937-555-5636");
+        await deleteByHand(page, "555-555-5636");
         const offer = await waitFor(async () => {
           const n = await readNotice(page);
           return n?.text.includes("Always watch") ? n : null;

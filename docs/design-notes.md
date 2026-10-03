@@ -11,6 +11,7 @@ Code comments refer to design decisions by number (for example `D30`). Each one 
 | D22 | Honest limit of "nothing readable" |
 | D23 | Account/ID formats |
 | D25 | Updates without breaking "100% local" |
+| D27 | Placeholder ↔ real value exists only in the page's memory |
 | D30 | Clotr never breaks the chat. |
 | D33 | The real-restart update test reports SKIP on Brave |
 | D35 | "Protect this site" covers only the page's section on shared hosts |
@@ -58,3 +59,7 @@ Code comments refer to design decisions by number (for example `D30`). Each one 
 | D124 | The public repo is just the extension. |
 | D134 | Clotr on your email and chat apps, one site at a time. |
 | D135 | One refreshed look for everything Clotr shows, and marketing for everyone. |
+| D140 | Versions: a new public version only at a release. |
+| D143 | One versioning standard, the same version everywhere. |
+| D144 | The public repo lives in the clotr-app organization: `clotr-app/clotr`. |
+| D146 | clotr.app moves smoothly on phones, and its install buttons are the stores' own badges. |

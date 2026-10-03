@@ -120,6 +120,13 @@ const SITES = {
     editor: `document.querySelector("#msg")`,
     send: `document.querySelector("#send")`,
   },
+  history: {
+    // a chat that shows the conversation and brings it back a moment after a reload, as real sites do (BN18, BN19)
+    url: "https://gemini.google.com/app/5d2c8a91f0b34e67",
+    page: "history-chat.html",
+    editor: `document.querySelector("#prompt")`,
+    send: `document.querySelector("#composer button")`,
+  },
   nochat: {
     // an AI site's page without a chat box (HC2)
     url: "https://grok.com/settings",
@@ -707,7 +714,7 @@ function writeReport(ctx) {
     `|----|-------|--------|---------|-------|`,
     ...results.map(
       (r) =>
-        `| ${r.id} | ${r.title} | ${r.skipped ? "SKIP" : r.ok ? "PASS" : "**FAIL**"} | ${r.secs} | ${r.note.replace(/\|/g, "\\|")} |`,
+        `| ${r.id} | ${r.title} | ${r.skipped ? "SKIP" : r.ok ? "PASS" : "**FAIL**"} | ${r.secs} | ${r.note.replace(/\\/g, "\\\\").replace(/\|/g, "\\|")} |`,
     ),
     ``,
     `Screenshots: ${fs

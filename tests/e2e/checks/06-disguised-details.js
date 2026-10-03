@@ -19,13 +19,13 @@ module.exports = async function (env) {
     withSite,
   } = env;
   const DISGUISED = [
-    ["(937)-555-5636", "Phone Number"],
-    ["937-555-5636", "Phone Number"],
+    ["(555)-555-5636", "Phone Number"],
+    ["555-555-5636", "Phone Number"],
     ["call 555-5636 tonight", "Phone Number"],
-    ["9375555636", "Phone Number"],
-    ["ninethreesevenfivefivefivefivesixthreesix", "Phone Number"],
-    ["9threeseve5five5five63six", "Phone Number"],
-    ["call me at nine three seven, five five five, five six three six", "Phone Number"],
+    ["5555555636", "Phone Number"],
+    ["fivefivefivefivefivefivefivesixthreesix", "Phone Number"],
+    ["5fivefive5five5five63six", "Phone Number"],
+    ["call me at five five five, five five five, five six three six", "Phone Number"],
     ["my social is one two three four five six seven eight nine", "US Social Security Number"],
     ["write to me at bob at gmail dot com", "Email Address"],
     ["bob(at)example(dot)org", "Email Address"],
@@ -35,8 +35,8 @@ module.exports = async function (env) {
     ["DOB: 03-14-1948", "Date of Birth"],
     ["acct no. one two three four five six seven eight", "Bank Account or Routing Number"],
     ["Medicare number 1EG4-TE5-MK73", "Medicare Number"],
-    ["call nine three seven, five fifty five, fifty six thirty six", "Phone Number"],
-    ["937-555-O636", "Phone Number"],
+    ["call five five five, five fifty five, fifty six thirty six", "Phone Number"],
+    ["555-555-O636", "Phone Number"],
     ["London office: +44 20 7946 0958", "Phone Number"],
     ["DATABASE_URL is postgres://admin:S3cr3tPw@db.prod.internal:5432/app", "Connection String"],
   ];
@@ -55,7 +55,7 @@ module.exports = async function (env) {
       await clickDialogButton(page, "Hide it", ui === "notice" ? readNotice : readDialog);
       const after = await editorText(page);
       const covered = (after.match(/\[REDACTED/g) || []).length;
-      // Forms holding the same value share one label ("937-555-5636" is inside "(937)-555-5636").
+      // Forms holding the same value share one label ("555-555-5636" is inside "(555)-555-5636").
       expect(
         covered >= DISGUISED.length - 2 && !/\d{3}|five|three|gmail|example/i.test(after),
         `after Hide it (${covered} hidden): "${after.replace(/\n/g, " / ")}"`,
@@ -84,6 +84,8 @@ module.exports = async function (env) {
     "the score went from +3 to +7",
     "version 10.2.3 and build 10.0.19041.1",
     "the local news and internal memo",
+    "Mix two to four for one to two minutes",
+    "for two to four for one to two for three",
   ];
   // Each sentence is also in tests/corpus/normal-messages.txt (checked one by one in the unit tests);
   // here they go through the real chat box together, which takes one wait instead of twenty.

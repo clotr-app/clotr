@@ -1,6 +1,6 @@
 // Clotr — styles for Clotr's warnings, dialog and reload prompt (content script).
 // They live in closed shadow roots, so the page's CSS can't touch them and they can't touch the page.
-// Loaded before content.js, which reads Clotr.styles.
+// Loaded before warning-ui.js, which reads Clotr.styles.
 (() => {
   "use strict";
 
@@ -147,6 +147,7 @@
       font: 13px/1.45 system-ui, -apple-system, "Segoe UI", sans-serif;
     }
     .value { font-weight: 600; margin-bottom: 8px; word-break: break-word; }
+    .note { margin: 0; }
     button { font: inherit; cursor: pointer; border-radius: 8px; padding: 5px 10px; border: 1px solid #8a8a8a; background: linear-gradient(180deg, #fff, #f4f0ec); color: #1a1a1a; }
     button:focus-visible { outline: 3px solid #8e3708; outline-offset: 2px; }
     .copied { font-size: 12px; color: #2a7a2a; margin-top: 6px; }
@@ -159,7 +160,8 @@
   `;
 
   // Bandage step 2 (D99): the invisible hotspots Clotr lays over each label in the AI's answer (the page itself is
-  // never changed). A dotted orange underline says "point here"; a clear ring shows keyboard focus.
+  // never changed). A dotted orange underline says "point here"; a clear ring shows keyboard focus. A label from before
+  // a reload, whose detail Clotr didn't keep (D27), gets a grey one.
   const spots = `
     :host { all: initial; }
     .layer { position: fixed; inset: 0; pointer-events: none; z-index: 2147483646; }
@@ -167,6 +169,7 @@
       position: fixed; pointer-events: auto; margin: 0; padding: 0; border: 0; background: transparent;
       border-bottom: 2px dotted #ff6700; cursor: help;
     }
+    .spot.older { border-bottom-color: #8a8a8a; }
     .spot:focus-visible { outline: 3px solid #8e3708; outline-offset: 2px; border-radius: 3px; }
     @media (prefers-color-scheme: dark) { .spot:focus-visible { outline-color: #f08a3c; } }
   `;

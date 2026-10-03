@@ -129,6 +129,8 @@ file, not audit evidence, and never worded as "prevents", "certified" or "compli
 or saved anywhere; it only reads the policy already on that computer.
 
 ## Where to put it
+Clotr's extension ID is `gkgpgejhhmmhklaghdnbjbalkmpjnmab` in Chrome and Brave (both install from the Chrome Web
+Store), `hbangnmofjeaieaeamlncpcfmhbclbkj` in Edge, and `clotr@billiambash` in Firefox. Use it for `<extension id>`.
 - **Chrome / Edge / Brave on Windows (Group Policy or registry):** force-install the extension, then set its policy
   under `Software\Policies\<Google\Chrome | Microsoft\Edge | BraveSoftware\Brave>\3rdparty\extensions\<extension id>\policy`.
 - **macOS:** a configuration profile for the browser's `3rdparty` → `extensions` → `<extension id>` → `policy` key.
@@ -141,13 +143,13 @@ popup, Settings shows "Managed by your organization" when a policy is active.
 
 ## Every browser on one computer (a family member's PC, too)
 Forcing the install puts Clotr in each browser for every account on the computer, turned on, with no *Remove*
-button. It needs Clotr's store listing: browsers on computers that aren't company-managed only force-install from
-their own store, so this works once Clotr is in the Chrome Web Store (and Edge Add-ons for Edge). Replace
-`<chrome id>` / `<edge id>` with the listing's extension ID. On Windows, in PowerShell run as administrator:
+button. Browsers on computers that aren't company-managed only force-install from their own store, so Chrome and
+Brave install Clotr from the Chrome Web Store and Edge from Edge Add-ons. On Windows, in PowerShell run as
+administrator:
 
 ```powershell
-$cws  = "<chrome id>;https://clients2.google.com/service/update2/crx"
-$edge = "<edge id>;https://edge.microsoft.com/extensionwebstorebase/v1/crx"
+$cws  = "gkgpgejhhmmhklaghdnbjbalkmpjnmab;https://clients2.google.com/service/update2/crx"
+$edge = "hbangnmofjeaieaeamlncpcfmhbclbkj;https://edge.microsoft.com/extensionwebstorebase/v1/crx"
 foreach ($p in @{ "Google\Chrome" = $cws; "BraveSoftware\Brave" = $cws; "Microsoft\Edge" = $edge }.GetEnumerator()) {
   $key = "HKLM:\Software\Policies\$($p.Key)\ExtensionInstallForcelist"
   New-Item -Path $key -Force | Out-Null
@@ -157,7 +159,9 @@ foreach ($p in @{ "Google\Chrome" = $cws; "BraveSoftware\Brave" = $cws; "Microso
 
 Restart the browsers (or *Reload policies* on `chrome://policy`). To undo, delete the `ExtensionInstallForcelist`
 entries. On macOS the same `ExtensionInstallForcelist` goes in a configuration profile; Firefox uses `policies.json`
-→ `"ExtensionSettings": { "clotr@billiambash": { "installation_mode": "force_installed", "install_url": "<AMO download URL>" } }`.
+→ `"ExtensionSettings": { "clotr@billiambash": { "installation_mode": "force_installed", "install_url": "<AMO download URL>" } }`,
+where the download URL is `https://addons.mozilla.org/firefox/downloads/latest/<slug>/latest.xpi` and `<slug>` is the
+last part of Clotr's Firefox Add-ons address.
 Add the policy above to also set larger warnings or lock the settings (helper mode can do the same without a policy).
 
 Apps outside the browser (the ChatGPT desktop or phone apps) aren't covered by any browser extension.

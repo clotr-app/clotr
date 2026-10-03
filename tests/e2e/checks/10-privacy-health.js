@@ -44,7 +44,7 @@ module.exports = async function (env) {
       withSite(ctx, "chatgpt", async (page) => {
         await resetState(ctx, {});
         const key = "AKIA4HPQ\u200b7XZ2R6TWLJ3N";
-        await typeText(page, `key ${key} or call 937\u00a0555\u00a00123`);
+        await typeText(page, `key ${key} or call 555\u00a0555\u00a00123`);
         const n = await waitForNotice(page);
         expect(n?.text.includes("AWS Access Key") && n.text.includes("Phone Number"), `notice: ${n?.text}`);
         await clickDialogButton(page, "Hide it", readNotice);
@@ -62,7 +62,7 @@ module.exports = async function (env) {
     () =>
       withSite(ctx, "chatgpt", async (page) => {
         await resetState(ctx, {});
-        await typeText(page, "call me at 937-555-0123");
+        await typeText(page, "call me at 555-555-0123");
         await pressEnter(page); // before the 400 ms pause: the warning was never visible
         await sleep(300);
         expect((await sentMessages(page)).length === 1, "the message didn't send (Warn must never hold it)");
@@ -86,7 +86,7 @@ module.exports = async function (env) {
         await page.evaluate(() => {
           window.__ignoreNextSend = true;
         });
-        await typeText(page, "call me at 937-555-0123");
+        await typeText(page, "call me at 555-555-0123");
         await pressEnter(page);
         await sleep(2000);
         expect((await sentMessages(page)).length === 0, "the page was supposed to ignore this Enter");
@@ -131,7 +131,7 @@ module.exports = async function (env) {
         await page.setViewport({ width: 360, height: 740 }); // (isMobile would reload the page mid-test)
         await page.emulateMediaFeatures([{ name: "prefers-color-scheme", value: "light" }]);
         await resetState(ctx, {});
-        await typeText(page, "call me at 937-555-0123 or jane.doe@gmail.com");
+        await typeText(page, "call me at 555-555-0123 or jane.doe@gmail.com");
         expect(await waitForNotice(page), "no notice");
         page.cdp ??= await page.createCDPSession();
         const box = async () => {
@@ -187,7 +187,7 @@ module.exports = async function (env) {
     () =>
       withSite(ctx, "iconsend", async (page) => {
         await resetState(ctx, {});
-        await typeText(page, "call me at 937-555-0123");
+        await typeText(page, "call me at 555-555-0123");
         await clickSend(page);
         await sleep(300);
         expect((await sentMessages(page)).length === 1, "didn't send (Warn must never hold)");
@@ -219,7 +219,7 @@ module.exports = async function (env) {
   await check("UB3", "Other buttons in the chat box (Attach) are never counted as a send", () =>
     withSite(ctx, "iconsend", async (page) => {
       await resetState(ctx, {});
-      await typeText(page, "call me at 937-555-0123");
+      await typeText(page, "call me at 555-555-0123");
       await page.evaluate(() => document.getElementById("attach").click());
       await sleep(2000);
       expect((await sentMessages(page)).length === 0, "attach sent the message");
@@ -232,7 +232,7 @@ module.exports = async function (env) {
   await check("FS2", "No 'Just sent' notice when the warning was on screen and you chose to send", () =>
     withSite(ctx, "chatgpt", async (page) => {
       await resetState(ctx, {});
-      await typeText(page, "call me at 937-555-0123");
+      await typeText(page, "call me at 555-555-0123");
       expect(await waitForNotice(page), "no warning");
       await sleep(1600); // time to read it
       await pressEnter(page);

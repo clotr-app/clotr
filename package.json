@@ -4,7 +4,7 @@
   "license": "AGPL-3.0-or-later",
   "description": "Dev tooling for the Clotr extension (the extension itself is in extension/ and has no dependencies).",
   "scripts": {
-    "test": "node --test --test-reporter=dot tests/patterns.test.js tests/rules.test.js tests/sites.test.js tests/package.test.js tests/attachments.test.js tests/backup.test.js tests/mindmap.test.js tests/readme.test.js",
+    "test": "node --test --test-reporter=dot tests/patterns.test.js tests/bandage.test.js tests/rules.test.js tests/sites.test.js tests/package.test.js tests/attachments.test.js tests/backup.test.js tests/mindmap.test.js tests/readme.test.js tests/site-check.test.js tests/sign-chrome.test.js",
     "test:e2e": "node tests/e2e/run.js",
     "test:firefox": "node tests/e2e/firefox.js",
     "test:stress": "node tests/e2e/run.js --stress --only STS",
@@ -14,7 +14,9 @@
     "check": "npm test && npm run lint && npm run test:e2e",
     "sites": "node tools/sync-sites.js",
     "package": "node tools/package.js",
-    "site-check": "node tools/site-check.js"
+    "site-check": "node tools/site-check.js",
+    "site-check:hosts": "node tools/site-check.js --hosts",
+    "sign-chrome": "node tools/sign-chrome.js"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",

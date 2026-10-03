@@ -94,22 +94,20 @@ module.exports = async function (env) {
         sel.value = val;
         sel.dispatchEvent(new Event("change"));
       }, v);
-    const options = await popup.$$eval("#site-filter option", (os) => os.map((o) => o.value));
+    const options = new Set(await popup.$$eval("#site-filter option", (os) => os.map((o) => o.value)));
     await pick("claude.ai");
     await sleep(200);
     const hero = await popup.$eval("#hero-value", (n) => n.textContent);
-    const bySite = await popup.$eval("#by-site", (n) => n.innerText);
+    // Compare whole site names (not substrings of the text): only the chosen tool is left in "By AI tool".
+    const bySite = await popup.$eval("#by-site", (n) => [...n.querySelectorAll(".label")].map((s) => s.textContent));
     await shot(popup, "popup-site-filter.png");
     await popup.click("#tab-activity");
     const rows = await popup.$$eval("#events-body tr", (trs) => trs.length);
     await pick("");
     await popup.close();
-    expect(
-      options.includes("") && options.includes("claude.ai") && options.includes("chatgpt.com"),
-      `options: ${options}`,
-    );
+    expect(options.has("") && options.has("claude.ai") && options.has("chatgpt.com"), `options: ${[...options]}`);
     expect(hero === "2", `hero for claude.ai: ${hero}`);
-    expect(!bySite.includes("chatgpt.com"), `by-site still lists other tools: ${bySite}`);
+    expect(bySite.length === 1 && bySite[0] === "claude.ai", `by-site should list only claude.ai: ${bySite}`);
     expect(rows === 2, `${rows} activity rows for claude.ai`);
   });
 
@@ -141,7 +139,7 @@ module.exports = async function (env) {
       const { siteModes } = await store.get(ctx, "siteModes");
       expect(siteModes?.["chatgpt.com"] === "block", `siteModes: ${JSON.stringify(siteModes)}`);
       await withSite(ctx, "chatgpt", async (page) => {
-        await typeText(page, "call me at 937-555-5636");
+        await typeText(page, "call me at 555-555-5636");
         const dialog = await waitForDialog(page);
         expect(dialog?.text.includes("Phone Number"), "phone didn't block on the stricter site");
         await clickDialogButton(page, "Leave it in");
@@ -217,8 +215,8 @@ module.exports = async function (env) {
         `rows: ${JSON.stringify(rows)}`,
       );
       await popup.evaluate(() => {
-        const li = [...document.querySelectorAll("#bandage-sites li")].find((n) =>
-          n.textContent.includes("chatgpt.com"),
+        const li = [...document.querySelectorAll("#bandage-sites li")].find(
+          (n) => n.querySelector("span").textContent === "chatgpt.com",
         );
         const cb = li.querySelector("input");
         cb.checked = false;

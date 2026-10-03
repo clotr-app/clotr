@@ -201,12 +201,16 @@ const BROWSERS = [
   "/usr/bin/chromium",
 ];
 
-// Renders [{ file, svg, w, h, transparent }] to PNGs in one browser session.
-async function renderPng(jobs) {
+function launchBrowser() {
   const puppeteer = require("puppeteer-core");
   const executablePath = process.env.CLOTR_BROWSER || BROWSERS.find((p) => fs.existsSync(p));
   if (!executablePath) throw new Error("No Brave/Chrome found (set CLOTR_BROWSER)");
-  const browser = await puppeteer.launch({ executablePath, headless: true, pipe: true });
+  return puppeteer.launch({ executablePath, headless: true, pipe: true });
+}
+
+// Renders [{ file, svg, w, h, transparent }] to PNGs in one browser session.
+async function renderPng(jobs) {
+  const browser = await launchBrowser();
   try {
     const tab = await browser.newPage();
     const css = fontCss();
@@ -230,4 +234,32 @@ async function renderPng(jobs) {
   }
 }
 
-module.exports = { ROOT, COLORS, mark, tile, mindMap, plasterAt, dotGrid, renderPng, nextId, fontCss };
+// PNG → WebP in the same browser (D146: the website's screenshots weigh about a third as WebP).
+// jobs: [{ from, to, quality }]
+async function renderWebp(jobs) {
+  const browser = await launchBrowser();
+  try {
+    const tab = await browser.newPage();
+    for (const j of jobs) {
+      const src = `data:image/png;base64,${fs.readFileSync(j.from).toString("base64")}`;
+      // runs in the page
+      const url = await tab.evaluate(`(async () => {
+        const img = new Image();
+        img.src = ${JSON.stringify(src)};
+        await img.decode();
+        const c = document.createElement("canvas");
+        c.width = img.naturalWidth;
+        c.height = img.naturalHeight;
+        c.getContext("2d").drawImage(img, 0, 0);
+        return c.toDataURL("image/webp", ${j.quality || 0.85});
+      })()`);
+      if (!url.startsWith("data:image/webp")) throw new Error("This browser can't write WebP");
+      fs.writeFileSync(j.to, Buffer.from(url.split(",")[1], "base64"));
+      console.log(path.relative(ROOT, j.to).replace(/\\/g, "/"), `(${fs.statSync(j.to).size} bytes)`);
+    }
+  } finally {
+    await browser.close();
+  }
+}
+
+module.exports = { ROOT, COLORS, mark, tile, mindMap, plasterAt, dotGrid, renderPng, renderWebp, nextId, fontCss };
