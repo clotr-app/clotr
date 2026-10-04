@@ -113,9 +113,10 @@ Known limits are listed on the "What Clotr stores" page and in [docs/security-re
 ## Install
 <a href="https://chromewebstore.google.com/detail/gkgpgejhhmmhklaghdnbjbalkmpjnmab"><img src="docs/brand/stores/chrome-web-store.png" alt="Available in the Chrome Web Store" height="56"></a>
 <a href="https://microsoftedge.microsoft.com/addons/detail/hbangnmofjeaieaeamlncpcfmhbclbkj"><img src="docs/brand/stores/edge-addons.png" alt="Get it from Microsoft Edge" height="56"></a>
+<a href="https://addons.mozilla.org/firefox/addon/clotr-clot-your-data-leaks/"><img src="docs/brand/stores/firefox-addons.svg" alt="Get the Add-on for Firefox" height="56"></a>
 
-Brave uses the Chrome Web Store. Firefox is on its way to Firefox Add-ons; until then, the Firefox build from
-Releases (below).
+Brave uses the Chrome Web Store. For other Firefox-based browsers, or to try a build before it reaches Firefox
+Add-ons, use the Firefox build from Releases (below).
 
 Then pin Clotr to the toolbar. A welcome page opens with a practice box.
 
@@ -130,7 +131,7 @@ Then pin Clotr to the toolbar. A welcome page opens with a practice box.
 |---|---|
 | Chrome, Brave (Windows, Mac, Linux) | Supported; every change is tested automatically in both |
 | Microsoft Edge | Supported; the full automatic test suite passes in Edge 153. Copilot in Edge's *sidebar* can't be checked by any extension; copilot.microsoft.com in a tab is covered |
-| Firefox (computer and Android) | Works: `npm run package -- --firefox` makes a Firefox build (Firefox 140+, Android 142+) that passes Mozilla's checks and an automatic test in Firefox 156. Firefox for Android is the one phone browser that runs extensions. The amber "AI chat spotted" dot isn't available there; the popup's page check is |
+| Firefox (computer and Android) | In Firefox Add-ons: `npm run package -- --firefox` makes the build (Firefox 140+, Android 142+), tested automatically in Firefox 156. Firefox for Android is the one phone browser that runs extensions. The amber "AI chat spotted" dot isn't available there; the popup's page check is |
 | iPhone / iPad | Planned as a Safari extension (needs Apple's paid developer program) |
 | Chrome / Brave on Android | Not possible: they don't run extensions |
 

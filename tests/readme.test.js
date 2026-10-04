@@ -35,6 +35,19 @@ test('README has a "no AI inside" badge linking to the rule check', () => {
   assert.match(HEAD, /tests\/rules\.test\.js/, 'the "no AI inside" badge doesn\'t link to tests/rules.test.js');
 });
 
+test("README's Install section links to all three stores, none of them a placeholder", () => {
+  // Comments stripped first: a link only inside an HTML comment (the old "once Mozilla approves" pattern)
+  // must not count as live.
+  const live = README.replace(/<!--[\s\S]*?-->/g, "");
+  const stores = [
+    ["Chrome", /https:\/\/chromewebstore\.google\.com\/detail\/[\w-]+/],
+    ["Microsoft Edge", /https:\/\/microsoftedge\.microsoft\.com\/addons\/detail\/[\w-]+/],
+    ["Firefox", /https:\/\/addons\.mozilla\.org\/firefox\/addon\/[\w-]+\//],
+  ];
+  for (const [name, re] of stores) assert.match(live, re, `README has no live ${name} store link`);
+  assert.doesNotMatch(README, /REPLACE-WITH|is on its way to/i, "README still has a placeholder store link");
+});
+
 test("README has a Scorecard badge whose workflow ships in the export", () => {
   const m = HEAD.match(/\[!\[OpenSSF Scorecard\]\(([^)]+)\)\]\(([^)]+)\)/);
   assert.ok(m, "no Scorecard badge found near the top of README.md");
