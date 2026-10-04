@@ -5,7 +5,7 @@
 const { msg } = globalThis.Clotr;
 const $ = (id) => document.getElementById(id);
 // Where someone gets Clotr: the website until the store listing is public (then its store page).
-const SHARE_URL = "https://clotr-app.github.io/";
+const SHARE_URL = "https://clotr.app/";
 
 $("share-url").textContent = SHARE_URL;
 $("copy-link").addEventListener("click", async () => {

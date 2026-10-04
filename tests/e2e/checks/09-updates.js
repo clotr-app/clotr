@@ -241,7 +241,7 @@ module.exports = async function (env) {
             `the new version didn't start in the open tab: ${page.logs.filter((l) => l.includes("[Clotr]")).join(" / ")}`,
           );
           // (An orphaned copy's console output doesn't reach DevTools: the notice count below shows it stepped aside.)
-          await typeText(page, "call me at 937-555-0123");
+          await typeText(page, "call me at 555-555-0123");
           const notice = await waitForNotice(page);
           expect(notice, "no notice from the new version");
           expect(!notice.text.includes("Reload this page"), `the notice comes from the old copy: ${notice.text}`);

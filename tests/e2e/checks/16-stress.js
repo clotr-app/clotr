@@ -235,7 +235,7 @@ module.exports = async function (env) {
             return (await page.metrics()).JSHeapUsedSize;
           };
           const round = async (i) => {
-            await typeText(page, `note ${i}: reach me at 937-555-${String(1000 + i).slice(-4)}`);
+            await typeText(page, `note ${i}: reach me at 555-555-${String(1000 + i).slice(-4)}`);
             await waitFor(() => readNotice(page), 3000);
             await pressEnter(page);
             await page.evaluate((n) => window.__reply(`Sure, here is a long answer number ${n}. `.repeat(20)), i);

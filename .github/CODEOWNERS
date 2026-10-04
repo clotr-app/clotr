@@ -11,3 +11,5 @@
 /.npmrc                           @BilliamBaSH
 /eslint.config.js                 @BilliamBaSH
 /.gitleaks.toml                   @BilliamBaSH
+# Tool settings the automation loads, and what decides how a diff shows (release review 2026-09-30).
+/.gitattributes                   @BilliamBaSH

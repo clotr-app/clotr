@@ -71,7 +71,10 @@ function collect(firefox) {
     for (const name of fs.readdirSync(dir)) {
       if (SKIP.has(name) || name.endsWith(".log")) continue;
       const file = path.join(dir, name);
-      if (fs.statSync(file).isDirectory()) {
+      // Gone since the folder was listed (another test's throwaway file, removed mid-walk): nothing to package.
+      const stat = fs.statSync(file, { throwIfNoEntry: false });
+      if (!stat) continue;
+      if (stat.isDirectory()) {
         walk(file);
         continue;
       }
@@ -189,7 +192,7 @@ function sbom({ fileName, version, sha256, entries }) {
     dataLicense: "CC0-1.0",
     SPDXID: "SPDXRef-DOCUMENT",
     name: fileName,
-    documentNamespace: `https://github.com/BilliamBaSH/clotr/releases/${fileName}/${sha256}`,
+    documentNamespace: `https://github.com/clotr-app/clotr/releases/${fileName}/${sha256}`,
     creationInfo: { created: "1980-01-01T00:00:00Z", creators: ["Tool: clotr-tools-package"] },
     packages: [
       {
@@ -197,7 +200,7 @@ function sbom({ fileName, version, sha256, entries }) {
         SPDXID: "SPDXRef-Package-Clotr",
         versionInfo: version,
         packageFileName: fileName,
-        downloadLocation: "https://github.com/BilliamBaSH/clotr/releases",
+        downloadLocation: "https://github.com/clotr-app/clotr/releases",
         filesAnalyzed: true,
         packageVerificationCode: { packageVerificationCodeValue: verification },
         checksums: [{ algorithm: "SHA256", checksumValue: sha256 }],
@@ -253,7 +256,7 @@ function build({ firefox = false, outDir = path.join(ROOT, "dist") } = {}) {
   return { out, sbom: sbomOut, files: entries.map(([n]) => n), size: bytes.length, sha256 };
 }
 
-module.exports = { build, crc32 };
+module.exports = { build, crc32, zip };
 
 if (require.main === module) {
   const i = process.argv.indexOf("--out");

@@ -78,11 +78,11 @@ module.exports = async function (env) {
         await store.set(ctx, { bandage: { "copilot.microsoft.com": true } });
         await sleep(300);
         const t0 = Date.now();
-        await typeText(page, "call me at 937-555-0123");
+        await typeText(page, "call me at 555-555-0123");
         const done = await waitFor(async () => ((await editorText(page)).includes("[Phone 1]") ? true : null), 3000);
         const text = await editorText(page);
         expect(done, `not covered after ${Date.now() - t0} ms: "${text}"`);
-        expect(!text.includes("937-555-0123"), `the number is still there: "${text}"`);
+        expect(!text.includes("555-555-0123"), `the number is still there: "${text}"`);
         const ping = await Promise.race([page.evaluate(() => 1), sleep(2000).then(() => 0)]);
         expect(ping === 1, "the page stopped answering after the swap");
         await resetState(ctx, {});

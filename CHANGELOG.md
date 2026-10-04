@@ -3,6 +3,39 @@
 What changed in each version of Clotr, in plain words. Versions were `0.x-alpha` until 1.0.0, the first public release.
 The extension shows the highlights of each series once after an update ("What's new").
 
+From 1.1.1 on, a new version comes out only as a release: the first number for a major feature or upgrade (2.0.0),
+the second for new features (1.2.0), the third for fixes only (1.1.2). Regular releases come at most every two weeks;
+an urgent fix can come any time. Work on its way to the next release is listed under "Unreleased"; copies run from
+this repository show it as a fourth number (1.1.1.1).
+
+## 1.1.2 (2026-10-03)
+- **Clotr has its own address: https://clotr.app.** "Share Clotr with someone" now gives that link.
+- **The code moved to github.com/clotr-app/clotr**, next to the website. "Report a problem" and the printable guide
+  point there; the old address still forwards.
+- **"Hide it" hides it:** on the corner warning, *Hide it* now hides a birth date or an address instead of turning it
+  into "March 1948" or a town.
+- **Counting aloud is fine:** "one two three … ten" or "uno dos tres … diez" no longer warns as a phone number or a
+  Social Security number.
+- **Bandage after a reload:** after you reload a chat, a new detail no longer reuses a label the chat already shows (like
+  a second [Phone 1]), in what the page has loaded; pointing at an older label says Clotr didn't keep its detail, and its underline shows as soon as the
+  message does.
+- **Bandage:** switching chats inside an AI site no longer lets an older chat's label show the new chat's detail.
+- **Caught now:** a phone number spelled with sound-alikes or a slip ("too zeero sicks …", "sevne"), and Spanish
+  numbers read in pairs with "once" (eleven).
+- **On Firefox, "Protect this site" now actually asks:** the button did nothing there before; now it asks the same
+  way the other button already did.
+- **Recipes and ranges are fine:** "Mix two to four for one to two minutes" no longer warns as a phone number, and a
+  longer one like it no longer warns as a Social Security number.
+- **A drug's NDC code and "Dr." before a name stay quiet:** a National Drug Code number ("NDC 0093-7146-56") isn't
+  read as a phone number, and "Dr. Okafor" isn't read as a street, even while
+  you're still typing the name.
+- **The store name now says what Clotr does:** "Clotr: chat privacy, clot your data leaks."
+- **Clotr's five promises, word for word,** on the welcome page (in English and Spanish), the website and the README:
+  "No AI inside. No network. No accounts. Open code. Free for people." The website also links to Clotr's tests, its
+  rule checks and its security scorecard.
+- Example phone numbers throughout Clotr (warnings, the vault, the welcome page, the website, the guide) no longer
+  use a real area code — they're all `555` now, the one television and the phone company use for made-up numbers.
+
 ## 1.1.1 (2026-09-30)
 - **The toolbar button opens on where your details went**: a small map at its own size, with a key under it, then
   the week's report; Overview, Activity and Settings sit at the bottom, always in view.

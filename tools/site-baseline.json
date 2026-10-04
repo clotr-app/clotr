@@ -1,5 +1,5 @@
 {
-  "updated": "2026-09-25",
+  "updated": "2026-10-02",
   "sites": {
     "https://chatgpt.com/": {
       "finalHost": "chatgpt.com",
@@ -72,6 +72,48 @@
     "https://arena.ai/": {
       "finalHost": "arena.ai",
       "editor": "textarea"
+    }
+  },
+  "everyday": {
+    "https://mail.google.com/": {
+      "finalHost": "workspace.google.com",
+      "covered": false,
+      "signInWall": true
+    },
+    "https://outlook.live.com/": {
+      "finalHost": "www.microsoft.com",
+      "covered": false,
+      "signInWall": true
+    },
+    "https://mail.yahoo.com/": {
+      "finalHost": "mail.yahoo.com",
+      "covered": true,
+      "signInWall": true
+    },
+    "https://discord.com/": {
+      "finalHost": "discord.com",
+      "covered": true,
+      "signInWall": true
+    },
+    "https://app.slack.com/": {
+      "finalHost": "app.slack.com",
+      "covered": true,
+      "signInWall": true
+    },
+    "https://web.whatsapp.com/": {
+      "finalHost": "web.whatsapp.com",
+      "covered": true,
+      "signInWall": true
+    },
+    "https://www.messenger.com/": {
+      "finalHost": "www.messenger.com",
+      "covered": true,
+      "signInWall": true
+    },
+    "https://teams.microsoft.com/": {
+      "finalHost": "login.microsoftonline.com",
+      "covered": false,
+      "signInWall": true
     }
   }
 }

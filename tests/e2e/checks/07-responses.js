@@ -58,15 +58,19 @@ module.exports = async function (env) {
   await check("R0b", "Notice → More choices → stop warning me about this kind sets that type to Log only", () =>
     withSite(ctx, "chatgpt", async (page) => {
       await resetState(ctx, {});
-      await typeText(page, "call me at 937-555-5636");
+      await typeText(page, "call me at 555-555-5636");
       expect(await waitForNotice(page), "no notice");
       await clickDialogButton(page, "More choices", readNotice);
       await clickDialogButton(page, "Leave it in, and stop warning me about: Phone Number", readNotice);
       expect(!(await readNotice(page)), "notice still open");
-      const { responses } = await store.get(ctx, "responses");
-      expect(responses?.phone_number === "log", `responses: ${JSON.stringify(responses)}`);
+      // Storage writes are asynchronous: wait for them instead of reading once, as A5 does.
+      const responses = await waitFor(
+        async () => ((await store.get(ctx, "responses")).responses?.phone_number === "log" ? true : null),
+        2000,
+      );
+      expect(responses, `responses: ${JSON.stringify((await store.get(ctx, "responses")).responses)}`);
       await clearEditor(page);
-      await typeText(page, "or 937-555-1234");
+      await typeText(page, "or 555-555-1234");
       await expectNoUI(page, "phone numbers are now Log only");
     }),
   );
@@ -98,13 +102,35 @@ module.exports = async function (env) {
       }),
   );
 
+  // The notice's own Hide it once handed its click to the hide step as "keep it general", so a birth date became
+  // "March 1948" and an address its town instead of being hidden.
+  await check("GEN1b", "Notice → Hide it hides a birth date and an address (it doesn't keep them general)", () =>
+    withSite(ctx, "chatgpt", async (page) => {
+      await resetState(ctx, {});
+      await typeText(page, "I was born on 03/14/1948 and live at 123 Oak Street, Springfield, IL 62704");
+      expect(await waitForNotice(page), "no notice");
+      await clickDialogButton(page, "Hide it", readNotice);
+      const text = await waitFor(async () => {
+        const t = await editorText(page);
+        return t.includes("[REDACTED") || t.includes("March") ? t : null;
+      }, 4000);
+      expect(
+        text &&
+          /\[REDACTED DATE OF BIRTH\]/.test(text) &&
+          /\[REDACTED STREET ADDRESS\]/.test(text) &&
+          !/1948|March|Springfield|Oak/.test(text),
+        `chat box: "${await editorText(page)}"`,
+      );
+    }),
+  );
+
   await check(
     "GEN2",
     'Ask-before dialog → More choices → Say "March 1948" instead, and hide the rest (the phone number)',
     () =>
       withSite(ctx, "chatgpt", async (page) => {
         await resetState(ctx, { date_of_birth: "block", phone_number: "block" });
-        await typeText(page, "born 03/14/1948, call me at 937-555-0123");
+        await typeText(page, "born 03/14/1948, call me at 555-555-0123");
         await pressEnter(page);
         expect(await waitForDialog(page), "no dialog");
         await clickDialogButton(page, "More choices");
@@ -120,7 +146,7 @@ module.exports = async function (env) {
     () =>
       withSite(ctx, "chatgpt", async (page) => {
         await resetState(ctx, {});
-        await typeText(page, "call me at 937-555-5636");
+        await typeText(page, "call me at 555-555-5636");
         expect(await waitForNotice(page), "no notice");
         await page.screenshot({ path: path.join(OUT, "notice-more-closed.png") });
         await clickDialogButton(page, "More choices", readNotice);
@@ -141,7 +167,7 @@ module.exports = async function (env) {
         );
         expect(!JSON.stringify(vault).includes("5636"), "the number itself was stored");
         await clearEditor(page);
-        await typeText(page, "again 937-555-5636");
+        await typeText(page, "again 555-555-5636");
         await expectNoUI(page, "this number is fine to share now");
         await clearEditor(page);
         await store.set(ctx, { responses: { aws_access_key: "block" } });
@@ -162,7 +188,7 @@ module.exports = async function (env) {
       }),
   );
 
-  const PHONE = "call me at 937-555-5636";
+  const PHONE = "call me at 555-555-5636";
   await check("R1", "Warn (phone, default): notice shows, sending isn't blocked, counts as allowed", () =>
     withSite(ctx, "chatgpt", async (page) => {
       await resetState(ctx);
@@ -172,7 +198,7 @@ module.exports = async function (env) {
         notice?.text.includes("Phone Number"),
         `notice: ${notice?.text} LOGS: ${page.logs.slice(-6).join(" || ")}`,
       );
-      expect(!notice.text.includes("937-555-5636"), "notice shows the full number");
+      expect(!notice.text.includes("555-555-5636"), "notice shows the full number");
       expect(!(await readDialog(page)), "a warn-level item opened the blocking dialog");
       await page.screenshot({ path: path.join(OUT, "notice.png") });
       await sleep(1600); // read it, then send anyway (an informed send: no "Just sent" follow-up, FS2)
@@ -634,7 +660,7 @@ module.exports = async function (env) {
   await check("N1", "Notice with several items: every item stays inside the notice (wraps between items)", () =>
     withSite(ctx, "chatgpt", async (page) => {
       await resetState(ctx, {}); // defaults: everything warns
-      await typeText(page, `key ${KEY} phone 937-555-0123 mail ann.lee@example-company.com`);
+      await typeText(page, `key ${KEY} phone 555-555-0123 mail ann.lee@example-company.com`);
       expect(await waitForNotice(page), "no notice");
       const { root } = await page.cdp.send("DOM.getDocument", { depth: -1, pierce: true });
       let box = null;
@@ -846,7 +872,7 @@ module.exports = async function (env) {
         await page.click("#show"); // "show password" makes it a text field
         await typeInto("#pass", KEY);
         await typeInto("#user", "grandma.jones@example.com");
-        await typeInto("#otp", "937-555-0147");
+        await typeInto("#otp", "555-555-0147");
         await typeInto("#new-user", "grandma.jones@example.com");
         await typeInto("#new-pass", KEY2);
         await page.keyboard.press("Enter");
@@ -893,7 +919,7 @@ module.exports = async function (env) {
       await resetState(ctx, {});
       const rows = Array.from(
         { length: 30 },
-        (_, i) => `user${i},user${i}@example${i}.com,937-555-${String(1000 + i)}`,
+        (_, i) => `user${i},user${i}@example${i}.com,555-555-${String(1000 + i)}`,
       );
       await typeText(page, ["name,email,phone", ...rows].join("\n"));
       const notice = await waitForNotice(page);
@@ -906,7 +932,7 @@ module.exports = async function (env) {
       expect(!/@example/.test(notice.text), "notice lists values");
       await clickDialogButton(page, "Hide it", readNotice);
       const text = await editorText(page);
-      expect(!/@example|937-555-1/.test(text), `not all redacted: ${text.slice(0, 120)}`);
+      expect(!/@example|555-555-1/.test(text), `not all redacted: ${text.slice(0, 120)}`);
     }),
   );
 
@@ -990,7 +1016,7 @@ module.exports = async function (env) {
       const file = path.join(OUT, "resume.docx");
       makeZip(file, [
         ["[Content_Types].xml", "<Types/>"],
-        ["word/document.xml", docxXml(["Jane Example", `deploy key ${KEY}`, "Call me: 937-555-0123"])],
+        ["word/document.xml", docxXml(["Jane Example", `deploy key ${KEY}`, "Call me: 555-555-0123"])],
       ]);
       await (await page.$("#attach")).uploadFile(file);
       const notice = await waitForNotice(page);
@@ -1019,7 +1045,7 @@ module.exports = async function (env) {
             i === 1
               ? "mail ann.lee@gmail.com"
               : i === 4
-                ? "call 937-555-0144"
+                ? "call 555-555-0144"
                 : i === 6
                   ? `key ${KEY}`
                   : "nothing private here";
@@ -1085,7 +1111,7 @@ module.exports = async function (env) {
         await printer.setRequestInterception(true);
         printer.on("request", (req) => req.abort());
         await printer.setContent(`<html><body style="font-family:Arial"><h1>Account statement</h1>
-        <p>Customer: Jane Example</p><p>Phone: 937-555-0123</p><p>Email: jane.example@gmail.com</p>
+        <p>Customer: Jane Example</p><p>Phone: 555-555-0123</p><p>Email: jane.example@gmail.com</p>
         <p>Deploy key ${KEY}</p></body></html>`);
         fs.writeFileSync(file, await printer.pdf({ format: "A4" }));
         await printer.close();
@@ -1128,7 +1154,7 @@ module.exports = async function (env) {
         fs.rmSync(file);
         const alive = await page.evaluate(() => 1 + 1).catch(() => 0);
         expect(alive === 2 && Date.now() - t0 < 8000, `page responsive: ${alive}, ${Date.now() - t0} ms`);
-        await typeText(page, "call me at 937-555-0123");
+        await typeText(page, "call me at 555-555-0123");
         expect(await waitForNotice(page), "Clotr stopped working after the PDF bomb");
       }),
   );
@@ -1153,7 +1179,7 @@ module.exports = async function (env) {
           ms < 500 && Date.now() - t0 < 6000,
           `page stalled: event loop ${Math.round(ms)} ms, total ${Date.now() - t0} ms`,
         );
-        await typeText(page, "call me at 937-555-0123");
+        await typeText(page, "call me at 555-555-0123");
         expect(await waitForNotice(page), "Clotr stopped working after the hostile PDF");
       }),
   );
@@ -1178,7 +1204,7 @@ module.exports = async function (env) {
       // Deleted without waiting: on Windows the browser keeps the uploaded file open, and a
       // synchronous delete then blocks this test for seconds (that was R8s's "stall", not the page).
       fs.rm(file, { force: true, maxRetries: 10, retryDelay: 500 }, () => {});
-      await typeText(page, "call me at 937-555-0123");
+      await typeText(page, "call me at 555-555-0123");
       expect(await waitForNotice(page), "Clotr stopped working after the hostile PDF");
     }),
   );
@@ -1197,7 +1223,7 @@ module.exports = async function (env) {
         fs.rmSync(file);
         const alive = await page.evaluate(() => 1 + 1).catch(() => 0);
         expect(alive === 2 && Date.now() - t0 < 8000, `page responsive: ${alive}, ${Date.now() - t0} ms`);
-        await typeText(page, "call me at 937-555-0123");
+        await typeText(page, "call me at 555-555-0123");
         expect(await waitForNotice(page), "Clotr stopped working after the zip bomb");
       }),
   );

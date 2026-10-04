@@ -259,7 +259,7 @@ module.exports = async function (env) {
     withSite(ctx, "chatgpt", async (page) => {
       await store.set(ctx, { events: [], responses: {}, guided: ALL_GUIDED, largeText: true });
       try {
-        await typeText(page, "call me at 937-555-0147");
+        await typeText(page, "call me at 555-555-0147");
         expect(await waitForNotice(page), "no notice");
         const classes = await uiClasses(page, "CLOTR-NOTICE");
         expect(classes.has("large"), `notice classes: ${[...classes].join(" ")}`);
@@ -647,7 +647,7 @@ module.exports = async function (env) {
           );
           expect(vaultSeen === "false", "the watch word shows up in the page's markup");
           await clearEditor(page);
-          await typeText(page, "call me at 937-555-0147");
+          await typeText(page, "call me at 555-555-0147");
           await pressEnter(page);
           expect(await waitForDialog(page), "the policy's Ask before sending didn't hold the phone number");
           expect((await sentMessages(page)).length === 0, "sent despite the policy");
@@ -761,7 +761,7 @@ module.exports = async function (env) {
     async () => {
       const host = "chatgpt.com";
       const fp = await ctx.worker.evaluate(async () =>
-        globalThis.Clotr.fingerprint(await ensureSalt(), "phone_number", "937-555-0147"),
+        globalThis.Clotr.fingerprint(await ensureSalt(), "phone_number", "555-555-0147"),
       );
       await ctx.worker.evaluate(() => {
         globalThis.__realManagedGet = chrome.storage.managed.get.bind(chrome.storage.managed);
@@ -774,7 +774,7 @@ module.exports = async function (env) {
       });
       try {
         await withSite(ctx, "chatgpt", async (page) => {
-          await typeText(page, "call me at 937-555-0147");
+          await typeText(page, "call me at 555-555-0147");
           await pressEnter(page);
           expect(
             await waitForDialog(page),
@@ -953,7 +953,7 @@ module.exports = async function (env) {
   // Reply checks: your own phone number, fingerprinted with this profile's salt, as the vault page would.
   const ownPhoneVault = async () => {
     const fp = await ctx.worker.evaluate(async () =>
-      globalThis.Clotr.fingerprint(await ensureSalt(), "phone_number", "937-555-0147"),
+      globalThis.Clotr.fingerprint(await ensureSalt(), "phone_number", "555-555-0147"),
     );
     await store.set(ctx, {
       events: [],
@@ -978,7 +978,7 @@ module.exports = async function (env) {
           await typeText(page, "hello, can you help me plan a trip?");
           await pressEnter(page);
           await sleep(300);
-          await page.evaluate(() => window.__reply("Sure! I'll text the plan to (937) 555-0147 like last time."));
+          await page.evaluate(() => window.__reply("Sure! I'll text the plan to (555) 555-0147 like last time."));
           const n = await replyNote(page);
           expect(
             n && /Phone Number/.test(n.text) && /memory|earlier/i.test(n.text),
@@ -1015,7 +1015,7 @@ module.exports = async function (env) {
         await typeText(page, "hello, can you help me plan a trip?");
         await pressEnter(page);
         await sleep(300);
-        await page.evaluate(() => window.__reply("Sure! I'll text the plan to (937) 555-0147 like last time."));
+        await page.evaluate(() => window.__reply("Sure! I'll text the plan to (555) 555-0147 like last time."));
         expect(!(await replyNote(page, 5000)), "a note although the reply check is off");
         const { mentions = [] } = await store.get(ctx, "mentions");
         expect(mentions.length === 0, `recorded although off: ${JSON.stringify(mentions)}`);
@@ -1038,7 +1038,7 @@ module.exports = async function (env) {
           await sleep(300);
           await store.set(ctx, { replyCheck: false }); // switched off in Settings right after sending
           await sleep(600);
-          await page.evaluate(() => window.__reply("Sure! I'll text the plan to (937) 555-0147 like last time."));
+          await page.evaluate(() => window.__reply("Sure! I'll text the plan to (555) 555-0147 like last time."));
           expect(!(await replyNote(page, 5000)), "a note after the reply check was switched off");
           const { mentions = [] } = await store.get(ctx, "mentions");
           expect(mentions.length === 0, `recorded after it was switched off: ${JSON.stringify(mentions)}`);
@@ -1052,11 +1052,11 @@ module.exports = async function (env) {
     withSite(ctx, "chatgpt", async (page) => {
       await ownPhoneVault();
       try {
-        await typeText(page, "my number is 937-555-0147");
+        await typeText(page, "my number is 555-555-0147");
         await sleep(700);
         await pressEnter(page);
         await sleep(300);
-        await page.evaluate(() => window.__reply("Got it, I'll use 937-555-0147."));
+        await page.evaluate(() => window.__reply("Got it, I'll use 555-555-0147."));
         expect(!(await replyNote(page, 2500)), "a note for a number the user typed here");
       } finally {
         await store.set(ctx, { vault: [] });
@@ -1091,7 +1091,7 @@ module.exports = async function (env) {
           await sleep(300);
           await page.evaluate(() => window.__reply("Sunny, around 70 degrees."));
           await sleep(4500); // the reply went quiet: its one check is done
-          await page.evaluate(() => window.__reply("Is it 937-555-0147?"));
+          await page.evaluate(() => window.__reply("Is it 555-555-0147?"));
           expect(!(await replyNote(page, 4000)), "a second check in the same reply window");
         } finally {
           await store.set(ctx, { vault: [] });
@@ -1106,7 +1106,7 @@ module.exports = async function (env) {
       withSite(ctx, "chatgpt", async (page) => {
         await ownPhoneVault();
         try {
-          await page.evaluate(() => window.__reply("Earlier you said: call me at 937-555-0147"));
+          await page.evaluate(() => window.__reply("Earlier you said: call me at 555-555-0147"));
           expect(!(await replyNote(page, 2500)), "a note for history loaded without a send");
         } finally {
           await store.set(ctx, { vault: [] });
@@ -1201,7 +1201,7 @@ module.exports = async function (env) {
       const es = await launch(EXT, ["--lang=es-ES", "--accept-lang=es-ES"], { LANGUAGE: "es", LANG: "es_ES.UTF-8" });
       try {
         const welcome = await openExtPage(es, "vault.html?welcome=1");
-        await welcome.type("#try", "llámame al nueve tres siete cinco cinco cinco cero uno cuatro siete");
+        await welcome.type("#try", "llámame al cinco cinco cinco cinco cinco cinco cero uno cuatro siete");
         await sleep(700);
         const w = await welcome.evaluate(() => ({
           title: document.getElementById("page-title").textContent,

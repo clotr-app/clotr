@@ -372,7 +372,7 @@
     icoud: "icloud",
   };
 
-  // Same value however it's written: "(937) 555-5636" = "nine three seven…",
+  // Same value however it's written: "(555) 555-5636" = "five five five…",
   // "Bob@Gmail.com" = "bob at gmail dot com".
   function normalize(patternId, raw) {
     const match = cleanText(raw).clean; // invisible characters and look-alike digits don't change a fingerprint
@@ -569,6 +569,67 @@
     return out;
   }
 
+  // ---------- Bandage's labels ([Phone 1], [Me], [born in the 1940s]) in every language Clotr speaks ----------
+  // content.js gives labels in the browser's language. After a reload it reads the ones a conversation already holds,
+  // so a new detail continues the numbering after them (D27): one label never stands for two details. The words are
+  // the _locales messages `bl_*` (English first; the unit tests check they match).
+  const BANDAGE_WORDS = {
+    bl_me: ["Me", "Yo"],
+    bl_company: ["My company", "Mi empresa"],
+    bl_family: ["Family", "Familiar"],
+    bl_address: ["Address", "Dirección"],
+    bl_phone: ["Phone", "Teléfono"],
+    bl_email: ["Email", "Correo"],
+    bl_birth: ["Birth date", "Fecha de nacimiento"],
+    bl_card: ["Card", "Tarjeta"],
+    bl_account: ["Account", "Cuenta"],
+    bl_ip: ["IP address", "Dirección IP"],
+    bl_term: ["Term", "Término"],
+    bl_id: ["ID"],
+  };
+  const BANDAGE_BORN_IN = ["born in the $1s", "nacimiento en los años $1"];
+  const BANDAGE_ALONE = new Set(["bl_me", "bl_company"]); // "[Me]", not "[Me 1]", the first time
+  // Case, accents and spacing are loose: an AI may write "[telefono 2]" for "[Teléfono 2]".
+  const plainWord = (w) => w.normalize("NFD").replace(/\p{M}/gu, "").toLowerCase().replace(/\s+/g, " ");
+  const looseWord = (w) =>
+    w
+      .replace(/[.*+?^${}()|[\]\\]/g, "\\$&")
+      .replace(/\s+/g, "\\s+")
+      .replace(/[áéíóúñ]/g, (c) => `[${c}${plainWord(c)}]`);
+  const BANDAGE_KIND = new Map(
+    Object.entries(BANDAGE_WORDS).flatMap(([kind, words]) => words.map((w) => [plainWord(w), kind])),
+  );
+  // "[word 2]" (the longest word first: "Dirección IP" before "Dirección"), or a decade label with its year in a group.
+  const BANDAGE_WORD_ALTS = Object.values(BANDAGE_WORDS)
+    .flat()
+    .sort((a, b) => b.length - a.length)
+    .map(looseWord)
+    .join("|");
+  const BANDAGE_BORN_ALTS = BANDAGE_BORN_IN.map((t) => looseWord(t).replace("\\$1", "(\\d{4})")).join("|");
+  const BANDAGE_LABEL_RE = new RegExp(
+    `\\[\\s*(?:(${BANDAGE_WORD_ALTS})(?:\\s+(\\d{1,4}))?|${BANDAGE_BORN_ALTS})\\s*\\]`,
+    "giu",
+  );
+
+  // Every Bandage label in `text`: { label (as written), index, kind (the bl_* key), n, id }. `id` is the same for one
+  // label in any language or case ("[Phone 2]", "[teléfono 2]" → "bl_phone 2"). Pure and one pass over the text.
+  function readBandageLabels(text) {
+    const out = [];
+    if (!text || !text.includes("[")) return out;
+    BANDAGE_LABEL_RE.lastIndex = 0;
+    for (let m = BANDAGE_LABEL_RE.exec(text); m; m = BANDAGE_LABEL_RE.exec(text)) {
+      const decade = m.slice(3).find(Boolean);
+      if (decade) {
+        out.push({ label: m[0], index: m.index, kind: "bl_bornIn", n: 0, id: `bl_bornIn ${decade}` });
+        continue;
+      }
+      const kind = BANDAGE_KIND.get(plainWord(m[1]));
+      const n = m[2] ? Number(m[2]) : BANDAGE_ALONE.has(kind) ? 1 : 0;
+      if (kind && n) out.push({ label: m[0], index: m.index, kind, n, id: `${kind} ${n}` });
+    }
+    return out;
+  }
+
   globalThis.Clotr = {
     ...globalThis.Clotr,
     SEVERITY_RANK,
@@ -576,6 +637,9 @@
     redact,
     generalize,
     generalForms,
+    BANDAGE_WORDS,
+    BANDAGE_BORN_IN,
+    readBandageLabels,
     RESPONSES,
     defaultResponse,
     responseFor,

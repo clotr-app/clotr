@@ -1088,6 +1088,9 @@
   "vault_clotrChecksWhatYouType": {
     "message": "Clotr funciona en chats de IA como ChatGPT, Claude y Gemini, y en tu correo o tus apps de chat cuando los activas en Ajustes. Te avisa antes de que salga una contraseña, una clave o un dato personal, y luego tú decides: quitarlo o enviarlo igualmente."
   },
+  "vault_fivePromises": {
+    "message": "Sin IA dentro. Sin red. Sin cuentas. Código abierto. Gratis para las personas."
+  },
   "vault_onlyOnAiChats": {
     "message": "Solo donde tú eliges."
   },
@@ -2535,6 +2538,9 @@
   },
   "bandageCopyReal": {
     "message": "Copiar con los nombres reales"
+  },
+  "bandageNotKept": {
+    "message": "Clotr no guardó el dato real de $1: los datos reales se olvidan al recargar la página."
   },
   "popup_showWelcome": {
     "message": "Ver la página de bienvenida"

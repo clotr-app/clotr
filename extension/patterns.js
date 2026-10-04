@@ -60,8 +60,8 @@
 
   // ---------- Numbers written any way ----------
   // Reads digit sequences whether typed as digits, number words, or a mix, with or
-  // without separators: "937-555-5636", "nine three seven…",
-  // "ninethreesevenfive…", "9threeseve5five5five63six". Aimed at people who don't
+  // without separators: "555-555-5636", "five five five…",
+  // "fivefivefivefive…", "5fivefive5five5five63six". Aimed at people who don't
   // realize spelling a number out doesn't hide it.
 
   // ---------- Translations (D65) ----------
@@ -78,7 +78,7 @@
   }
 
   // Digit words, with common misspellings (none of them an everyday word; those are WEAK_WORDS below).
-  const NUMBER_WORDS = {
+  const ENGLISH_NUMBER_WORDS = {
     zero: "0",
     zeero: "0",
     zro: "0",
@@ -115,7 +115,9 @@
     seventeen: "17",
     eighteen: "18",
     nineteen: "19",
-    // Spanish (D64)
+  };
+  // Spanish (D64)
+  const SPANISH_NUMBER_WORDS = {
     cero: "0",
     uno: "1",
     dos: "2",
@@ -126,8 +128,8 @@
     siete: "7",
     ocho: "8",
     nueve: "9",
-    // Spanish numbers are often read out in pairs ("seis cero cero, doce, treinta y cuatro"). Not "once"
-    // (eleven): it's an everyday English word.
+    // Spanish numbers are often read out in pairs ("seis cero cero, doce, treinta y cuatro"). "once" (eleven) is
+    // an everyday English word, so it's with the sound-alikes (WEAK_WORDS).
     diez: "10",
     doce: "12",
     trece: "13",
@@ -151,8 +153,9 @@
     veintiocho: "28",
     veintinueve: "29",
   };
+  const NUMBER_WORDS = { ...ENGLISH_NUMBER_WORDS, ...SPANISH_NUMBER_WORDS };
   // "fifty five" = 55, "fifty" alone = 50; Spanish "treinta y cuatro" = 34.
-  const TENS_WORDS = {
+  const ENGLISH_TENS_WORDS = {
     twenty: "2",
     thirty: "3",
     forty: "4",
@@ -162,6 +165,8 @@
     seventy: "7",
     eighty: "8",
     ninety: "9",
+  };
+  const SPANISH_TENS_WORDS = {
     veinte: "2",
     treinta: "3",
     cuarenta: "4",
@@ -171,7 +176,7 @@
     ochenta: "8",
     noventa: "9",
   };
-  // Spanish hundreds are one word ("novecientos treinta y siete" = 937).
+  // Spanish hundreds are one word ("quinientos cincuenta y cinco" = 555).
   const HUNDRED_WORDS = {
     cien: "1",
     ciento: "1",
@@ -192,8 +197,39 @@
     novecientos: "9",
     novecientas: "9",
   };
-  // Sound-alikes and look-alikes. Everyday words, so they only count between real digits.
-  const WEAK_WORDS = { won: "1", to: "2", too: "2", for: "4", fore: "4", ate: "8" };
+  const TENS_WORDS = { ...ENGLISH_TENS_WORDS, ...SPANISH_TENS_WORDS };
+  // Sound-alikes, and Spanish "once" (eleven). Everyday English words, so they only count inside a number
+  // (keepSoftUnits below).
+  const WEAK_WORDS = { won: "1", to: "2", too: "2", for: "4", fore: "4", ate: "8", once: "11" };
+  // The words most often right before a number ("text to …", "wait for …"): never part of it at its edge.
+  const NOT_AT_EDGE = new Set(["to", "for"]);
+  const SPANISH = new Set([
+    ...Object.keys(SPANISH_NUMBER_WORDS),
+    ...Object.keys(SPANISH_TENS_WORDS),
+    ...Object.keys(HUNDRED_WORDS),
+    "mil",
+    "once",
+  ]);
+  // A slip of one letter in these ("sevne", "fivve", "sinco", "nuebe") is read too, but like a sound-alike: only
+  // inside a spelled-out phone number. Words of four letters or more: shorter ones are a slip away from too many
+  // everyday words.
+  const SLIP_WORDS = {
+    zero: "0",
+    three: "3",
+    four: "4",
+    five: "5",
+    seven: "7",
+    eight: "8",
+    nine: "9",
+    cero: "0",
+    tres: "3",
+    cuatro: "4",
+    cinco: "5",
+    seis: "6",
+    siete: "7",
+    ocho: "8",
+    nueve: "9",
+  };
   const WEAK_LETTERS = { O: "0", o: "0", l: "1" };
   // "five hundred fifty five" = 555, "six thousand seven hundred" = 6700: how many places each fills.
   const MULTIPLIERS = { hundred: 2, thousand: 3, mil: 3 };
@@ -222,6 +258,8 @@
       digits,
       kind,
       isWord: kind !== "digit" && kind !== "letter",
+      // the language of a number word; digits, letters and the English sound-alikes fit either
+      lang: SPANISH.has(w) ? "es" : ["word", "tens", "mult", "rep"].includes(kind) ? "en" : undefined,
     });
     if (/^\d$/.test(s)) return unit(s, "digit");
     if (s.length === 1) return WEAK_LETTERS[s] ? unit(WEAK_LETTERS[s], "letter") : null;
@@ -230,7 +268,43 @@
     if (HUNDRED_WORDS[w]) return unit(HUNDRED_WORDS[w], "hund");
     if (MULTIPLIERS[w]) return { ...unit("", "mult"), places: MULTIPLIERS[w] };
     if (REPEATS[w]) return { ...unit("", "rep"), times: REPEATS[w] };
-    return unit(WEAK_WORDS[w], "weak");
+    return { ...unit(WEAK_WORDS[w], "weak"), atEdge: !NOT_AT_EDGE.has(w) };
+  }
+
+  // True when `typed` is `word` with one letter added, dropped or changed, or two side by side swapped.
+  function oneSlip(typed, word) {
+    if (typed === word || Math.abs(typed.length - word.length) > 1) return false;
+    let i = 0;
+    while (i < typed.length && typed[i] === word[i]) i++;
+    if (typed.length > word.length) return typed.slice(i + 1) === word.slice(i);
+    if (typed.length < word.length) return typed.slice(i) === word.slice(i + 1);
+    return (
+      typed.slice(i + 1) === word.slice(i + 1) ||
+      (typed[i] === word[i + 1] && typed[i + 1] === word[i] && typed.slice(i + 2) === word.slice(i + 2))
+    );
+  }
+
+  // A whole word that is a slip of a digit word (SLIP_WORDS), read as a sound-alike. A slip of two different
+  // digits ("fine": "five" or "nine") is neither.
+  const WORD_AT = /\p{L}+/uy;
+  function readSlip(text, start) {
+    WORD_AT.lastIndex = start;
+    const s = WORD_AT.exec(text)[0];
+    const w = s.toLowerCase();
+    if (s.length < 4 || s.length > 7 || Object.hasOwn(ALL_WORDS, w)) return null;
+    const words = Object.keys(SLIP_WORDS).filter((word) => oneSlip(w, word));
+    const digits = new Set(words.map((word) => SLIP_WORDS[word]));
+    if (digits.size !== 1) return null;
+    const es = words.filter((word) => SPANISH.has(word)).length;
+    return {
+      start,
+      end: start + s.length,
+      digits: [...digits][0],
+      kind: "weak",
+      isWord: true,
+      slip: true,
+      lang: es === words.length ? "es" : es === 0 ? "en" : undefined,
+    };
   }
 
   // Splits text into runs of digits. Each run is a list of groups (digits written
@@ -251,8 +325,9 @@
     const units = [];
     for (let i = 0; i < text.length;) {
       UNIT_RE.lastIndex = i;
-      const m = UNIT_RE.exec(text);
-      const u = m && readUnit(m[0], i);
+      const slip = isLetter(text[i]) && !isLetter(text[i - 1]) ? readSlip(text, i) : null;
+      const m = !slip && UNIT_RE.exec(text);
+      const u = slip || (m && readUnit(m[0], i));
       if (!u) {
         i++;
         continue;
@@ -271,16 +346,16 @@
     const strong = units.map(
       (u, k) => u.kind === "digit" || (["word", "tens", "hund", "mult", "rep"].includes(u.kind) && wordOk(u, k)),
     );
-    // Weak units need a real digit on both sides ("five won two", "555-O636"); a letter must also touch one.
+    // A letter needs a real digit on both sides, and must touch one ("555-O636"). Sound-alikes and slips stay for
+    // now: whether they're part of a number is decided once the runs are read (keepSoftUnits).
     const valid = units.filter((u, k) => {
       if (strong[k]) return true;
-      if (u.kind === "weak" && !wordOk(u, k)) return false;
-      if (u.kind !== "weak" && u.kind !== "letter") return false;
+      if (u.kind === "weak") return wordOk(u, k);
+      if (u.kind !== "letter") return false;
       if (!strong[k - 1] || !strong[k + 1]) return false;
       const before = text.slice(units[k - 1].end, u.start);
       const after = text.slice(u.end, units[k + 1].start);
-      if (!isGap(before) || !isGap(after)) return false;
-      return u.kind === "weak" || before === "" || after === "";
+      return isGap(before) && isGap(after) && (before === "" || after === "");
     });
 
     // "double five" → 55: the next single digit, repeated. A "double" not before a digit isn't one.
@@ -385,20 +460,105 @@
       /^[.)][^\S\n]+$/.test(gap) &&
       r.units.every((x) => x.kind === "digit") &&
       atLineStart(r.units[0].start);
-    const runs = [];
-    let run = null;
-    for (const u of placed) {
-      const gap = run ? text.slice(run.units[run.units.length - 1].end, u.start) : null;
-      if (run && isGap(gap) && !listNumber(run, gap)) {
-        if (gap !== "") run.groups.push([]);
-        run.groups[run.groups.length - 1].push(u);
-        run.units.push(u);
-      } else {
-        run = { units: [u], groups: [[u]] };
-        runs.push(run);
+    const buildRuns = (list) => {
+      const runs = [];
+      let run = null;
+      for (const u of list) {
+        const gap = run ? text.slice(run.units[run.units.length - 1].end, u.start) : null;
+        if (run && isGap(gap) && !listNumber(run, gap)) {
+          if (gap !== "") run.groups.push([]);
+          run.groups[run.groups.length - 1].push(u);
+          run.units.push(u);
+        } else {
+          run = { units: [u], groups: [[u]] };
+          runs.push(run);
+        }
       }
+      return runs;
+    };
+    // Read with every sound-alike and slip that touches a number, then again with only those that belong to it.
+    const runs = buildRuns(placed);
+    if (!placed.some((u) => u.kind === "weak")) return runs;
+    const kept = keepSoftUnits(runs, text);
+    return buildRuns(placed.filter((u) => u.kind !== "weak" || kept.has(u)));
+  }
+
+  // Sound-alikes ("won", "too", "fore"), slips ("sevne") and Spanish "once" are everyday words, so in a run they
+  // count only where they're part of the number:
+  // - a sound-alike between two digits or number words ("five won two"), as always; but not "to" or "for", which sit
+  //   between numbers in ranges and recipes ("two to four", "one to two minutes", "two to four for one to two");
+  // - in a spelled-out number, any of them when the number with them reads as a whole phone number: inside it
+  //   (with no more of them than number words), and up to two sound-alikes at its edges when the number without
+  //   them is short of a phone number ("too zeero sicks …" with nine digits after "too"). So a word before a whole
+  //   number isn't a leading digit, and "line" after one isn't a 9. Never "to" or "for" at an edge, never a slip.
+  // - A "to" or "for" between two number words that go up ("two to four", "eight to ten", "three for five"), with
+  //   the pair set off from any other number word (by the number's end, a comma, or another "to" or "for"), is a
+  //   range or a price, so that run isn't one number ("ages two to four, five to seven, eight to ten"). Inside a
+  //   phone number the words around it are digits too ("nine five to six three …"), so it still reads as one.
+  // Spanish "once" and Spanish slips count only among Spanish number words, English slips among English ones, and
+  // none of them inside a count ("seis siete ocho nueve diez once doce").
+  function keepSoftUnits(runs, text) {
+    const kept = new Set();
+    const soft = (u) => u.kind === "weak";
+    const strong = (u) => u.kind !== "weak" && u.kind !== "letter";
+    const linking = (u) => soft(u) && !u.slip && !u.atEdge; // "to" and "for"
+    const digits = (list) => list.map((u) => u.digits).join("");
+    for (const { units } of runs) {
+      if (!units.some(soft)) continue;
+      const between = (k) => k > 0 && k < units.length - 1 && strong(units[k - 1]) && strong(units[k + 1]);
+      units.forEach((u, k) => {
+        if (soft(u) && !u.slip && !u.lang && !linking(u) && between(k)) kept.add(u);
+      });
+      const first = units.findIndex(strong);
+      const last = units.findLastIndex(strong);
+      if (first < 0) continue;
+      const core = units.slice(first, last + 1);
+      const words = core.filter(strong);
+      if (!core.every((u) => u.isWord)) continue; // spelled out: no digits or look-alike letters
+      const lang = words.every((u) => u.lang === "es") ? "es" : words.every((u) => u.lang === "en") ? "en" : null;
+      const fits = (u) => !u.lang || u.lang === lang;
+      const inside = core.filter(soft);
+      if (inside.length > words.length || !inside.every(fits)) continue;
+      if (countsByOne(core.map((u) => Number(u.digits)))) continue; // a count
+      // A pair set off from other number words: by the number's end, a comma or another "to" or "for".
+      const setOff = (a, b) => !a || !b || linking(a) || linking(b) || /[,;.]/.test(text.slice(a.end, b.start));
+      const range = (k) =>
+        linking(core[k]) &&
+        strong(core[k - 1]) &&
+        strong(core[k + 1]) &&
+        +core[k - 1].digits < +core[k + 1].digits &&
+        setOff(core[k - 2], core[k - 1]) &&
+        setOff(core[k + 1], core[k + 2]);
+      if (core.some((u, k) => range(k))) continue; // "two to four, five to seven": ranges
+      // Edge candidates, nearest the number first; one that can't be at an edge ends them.
+      const edge = (from, step) => {
+        const out = [];
+        for (let k = from; units[k]?.atEdge && fits(units[k]) && out.length < 2; k += step) out.push(units[k]);
+        return out;
+      };
+      const before = edge(first - 1, -1);
+      const after = edge(last + 1, 1);
+      const middle = digits(core);
+      // The fewest edge words that make a whole phone number (a 7-digit local one only with none).
+      let pick = null;
+      for (let n = 0; n <= 2 && !pick; n++) {
+        for (let i = Math.min(n, before.length); i >= 0 && !pick; i--) {
+          if (n - i > after.length) continue;
+          const lead = before.slice(0, i).reverse();
+          const trail = after.slice(0, n - i);
+          if (wholePhone(digits(lead) + middle + digits(trail), lang === "es")) pick = [...lead, ...trail];
+        }
+      }
+      if (!pick && !inside.some(linking) && /^[2-9]\d{6}$/.test(middle)) pick = [];
+      if (pick) for (const u of [...inside, ...pick]) kept.add(u);
     }
-    return runs;
+    return kept;
+  }
+
+  // Numbers that go up or down by one, each step the same ("6 7 8 9 10", "10 9 8 7"): a count.
+  function countsByOne(values) {
+    const by = values[1] - values[0];
+    return Math.abs(by) === 1 && values.every((v, k) => k === 0 || v - values[k - 1] === by);
   }
 
   const spanText = (text, groups) => text.slice(groups[0][0].start, groups[groups.length - 1].at(-1).end);
@@ -412,6 +572,10 @@
 
   // North American numbering: area code and exchange can't start with 0 or 1.
   const NANP10 = /^[2-9]\d{2}[2-9]\d{6}$/;
+  // A whole phone number by its digits alone: North American (10, or 11 with a leading 1), or Spain's 9 digits
+  // (mobiles start with 6 or 7, landlines with 8 or 9) for a number read in Spanish.
+  const wholePhone = (d, spanish) =>
+    NANP10.test(d) || (d[0] === "1" && NANP10.test(d.slice(1))) || (spanish && /^[6-9]\d{8}$/.test(d));
   // Toll-free numbers belong to businesses and help lines ("poison control at 1-800-222-1222"), never a person.
   const TOLL_FREE = /^1?8(?:00|33|44|55|66|77|88)/;
   // Spain's free numbers are 9 digits: 900 and 800.
@@ -458,7 +622,7 @@
   const glued = (text, span) => {
     const first = span[0][0];
     const last = span.at(-1).at(-1);
-    // An extension right after the number ("937-555-5636x12") doesn't make it part of a word.
+    // An extension right after the number ("555-555-5636x12") doesn't make it part of a word.
     const extension = /^x\d{1,5}\b/i.test(text.slice(last.end, last.end + 7));
     return (
       (first.kind === "digit" && isLetter(text[first.start - 1])) ||
@@ -479,6 +643,15 @@
   const phoneContextBefore = (text, run) =>
     !ssnLabelBefore(text, run) &&
     PHONE_CONTEXT.test(text.slice(Math.max(0, run.units[0].start - 30), run.units[0].start));
+  // Counting aloud ("one two three … ten", "diez nueve ocho …"): number words only, three or more, each one more or
+  // one less than the one before. It isn't a phone number or an SSN, unless a phone word or an SSN label right before
+  // says it is, as it would for the same digits. Digits keep their own rules ("234-567-8910" is still a phone).
+  const counting = (text, run) =>
+    run.units.length >= 3 &&
+    run.units.every((u) => u.isWord) &&
+    countsByOne(run.units.map((u) => Number(u.digits))) &&
+    !ssnLabelBefore(text, run) &&
+    !phoneContextBefore(text, run);
 
   // UK and Australian numbers written the local way: mobiles "07700 900123" / "0412 345 678", UK landlines
   // "020 7946 0958". Grouped like a phone, or right after a phone word ("ring me on 07700900123"); a bare
@@ -493,7 +666,7 @@
   }
 
   // A number labelled as something else isn't a phone: "Order #445-2231987", "meeting ID is 845 2931 7710",
-  // "ticket 555-1234", "invoice no. 937-555-0199", "request id 004940008510" (a log's IDs read like "00 49 …").
+  // "ticket 555-1234", "invoice no. 555-555-0199", "request id 004940008510" (a log's IDs read like "00 49 …").
   // The label may be a few words back ("El ID de la reunión de Zoom es …"); a phone word after it wins
   // ("about the order, call me at …").
   const OTHER_NUMBER_BEFORE =
@@ -503,14 +676,24 @@
   function labelledAsOther(text, run) {
     const start = run.units[0].start;
     const before = text.slice(Math.max(0, start - 40), start);
-    // A phone word anywhere close by wins: "about the order, call me at …", "phone # 9375555636".
+    // A phone word anywhere close by wins: "about the order, call me at …", "phone # 5555555636".
     return OTHER_NUMBER_BEFORE.test(before) && !PHONE_WORD.test(before);
   }
+
+  // A drug's National Drug Code right after "NDC" isn't a phone ("NDC 0093-7146-56" read as "00" and a country code,
+  // the health study): NDC shapes are 4-4-2, 5-3-2 and 5-4-1, or 5-4-2 as 11 digits, also written without dashes.
+  // Any other shape after "NDC" is still read as a phone.
+  const NDC_BEFORE = /(?<![\p{L}])NDC(?:\s*(?:code|number|no\.?|#))?\s*(?:[:=]|is)?\s*$/iu;
+  const NDC_SHAPES = new Set(["4,4,2", "5,3,2", "5,4,1", "5,4,2", "10", "11"]);
+  const ndcCode = (text, run) =>
+    NDC_SHAPES.has(sizesOf(run.groups)) &&
+    NDC_BEFORE.test(text.slice(Math.max(0, run.units[0].start - 20), run.units[0].start));
 
   function findPhones(text) {
     const found = [];
     for (const run of numberRuns(text)) {
-      if (labelledAsOther(text, run) || tollFree(digitsOf(run.groups))) continue;
+      if (labelledAsOther(text, run) || tollFree(digitsOf(run.groups)) || counting(text, run)) continue;
+      if (ndcCode(text, run)) continue;
       if (localPhone(text, run)) {
         found.push(spanText(text, run.groups));
         continue;
@@ -577,7 +760,7 @@
     return found;
   }
 
-  // An SSN written in digits inside a longer list ("937-555-5636, 219-09-9999"): a 3-2-4 group set off by a
+  // An SSN written in digits inside a longer list ("555-555-5636, 219-09-9999"): a 3-2-4 group set off by a
   // comma or semicolon, with no comma inside. (", " also joins the parts of a spelled-out phone, so the
   // number reader keeps them in one run.)
   // The run cut at its list breaks: [[group, …], …].
@@ -606,7 +789,7 @@
       .map((c) => spanText(text, c));
   }
 
-  // A CSV export with an SSN column ("phone,ssn" then "9375555636,219099999"): the header says what the
+  // A CSV export with an SSN column ("phone,ssn" then "5555555636,219099999"): the header says what the
   // plain 9-digit values are.
   const SSN_COLUMN = /^["']?(?:ssn|social[\s_]*security(?:[\s_]*(?:number|no))?|social)["']?$/i;
   function ssnColumn(text) {
@@ -640,6 +823,7 @@
         continue;
       }
       if (phoneContextBefore(text, run)) continue; // "call me at …": a 9-digit phone number, not an SSN
+      if (counting(text, run)) continue;
       // Digits need the 3-2-4 shape, unless an SSN label says what they are; spelled-out ones may be written any way.
       if (!hasWord(run.groups) && sizesOf(run.groups) !== "3,2,4" && !ssnLabelBefore(text, run)) continue;
       if (!/^(?!000|666|9)\d{3}(?!00)\d{2}(?!0000)\d{4}$/.test(d)) continue;
@@ -716,7 +900,9 @@
       "hard test disk flash usb thumb long right wrong the a an this that my your our his her " +
       "any some no one other same half all each every way lane minute minutes min mins hour hours mile miles km " +
       "day days week weeks year years time times people more less of to in for and or star stars point points step " +
-      "steps bed beds bedroom bedrooms room rooms car cars story stories person man men dollar dollars"
+      "steps bed beds bedroom bedrooms room rooms car cars story stories person man men dollar dollars " +
+      // Linking words never name a street: "at 3 with Dr", half typed before the doctor's name (R95).
+      "with at by from on about after before until till near into onto without around against"
     ).split(" "),
   );
   const STATES =
@@ -835,6 +1021,20 @@
   // will…"); "ship it to 2068 Oak Street" is an address (the 10,000-message oracle run, 2026-09-30).
   const YEAR_BEFORE =
     /(?<!\p{L})(?:in|since|by|from|until|till|before|after|during|of|circa|around|the|en|desde|hasta)\s+$/iu;
+  // "at 3 with Dr. Okafor", "a las 4 con el Dr. Ramírez": there "Dr" is a doctor, not Drive (the health study). A
+  // title is written "Dr" and comes before a capitalised name, and the word before it is in lowercase: someone who
+  // capitalises "Okafor" writes a street's name capitalised too ("418 Maple Dr. Springfield"). An address's own words
+  // after it (Apt, a direction) or a ZIP code keep it a street.
+  const NAME_AFTER_TITLE =
+    /^Dr\.?[^\S\n]+(?:(?:de|del|la|las|los|van|von|da|di|du|le)[^\S\n]+){0,2}(?!(?:Apt|Apartment|Unit|Suite|Ste|North|South|East|West)(?![\p{L}]))\p{Lu}[\p{Ll}'’]/u;
+  function doctorNotDrive(text, m) {
+    const { name, suf } = m.groups;
+    if (!/^Dr\.?$/.test(suf) || !/^\p{Ll}/u.test(name.split(/\s+/).at(-1))) return false;
+    const at = m.index + m[0].lastIndexOf(suf);
+    if (!NAME_AFTER_TITLE.test(text.slice(at, at + 60))) return false;
+    const tail = CITY_STATE_ZIP.exec(text.slice(at + suf.length));
+    return !(tail && /\d{5}/.test(tail[0]));
+  }
   function findAddresses(text) {
     const found = [];
     const withTail = (start, end) => {
@@ -846,6 +1046,7 @@
       if (words.some((w) => NOT_A_STREET.has(w))) continue;
       const yearLike = /^(?:19|20)\d\d$/.test(m[0].split(/\s/)[0]);
       if (yearLike && YEAR_BEFORE.test(text.slice(Math.max(0, m.index - 12), m.index))) continue;
+      if (doctorNotDrive(text, m)) continue;
       withTail(m.index, m.index + m[0].length);
     }
     for (const m of text.matchAll(PO_BOX_RE)) withTail(m.index, m.index + m[0].length);
@@ -1672,7 +1873,7 @@
 
     // --- Personal data ---
     // Phone, SSN and email use find() instead of a single regex, so they also catch
-    // spelled-out and mixed forms ("nine three seven…", "9threeseve5…", "bob at gmail dot com").
+    // spelled-out and mixed forms ("five five five…", "5fivefive5…", "bob at gmail dot com").
     { id: "us_ssn", group: "personal", name: "US Social Security Number", severity: "high", find: findSSNs },
     { id: "credit_card", group: "personal", name: "Credit Card Number", severity: "high", find: findCards },
     {

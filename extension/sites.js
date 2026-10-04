@@ -8,7 +8,15 @@
 (() => {
   "use strict";
 
-  const CONTENT_JS = ["patterns.js", "detector.js", "attachments.js", "ui-styles.js", "editor.js", "content.js"];
+  const CONTENT_JS = [
+    "patterns.js",
+    "detector.js",
+    "attachments.js",
+    "ui-styles.js",
+    "editor.js",
+    "warning-ui.js",
+    "content.js",
+  ];
   const USER_SCRIPT_ID = "clotr-user-sites";
 
   // Everyday sites (D134): email and chat apps, where you write to people rather than to an AI. None is built in:

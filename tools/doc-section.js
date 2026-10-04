@@ -9,13 +9,19 @@ function headings(lines) {
   return lines.flatMap((l, i) => (/^#{1,6} /.test(l) ? [{ i, level: l.match(/^#+/)[0].length, text: l }] : []));
 }
 
+// Escapes a string's regex metacharacters so it can be interpolated into a RegExp as a literal match.
+function escapeRegExp(s) {
+  return s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
 // The section under the first heading containing `query`: up to the next heading of the same or a higher level.
 function section(text, query) {
   const lines = text.split(/\r?\n/);
   const q = query.toLowerCase();
   // A decision or question number (D45, Q3): its table row or its bold entry.
   if (/^[dq]\d+$/i.test(query)) {
-    const hit = lines.filter((l) => new RegExp(`^\\| ${query} \\||^\\*\\*${query}\\.`, "i").test(l));
+    const safeQuery = escapeRegExp(query);
+    const hit = lines.filter((l) => new RegExp(`^\\| ${safeQuery} \\||^\\*\\*${safeQuery}\\.`, "i").test(l));
     if (hit.length) return hit.join("\n");
   }
   const hs = headings(lines);
@@ -47,4 +53,4 @@ if (require.main === module) {
   }
 }
 
-module.exports = { section, headings };
+module.exports = { section, headings, escapeRegExp };

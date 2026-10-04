@@ -6,7 +6,7 @@
 module.exports = async function (env) {
   const { EXT, check, clotrActive, ctx, expect, expectNoUI, fs, launch, openPopup, os, path, readNotice } = env;
   const { resetState, sleep, store, typeText, waitFor, withSite } = env;
-  const PHONE = "937-555-0123";
+  const PHONE = "555-555-0123";
 
   await check("EV1", "Email and chat apps: Clotr stays off until you switch one on", async () => {
     for (const key of ["gmail", "discord"]) {

@@ -98,10 +98,96 @@ test("a house number that looks like a year (the 10,000-message oracle run)", ()
 });
 
 test("phone numbers with misspelled digit words (the 10,000-message oracle run)", () => {
-  expectOnly("my number is nien three seven, fiv fiv sicks, zeero one four seven", "phone_number");
-  expectOnly("call nine three seven five five five zro one eigt seven", "phone_number");
+  expectOnly("my number is fiv fiv fiv, fiv fiv sicks, zeero one four seven", "phone_number");
+  expectOnly("call five five five five five five zro one eigt seven", "phone_number");
   // Sound-alikes still need real digits on both sides, so an ordinary sentence stays quiet
   expectNothing("I won too many times to count, for real");
+});
+
+// Sound-alikes ("won", "too", "fore") at a spelled-out number's edge, or several side by side (#168, the
+// 10,000-message oracle run): they count when they make the number a whole phone number.
+test("phone numbers with sound-alikes at the edges and side by side", () => {
+  for (const phone of [
+    "too zeero sicks eigt thre won sicks won eigt fiv",
+    "fore won fiv too seve fiv sicks seve fiv thre",
+    "fiv fiv fiv too fore eigt zeero fore fiv won",
+    "too zeero sicks eigt fiv nien fiv eigt thre fore",
+    "too zeero sicks fore fore fore fore seve seve too",
+  ])
+    expectOnly(`number is ${phone} ok?`, "phone_number", phone);
+  const fp = (m) => globalThis.Clotr.fingerprint("s", "phone_number", m);
+  assert.equal(fp("fore won fiv too seve fiv sicks seve fiv thre"), fp("415-275-6753"));
+  // A sound-alike in front of a whole number isn't part of it: "to" isn't a leading 2, even before nine digits
+  expectOnly(
+    "text to five five five five five five five six three six",
+    "phone_number",
+    "five five five five five five five six three six",
+  );
+  expectOnly(
+    "text to two one nine zero nine nine nine nine nine",
+    "phone_number",
+    "two one nine zero nine nine nine nine nine",
+  );
+  // Everyday sentences stay quiet
+  expectNothing("we won too");
+  expectNothing("fore!");
+  expectNothing("we won too, for the fourth time");
+  expectNothing("wait for one two three four five six");
+  expectNothing("I went to four or five shops, too");
+});
+
+// Ranges and recipes ("two to four", "one to two minutes") are everyday speech: there "to" and "for" are words, not
+// a 2 and a 4, so a recipe isn't a 7-digit phone number and a longer one isn't an SSN (found by the detection work,
+// 2026-10-02).
+test("ranges and recipes aren't phone numbers or SSNs", () => {
+  expectNothing("Mix two to four for one to two minutes");
+  expectNothing("Mix two to four for one to two minutes.");
+  expectNothing("for two to four for one to two for three");
+  expectNothing("Mix 2 to 4 for 1 to 2 minutes");
+  expectNothing("for 2 to 4 for 1 to 2 for 3");
+  expectNothing("Group the kids by age: two to four, five to seven, eight to ten.");
+  expectNothing("Kids from five to eight, eight to twelve, and twelve to fifteen.");
+  expectNothing("Knead for two to three, rest for one to two, bake for four to five");
+  expectNothing("three to four for two to three for one to two");
+  expectNothing("one to two, two to three, three to four, four to five");
+  // A "to" or "for" that stands for a digit inside a whole phone number still counts
+  expectOnly(
+    "my number is five five five for five five five six three six",
+    "phone_number",
+    "five five five for five five five six three six",
+  );
+  expectOnly(
+    "call me at nine to seven, five five five, five six three six",
+    "phone_number",
+    "nine to seven, five five five, five six three six",
+  );
+  const fp = (m) => globalThis.Clotr.fingerprint("s", "phone_number", m);
+  assert.equal(fp("five five five for five five five six three six"), fp("555-455-5636"));
+});
+
+// A number word with one letter added, dropped, changed or swapped ("sevne", "fivve", "sinco", "nuebe") counts
+// only inside a spelled-out phone number, so ordinary words next to number words stay words.
+test("phone numbers with a one-letter slip in a number word", () => {
+  expectOnly(
+    "call me at five five fivve, five fivve five, five six three six",
+    "phone_number",
+    "five five fivve, five fivve five, five six three six",
+  );
+  expectOnly(
+    "mi número es seis sinco nuebe, doce, treinta y cuatro, ochenta",
+    "phone_number",
+    "seis sinco nuebe, doce, treinta y cuatro, ochenta",
+  );
+  expectNothing("I'm fine, nine to five suits me");
+  expectNothing("my son is nine, my daughter is five, and I'm fine");
+  expectNothing("I have fiv cats and a dog, nien fish too");
+  expectNothing("pero tengo cinco o seis, nueva casa");
+  // "line" isn't read as "nine" when it would cost the real number before it
+  expectOnly(
+    "five five five five five five five six three six line two",
+    "phone_number",
+    "five five five five five five five six three six",
+  );
 });
 
 test("credit cards (Luhn)", () => {
@@ -135,25 +221,25 @@ test("credit cards spelled out in words (not mistaken for a crypto seed phrase)"
 });
 
 test("phone numbers: digit formats", () => {
-  expectOnly("(937)-555-5636", "phone_number", "(937)-555-5636");
-  expectOnly("937-555-5636", "phone_number", "937-555-5636");
+  expectOnly("(555)-555-5636", "phone_number", "(555)-555-5636");
+  expectOnly("555-555-5636", "phone_number", "555-555-5636");
   expectOnly("call 555-5636 tonight", "phone_number", "555-5636");
-  expectOnly("9375555636", "phone_number", "9375555636");
-  expectOnly("(937) 555-5636", "phone_number", "(937) 555-5636");
-  expectOnly("+1 937 555 5636", "phone_number", "+1 937 555 5636");
-  expectOnly("937.555.5636", "phone_number", "937.555.5636");
-  expectOnly("my number is 937 555 5636 4 kids", "phone_number", "937 555 5636");
-  expectOnly("phone # 9375555636", "phone_number", "9375555636");
-  expectOnly("my number is 937-555-5636x12", "phone_number", "937-555-5636");
-  expectOnly("call 937-555-5636 ext. 204", "phone_number", "937-555-5636");
+  expectOnly("5555555636", "phone_number", "5555555636");
+  expectOnly("(555) 555-5636", "phone_number", "(555) 555-5636");
+  expectOnly("+1 555 555 5636", "phone_number", "+1 555 555 5636");
+  expectOnly("555.555.5636", "phone_number", "555.555.5636");
+  expectOnly("my number is 555 555 5636 4 kids", "phone_number", "555 555 5636");
+  expectOnly("phone # 5555555636", "phone_number", "5555555636");
+  expectOnly("my number is 555-555-5636x12", "phone_number", "555-555-5636");
+  expectOnly("call 555-555-5636 ext. 204", "phone_number", "555-555-5636");
 });
 
 test("phone numbers: spelled out and mixed", () => {
-  expectOnly("ninethreesevenfivefivefivefivesixthreesix", "phone_number");
-  expectOnly("9threeseve5five5five63six", "phone_number");
-  expectOnly("nine three seven five five five five six three six", "phone_number");
-  expectOnly("Nine-Three-Seven 555 5636", "phone_number");
-  expectOnly("call me at nine three seven, five five five, five six three six", "phone_number");
+  expectOnly("fivefivefivefivefivefivefivesixthreesix", "phone_number");
+  expectOnly("5fivefive5five5five63six", "phone_number");
+  expectOnly("five five five five five five five six three six", "phone_number");
+  expectOnly("Five-Five-Five 555 5636", "phone_number");
+  expectOnly("call me at five five five, five five five, five six three six", "phone_number");
   expectOnly("it's five five five five six three six", "phone_number");
 });
 
@@ -170,8 +256,8 @@ test("phone numbers: UK and Australian local formats", () => {
 });
 
 test("numbered lists: the item number isn't part of the detail", () => {
-  const found = detect("1. 937-555-5636\n2. 219-09-9999\n3) 937-555-1234");
-  assert.deepEqual(found.phone_number, ["937-555-5636", "937-555-1234"]);
+  const found = detect("1. 555-555-5636\n2. 219-09-9999\n3) 555-555-1234");
+  assert.deepEqual(found.phone_number, ["555-555-5636", "555-555-1234"]);
   assert.deepEqual(found.us_ssn, ["219-09-9999"]);
 });
 
@@ -179,11 +265,11 @@ test("structured data: JSON, YAML and XML labels", () => {
   expectOnly('{"dob":"1948-03-14"}', "date_of_birth", "1948-03-14");
   expectOnly("ssn: 219099999", "us_ssn", "219099999");
   expectOnly("<ssn>219-09-9999</ssn>", "us_ssn", "219-09-9999");
-  const both = detect("<phone>937-555-5636</phone><ssn>219-09-9999</ssn>");
-  assert.deepEqual([both.phone_number, both.us_ssn], [["937-555-5636"], ["219-09-9999"]]);
+  const both = detect("<phone>555-555-5636</phone><ssn>219-09-9999</ssn>");
+  assert.deepEqual([both.phone_number, both.us_ssn], [["555-555-5636"], ["219-09-9999"]]);
   expectNothing("order_id: 219099999");
   assert.deepEqual(detect('{"card_number": "4111 1111 1111 1111", "cvv": "123"}').password, ["123"]);
-  assert.deepEqual(detect("phone,ssn\n9375555636,219099999\n9375551234,078051120").us_ssn, ["219099999", "078051120"]);
+  assert.deepEqual(detect("phone,ssn\n5555555636,219099999\n5555551234,078051120").us_ssn, ["219099999", "078051120"]);
   expectNothing("id,count\n219099999,5");
 });
 
@@ -205,33 +291,35 @@ test("phone numbers: things that are not phones", () => {
   // Order, ticket and meeting numbers are labelled as what they are
   expectNothing("Order #445-2231987 from Amazon arrived damaged");
   expectNothing("The meeting ID is 845 2931 7710 on Zoom");
-  expectNothing("ticket 555-1234 was closed, invoice no. 937-555-0199 paid");
-  expectOnly("order 445-2231987 arrived, call me at 937-555-0147", "phone_number", "937-555-0147");
+  expectNothing("ticket 555-1234 was closed, invoice no. 555-555-0199 paid");
+  expectOnly("order 445-2231987 arrived, call me at 555-555-0147", "phone_number", "555-555-0147");
   expectNothing("El ID de la reunión de Zoom es 845 2931 7710");
   // An ID in a log isn't a phone, even when it reads like "00 49 …" (the 10,000-message oracle run, 2026-09-30)
   expectNothing("The log says 2026-05-11T14:11:59Z request id 004940008510.");
   expectNothing("transaction ID: 004582298378 failed");
-  expectOnly("request id 004940008510, call me at 937-555-0147", "phone_number", "937-555-0147");
-  expectOnly("about the order, call me at 937-555-0147", "phone_number", "937-555-0147");
+  expectOnly("request id 004940008510, call me at 555-555-0147", "phone_number", "555-555-0147");
+  expectOnly("about the order, call me at 555-555-0147", "phone_number", "555-555-0147");
   expectOnly("sobre el pedido, llámame al 612 345 678", "phone_number", "612 345 678");
 });
 
 test("SSNs, including spelled out", () => {
   expectOnly("123-45-6789", "us_ssn", "123-45-6789");
   expectOnly("123 45 6789", "us_ssn", "123 45 6789");
-  expectOnly("one two three four five six seven eight nine", "us_ssn");
+  expectOnly("two one nine zero nine nine nine nine nine", "us_ssn");
+  // Counting to nine is a count, unless it's said to be an SSN (see "counting aloud" below)
+  expectOnly("my social is one two three four five six seven eight nine", "us_ssn");
   expectOnly("my social is onetwothree45sixseven89", "us_ssn");
   expectNothing("123456789");
   expectNothing("000-12-3456");
   // In a list after another number
-  assert.deepEqual(detect("my phone 937-555-5636, 219-09-9999 is my social").us_ssn, ["219-09-9999"]);
+  assert.deepEqual(detect("my phone 555-555-5636, 219-09-9999 is my social").us_ssn, ["219-09-9999"]);
   assert.deepEqual(detect("ids: 5636; 219-09-9999").us_ssn, ["219-09-9999"]);
-  const both = detect("nine three seven five five five five six three six, two one nine oh nine nine nine nine nine");
+  const both = detect("five five five five five five one two three four, two one nine oh nine nine nine nine nine");
   assert.ok(both.phone_number?.length === 1 && both.us_ssn?.length === 1, JSON.stringify(both));
-  expectOnly("call me at nine three seven, five five five, five six three six", "phone_number"); // commas inside one phone
+  expectOnly("call me at five five five, five five five, five six three six", "phone_number"); // commas inside one phone
   // "dash" said as a word
   expectOnly("social security two one nine dash oh nine dash nine nine nine nine", "us_ssn");
-  expectOnly("call nine three seven dash five five five dash one two three four", "phone_number");
+  expectOnly("call five five five dash five five five dash one two three four", "phone_number");
 });
 
 test("emails, including spelled out", () => {
@@ -296,7 +384,7 @@ test("responses: nothing blocks by default, user overrides win", () => {
 
 test("sha256 matches node's crypto", () => {
   const { createHash } = require("node:crypto");
-  for (const s of ["", "abc", "a".repeat(55), "a".repeat(56), "a".repeat(64), "x".repeat(1000), "héllo ☎ 937"]) {
+  for (const s of ["", "abc", "a".repeat(55), "a".repeat(56), "a".repeat(64), "x".repeat(1000), "héllo ☎ 555"]) {
     assert.equal(
       globalThis.Clotr.sha256(s),
       createHash("sha256").update(s).digest("hex"),
@@ -307,17 +395,17 @@ test("sha256 matches node's crypto", () => {
 
 test("fingerprints: same value however it's written", () => {
   const fp = (id, m) => globalThis.Clotr.fingerprint("salt", id, m);
-  const phone = fp("phone_number", "937-555-5636");
+  const phone = fp("phone_number", "555-555-5636");
   for (const m of [
-    "(937) 555-5636",
-    "937.555.5636",
-    "+1 937 555 5636",
-    "nine three seven five five five five six three six",
-    "9threeseve5five5five63six",
+    "(555) 555-5636",
+    "555.555.5636",
+    "+1 555 555 5636",
+    "five five five five five five five six three six",
+    "5fivefive5five5five63six",
   ]) {
     assert.equal(fp("phone_number", m), phone, m);
   }
-  assert.notEqual(fp("phone_number", "937-555-5637"), phone);
+  assert.notEqual(fp("phone_number", "555-555-5637"), phone);
   const email = fp("email", "bob@gmail.com");
   for (const m of ["Bob@Gmail.com", "bob at gmail dot com", "bob(at)gmail(dot)com", "bob [at] gmail [dot] com"]) {
     assert.equal(fp("email", m), email, m);
@@ -411,7 +499,7 @@ test("logins, home codes and passwords told in passing", () => {
   expectOnly("the safe combination is 12-34-56", "password", "12-34-56");
   expectOnly("my password is my dog's name Rex2019", "password", "Rex2019");
   // Everyday codes and password talk stay quiet
-  expectNothing("my zip code is 45402 and the area code is 937");
+  expectNothing("my zip code is 45402 and the area code is 555");
   expectNothing("I got error code 1234 and status code 404");
   expectNothing("the password reset link expired");
   expectNothing("my password is not working since 2019");
@@ -475,6 +563,29 @@ test("street addresses, however they're written", () => {
   expectNothing("a 5 star place to eat");
   expectNothing("she came in 2nd place");
   expectNothing("a 3 bedroom place near the lake");
+});
+
+// The health study's false alarms (Q75): "Dr." before a capitalised name is a doctor, not Drive.
+test("a doctor's title isn't a street: 'at 3 with Dr. Okafor', 'a las 4 con el Dr. Ramírez'", () => {
+  expectNone("My appointment is at 3 with Dr. Okafor about my thyroid nodule. What questions should I ask?");
+  expectNone("Tengo la cita a las 4 con el Dr. Ramírez por un nódulo en la tiroides. ¿Qué le pregunto?");
+  expectNone("Mañana a las 9 con la Dra. Ramírez, ¿qué llevo?");
+  expectNone("I see him at 10 with Dr Patel, then at 2 with Dr. de la Cruz");
+  // Mid-typing, before the doctor's name (R95: Bandage swapped "3 with Dr" for [Address 1] as it was typed).
+  expectNone("My appointment is at 3 with Dr");
+  expectNone("My appointment is at 3 with Dr.");
+  expectNone("I'll be there at 4 tomorrow with Dr");
+  expectNone("a call at 2 from Dr");
+  expectNone("seen at 11 by Dr");
+  // Streets that end in Dr are still streets
+  expectOnly("send it to 418 Maple Dr", "street_address", "418 Maple Dr");
+  expectOnly("my address is 12 Oak Dr., Apt 4", "street_address", "12 Oak Dr., Apt 4");
+  expectOnly("we moved to 500 Lakeview Drive", "street_address", "500 Lakeview Drive");
+  expectOnly("418 Maple Dr. Springfield, IL 62704", "street_address", "418 Maple Dr. Springfield, IL 62704");
+  expectOnly("ship it to 12 Oak Dr. Apt 4 today", "street_address", "12 Oak Dr. Apt 4");
+  expectOnly("22 riverside dr Dayton OH 45402", "street_address", "22 riverside dr Dayton OH 45402");
+  expectOnly("ship to 22 riverside Dr Dayton, OH 45402", "street_address", "22 riverside Dr Dayton, OH 45402");
+  expectOnly("I live at 7 Willow Dr. My doctor is Dr. Okafor.", "street_address", "7 Willow Dr.");
 });
 
 test("Spanish: dates of birth, digits or words", () => {
@@ -561,16 +672,16 @@ test("bank, Medicare, license, passport and insurance numbers", () => {
 });
 
 test("spoken numbers with hundred and thousand", () => {
-  expectOnly("call me at nine three seven, five hundred fifty five, twelve thirty four", "phone_number");
-  expectOnly("my cell is nine three seven five hundred and five one two three four", "phone_number");
-  expectOnly("phone: nine three seven, eight hundred, fifty six thirty six", "phone_number");
+  expectOnly("call me at five five five, five hundred fifty five, twelve thirty four", "phone_number");
+  expectOnly("my cell is five five five five hundred and five one two three four", "phone_number");
+  expectOnly("phone: five five five, eight hundred, fifty six thirty six", "phone_number");
   expectOnly("SSN one two three, forty five, six thousand seven hundred eighty nine", "us_ssn");
   const fp = (m) => globalThis.Clotr.fingerprint("s", "phone_number", m);
-  assert.equal(fp("nine three seven, five hundred fifty five, twelve thirty four"), fp("937-555-1234"));
+  assert.equal(fp("five five five, five hundred fifty five, twelve thirty four"), fp("555-555-1234"));
   // "double five" = 55, "triple seven" = 777, as numbers are often read out
-  expectOnly("ring me on nine three seven, double five five, one two three four", "phone_number");
-  expectOnly("my number is 937 triple 5 double 1 two three", "phone_number");
-  assert.equal(fp("nine three seven, double five five, one two three four"), fp("937-555-1234"));
+  expectOnly("ring me on five five five, double five five, one two three four", "phone_number");
+  expectOnly("my number is 555 triple 5 double 1 two three", "phone_number");
+  assert.equal(fp("five five five, double five five, one two three four"), fp("555-555-1234"));
   expectNothing("I got a double espresso and a triple shot at five");
   // Amounts and years stay quiet
   expectNothing("it cost five hundred dollars and took two thousand hours");
@@ -579,16 +690,16 @@ test("spoken numbers with hundred and thousand", () => {
 });
 
 test("more disguises: teens/tens, letters for digits, sound-alike words", () => {
-  expectOnly("call nine three seven, five fifty five, fifty six thirty six", "phone_number");
-  expectOnly("my number is nine three seven five five five fifty six thirty six", "phone_number");
-  expectOnly("937-555-O636", "phone_number", "937-555-O636");
-  expectOnly("93755556l6", "phone_number", "93755556l6");
-  expectOnly("nine three seven five five five won two three four", "phone_number"); // sound-alikes only count between digits
+  expectOnly("call five five five, five fifty five, fifty six thirty six", "phone_number");
+  expectOnly("my number is five five five five five five fifty six thirty six", "phone_number");
+  expectOnly("555-555-O636", "phone_number", "555-555-O636");
+  expectOnly("55555556l6", "phone_number", "55555556l6");
+  expectOnly("five five five five five five won two three four", "phone_number"); // sound-alikes only count between digits
   expectOnly("social one two three, forty five, sixty seven eighty nine", "us_ssn");
   // Same number however it's disguised → same fingerprint (It's me, repeats)
   const fp = (m) => globalThis.Clotr.fingerprint("s", "phone_number", m);
-  assert.equal(fp("nine three seven, five fifty five, fifty six thirty six"), fp("937-555-5636"));
-  assert.equal(fp("937-555-O636"), fp("937-555-0636"));
+  assert.equal(fp("five five five, five fifty five, fifty six thirty six"), fp("555-555-5636"));
+  assert.equal(fp("555-555-O636"), fp("555-555-0636"));
   // Everyday words stay words
   expectNothing("I want to go for a walk at 5 to 6");
   expectNothing("we won 2 to 1 and ate for free");
@@ -604,13 +715,30 @@ test("international phone numbers (+, plus, 00)", () => {
   expectOnly("+33 1 23 45 67 89", "phone_number", "+33 1 23 45 67 89");
   expectOnly("+44 (0)20 7946 0958", "phone_number", "+44 (0)20 7946 0958");
   expectOnly("plus four four two zero seven nine four six zero nine five eight", "phone_number");
-  expectOnly("+1 937 555 5636", "phone_number", "+1 937 555 5636");
+  expectOnly("+1 555 555 5636", "phone_number", "+1 555 555 5636");
   const fp = (m) => globalThis.Clotr.fingerprint("s", "phone_number", m);
   assert.equal(fp("0044 20 7946 0958"), fp("+44 20 7946 0958"));
   assert.equal(fp("+44 (0)20 7946 0958"), fp("+44 20 7946 0958"));
   expectNothing("the score went from +3 to +7");
   expectNothing("that's 2 plus 3 plus 15");
   expectNothing("code 00100 is fine");
+});
+
+// The health study's false alarms (Q75): a drug's National Drug Code after "NDC" isn't a phone. Its shapes are 4-4-2,
+// 5-3-2 and 5-4-1, or 5-4-2 as 11 digits.
+test("a drug's NDC code isn't a phone number; a phone near it, or another shape after NDC, still is", () => {
+  expectNone("How do I look up which drug NDC 0093-7146-56 is? The bottle just says the generic name.");
+  expectNone("NDC 50580-488-02 is the one in the blue box");
+  expectNone("the NDC is 00093-7146-56, what is it?");
+  expectNone("NDC #: 0002-3227-30");
+  expectNone("NDC code 12345-6789-1");
+  expectNone("NDC: 5058048802");
+  expectNone("¿Qué medicamento es el NDC 50580-488-02?");
+  // still phones
+  expectOnly("NDC 0093-7146-56, call me at 555-555-0142", "phone_number", "555-555-0142");
+  expectOnly("my NDC question: call 0044 20 7946 0958", "phone_number", "0044 20 7946 0958");
+  expectOnly("NDC 555-555-0142", "phone_number", "555-555-0142");
+  expectOnly("call 0093 7146 5600 about the NDC", "phone_number");
 });
 
 test("vault names match with or without accents; entries saved before still match", () => {
@@ -723,7 +851,7 @@ test("detection stays fast on long drafts and big pastes (no quadratic patterns)
     "long prose": prose.repeat(2300),
     "spelled-out numbers": "one two three four five six seven eight nine ten ".repeat(800),
     "number words and streets": "twenty one forty two main street and ninety nine ".repeat(800),
-    "csv paste": Array.from({ length: 2000 }, (_, i) => `Person ${i},p${i}@example.com,937-555-${1000 + i}`).join("\n"),
+    "csv paste": Array.from({ length: 2000 }, (_, i) => `Person ${i},p${i}@example.com,555-555-${1000 + i}`).join("\n"),
     digits: "1234567890 ".repeat(4000),
   };
   for (const [name, text] of Object.entries(inputs)) {
@@ -743,7 +871,7 @@ test("a paste with thousands of different details scans in linear time (overlap 
   const csv = (n) =>
     Array.from(
       { length: n },
-      (_, i) => `Person ${i},p${i}@example.com,937-555-${String(1000 + (i % 9000)).padStart(4, "0")}`,
+      (_, i) => `Person ${i},p${i}@example.com,555-555-${String(1000 + (i % 9000)).padStart(4, "0")}`,
     ).join("\n");
   const best = (t) => {
     let ms = Infinity;
@@ -774,8 +902,8 @@ test("home coordinates are an address; other places are not", () => {
 // line into the next and hide what's written there (an address after a ZIP code did, 0.9.77).
 test("many details on separate lines are each found", () => {
   const LINES = [
-    "call me at 937-555-5636",
-    "my number is nine three seven five five five five six three six",
+    "call me at 555-555-5636",
+    "my number is five five five five five five five six three six",
     "ring me on 07700 900123",
     "+44 20 7946 0958",
     "my social is 219-09-9999",
@@ -858,15 +986,15 @@ test("Hide it leaves no part of a detail behind", () => {
     "i",
   );
   const DETAILS = [
-    "call me at nine three seven, five five five, five six three six please",
+    "call me at five five five, five five five, five six three six please",
     "my social is two one nine dash oh nine dash nine nine nine nine",
     "contact: jane(dot)doe(at)gmail(dot)com thanks",
     "mi correo es juan punto perez arroba hotmail punto es gracias",
     "email me at bob at gmial dot com",
     "write to jane dot doe at gmail dot com",
     "my card is four five three nine one four eight eight zero three four three six four six seven",
-    "1. 937-555-5636",
-    "my number is 937-555-5636x12",
+    "1. 555-555-5636",
+    "my number is 555-555-5636x12",
     "+44 20 7946 0958 is the office",
     "ring me on 07700 900123 today",
     "my google backup codes are 1234 5678, 2345 6789",
@@ -875,8 +1003,8 @@ test("Hide it leaves no part of a detail behind", () => {
     "mi DNI es 12345678Z",
     "my ITIN is 912-70-1234",
     "llámame al seis cero cero, doce, treinta y cuatro, cincuenta y seis",
-    "my number is nine three seven five hundred fifty five, twelve thirty four",
-    "phone # 9375555636",
+    "my number is five five five five hundred fifty five, twelve thirty four",
+    "phone # 5555555636",
   ];
   const left = [];
   for (const line of DETAILS) {
@@ -923,9 +1051,9 @@ test("not phones: digits inside IDs and hashes, lists of small numbers", () => {
   expectNone("Explain the Fibonacci sequence: 1, 1, 2, 3, 5, 8, 13, 21, 34, 55.");
   expectNone("build a1b2c3d4-9375-5501-23ef finished");
   // still phones: whole runs in any grouping, and two numbers in one list
-  expectOnly("call 9 3 7 5 5 5 0 1 2 3 please", "phone_number", "9 3 7 5 5 5 0 1 2 3");
-  assert.deepEqual(detect("reach us at 937-555-0123, 937-555-0199")["phone_number"], ["937-555-0123", "937-555-0199"]);
-  expectOnly("my number is 937-555-O636", "phone_number", "937-555-O636");
+  expectOnly("call 5 5 5 5 5 5 0 1 2 3 please", "phone_number", "5 5 5 5 5 5 0 1 2 3");
+  assert.deepEqual(detect("reach us at 555-555-0123, 555-555-0199")["phone_number"], ["555-555-0123", "555-555-0199"]);
+  expectOnly("my number is 555-555-O636", "phone_number", "555-555-O636");
 });
 
 // M5 security: page text is attacker-controlled. No pattern may backtrack badly on hostile
@@ -1105,11 +1233,11 @@ test("invisible and look-alike characters don't hide a leak (and matches are the
     ["aws_access_key", "key AKIA‍4HPQ7XZ2R6TWLJ3N"], // zero-width joiner
     ["aws_access_key", "key AKIA4HP­Q7XZ2R6TWLJ3N"], // soft hyphen
     ["aws_access_key", "key ⁦" + K + "⁩"], // bidi isolates
-    ["phone_number", "call 937 555 0123"], // no-break space (web pages, Word)
-    ["phone_number", "call 937 555 0123"], // narrow no-break space
-    ["phone_number", "call 937—555—0123"], // em dash
-    ["phone_number", "call ９３７-５５５-０１２３"], // full-width
-    ["phone_number", "call ٩٣٧-٥٥٥-٠١٢٣"], // Arabic-Indic digits
+    ["phone_number", "call 555 555 0123"], // no-break space (web pages, Word)
+    ["phone_number", "call 555 555 0123"], // narrow no-break space
+    ["phone_number", "call 555—555—0123"], // em dash
+    ["phone_number", "call ５５５-５５５-０１２３"], // full-width
+    ["phone_number", "call ٥٥٥-٥٥٥-٠١٢٣"], // Arabic-Indic digits
     ["us_ssn", "ssn １２３-４５-６７８９"],
     ["us_ssn", "ssn 123 - 45 - 6789"], // thin spaces
     ["email", "mail jane.doe＠gmail.com"], // full-width @
@@ -1130,7 +1258,7 @@ test("invisible and look-alike characters don't hide a leak (and matches are the
 
 test("fingerprints ignore invisible characters and look-alike digits", () => {
   const { fingerprint } = globalThis.Clotr;
-  assert.equal(fingerprint("s", "phone_number", "937 555 0123"), fingerprint("s", "phone_number", "937 555 0123"));
+  assert.equal(fingerprint("s", "phone_number", "555 555 0123"), fingerprint("s", "phone_number", "555 555 0123"));
   assert.equal(fingerprint("s", "email", "jane.do​e@gmail.com"), fingerprint("s", "email", "jane.doe@gmail.com"));
 });
 
@@ -1165,9 +1293,9 @@ test("PDF page text: literal strings, TJ arrays and ToUnicode-mapped fonts; host
   const { pdfPageText } = globalThis.Clotr;
   const cmap =
     "begincmap 2 beginbfchar <0001> <0039> <0002> <0033> endbfchar 1 beginbfrange <0010> <0019> <0030> endbfrange endcmap";
-  const page = "BT /F1 12 Tf (call me at ) Tj [(937)-120(-555-)] TJ <001000110012> Tj ET BT <00010002> Tj ET";
+  const page = "BT /F1 12 Tf (call me at ) Tj [(555)-120(-555-)] TJ <001000110012> Tj ET BT <00010002> Tj ET";
   const text = pdfPageText([cmap, page]);
-  assert.match(text, /call me at 937-555-012/);
+  assert.match(text, /call me at 555-555-012/);
   assert.match(text, /93/);
   assertLinear(
     (x) => pdfPageText([x]),
@@ -1182,9 +1310,9 @@ test("Office XML to text: paragraphs and entities read; hostile XML stays fast",
   const { xmlToText } = globalThis.Clotr;
   assert.equal(
     xmlToText(
-      "<w:p><w:r><w:t>call 937-555-0123</w:t></w:r></w:p><w:p><w:t>Tom &amp; Ann &#64; home</w:t></w:p>",
+      "<w:p><w:r><w:t>call 555-555-0123</w:t></w:r></w:p><w:p><w:t>Tom &amp; Ann &#64; home</w:t></w:p>",
     ).trim(),
-    "call 937-555-0123\nTom & Ann @ home",
+    "call 555-555-0123\nTom & Ann @ home",
   );
   assertLinear(xmlToText, (u, n) => u.repeat(n), ["<a ", "&aaaa", "</w:", "<w:p"]);
 });
@@ -1209,7 +1337,6 @@ test("fuzz: 3,000 random messages never break detection and each stays fast", ()
     "9",
     "12",
     "555",
-    "937",
     "0147",
     "-",
     ".",
@@ -1289,7 +1416,7 @@ test("false-alarm budget (Spanish): at most 1 per 50 normal messages", () => {
 });
 
 test("Spanish: phone numbers spelled out in Spanish, mixed with digits", () => {
-  expectOnly("mi número es nueve tres siete cinco cinco cinco cero uno cuatro siete", "phone_number");
+  expectOnly("mi número es cinco cinco cinco cinco cinco cinco cero uno cuatro siete", "phone_number");
   expectOnly("llámame al 6 uno dos tres cuatro cinco seis siete ocho", "phone_number");
   expectNothing("tengo dos o tres preguntas");
   expectNothing("todos los días a las siete");
@@ -1301,7 +1428,7 @@ test("Spanish: phone numbers spelled out in Spanish, mixed with digits", () => {
 test("Spanish: numbers said in pairs and hundreds, as people read out phone numbers", () => {
   expectOnly("mi móvil es seis cero cero, doce, treinta y cuatro, cincuenta y seis", "phone_number");
   expectOnly(
-    "llámame al novecientos treinta y siete, quinientos cincuenta y cinco, doce, treinta y cuatro",
+    "llámame al quinientos cincuenta y cinco, quinientos cincuenta y cinco, doce, treinta y cuatro",
     "phone_number",
   );
   expectOnly(
@@ -1315,6 +1442,94 @@ test("Spanish: numbers said in pairs and hundreds, as people read out phone numb
   expectNothing("tengo treinta y cinco años y ahorré dos mil euros");
   expectNothing("cuesta quinientos euros y éramos veinte personas");
   expectNothing("nací en mil novecientos ochenta y dos");
+});
+
+// "once" (eleven) is an everyday English word, so it counts only among other Spanish number words in a phone
+// number (#169, the 10,000-message oracle run).
+test("Spanish: phone numbers read in pairs that include 'once'", () => {
+  for (const phone of [
+    "seis tres cinco, sesenta y cuatro, once, veintiuno",
+    "seis nueve tres, once, once, treinta y cinco",
+    "seis cuatro nueve, once, cincuenta y cuatro, setenta",
+    "seis tres cinco, sesenta y cuatro, veintiuno, once",
+  ])
+    expectOnly(`mi número es ${phone}, llámame luego`, "phone_number", phone);
+  const fp = (m) => globalThis.Clotr.fingerprint("s", "phone_number", m);
+  assert.equal(fp("seis tres cinco, sesenta y cuatro, once, veintiuno"), fp("635 64 11 21"));
+  // English "once" stays a word, even right after a number
+  expectNothing("once upon a time there were three bears");
+  expectNothing("I'll call you once I'm home");
+  expectNothing("call me once you're home");
+  expectNothing("I once had 3 cats");
+  expectOnly(
+    "call me at five five five five five five five six three six once you're home",
+    "phone_number",
+    "five five five five five five five six three six",
+  );
+  // Spanish "once" in dates, times and counts stays quiet
+  expectNothing("la reunión es el once de marzo a las once");
+  expectNothing("tengo once gatos, doce perros y trece gallinas");
+  expectNothing("diez, once, doce, trece, catorce");
+  expectNothing("seis siete ocho nueve diez once doce");
+  expectNothing("nos casamos en dos mil once");
+});
+
+// Counting aloud read as a phone number ("one … ten") or an SSN ("one … nine"): number words that go up or down by
+// one are a count. A phone word or an SSN label right before still says what it is, as it does for the same digits.
+test("counting aloud, up or down, in English or Spanish, isn't a phone number or an SSN", () => {
+  const EN =
+    "zero one two three four five six seven eight nine ten eleven twelve thirteen fourteen fifteen sixteen seventeen eighteen nineteen twenty".split(
+      " ",
+    );
+  const ES = "cero uno dos tres cuatro cinco seis siete ocho nueve diez".split(" ");
+  expectNothing("one two three four five six seven eight nine ten");
+  expectNothing("one, two, three, four, five, six, seven, eight, nine, ten");
+  expectNothing("uno dos tres cuatro cinco seis siete ocho nueve diez");
+  expectNothing("uno, dos, tres, cuatro, cinco, seis, siete, ocho, nueve, diez");
+  expectNothing("one two three four five six seven eight nine");
+  expectNothing("uno dos tres cuatro cinco seis siete ocho nueve");
+  expectNothing("ten, nine, eight, seven, six, five, four, three, two, one");
+  expectNothing("eight seven six five four three two one zero");
+  expectNothing("ocho siete seis cinco cuatro tres dos uno cero");
+  expectNothing("seven six five four three two one, liftoff!");
+  expectNothing("my kid can count to ten now: one two three four five six seven eight nine ten!");
+  expectNothing("count with me: twenty one, twenty two, twenty three, twenty four, twenty five");
+  // Every count of three words or more, from anywhere, up or down, with spaces or commas
+  for (const words of [EN, ES]) {
+    for (let from = 0; from < words.length; from++) {
+      for (let to = from + 2; to < words.length; to++) {
+        const up = words.slice(from, to + 1);
+        for (const run of [up, [...up].reverse()])
+          for (const sep of [" ", ", "]) expectNothing(`let's count: ${run.join(sep)}`);
+      }
+    }
+  }
+  // Real spelled-out numbers still warn, even with a stretch that counts
+  expectOnly(
+    "call me at nine one two three four five six seven eight nine",
+    "phone_number",
+    "nine one two three four five six seven eight nine",
+  );
+  expectOnly(
+    "my number is two one two three four five six seven eight nine",
+    "phone_number",
+    "two one two three four five six seven eight nine",
+  );
+  expectOnly(
+    "mi móvil es seis uno dos tres cuatro cinco seis siete ocho",
+    "phone_number",
+    "seis uno dos tres cuatro cinco seis siete ocho",
+  );
+  expectOnly("my ssn is two one nine zero nine nine nine nine nine", "us_ssn");
+  expectOnly("my ssn is one two three four five six seven nine eight", "us_ssn");
+  // Said to be a phone number or an SSN: it warns, as the same digits do
+  expectOnly("my ssn is one two three four five six seven eight nine", "us_ssn");
+  expectOnly("ssn: 123-45-6789", "us_ssn");
+  expectOnly("call me at one two three four five six seven eight nine ten", "phone_number");
+  // Digits are read as before
+  expectOnly("2345678910", "phone_number");
+  expectOnly("call me at 234-567-8910", "phone_number");
+  expectNothing("1234567890");
 });
 
 test("security-question answers are secrets", () => {
@@ -1537,7 +1752,7 @@ test("generalize: a birth date becomes its month and year, an address its town",
   // No town to keep: hidden like before.
   assert.equal(gen("I live at 123 Oak Street"), "I live at [REDACTED STREET ADDRESS]");
   // Mixed: the date generalized, the phone hidden.
-  const mixed = gen("born 03/14/1948, call me at 937-555-0123");
+  const mixed = gen("born 03/14/1948, call me at 555-555-0123");
   assert.equal(mixed, "born March 1948, call me at [REDACTED PHONE NUMBER]");
   // In Spanish, the month is Spanish.
   const es = (text) => generalize(text, find(text), "es-ES");
@@ -1545,10 +1760,10 @@ test("generalize: a birth date becomes its month and year, an address its town",
   assert.equal(es("mi fecha de nacimiento es 14 de marzo de 1948"), "mi fecha de nacimiento es marzo de 1948");
   // What the button shows, and nothing when there's nothing to generalize.
   assert.deepEqual(
-    generalForms(find("born 03/14/1948, call me at 937-555-0123"), "en-US").map((g) => g.general),
+    generalForms(find("born 03/14/1948, call me at 555-555-0123"), "en-US").map((g) => g.general),
     ["March 1948"],
   );
-  assert.deepEqual(generalForms(find("call me at 937-555-0123"), "en-US"), []);
+  assert.deepEqual(generalForms(find("call me at 555-555-0123"), "en-US"), []);
   // The general message is quiet: nothing in it is found again.
   for (const t of ["I was born on 03/14/1948", "my address is 123 Oak Street, Springfield, IL 62704"]) {
     assert.deepEqual(find(gen(t)), [], `still found in "${gen(t)}"`);

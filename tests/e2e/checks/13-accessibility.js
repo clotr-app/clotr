@@ -117,7 +117,7 @@ module.exports = async function (env) {
         await resetState(ctx, {});
         await store.set(ctx, { bandage: { "chatgpt.com": true } });
         await sleep(300);
-        await typeText(page, "call me at 937-555-0123");
+        await typeText(page, "call me at 555-555-0123");
         await waitFor(async () => ((await editorText(page)) === "call me at [Phone 1]" ? true : null), 4000);
         await pressEnter(page);
         await sleep(300);
@@ -151,7 +151,7 @@ module.exports = async function (env) {
           handleCommand("focus-notice", tab); // what the browser calls for the shortcut
         });
       const focused = () => page.evaluate(() => document.activeElement?.tagName);
-      await typeText(page, "call me at 937-555-0123");
+      await typeText(page, "call me at 555-555-0123");
       expect(await waitForNotice(page), "no notice");
       await shortcut();
       await sleep(200);

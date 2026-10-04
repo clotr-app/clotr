@@ -7,6 +7,7 @@ module.exports = async function (env) {
   const {
     ORPHAN_CLOTR,
     KEY,
+    OUT,
     TYPED_VALUES,
     check,
     clearEditor,
@@ -17,6 +18,7 @@ module.exports = async function (env) {
     evalInClotr,
     expect,
     openExtPage,
+    path,
     pressEnter,
     readNotice,
     readUI,
@@ -29,7 +31,7 @@ module.exports = async function (env) {
     waitForNotice,
     withSite,
   } = env;
-  const PHONE = "937-555-0123";
+  const PHONE = "555-555-0123";
   const HOME = "123 Oak Street";
   TYPED_VALUES.add(PHONE);
   TYPED_VALUES.add(HOME);
@@ -67,8 +69,8 @@ module.exports = async function (env) {
         await typeText(page, `my number ${PHONE}`);
         expect(await covered(page, "my number [Phone 1]"), `first: "${await editorText(page)}"`);
         await clearEditor(page);
-        await typeText(page, `again ${PHONE} and my work line 937-555-0199`);
-        TYPED_VALUES.add("937-555-0199");
+        await typeText(page, `again ${PHONE} and my work line 555-555-0199`);
+        TYPED_VALUES.add("555-555-0199");
         expect(
           await covered(page, "again [Phone 1] and my work line [Phone 2]"),
           `second: "${await editorText(page)}"`,
@@ -148,11 +150,11 @@ module.exports = async function (env) {
       }, 4000);
       expect(said, `bandage: ${JSON.stringify((await store.get(ctx, "bandage")).bandage)}`);
       await clearEditor(page);
-      await typeText(page, "or 937-555-0177");
-      TYPED_VALUES.add("937-555-0177");
+      await typeText(page, "or 555-555-0177");
+      TYPED_VALUES.add("555-555-0177");
       const n = await waitForNotice(page);
       expect(n && !/cover name/i.test(n.text), `asked again: ${n?.text}`);
-      expect((await editorText(page)).includes("937-555-0177"), "covered without a yes");
+      expect((await editorText(page)).includes("555-555-0177"), "covered without a yes");
       await store.set(ctx, { bandage: {} });
     }),
   );
@@ -244,7 +246,7 @@ module.exports = async function (env) {
       await clickNode(page, btn.nodeId);
       await sleep(200);
       const copied = await evalInClotr(page, "window.__copied");
-      expect(copied === "Sure, I'll call 937-555-0123 soon.", `copied: ${JSON.stringify(copied)}`);
+      expect(copied === "Sure, I'll call 555-555-0123 soon.", `copied: ${JSON.stringify(copied)}`);
       await resetState(ctx, {});
     }),
   );
@@ -438,5 +440,188 @@ module.exports = async function (env) {
       expect(spots && spots.buttons.length === 1, `hotspots: ${JSON.stringify(spots)}`);
       await resetState(ctx, {});
     }),
+  );
+
+  // After a reload in the same chat (D27): Clotr kept no details, so the labels the conversation already holds can't
+  // be given again. A new detail continues the numbering after them (one label never means two details), and an old
+  // label says plainly that Clotr didn't keep its detail instead of showing someone else's.
+  const PHONE2 = "555-555-0199";
+  const HOME2 = "45 Elm Street";
+  TYPED_VALUES.add(PHONE2);
+  TYPED_VALUES.add(HOME2);
+  async function reloadedChat(page) {
+    await resetState(ctx, {});
+    await store.set(ctx, { bandage: { "gemini.google.com": true } });
+    await sleep(300);
+    await typeText(page, `call me at ${PHONE}, I live at ${HOME}`);
+    const first = "call me at [Phone 1], I live at [Address 1]";
+    expect(await covered(page, first), `before the reload: "${await editorText(page)}"`);
+    await pressEnter(page);
+    await sleep(300);
+    expect((await sentMessages(page)).length === 1, "the first message wasn't sent");
+    await page.evaluate(() => window.__reply("Noted: I'll call [Phone 1] and write to [Address 1]."));
+    await sleep(500);
+    const logged = page.logs.length;
+    await page.reload({ waitUntil: "load" });
+    await waitFor(() => page.logs.slice(logged).some((l) => l.startsWith("[Clotr] responses:")), 3000);
+    expect(await waitFor(() => page.evaluate(() => window.__historyShown), 3000), "the conversation didn't come back");
+    await sleep(300);
+  }
+  // Where `label` is drawn in the last message matching `selector` that holds it, found in the page's own text.
+  const pointIn = (page, selector, label) =>
+    page.evaluate(
+      (sel, label) => {
+        const msg = [...document.querySelectorAll(sel)].filter((e) => e.textContent.includes(label)).pop();
+        const t = msg.firstChild;
+        const r = document.createRange();
+        r.setStart(t, t.nodeValue.indexOf(label));
+        r.setEnd(t, t.nodeValue.indexOf(label) + label.length);
+        const b = r.getBoundingClientRect();
+        return { x: b.left + b.width / 2, y: b.top + b.height / 2 };
+      },
+      selector,
+      label,
+    );
+  // Points at a label and reads the bubble (null if none opens), then moves away until it closes.
+  async function peekAt(page, selector, label, timeout = 3000) {
+    const peek = await waitFor(async () => {
+      await page.mouse.move(0, 0);
+      const { x, y } = await pointIn(page, selector, label);
+      await page.mouse.move(x, y);
+      return waitFor(() => readUI(page, "CLOTR-PEEK"), 500);
+    }, timeout);
+    await page.mouse.move(0, 0);
+    await waitFor(async () => ((await readUI(page, "CLOTR-PEEK")) ? null : true), 2000);
+    return peek;
+  }
+
+  await check(
+    "BN18",
+    "After a reload, a different phone and address get [Phone 2] and [Address 2], never a label the chat already holds",
+    () =>
+      withSite(ctx, "history", async (page) => {
+        await reloadedChat(page);
+        await typeText(page, `my work line is ${PHONE2}, the office is at ${HOME2}`);
+        const want = "my work line is [Phone 2], the office is at [Address 2]";
+        expect(await covered(page, want), `after the reload: "${await editorText(page)}"`);
+        await resetState(ctx, {});
+      }),
+  );
+
+  await check(
+    "BN19",
+    "After a reload, an old label's bubble says Clotr didn't keep its detail (never the new one); a new label shows its own",
+    () =>
+      withSite(ctx, "history", async (page) => {
+        await reloadedChat(page);
+        await typeText(page, `my work line is ${PHONE2}`);
+        expect(await covered(page, "my work line is [Phone 2]"), `after the reload: "${await editorText(page)}"`);
+        for (const [where, label] of [
+          [".mine", "[Phone 1]"],
+          [".reply", "[Phone 1]"],
+          [".mine", "[Address 1]"],
+        ]) {
+          const peek = await peekAt(page, where, label);
+          expect(peek && /didn.t keep/i.test(peek.text), `${label} in ${where}: ${JSON.stringify(peek)}`);
+          expect(!/555-555-01|Oak|Elm/.test(peek.text), `${label} in ${where} showed a detail: ${peek.text}`);
+        }
+        const { x, y } = await pointIn(page, ".mine", "[Phone 1]");
+        await page.mouse.move(x, y);
+        if (await waitFor(() => readUI(page, "CLOTR-PEEK"), 3000))
+          await page.screenshot({ path: path.join(OUT, "bandage-not-kept.png") });
+        await page.mouse.move(0, 0);
+        await pressEnter(page);
+        await sleep(300);
+        await page.evaluate(() => window.__reply("Got it, [Phone 2] for work."));
+        // The answer's labels are found once it has been quiet for a moment (the reply check's pause).
+        const peek = await peekAt(page, ".reply", "[Phone 2]", 8000);
+        expect(peek && peek.text.includes(PHONE2), `[Phone 2]: ${JSON.stringify(peek)}`);
+        const old = await peekAt(page, ".mine", "[Phone 1]");
+        expect(old && /didn.t keep/i.test(old.text), `[Phone 1] after the new reply: ${JSON.stringify(old)}`);
+        const pageText = await page.evaluate(() => document.body.innerText);
+        expect(!pageText.includes(PHONE) && !pageText.includes(PHONE2), "a real number is readable in the page");
+        await resetState(ctx, {});
+      }),
+  );
+
+  await check(
+    "BN19b",
+    "After a reload, labels in messages that fade in still get their hotspots within a second of showing (R96)",
+    () =>
+      withSite(ctx, "history", async (page) => {
+        await page.evaluate(() => sessionStorage.setItem("fadeIn", "1"));
+        try {
+          await reloadedChat(page);
+          // The messages were invisible when the page was first read; they've faded in since (600 ms after showing).
+          const spots = await waitFor(async () => {
+            const s = await readUI(page, "CLOTR-SPOTS");
+            return s?.buttons.length >= 3 ? s : null;
+          }, 1500);
+          expect(spots, `no hotspots within 1.5 s of the fade: ${JSON.stringify(await readUI(page, "CLOTR-SPOTS"))}`);
+        } finally {
+          await page.evaluate(() => sessionStorage.removeItem("fadeIn"));
+          await resetState(ctx, {});
+        }
+      }),
+  );
+
+  // Switching chats inside the site (the 1.2.0 security review): the sidebar opens another conversation without a
+  // reload (a new address through history.pushState), and the old one's messages stay on the page for a moment. The
+  // same label means a different detail in each chat, so a label left over from the chat you left must never show
+  // the detail it stands for in the chat you opened; once the new chat is there, its own labels work as usual.
+  const CHAT_A = "8e41b07c2a9d4f15";
+  const CHAT_B = "5d2c8a91f0b34e67"; // the history page's own address
+  const chatShown = (page, id) =>
+    waitFor(async () => ((await page.evaluate(() => window.__chatShown)) === id ? true : null), 6000);
+  await check(
+    "BN20",
+    "Switching chats without a reload: a label left on the page by the other chat never shows this chat's detail",
+    () =>
+      withSite(ctx, "history", async (page) => {
+        await resetState(ctx, {});
+        await store.set(ctx, { bandage: { "gemini.google.com": true } });
+        await sleep(300);
+        // Chat B: the work line becomes B's [Phone 1].
+        await typeText(page, `my work line is ${PHONE2}`);
+        expect(await covered(page, "my work line is [Phone 1]"), `chat B: "${await editorText(page)}"`);
+        await pressEnter(page);
+        await sleep(300);
+        // Chat A, from the sidebar: the home number becomes A's own [Phone 1], and A's answer shows it.
+        await page.evaluate((id) => window.__openChat(id), CHAT_A);
+        await sleep(300);
+        await typeText(page, `call me at ${PHONE}`);
+        expect(await covered(page, "call me at [Phone 1]"), `chat A: "${await editorText(page)}"`);
+        await pressEnter(page);
+        await sleep(300);
+        await page.evaluate(() => window.__reply("I'll call [Phone 1] tonight."));
+        const inA = await peekAt(page, ".reply", "[Phone 1]", 8000);
+        expect(inA && inA.text.includes(PHONE), `chat A's [Phone 1]: ${JSON.stringify(inA)}`);
+        // Back to chat B: A's answer stays on the page for a moment, and its [Phone 1] is A's, not B's.
+        await page.evaluate((id) => window.__openChat(id, 3000), CHAT_B);
+        const left = await peekAt(page, ".reply", "[Phone 1]", 1500);
+        expect(!left?.text.includes(PHONE2), `chat A's [Phone 1] showed chat B's number: ${JSON.stringify(left)}`);
+        expect(!left, `a hotspot of the chat you left still opens: ${JSON.stringify(left)}`);
+        // Chat B is back: its own [Phone 1] shows B's number in its next answer.
+        expect(await chatShown(page, CHAT_B), "chat B didn't come back");
+        await typeText(page, `still ${PHONE2}`);
+        expect(await covered(page, "still [Phone 1]"), `chat B again: "${await editorText(page)}"`);
+        await pressEnter(page);
+        await sleep(300);
+        await page.evaluate(() => window.__reply("Yes, [Phone 1] for work."));
+        const inB = await peekAt(page, ".reply", "[Phone 1]", 8000);
+        expect(inB && inB.text.includes(PHONE2) && !inB.text.includes(PHONE), `chat B's [Phone 1]: ${inB?.text}`);
+        // A bubble open when the chat changes closes, and the label it was over shows nothing from the new chat.
+        const { x, y } = await pointIn(page, ".reply", "[Phone 1]");
+        await page.mouse.move(x, y);
+        expect(await waitFor(() => readUI(page, "CLOTR-PEEK"), 3000), "no bubble over chat B's [Phone 1]");
+        await page.evaluate((id) => window.__openChat(id, 3000), CHAT_A);
+        const closed = await waitFor(async () => ((await readUI(page, "CLOTR-PEEK")) ? null : true), 2500);
+        expect(closed, "the bubble of the chat you left stayed open");
+        const leftB = await peekAt(page, ".reply", "[Phone 1]", 1000);
+        expect(!leftB, `a hotspot of the chat you left still opens: ${JSON.stringify(leftB)}`);
+        const pageText = await page.evaluate(() => document.body.innerText);
+        expect(!pageText.includes(PHONE) && !pageText.includes(PHONE2), "a real number is readable in the page");
+        await resetState(ctx, {});
+      }),
   );
 };

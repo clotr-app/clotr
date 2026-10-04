@@ -56,14 +56,14 @@ test("Word documents: text read from stored and compressed parts; other parts ig
   const stored = new File(
     [
       zip([
-        ["word/document.xml", docXml("call 937-555-0123"), false],
+        ["word/document.xml", docXml("call 555-555-0123"), false],
         ["docProps/app.xml", "<x>ignore me 555-0199</x>", false],
       ]),
     ],
     "a.docx",
   );
   const text = await readAttachment(stored);
-  assert.match(text, /937-555-0123/);
+  assert.match(text, /555-555-0123/);
   assert.doesNotMatch(text, /555-0199/);
   const packed = new File([zip([["word/document.xml", docXml("my key AKIA4HPQ7XZ2R6TWLJ3N"), true]])], "b.docx");
   assert.match(await readAttachment(packed), /AKIA4HPQ7XZ2R6TWLJ3N/);

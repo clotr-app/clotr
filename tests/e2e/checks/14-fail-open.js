@@ -73,7 +73,7 @@ module.exports = async function (env) {
         await clickDialogButton(page, "Leave it in, and stop warning me about: AWS Access Key");
         expect(!(await readDialog(page)), "the dialog couldn't be closed");
         // Keys are now Log only (the tick above, kept in memory); a new key would stay quiet.
-        await typeText(page, " call me at 937-555-0123");
+        await typeText(page, " call me at 555-555-0123");
         await sleep(DIALOG_WAIT);
         expect(!(await readDialog(page)), "an orphaned Clotr opened a dialog (it must only warn)");
         const notice = await readNotice(page);
@@ -121,7 +121,7 @@ module.exports = async function (env) {
         await resetState(ctx, {});
         const before = ctx.problems.length;
         await evalInClotr(page, ORPHAN_CLOTR);
-        await typeText(page, "call me at 937-555-0123");
+        await typeText(page, "call me at 555-555-0123");
         const prompt = await waitFor(() => readReloadPrompt(page), DIALOG_WAIT);
         expect(prompt?.text.includes("Clotr was updated"), `prompt: ${prompt?.text}`);
         expect(
@@ -133,7 +133,7 @@ module.exports = async function (env) {
         await sleep(200);
         expect(!(await readReloadPrompt(page)), "Esc didn't close the prompt");
         expect((await readNotice(page))?.text.includes("Reload this page"), "the old copy stopped warning after Later");
-        await typeText(page, " and 937-555-0199");
+        await typeText(page, " and 555-555-0199");
         await sleep(DIALOG_WAIT);
         expect(!(await readReloadPrompt(page)), "asked again after Later");
         await pressEnter(page);
@@ -145,7 +145,7 @@ module.exports = async function (env) {
           withSite(ctx, "chatgpt", async (page) => {
             const before = ctx.problems.length;
             await evalInClotr(page, ORPHAN_CLOTR);
-            await typeText(page, "call me at 937-555-0123");
+            await typeText(page, "call me at 555-555-0123");
             expect(await waitFor(() => readReloadPrompt(page), DIALOG_WAIT), "no prompt");
             await page.keyboard.press("Enter"); // too soon after it appeared: a habit press does nothing
             await sleep(100);
@@ -166,7 +166,7 @@ module.exports = async function (env) {
             const before = ctx.problems.length;
             await evalInClotr(page, ORPHAN_CLOTR);
             await evalInClotr(page, `navigator.clipboard.writeText = () => Promise.reject(new Error("denied")), true`);
-            await typeText(page, "call me at 937-555-0123");
+            await typeText(page, "call me at 555-555-0123");
             expect(await waitFor(() => readReloadPrompt(page), DIALOG_WAIT), "no prompt");
             let navigated = false;
             page.once("framenavigated", () => {

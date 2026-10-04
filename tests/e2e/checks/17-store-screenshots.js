@@ -142,7 +142,7 @@ module.exports = async function (env) {
           await prepare(page);
           await typeText(
             page,
-            "Hi, the heater is broken again. I'm at 123 Oak Street, Apt 4B. Call me at 937-555-0123 and I'll let you in.",
+            "Hi, the heater is broken again. I'm at 123 Oak Street, Apt 4B. Call me at 555-555-0123 and I'll let you in.",
           );
           expect(await waitForNotice(page), "no notice in the email");
           await frame(
@@ -196,7 +196,7 @@ module.exports = async function (env) {
         await sleep(300);
         await typeText(
           page,
-          "The heater has been broken since Monday. Reach me at 937-555-0123. I live at 123 Oak Street.",
+          "The heater has been broken since Monday. Reach me at 555-555-0123. I live at 123 Oak Street.",
         );
         const covered = await waitFor(async () => {
           const t = await page.$eval("#prompt", (b) => b.value);
@@ -252,7 +252,7 @@ module.exports = async function (env) {
       const welcome = await openExtPage(ctx, "vault.html?welcome=1");
       await welcome.setViewport({ width: 700, height: 800, deviceScaleFactor: 2 });
       await welcome.emulateMediaFeatures([{ name: "prefers-color-scheme", value: "light" }]);
-      await welcome.type("#try", "call me at 937-555-0123");
+      await welcome.type("#try", "call me at 555-555-0123");
       await sleep(600);
       await welcome.screenshot({ path: path.join(shots, "welcome.png") });
       await welcome.close();

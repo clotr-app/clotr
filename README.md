@@ -2,10 +2,12 @@
 
 ![Clotr: clot your data leaks. A mind map from You to AI chats, email, and Discord and Slack, where a bandage stops each detail (bank account, password, home address, card number, phone number, date of birth) before it goes out](docs/brand/readme-header.png)
 
-[![Tests](https://github.com/BilliamBaSH/clotr/actions/workflows/test.yml/badge.svg)](https://github.com/BilliamBaSH/clotr/actions/workflows/test.yml)
-[![no AI inside, rule-checked](https://img.shields.io/badge/no%20AI%20inside-rule--checked-blue)](https://github.com/BilliamBaSH/clotr/blob/main/tests/rules.test.js)
-[![OpenSSF Scorecard](https://api.scorecard.dev/projects/github.com/BilliamBaSH/clotr/badge)](https://scorecard.dev/viewer/?uri=github.com/BilliamBaSH/clotr)
+[![Tests](https://github.com/clotr-app/clotr/actions/workflows/test.yml/badge.svg)](https://github.com/clotr-app/clotr/actions/workflows/test.yml)
+[![no AI inside, rule-checked](https://img.shields.io/badge/no%20AI%20inside-rule--checked-blue)](https://github.com/clotr-app/clotr/blob/main/tests/rules.test.js)
+[![OpenSSF Scorecard](https://api.scorecard.dev/projects/github.com/clotr-app/clotr/badge)](https://scorecard.dev/viewer/?uri=github.com/clotr-app/clotr)
 License: [AGPL-3.0-or-later](LICENSE) · [What changed](CHANGELOG.md)
+
+**No AI inside. No network. No accounts. Open code. Free for people.**
 
 **Clotr catches a password, a key or a personal detail before you send it**: in AI chats like ChatGPT, Claude,
 Gemini, Copilot or Perplexity, and in your email or chat apps (Gmail, Outlook, Discord, Slack, WhatsApp and more)
@@ -17,7 +19,7 @@ out to a whole office.
 > be free for people. It runs only on your computer, never sends anything anywhere, and its code is open, so you don't
 > have to take my word for it. If it misses something, or warns you about nothing, please tell me. The more you use Clotr, the more you report bugs, the better it gets. For free.
 > — Alex ([BilliamBaSH](https://github.com/BilliamBaSH)) ·
-> [the whole story](https://clotr-app.github.io/#who)
+> [the whole story](https://clotr.app/#who)
 
 It is built for people who don't think of "my phone number, spelled out" as sensitive: it catches personal
 details however they're written (digits, number words, misspellings, mixes), and it explains itself in plain words.
@@ -86,7 +88,7 @@ switched on), before you send it:
 ![The dashboard: leaks stopped this week, what was found per day, and on which site](docs/store/5-dashboard.png)
 
 ## What's inside
-**No AI inside, no network, no accounts, open code, free for people.**
+**No AI inside. No network. No accounts. Open code. Free for people.**
 
 | What's in Clotr | How you know |
 |---|---|
@@ -109,7 +111,16 @@ switched on), before you send it:
 Known limits are listed on the "What Clotr stores" page and in [docs/security-review.md](docs/security-review.md).
 
 ## Install
-### From a release (Chrome, Brave, Edge)
+<a href="https://chromewebstore.google.com/detail/gkgpgejhhmmhklaghdnbjbalkmpjnmab"><img src="docs/brand/stores/chrome-web-store.png" alt="Available in the Chrome Web Store" height="56"></a>
+<a href="https://microsoftedge.microsoft.com/addons/detail/hbangnmofjeaieaeamlncpcfmhbclbkj"><img src="docs/brand/stores/edge-addons.png" alt="Get it from Microsoft Edge" height="56"></a>
+<a href="https://addons.mozilla.org/firefox/addon/clotr-clot-your-data-leaks/"><img src="docs/brand/stores/firefox-addons.svg" alt="Get the Add-on for Firefox" height="56"></a>
+
+Brave uses the Chrome Web Store. For other Firefox-based browsers, or to try a build before it reaches Firefox
+Add-ons, use the Firefox build from Releases (below).
+
+Then pin Clotr to the toolbar. A welcome page opens with a practice box.
+
+### From a release (testers and developers)
 1. Download the latest `clotr-<version>.zip` from Releases and unzip it (or clone this repository).
 2. Open `chrome://extensions` (or `brave://extensions`), turn on **Developer mode** (top right).
 3. Click **Load unpacked** and choose the unzipped folder (the one with `manifest.json`; in a clone, `extension/`).
@@ -120,7 +131,7 @@ Known limits are listed on the "What Clotr stores" page and in [docs/security-re
 |---|---|
 | Chrome, Brave (Windows, Mac, Linux) | Supported; every change is tested automatically in both |
 | Microsoft Edge | Supported; the full automatic test suite passes in Edge 153. Copilot in Edge's *sidebar* can't be checked by any extension; copilot.microsoft.com in a tab is covered |
-| Firefox (computer and Android) | Works: `npm run package -- --firefox` makes a Firefox build (Firefox 140+, Android 142+) that passes Mozilla's checks and an automatic test in Firefox 156. Firefox for Android is the one phone browser that runs extensions. The amber "AI chat spotted" dot isn't available there; the popup's page check is |
+| Firefox (computer and Android) | In Firefox Add-ons: `npm run package -- --firefox` makes the build (Firefox 140+, Android 142+), tested automatically in Firefox 156. Firefox for Android is the one phone browser that runs extensions. The amber "AI chat spotted" dot isn't available there; the popup's page check is |
 | iPhone / iPad | Planned as a Safari extension (needs Apple's paid developer program) |
 | Chrome / Brave on Android | Not possible: they don't run extensions |
 
@@ -137,7 +148,7 @@ Known limits are listed on the "What Clotr stores" page and in [docs/security-re
 
 ## Reporting problems
 Open an issue: *False alarm*, *Missed something* or *Bug*. Never paste the real sensitive value; describe its shape
-instead (for example "a phone number written as nine three seven…"). Security problems: see
+instead (for example "a phone number written as five five five…"). Security problems: see
 [SECURITY.md](SECURITY.md) (reported privately, not as an issue).
 
 ## How Clotr works
@@ -163,6 +174,20 @@ are reproducible: rebuilding a release from its code gives a byte-identical zip,
 - **Nothing to poison.** No training data to tamper with, no prompt to trick.
 - **Small enough for an old laptop.** The whole extension is well under a megabyte.
 
+## What's next: more than an extension
+Today, Clotr is this browser extension. Next, it grows into the Clotr suite: privacy and scam tools with the same
+engine, still with no AI inside and nothing sent anywhere. In development now, with no date yet:
+
+- **Look back.** Open the export ChatGPT, Claude or Gemini gives you, and see which of your chats already hold a
+  password, a card or ID number, or your address, so you know what to delete. Read on your computer, never uploaded.
+- **Extension check.** See which of your other browser extensions can read your AI chats, and whether any of them has
+  been publicly reported for collecting them.
+- **Clotr Antibody.** Help at the moment a scam asks for something: a code, your card's numbers, gift cards, or a
+  command to paste into your computer.
+- **Clotr for Windows.** All of it in one app on your PC, with scans of the folders you pick, on your computer.
+
+They'll come to the extension as free updates, and Clotr for Windows will be free for people too.
+
 ## For organizations
 Clotr is free at work too. An office can roll it out to every computer through browser policy, with ready-made
 presets for developers, for offices that handle client names (law, accounting, agencies) and for clinics, plus a
@@ -175,7 +200,7 @@ Clotr is free and open-source software: you may use, study, change and share it 
 over a network, you must share its source code under the same license.
 
 Want to build Clotr's code into a closed-source product or service instead? A **commercial license** is available:
-open a *Commercial license* issue. The name Clotr and its logo aren't covered by the license: a changed version you
+email [billiambash.clotr@gmail.com](mailto:billiambash.clotr@gmail.com?subject=Clotr%3A%20team%20pack%20or%20commercial%20license). The name Clotr and its logo aren't covered by the license: a changed version you
 share needs its own name and icon, so people can tell it apart from Clotr.
 
 Copyright © 2026 BilliamBaSH.
@@ -183,4 +208,4 @@ Copyright © 2026 BilliamBaSH.
 ## For developers
 `npm install`, then `npm test` (detection and rule checks), `npm run lint` (formatting and lint; `npm run format` fixes
 formatting) and `npm run test:e2e` (drives a real browser with the extension loaded). `npm run package` builds the
-release zip and its SHA-256 in `dist/SHA256SUMS.txt`. How to help: [CONTRIBUTING.md](CONTRIBUTING.md). How it's put together: [docs/architecture.md](docs/architecture.md). Design decisions: [docs/design-notes.md](docs/design-notes.md). Security: [SECURITY.md](SECURITY.md).
+release zip and its SHA-256 in `dist/SHA256SUMS.txt`. How to help: [CONTRIBUTING.md](CONTRIBUTING.md). How it's put together: [docs/architecture.md](docs/architecture.md). Design decisions: [docs/design-notes.md](docs/design-notes.md). Versions: [VERSIONING.md](VERSIONING.md). Security: [SECURITY.md](SECURITY.md).

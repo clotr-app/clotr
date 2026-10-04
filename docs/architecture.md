@@ -8,8 +8,9 @@ For contributors: where things live, how the parts talk, and what is stored. Des
 
 ### Content scripts (in AI chat pages)
 Classic scripts, no `import`/`export`: they share code through `globalThis.Clotr` and load in this order. The
-list must be the same in `manifest.json` and in `sites.js` → `CONTENT_JS` (for sites people add), and `popup.html`
-loads the first two (all rule-checked).
+list must be the same in `manifest.json` and in `sites.js` → `CONTENT_JS`, which the background uses both to register
+Clotr for sites people add (`clotr-user-sites`) and to start it in open tabs; `popup.html` loads the first two (all
+rule-checked).
 1. `patterns.js`: what to look for. A pattern has either a `regex` (plus an optional `validate`; `secret: true`
    drops placeholders) or a `find(text)`. Phone numbers, SSNs and emails use `find` with the number reader
    (`numberRuns`) to catch spelled-out and mixed forms; passwords use `findSecrets` (context words). Also
@@ -17,18 +18,26 @@ loads the first two (all rule-checked).
 2. `detector.js`: `detect()`, each kind's response (`responseFor()`), the text cleaner (invisible characters,
    look-alike digits, D51), `normalize()` with a synchronous `sha256()` → `fingerprint()`, and `redact()`.
 3. `attachments.js`: `Clotr.readAttachment(file)` reads text, PDF and Office files locally, with hard size caps.
-4. `ui-styles.js`: `Clotr.styles`, the CSS for the dialog, the corner warning and the reload prompt (all in closed
-   shadow roots).
+4. `ui-styles.js`: `Clotr.styles`, the CSS for the dialog, the corner warning, the reload prompt, the chat-box
+   outline and Bandage's hotspots and bubble (all in closed shadow roots).
 5. `editor.js`: `Clotr.editor` finds the chat box (never a sign-in field) and replaces its text so the page's own
    framework sees real input, and checks that the edit took (`replaceText()` → true/false). If
    `execCommand("insertText")` doesn't work, it falls back to an input event (text boxes) or a `beforeinput` event
    (rich editors), never a direct rewrite of a rich editor's content.
-6. `content.js`: watches what's typed, runs detection and responds per kind: the *Ask before sending* dialog, the
-   corner warning, or just counting. It holds a send only when asked to, and reports what happened to the
-   background. Wording (D40, D47): **Hide it / Leave it in**, plus **More choices** (this one is fine to share →
-   vault "allow"; stop warning me about this kind → just count; hide it and always watch for it → vault "protect").
-   Keys (D36, D41, `guardKeys()`): Space never chooses; Enter does nothing for 0.6 s or while held, then presses the
-   focused button or the forward one; Esc or Backspace go back to the message (the dialog returns on send).
+6. `warning-ui.js`: the warning UI, everything Clotr shows in the page. `Clotr.ui.create(app)` returns the *Ask
+   before sending* dialog, the corner warning (with its first-time tip or the Bandage offer), the short offers after a
+   choice, the reload prompt after an update, the *Test Clotr here* outline, and Bandage's hotspots with their
+   hover-to-peek bubble. It shows values only through `mask()`, notices when the page removes one of its boxes, and
+   records or sends nothing itself: `app` is content.js's side (the chat box, settings, and what each choice does).
+   Wording (D40, D47): **Hide it / Leave it in**, plus **More choices** (this one is fine to share → vault "allow";
+   stop warning me about this kind → just count; hide it and always watch for it → vault "protect"). Keys (D36, D41,
+   `guardKeys()`): Space never chooses; Enter does nothing for 0.6 s or while held, then presses the focused button
+   or the forward one; Esc or Backspace go back to the message (the dialog returns on send).
+7. `content.js`: watches what's typed, runs detection and decides the response per kind: ask before sending, warn,
+   or just count. It holds a send only when asked to, carries out the person's choices (hide, keep, remember, send
+   again), covers details with Bandage and finds its labels in replies (and, after a reload, the ones the
+   conversation already holds, so their numbers aren't given again), checks replies and attached files, and reports
+   what happened to the background.
 
 ### The rest
 - `manifest.json`: Manifest V3. The content-script `matches` and `host_permissions` are generated from
@@ -55,8 +64,9 @@ loads the first two (all rule-checked).
   every key again (`Backup.clean`, `cleanVaultEntry`) and replaces those keys. History never moves.
 - `dashboard.html/css/js`: "Your AI exposure report". Reads history only and never shows fingerprints.
   `insights.js` holds the plain-words advice (`adviceFor()`) and the mind map's model (`exposureModel()`,
-  `buildMindMapTree()`, D75); `mindmap.js` lays it out (`layoutRadial()`, or `layoutList()` on a narrow window) and
-  draws it with its motion and table view. Both are shared with the popup's small version.
+  `buildMindMapTree()`, D75); `mindmap.js` lays it out (`layoutRadial()`, or `layoutList()` on a narrow window, then
+  `mindMapLayout()`: every place, line, shape and label, pure and unit-tested) and draws it (`renderMindMap()`) with
+  its motion and table view. Both are shared with the popup's small version.
 - `helper.html/css/js`: "Set Clotr up for someone", the guided setup (Settings → *Set it up step by step*): their
   details (opens the vault), larger warnings, ask before personal details, a PIN. `helper-core.js` holds what it
   shares with the popup's Settings: the PIN hash and check, the 10-minute unlock in session storage, and the

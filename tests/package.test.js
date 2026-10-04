@@ -50,6 +50,21 @@ test("release zip is byte-identical when built twice, and its checksum is record
   assert.strictEqual(crypto.createHash("sha256").update(fs.readFileSync(a.out)).digest("hex"), a.sha256);
 });
 
+test("a file that vanishes while the zip is built is skipped, not a crash (another test's planted file, removed mid-walk)", () => {
+  const vanished = "zz-vanished-mid-walk.js";
+  const { readdirSync } = fs;
+  fs.readdirSync = function (dir, ...rest) {
+    const names = readdirSync.call(fs, dir, ...rest);
+    return path.resolve(String(dir)) === path.resolve(EXT) ? [...names, vanished] : names;
+  };
+  try {
+    const out = build({ outDir: tmp() });
+    assert.ok(!unzip(fs.readFileSync(out.out)).some(([name]) => name === vanished));
+  } finally {
+    fs.readdirSync = readdirSync;
+  }
+});
+
 test("release zip holds exactly the shipped files, sorted, manifest at the root, LF text", () => {
   const r = build({ outDir: tmp() });
   const entries = unzip(fs.readFileSync(r.out));
@@ -94,11 +109,11 @@ test("Firefox zip gets the Firefox manifest; checksums of both builds sit side b
 
 test("a file git doesn't track (personal notes, a saved chat) never ships", () => {
   const stray = path.join(EXT, "zz-private-notes.txt");
-  fs.writeFileSync(stray, "my phone 937-555-0147\n");
+  fs.writeFileSync(stray, "my phone 555-555-0147\n");
   try {
     const r = build({ outDir: tmp() });
     assert.ok(!r.files.includes("zz-private-notes.txt"), "untracked file was packaged");
-    assert.ok(!fs.readFileSync(r.out).includes("937-555-0147"), "its contents are in the zip");
+    assert.ok(!fs.readFileSync(r.out).includes("555-555-0147"), "its contents are in the zip");
   } finally {
     fs.rmSync(stray, { force: true });
   }

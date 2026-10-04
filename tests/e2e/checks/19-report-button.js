@@ -57,7 +57,7 @@ module.exports = async function (env) {
     "Each choice opens the right GitHub form with only the version and browser prefilled: never a typed value, a stored value or a fingerprint",
     async () => {
       const fp = await ctx.worker.evaluate(async () =>
-        globalThis.Clotr.fingerprint(await ensureSalt(), "phone_number", "937-555-0147"),
+        globalThis.Clotr.fingerprint(await ensureSalt(), "phone_number", "555-555-0147"),
       );
       await store.set(ctx, {
         events: [
@@ -91,7 +91,7 @@ module.exports = async function (env) {
         for (const url of urls) {
           const decoded = decodeURIComponent(url);
           expect(/[?&]version=/.test(url), `no version: ${url}`);
-          expect(!/chatgpt|937|555|0147/i.test(decoded), `a typed/stored value or the site leaked: ${decoded}`);
+          expect(!/chatgpt|555|0147/i.test(decoded), `a typed/stored value or the site leaked: ${decoded}`);
           expect(!decoded.includes(fp), `the fingerprint leaked: ${decoded}`);
           expect(!/[?&]site=/.test(url), `a site with no opt-in checkbox still carried one: ${url}`);
         }
@@ -165,7 +165,7 @@ module.exports = async function (env) {
 
   // D120: "an initial warning and an address on the welcome page or guide are
   // mandatory". The warning comes before any choice; the address is plain text, so it also works on paper.
-  const ADDRESS = "github.com/BilliamBaSH/clotr/issues";
+  const ADDRESS = "github.com/clotr-app/clotr/issues";
   await check(
     "RB4",
     "Report a problem warns first that reports are public (never paste the real detail), and shows its address in words, on screen and in the printed guide",
