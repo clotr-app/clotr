@@ -900,7 +900,9 @@
       "hard test disk flash usb thumb long right wrong the a an this that my your our his her " +
       "any some no one other same half all each every way lane minute minutes min mins hour hours mile miles km " +
       "day days week weeks year years time times people more less of to in for and or star stars point points step " +
-      "steps bed beds bedroom bedrooms room rooms car cars story stories person man men dollar dollars"
+      "steps bed beds bedroom bedrooms room rooms car cars story stories person man men dollar dollars " +
+      // Linking words never name a street: "at 3 with Dr", half typed before the doctor's name (R95).
+      "with at by from on about after before until till near into onto without around against"
     ).split(" "),
   );
   const STATES =

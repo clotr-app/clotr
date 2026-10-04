@@ -71,7 +71,10 @@ function collect(firefox) {
     for (const name of fs.readdirSync(dir)) {
       if (SKIP.has(name) || name.endsWith(".log")) continue;
       const file = path.join(dir, name);
-      if (fs.statSync(file).isDirectory()) {
+      // Gone since the folder was listed (another test's throwaway file, removed mid-walk): nothing to package.
+      const stat = fs.statSync(file, { throwIfNoEntry: false });
+      if (!stat) continue;
+      if (stat.isDirectory()) {
         walk(file);
         continue;
       }

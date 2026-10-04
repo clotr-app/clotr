@@ -29,8 +29,17 @@
     // The AI "answers": its reply appears in the conversation, and stays there.
     window.__reply = (text) => add("ai", text);
     // The conversation so far comes back from the "server" a moment after the page loads.
+    // With "fadeIn" set, the messages come back invisible and fade in a moment later, as ChatGPT's do after a reload:
+    // only their style changes, nothing is added to the page (R96).
     setTimeout(() => {
+      const fade = sessionStorage.getItem("fadeIn") === "1";
+      const before = chat.childElementCount;
       for (const m of saved()) show(m.who, m.text);
+      const shown = [...chat.children].slice(before);
+      if (fade) {
+        for (const d of shown) d.style.opacity = "0";
+        setTimeout(() => shown.forEach((d) => (d.style.opacity = "1")), 600);
+      }
       window.__historyShown = true;
     }, 700);
     // The sidebar: another conversation opens at its own address (history.pushState, no reload). As on real sites,

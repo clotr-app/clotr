@@ -483,6 +483,7 @@
     ui.clearSpots();
     chat.read = false;
     labelWatch.nodes.clear();
+    labelWatch.unseen.clear();
     if (labelWatch.observer && !labelWatch.timer) labelWatch.timer = setTimeout(safely(bandageReadPage), LABEL_READ_MS);
     replyChat = null;
     replyNodes.clear();
@@ -550,8 +551,13 @@
   // page once per chat, then only what changed (the observer just collects changed nodes; they're read at most twice a
   // second, and right before a new label is given). Each kind's numbering continues after the highest number found, and
   // a label this page didn't give gets a hotspot whose bubble says Clotr didn't keep its detail, never another one.
-  const labelWatch = { observer: null, nodes: new Set(), timer: 0 };
+  // A label skipped because its text wasn't visible yet is looked at again every LABEL_READ_MS, for up to
+  // UNSEEN_TRIES reads (about 10 seconds): a fade-in changes only a style, which the observer doesn't see, so the
+  // hotspot waited for some other change on the page, 4 to 5 seconds on ChatGPT (R96). Text that stays hidden (a
+  // screen reader's copy) runs out of tries and never gets one.
+  const labelWatch = { observer: null, nodes: new Set(), timer: 0, unseen: new Set(), tries: 0 };
   const LABEL_READ_MS = 500;
+  const UNSEEN_TRIES = 20;
   const MAX_CHANGED = 500; // more changed nodes than this before a read: read the whole page instead
   const NO_TEXT = new Set(["SCRIPT", "STYLE", "NOSCRIPT", "TEMPLATE"]);
 
@@ -591,6 +597,7 @@
     labelWatch.observer?.disconnect();
     labelWatch.observer = null;
     labelWatch.nodes.clear();
+    labelWatch.unseen.clear();
     clearTimeout(labelWatch.timer);
     labelWatch.timer = 0;
   }
@@ -601,7 +608,9 @@
     labelWatch.timer = 0;
     if (!bandageOn() || retired || !document.body) return;
     const chat = bandageChat();
-    const roots = chat.read ? [...labelWatch.nodes] : [document.body];
+    const retry = [...labelWatch.unseen];
+    labelWatch.unseen.clear();
+    const roots = chat.read ? [...labelWatch.nodes, ...retry] : [document.body];
     chat.read = true;
     labelWatch.nodes.clear();
     let spots = 0;
@@ -613,6 +622,9 @@
       }
     }
     if (spots) ui.placeSpots();
+    if (!labelWatch.unseen.size) labelWatch.tries = 0;
+    else if (++labelWatch.tries <= UNSEEN_TRIES) labelWatch.timer = setTimeout(safely(bandageReadPage), LABEL_READ_MS);
+    else labelWatch.unseen.clear();
   }
 
   // Notes the labels in `root`'s text: each kind's highest number, and which ones this page didn't give. The text is
@@ -635,7 +647,11 @@
       const parent = t.parentElement;
       if (!t.nodeValue.includes("[") || !parent || NO_TEXT.has(parent.nodeName)) continue;
       const older = readBandageLabels(t.nodeValue).filter((f) => !chat.given.has(f.id) && !ui.hasSpot(t, f.index));
-      if (!older.length || !validReplyNode(parent) || unseenText(parent)) continue;
+      if (!older.length || !validReplyNode(parent)) continue;
+      if (unseenText(parent)) {
+        labelWatch.unseen.add(parent); // fading in (as ChatGPT's messages do after a reload): looked at again soon
+        continue;
+      }
       for (const f of older) {
         if (!ui.addSpot(t, f.index, f.label, root, chat, true)) return added; // enough of them already
         added++;

@@ -544,6 +544,27 @@ module.exports = async function (env) {
       }),
   );
 
+  await check(
+    "BN19b",
+    "After a reload, labels in messages that fade in still get their hotspots within a second of showing (R96)",
+    () =>
+      withSite(ctx, "history", async (page) => {
+        await page.evaluate(() => sessionStorage.setItem("fadeIn", "1"));
+        try {
+          await reloadedChat(page);
+          // The messages were invisible when the page was first read; they've faded in since (600 ms after showing).
+          const spots = await waitFor(async () => {
+            const s = await readUI(page, "CLOTR-SPOTS");
+            return s?.buttons.length >= 3 ? s : null;
+          }, 1500);
+          expect(spots, `no hotspots within 1.5 s of the fade: ${JSON.stringify(await readUI(page, "CLOTR-SPOTS"))}`);
+        } finally {
+          await page.evaluate(() => sessionStorage.removeItem("fadeIn"));
+          await resetState(ctx, {});
+        }
+      }),
+  );
+
   // Switching chats inside the site (the 1.2.0 security review): the sidebar opens another conversation without a
   // reload (a new address through history.pushState), and the old one's messages stay on the page for a moment. The
   // same label means a different detail in each chat, so a label left over from the chat you left must never show

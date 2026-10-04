@@ -50,6 +50,21 @@ test("release zip is byte-identical when built twice, and its checksum is record
   assert.strictEqual(crypto.createHash("sha256").update(fs.readFileSync(a.out)).digest("hex"), a.sha256);
 });
 
+test("a file that vanishes while the zip is built is skipped, not a crash (another test's planted file, removed mid-walk)", () => {
+  const vanished = "zz-vanished-mid-walk.js";
+  const { readdirSync } = fs;
+  fs.readdirSync = function (dir, ...rest) {
+    const names = readdirSync.call(fs, dir, ...rest);
+    return path.resolve(String(dir)) === path.resolve(EXT) ? [...names, vanished] : names;
+  };
+  try {
+    const out = build({ outDir: tmp() });
+    assert.ok(!unzip(fs.readFileSync(out.out)).some(([name]) => name === vanished));
+  } finally {
+    fs.readdirSync = readdirSync;
+  }
+});
+
 test("release zip holds exactly the shipped files, sorted, manifest at the root, LF text", () => {
   const r = build({ outDir: tmp() });
   const entries = unzip(fs.readFileSync(r.out));

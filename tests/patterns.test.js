@@ -571,6 +571,12 @@ test("a doctor's title isn't a street: 'at 3 with Dr. Okafor', 'a las 4 con el D
   expectNone("Tengo la cita a las 4 con el Dr. Ramírez por un nódulo en la tiroides. ¿Qué le pregunto?");
   expectNone("Mañana a las 9 con la Dra. Ramírez, ¿qué llevo?");
   expectNone("I see him at 10 with Dr Patel, then at 2 with Dr. de la Cruz");
+  // Mid-typing, before the doctor's name (R95: Bandage swapped "3 with Dr" for [Address 1] as it was typed).
+  expectNone("My appointment is at 3 with Dr");
+  expectNone("My appointment is at 3 with Dr.");
+  expectNone("I'll be there at 4 tomorrow with Dr");
+  expectNone("a call at 2 from Dr");
+  expectNone("seen at 11 by Dr");
   // Streets that end in Dr are still streets
   expectOnly("send it to 418 Maple Dr", "street_address", "418 Maple Dr");
   expectOnly("my address is 12 Oak Dr., Apt 4", "street_address", "12 Oak Dr., Apt 4");
