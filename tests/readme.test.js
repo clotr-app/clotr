@@ -35,10 +35,23 @@ test('README has a "no AI inside" badge linking to the rule check', () => {
   assert.match(HEAD, /tests\/rules\.test\.js/, 'the "no AI inside" badge doesn\'t link to tests/rules.test.js');
 });
 
+// The text outside HTML comments, cut by position rather than a replace pattern (a link only inside a comment, like
+// the old "once Mozilla approves" placeholder, must not count as live).
+function outsideComments(s) {
+  let out = "";
+  let i = 0;
+  for (;;) {
+    const open = s.indexOf("<!--", i);
+    if (open < 0) return out + s.slice(i);
+    out += s.slice(i, open);
+    const close = s.indexOf("-->", open + 4);
+    if (close < 0) return out;
+    i = close + 3;
+  }
+}
+
 test("README's Install section links to all three stores, none of them a placeholder", () => {
-  // Comments stripped first: a link only inside an HTML comment (the old "once Mozilla approves" pattern)
-  // must not count as live.
-  const live = README.replace(/<!--[\s\S]*?-->/g, "");
+  const live = outsideComments(README);
   const stores = [
     ["Chrome", /https:\/\/chromewebstore\.google\.com\/detail\/[\w-]+/],
     ["Microsoft Edge", /https:\/\/microsoftedge\.microsoft\.com\/addons\/detail\/[\w-]+/],
