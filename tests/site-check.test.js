@@ -1,5 +1,5 @@
-// tools/site-check.js's pure comparison logic, with fixtures standing in for a browser run or an
-// HTTPS probe. No network and no browser here (npm test must stay offline); the real checks run by
+// Tests tools/site-check.js's pure comparison logic, with fixtures standing in for a browser run or an HTTPS
+// probe. There's no network and no browser here, because npm test has to stay offline. The real checks run by
 // hand with `npm run site-check` and `npm run site-check -- --hosts`.
 "use strict";
 
@@ -94,7 +94,7 @@ test("compareToBaseline: a bot check swallows the editor findings but not the co
     },
   ];
   const baseline = { "https://www.kimi.com/": { finalHost: "www.kimi.com", editor: "lexical" } };
-  // covered is true, so there is nothing to flag here either: the bot check hides the editor drift.
+  // Coverage is true here too, so there's nothing to flag. The bot check hides the editor drift from view.
   assert.deepEqual(compareToBaseline(results, baseline, AI_OPTS), []);
 });
 

@@ -1,33 +1,43 @@
-// Clotr — content script.
-//
-// Watches AI chat inputs and scans their text locally against Clotr.PATTERNS.
-// What happens on a detection depends on the pattern's response (patterns.js):
-// block → a modal dialog the user must answer (Hide it / Leave it in), sending
-// waits; warn → a corner notice that doesn't block; log → counted quietly; off → ignored.
-// Nothing leaves the browser: no network calls. Settings and event metadata
-// (never the detected values) are kept in chrome.storage.local.
-// What the person sees (the dialog, the notice, the offers) is drawn by warning-ui.js; this file decides
-// when to show it and what each choice does.
+// Watches AI chat inputs and scans their text locally against Clotr.PATTERNS. Each pattern's response, set
+// in patterns.js, decides what happens next. A block holds the message in a dialog until the person answers
+// it, a warn shows a corner notice without holding anything, a log just counts it, and an off skips it.
+// Nothing leaves the browser, and the detected values themselves never get stored, only settings and event
+// metadata in chrome.storage.local. warning-ui.js draws what the person sees; this file decides when to
+// show it and what each choice does.
 (() => {
   "use strict";
 
   const LOG = "[Clotr]";
 
-  // Already running here (e.g. injected into an open tab right after the user added this site).
+  // This can run twice if the user adds a site and Chrome injects into an already-open tab.
   if (globalThis.__clotrActive) return;
   globalThis.__clotrActive = true;
 
-  const { detect, redact, generalize, responseFor, fingerprint, setVault, readAttachment, readBandageLabels, msg } =
-    globalThis.Clotr;
+  const {
+    detect,
+    redact,
+    generalize,
+    fingerprint,
+    setVault,
+    vaultKinds,
+    isPicture,
+    readPicture,
+    namedDocument,
+    readBandageLabels,
+    bandageKindOf,
+    msg,
+  } = globalThis.Clotr;
   const { realTarget, findEditor, getText, replaceText } = globalThis.Clotr.editor;
   const IS_TOP = window === window.top;
+  // Which held-back features this build ships (`clotr_features` in manifest.json).
+  const FEATURES = chrome.runtime.getManifest().clotr_features || {};
 
   console.info(LOG, "active on", location.href, IS_TOP ? "(top frame)" : "(iframe)");
 
-  // ---------- Fail open (D30) ----------
-  // After an update reload, this page's copy of Clotr keeps running but is orphaned:
-  // every extension call throws "Extension context invalidated". Extension calls go
-  // through these helpers so they can never throw into the chat or Clotr's own UI.
+  // ---------- Fail open ----------
+  // After an update, this page's copy of Clotr keeps running but is cut off from the extension: every call
+  // into chrome.* now throws "Extension context invalidated". These helpers catch that so it never throws
+  // into the chat or into Clotr's own UI.
   function message(msg) {
     try {
       return chrome.runtime.sendMessage(msg);
@@ -44,9 +54,8 @@
     }
   }
 
-  // An orphaned copy keeps protecting with the settings it last knew, but only warns:
-  // it never holds a message and records nothing (D37). Reloading the page brings in
-  // the new version.
+  // An orphaned copy keeps protecting with whatever settings it last loaded, but only warns. It never holds
+  // a message or records anything, since reloading the page is what brings in the new version.
   let orphanLogged = false;
   function noteOrphaned() {
     if (!orphanLogged)
@@ -54,10 +63,10 @@
     orphanLogged = true;
   }
 
-  // Seamless updates (D39): after an update the background starts the new version in open
-  // tabs. The new copy runs in a fresh script world, so it announces itself with a page
-  // event; an orphaned older copy hears it and steps aside. A page faking the event can't
-  // switch off a working copy: only an orphaned one listens to it.
+  // After an update the background starts the new version in open tabs without a reload. The new copy runs
+  // in a fresh script world, so it announces itself with a page event, and an orphaned older copy hears
+  // that and steps aside. A page faking the event can't switch off a working copy, because only an
+  // orphaned one is listening for it.
   let retired = false;
   document.addEventListener("clotr:hello", () => {
     if (!retired && orphaned()) retire();
@@ -68,6 +77,11 @@
     retired = true;
     clearTimeout(scanTimer);
     stopWatchingLabels();
+    try {
+      tabPort?.disconnect();
+    } catch {
+      /* already gone */
+    }
     ui.retire();
     console.info(LOG, "the updated Clotr took over this page");
   }
@@ -85,8 +99,9 @@
   const health = { editor: false, editFailed: false, uiRemoved: false };
 
   // ---------- The warning UI (warning-ui.js) ----------
-  // It draws what the person sees; the callbacks below are what their choices do. Created here, after the hello
-  // above, so an older copy's warnings stepping aside aren't taken for the page removing Clotr's.
+  // It draws what the person sees. The callbacks below are what each of their choices does. I create it
+  // here, after the hello above, so an older copy's warnings stepping aside don't get mistaken for the
+  // page removing Clotr's own UI.
   const ui = globalThis.Clotr.ui.create({
     safely,
     orphaned,
@@ -94,9 +109,12 @@
     editor: () => activeEditor,
     largeText: () => largeText,
     everyday: () => everyday,
+    tourniquet: () => tourniquet,
+    isFirm: (id) => holds(id),
     bandageUnasked: () => bandage === undefined,
     canRemember: () => Boolean(saltValue),
-    isVaultType: (id) => VAULT_TYPES.has(id),
+    isVaultType: (id) => isVaultType(id),
+    isTeamKind: (id) => isTeamKind(id),
     isGuided: (id) => Boolean(guided[id]),
     markGuided,
     responseOf: (id) => responseOf(id),
@@ -105,15 +123,18 @@
     addToVault,
     answerBandage,
     removedByPage,
-    // A hotspot keeps the chat it was made for: its detail comes from that chat only (BN20).
+    // A warning's "Get a second opinion": the background opens Clotr's Is this a scam? page. Fails quietly.
+    // Held back in this build: no function here means no door (warning-ui.js checks).
+    openCheck: FEATURES.scamcheck ? () => message({ type: "clotr:openCheck" }).catch(() => {}) : undefined,
+    // A hotspot keeps the chat it was made for: its detail comes from that chat only.
     currentChat: () => bandageChat(),
     realValue: (label, chat) => chat?.byLabel.get(label),
     realText: bandageRealText,
   });
 
-  // One of Clotr's own boxes vanished without Clotr removing it: the page is removing Clotr's warnings
-  // (hostile, or a framework rebuilding the page). Stop holding messages there so nobody is stuck (D30, HP1)
-  // and say so.
+  // One of Clotr's own boxes vanished without Clotr removing it, so the page itself removed it: maybe on
+  // purpose, maybe because a framework like React rebuilt around it. I stop holding messages there so
+  // nobody gets stuck, and log what happened.
   function removedByPage(node) {
     if (!health.uiRemoved && !retired) {
       console.info(LOG, "this page removed Clotr's warning; messages won't be held here");
@@ -129,9 +150,9 @@
   function noteEditor() {
     if (!health.editor) reportHealth({ editor: true });
   }
-  // A chat box on the page (textarea or rich editor, also inside open shadow roots), without
-  // waiting for the user to type. Checked for a while after load; focus and typing catch the rest.
-  // Returns the chat box (or null).
+  // Looks for the chat box right after load without waiting for the user to type, including inside open
+  // shadow roots where sites like Gemini keep theirs. I keep trying for a while, since focus and typing
+  // events catch anything that shows up later. Returns the chat box, or null.
   function findChatBox(root = document, depth = 0) {
     for (const node of root.querySelectorAll('textarea, [contenteditable="true"], [contenteditable=""]')) {
       if (node.getClientRects().length && findEditor(node)) return findEditor(node);
@@ -144,8 +165,8 @@
     return null;
   }
 
-  // "Test Clotr here" (popup): outline the chat box Clotr watches for a moment. Nothing is typed,
-  // sent or recorded; the outline never takes clicks and removes itself.
+  // The popup's "Test Clotr here" button calls this to outline the chat box for a moment. Nothing gets
+  // typed, sent, or recorded, and the outline removes itself and never blocks clicks.
   function showChatBox() {
     const box = activeEditor?.isConnected ? activeEditor : findChatBox();
     if (!box) return { found: false };
@@ -172,7 +193,8 @@
     true,
   );
 
-  // Send buttons on ChatGPT, Claude/Gemini and NotebookLM respectively, plus generic forms.
+  // Matches the send buttons on ChatGPT, Claude, Gemini, and NotebookLM, plus a generic fallback for
+  // ordinary form submit buttons.
   const SEND_BUTTON_SELECTOR = [
     'button[data-testid="send-button"]',
     'button[aria-label*="send" i]',
@@ -182,10 +204,11 @@
 
   const SCAN_DELAY_MS = 400; // wait for typing to pause so half-typed keys don't trigger
 
-  // Did the person do this (S24)? A page could otherwise put guesses in its own chat box by script,
-  // fire a fake input or Enter, and watch whether Clotr's warning appears: that would tell it which
-  // names or numbers are in your vault. Events a script makes right after a real key or click (sites
-  // re-dispatch them) still count; where the browser can't tell, Clotr reacts as before.
+  // Checks whether a real person triggered this, not a script. Without that check, a page could type
+  // guesses into its own chat box, fire a fake keystroke or Enter, and watch whether Clotr's warning
+  // appears, which would tell it what's in your vault. I still count events a script re-dispatches right
+  // after a real key or click, since some sites genuinely do that, and I fall back to reacting as before
+  // wherever the browser can't tell the difference.
   const byUser = (e) => e.isTrusted || navigator.userActivation?.isActive !== false;
 
   // ---------- Per-pattern responses (set in the popup, or "stop warning me about this kind" = log) ----------
@@ -194,10 +217,9 @@
 
   // Per-site mode (popup → per-site view): "block" = stricter here, "log" = quieter here.
   let siteMode = null; // this site's mode, or null
-  const responseOf = (patternId) => {
-    const r = responseFor(patternId, responses);
-    return siteMode || r;
-  };
+  // What each found value does is decided in decide.js, the same on every host, from what this page knows.
+  const known = () => ({ salt: saltValue, vault: vaultEntries, responses, siteMode, cache: vaultCache });
+  const responseOf = (patternId) => globalThis.Clotr.responseOf(patternId, { responses, siteMode });
 
   function setToLog(patternIds) {
     setResponse(patternIds, "log");
@@ -230,72 +252,78 @@
   // "allow" = OK to share: never warns, still recorded (as "Just counted") like everything else. Words and ID formats are matched in patterns.js.
 
   let vaultEntries = [];
+  // A team's own kinds from its policy: [{ id, name, cover }], their words among the vault's entries as
+  // fingerprints. Never stored here; they come with the settings each time.
+  let teamKinds = [];
   const vaultCache = new Map(); // "type\0match" → "protect" | "allow" | null, hashed once per page
 
   function applyVault() {
     vaultCache.clear();
-    setVault({ salt: saltValue, entries: vaultEntries });
+    setVault({ salt: saltValue, entries: vaultEntries, kinds: teamKinds });
   }
+  const isTeamKind = (id) => vaultKinds().some((k) => k.id === id);
 
-  function vaultMode(patternId, match) {
-    if (!saltValue || !vaultEntries.some((e) => e.kind === "value")) return null;
-    const key = `${patternId}\0${match}`;
-    if (!vaultCache.has(key)) {
-      if (vaultCache.size >= 2000) vaultCache.clear(); // a tab left open all day stays small
-      const entry = (id) => {
-        const fp = fingerprint(saltValue, id, match);
-        return vaultEntries.find((e) => e.kind === "value" && e.type === patternId && e.fp === fp);
-      };
-      // An address saved before 0.9.68 kept its accents in the fingerprint: it still matches as typed.
-      const found =
-        entry(patternId) ||
-        (patternId === "street_address" && /[^\x00-\x7f]/.test(match) && entry("street_address_accented"));
-      vaultCache.set(key, found?.mode || null);
-    }
-    return vaultCache.get(key);
-  }
+  // Your vault's word on one value: "protect", "allow" or null, hashed once per page (cleared with the vault).
+  const vaultMode = (patternId, match) => globalThis.Clotr.vaultMode(patternId, match, known());
 
-  // With a fingerprint of your own ID in the vault (D23), IDs that only share its format are
+  // With a fingerprint of your own ID in the vault, IDs that only share its format are
   // named apart ("Account/ID Number") and ranked lower than yours ("Your Account/ID Number").
-  function splitOwnIds(results) {
-    if (!saltValue || !vaultEntries.some((e) => e.kind === "value" && e.type === "my_id")) return results;
-    return results.flatMap((r) => {
-      if (r.id !== "my_id") return [r];
-      const own = r.matches.filter((m) => vaultMode("my_id", m));
-      const other = r.matches.filter((m) => !vaultMode("my_id", m));
-      return [
-        ...(own.length ? [{ ...r, matches: own }] : []),
-        ...(other.length
-          ? [{ ...r, matches: other, name: msg("otherAccountId", "Account/ID Number"), severity: "medium" }]
-          : []),
-      ];
-    });
-  }
+  const splitOwnIds = (results) => globalThis.Clotr.splitOwnIds(results, known());
 
   // The response for one detected value: the type's response, adjusted by the vault.
-  function respFor(r, m) {
-    const mode = vaultMode(r.id, m);
-    if (mode === "allow") return "log";
-    const base = responseOf(r.id);
-    return mode === "protect" && base === "log" ? "warn" : base;
-  }
+  const respFor = (r, m) => globalThis.Clotr.respFor(r, m, known());
 
-  // First-time tips (D21, D43): kinds of data the user has already been guided about.
+  // Kinds of data the user has already gotten a first-time tip about.
   let guided = {};
   function markGuided(id) {
     guided = { ...guided, [id]: Date.now() };
     message({ type: "clotr:guided", id }).catch(() => {});
   }
-  // Helping someone (settings → "Larger warnings"): bigger text and buttons in Clotr's boxes.
+  // Bigger text and buttons in Clotr's boxes, turned on from settings → "Larger warnings".
   let largeText = false;
-  let replyCheck = true; // Settings → "Check the AI's replies for my details" (D63)
-  let bandage; // Bandage on this site (D93): true on, false the user said no, undefined not asked yet
-  let everyday = false; // an email or chat app you switched on (D134): your words go to people, not to an AI
+  let replyCheck = true; // Settings → "Check the AI's replies for my details"
+  let commandCheck = true; // Settings → "Check commands I copy on AI chats"
+  let bandage; // Bandage on this site: true on, false the user said no, undefined not asked yet
+  let everyday = false; // an email or chat app you switched on: your words go to people, not to an AI
+  let pictureNoted = false; // the "can't read pictures" note was already shown on this site
+  // Tourniquet mode: "child", "adult", or "after_scam" for the 30 days after a scam, while it's on. Whatever
+  // kinds it or an organization's policy holds, and whether settings are locked, the warning never offers a
+  // way to loosen those, so there's no route around the PIN.
+  let tourniquet = null;
+  let firm = new Set();
+  let locked = false;
+  const holds = (id) => locked || firm.has(id);
 
-  // Settings come from the background (storage is locked to Clotr's own pages, S20): only what
-  // this frame needs, its own site's pause and mode included. Fetched at start, when the background
-  // says something changed, and when the tab is shown again.
+  // A reload's content script starts out knowing nothing, and normally has to wait for loadSettings() to
+  // come back before it knows whether Bandage is on here. In Firefox, though, the background can be an
+  // asleep event page, and waking it can take several seconds, during which an old label already on the
+  // page would show no hotspot at all. I open a port instead of just sending a message, because holding a
+  // port open also keeps the background from going back to sleep in the first place, so most reloads never
+  // hit that wake delay to begin with. The port doesn't touch chrome.storage directly; the background
+  // answers with just the Bandage flag, from its own fast, separate lookup, the moment the port connects.
+  // loadSettings() below still runs right after and is the real answer, confirming this guess or switching
+  // the watch off if Bandage was turned off for this site since.
+  let tabPort;
+  try {
+    tabPort = chrome.runtime.connect({ name: "clotr:tab" });
+    tabPort.onMessage.addListener((m) => {
+      if (m?.type === "clotr:bandage" && m.on === true && bandage === undefined && !retired) {
+        bandage = true;
+        safely(watchLabels)();
+      }
+    });
+    tabPort.onDisconnect.addListener(() => {
+      tabPort = null;
+    });
+  } catch {
+    /* fail open: no port, loadSettings() below is still the answer */
+  }
+
+  // Settings come from the background, just the slice this frame needs, including this site's own pause
+  // state and mode. I fetch them at start, whenever the background says something changed, and whenever
+  // the tab is shown again.
   let settingsLoaded = false;
+  let prepFailed = false; // asking the background for settings or the salt failed before they came: nothing waits
   function loadSettings() {
     return message({ type: "clotr:getSettings" })
       .then((r) => {
@@ -304,13 +332,22 @@
         guided = r.guided || {};
         largeText = r.largeText === true;
         replyCheck = r.replyCheck !== false;
+        commandCheck = r.commandCheck !== false;
         bandage = typeof r.bandage === "boolean" ? r.bandage : undefined;
-        safely(watchLabels)(); // on: read the labels the conversation already holds (after a reload); off: stop
+        safely(watchLabels)(); // turns the label watch on (picking up labels from a reload) or off
         everyday = r.everyday === true;
-        if (!replyCheck) closeReplyWindow(); // switched off: a reply already on its way isn't read either
+        pictureNoted = r.pictureNoted === true;
+        teamHold = r.teamHold === true;
+        tourniquet = ["child", "adult", "after_scam"].includes(r.tourniquet) ? r.tourniquet : null;
+        firm = new Set(Array.isArray(r.firm) ? r.firm : []);
+        locked = r.locked === true;
+        if (!replyCheck) closeReplyWindow(); // off: don't read a reply already on its way, either
         responses = r.responses || {};
         siteMode = r.siteMode || null;
         vaultEntries = Array.isArray(r.vault) ? r.vault : [];
+        teamKinds = Array.isArray(r.kinds) ? r.kinds : [];
+        // The salt comes with the settings, so the words they fingerprinted can be matched at once.
+        if (!saltValue && typeof r.salt === "string" && /^[0-9a-f]{32}$/.test(r.salt)) saltValue = r.salt;
         applyVault();
         paused = r.paused ? { [location.hostname]: true } : {};
         if (!settingsLoaded) {
@@ -327,9 +364,13 @@
           pending = [];
           warnings = [];
           fileWarnings = [];
+          dropFileHold();
         }
       })
-      .catch((err) => console.warn(LOG, "could not load preferences", err));
+      .catch((err) => {
+        if (!settingsLoaded) prepFailed = true;
+        console.warn(LOG, "could not load preferences", err);
+      });
   }
   loadSettings().finally(reportTabState);
   document.addEventListener("visibilitychange", () => {
@@ -352,6 +393,7 @@
       })
       .catch((err) => {
         saltPromise = null; // retry next time
+        if (!saltValue) prepFailed = true;
         throw err;
       });
     return saltPromise;
@@ -359,10 +401,10 @@
 
   getSalt().catch((err) => console.warn(LOG, "could not load salt", err));
 
-  // One event per detected value. `via`: how a "redacted" event happened ("bandage" apart from
-  // hand-hidden), so the report can count what Bandage kept apart from what you hid yourself.
+  // Records one event per detected value. The `via` field says how a "redacted" event happened, whether
+  // Bandage covered it automatically or the person hid it by hand, so reports can tell the two apart.
   async function report(results, action, via) {
-    if (orphaned()) return; // nothing can be recorded after an update (D37)
+    if (orphaned()) return; // nothing can be recorded after an update
     try {
       const t = Date.now();
       const salt = await getSalt();
@@ -389,8 +431,8 @@
 
   // ---------- State ----------
 
-  // Both last for the message being written (DECISIONS D3): once it's sent or the box is
-  // emptied, the next message warns (and logs) again like normal.
+  // Both only last for the message currently being written. Once it's sent or the box is cleared, the next
+  // message warns and logs again like normal.
   const allowedValues = new Set(); // values the user kept ("Leave it in" in the dialog or notice) in this message
   const loggedSilenced = new Set(); // log-only values already recorded for this message
   function newMessage() {
@@ -405,18 +447,22 @@
   let fileWarnings = []; // detections in attached files, not yet acknowledged
   const flagged = new Map(); // value → { id, name }: shown to the user and still in the text
   const offered = new Set(); // values already offered for the vault on this page
-  // Types that come from the vault itself (nothing to learn there).
+  // Vault-only types have nothing left to learn, and a team's own kinds are set by its policy, so I never
+  // offer the person a way to loosen or remember either one.
   const VAULT_TYPES = new Set(["my_name", "family_name", "employer", "my_id", "watch_list"]);
+  const isVaultType = (id) => VAULT_TYPES.has(id) || isTeamKind(id);
   let scanTimer = null;
   let backToEdit = false; // the user went back to the message from the dialog: don't reopen it until they send
   let heldVia = null; // while a send attempt is checked: what it used (the chat box for Enter, a button, a form)
 
-  // ---------- Bandage (D93): cover names while you type ----------
-  // On a site where the user said yes, personal details become labels in brackets ([Phone 1], [Me]) as soon as typing
-  // pauses, the same label for the same detail within one chat. Passwords and keys are never covered: they keep their
-  // warning. The label ↔ detail map lives only in this page's memory, keyed by fingerprint; nothing is stored. A reload
-  // forgets it, but the conversation still holds the labels given before: Clotr reads them from the page and numbers
-  // new details after them, so one label never stands for two details (D27; "after a reload" below).
+  // ---------- Bandage: cover names while you type ----------
+  // On a site where the user turned Bandage on, personal details turn into bracketed labels like [Phone 1]
+  // or [Me] as soon as typing pauses, and the same detail keeps the same label for the rest of that chat.
+  // Passwords and keys are never covered, so they still get the normal warning. The label-to-detail map
+  // lives only in this page's memory, keyed by fingerprint, and nothing gets stored. A reload forgets that
+  // map, but the labels already given are still visible in the conversation itself, so Clotr reads them
+  // back off the page and numbers new details after them. That's what keeps one label from ever standing
+  // for two different details.
   const bandageChats = new Map(); // conversation path → newBandageChat()
   const newBandageChat = () => ({
     byKey: new Map(), // fingerprint → label
@@ -432,8 +478,8 @@
   let bandaging = false; // a swap is under way: a send waits for it
   let bandageHeldSend = false; // a send was held for the swap: say so once it's done
   let bandageRounds = [];
-  // Typing through an input method (Japanese, Chinese, Korean…): never swap text in the middle of a composition,
-  // which would scramble it; the scan right after it ends covers the details (e2e BN13).
+  // While an IME composition is in progress (Japanese, Chinese, Korean...), I never swap the text, since that
+  // would scramble it mid-composition. The scan right after it ends covers whatever was typed.
   let composing = false;
   addEventListener("compositionstart", () => (composing = true), true);
   addEventListener(
@@ -450,8 +496,9 @@
     true,
   );
 
-  // A chat's page before its first message ("/", "/new", "/app") has no id in its path; the first send moves the page
-  // to the conversation's own path, which keeps the labels already given.
+  // A chat's page has no id in its path before the first message goes out, just something like "/", "/new",
+  // or "/app". Once the first message sends, the page moves to the conversation's own path, and I carry
+  // the labels already given over to it so they don't reset.
   const isStartPage = (path) => !path.split("/").some((part) => part.length >= 8 && /\d/.test(part));
   function bandageChat() {
     const path = location.pathname;
@@ -473,12 +520,12 @@
     return chat;
   }
 
-  // The conversation changed without a reload (the site's sidebar, back and forward, a new chat; not the first send
-  // moving a new chat to its own address, which keeps its chat). The same label stands for a different detail in each
-  // chat, and the old chat's messages can stay on the page for a moment, so every hotspot goes now: they were all made
-  // for the chat you left (each also keeps its own chat, so none can show this one's details). The page is read whole
-  // again for this chat's labels, and the answer being waited for belongs to the chat you left: its labels aren't
-  // marked here.
+  // Called when the conversation changes without a reload: the site's sidebar, back and forward, or a new
+  // chat. The first send that moves a new chat to its own address keeps the same chat, so it doesn't call
+  // this. Every hotspot gets cleared right away, since each one was made for the chat just left and could
+  // otherwise show that chat's details here. The old chat's messages can also linger on the page for a
+  // moment, so I read the whole page again for this chat's own labels. Any reply Clotr was still waiting on
+  // belonged to the chat just left, so its labels never get marked here.
   function bandageSwitched(chat) {
     ui.clearSpots();
     chat.read = false;
@@ -489,8 +536,9 @@
     replyNodes.clear();
   }
 
-  // Label words, per kind of detail; anything else personal is an ID. The kind (the word's message key) numbers the
-  // labels in any language, so a "[Teléfono 1]" from before makes the next phone "[Phone 2]".
+  // Picks the label word for a kind of detail. Anything else personal just becomes "ID". The kind also
+  // serves as the numbering key, so a "[Teléfono 1]" label read from an earlier message still makes the
+  // next phone "[Phone 2]", no matter the language.
   function bandageWord(id) {
     switch (id) {
       case "my_name":
@@ -515,12 +563,17 @@
         return ["bl_ip", msg("bl_ip", "IP address")];
       case "watch_list":
         return ["bl_term", msg("bl_term", "Term")];
-      default:
+      default: {
+        // A team's own kind has its own word ("[Matter 1]"), numbered as detector.js reads it back.
+        const own = vaultKinds().find((k) => k.id === id);
+        if (own) return [bandageKindOf(own.cover), own.cover];
         return ["bl_id", msg("bl_id", "ID")];
+      }
     }
   }
 
-  // The same id for one label in any language or case (detector.js); the label itself if it isn't one.
+  // Returns the same id for a label regardless of language or case, using detector.js's own matcher, or
+  // the label text itself if it isn't a recognized label.
   const labelId = (label) => readBandageLabels(label)[0]?.id ?? label;
 
   function bandageLabel(r, value) {
@@ -536,7 +589,7 @@
       const [kind, word] = bandageWord(r.id);
       const n = (chat.counts[kind] || 0) + 1;
       chat.counts[kind] = n;
-      // "Me" and "My company" stand alone; everything else is numbered.
+      // "Me" and "My company" stand alone. Everything else gets a number.
       label = (r.id === "my_name" || r.id === "employer") && n === 1 ? `[${word}]` : `[${word} ${n}]`;
     }
     chat.byKey.set(key, label);
@@ -545,16 +598,17 @@
     return label;
   }
 
-  // ---------- Bandage after a reload: the labels the conversation already holds (D27) ----------
-  // Nothing is stored, so after a reload Clotr no longer knows which detail an earlier label stood for, but the page
-  // still shows those labels (your messages and the AI's replies). While Bandage is on here, Clotr reads them: the whole
-  // page once per chat, then only what changed (the observer just collects changed nodes; they're read at most twice a
-  // second, and right before a new label is given). Each kind's numbering continues after the highest number found, and
-  // a label this page didn't give gets a hotspot whose bubble says Clotr didn't keep its detail, never another one.
-  // A label skipped because its text wasn't visible yet is looked at again every LABEL_READ_MS, for up to
-  // UNSEEN_TRIES reads (about 10 seconds): a fade-in changes only a style, which the observer doesn't see, so the
-  // hotspot waited for some other change on the page, 4 to 5 seconds on ChatGPT (R96). Text that stays hidden (a
-  // screen reader's copy) runs out of tries and never gets one.
+  // ---------- Bandage after a reload: the labels the conversation already holds ----------
+  // Nothing gets stored, so after a reload Clotr no longer knows which detail an earlier label stood for,
+  // though the page itself still shows those labels in your messages and the AI's replies. While Bandage is
+  // on, I read the whole page once per chat, then only what changed since: a mutation observer collects
+  // changed nodes, and I read them at most twice a second, plus once more right before handing out a new
+  // label. Each kind's numbering picks up after the highest number already found, and a label this page
+  // didn't give gets a hotspot whose bubble explains that Clotr never kept its real detail. A label that
+  // isn't visible yet gets retried every LABEL_READ_MS for up to UNSEEN_TRIES tries, about 10 seconds,
+  // because a plain fade-in only changes a CSS style that the observer can't see; on ChatGPT the hotspot
+  // usually waits for some other page change, 4 to 5 seconds. Text that stays hidden, like a screen reader's
+  // own copy of a message, just runs out of tries and never gets one.
   const labelWatch = { observer: null, nodes: new Set(), timer: 0, unseen: new Set(), tries: 0 };
   const LABEL_READ_MS = 500;
   const UNSEEN_TRIES = 20;
@@ -660,13 +714,19 @@
     return added;
   }
 
-  // What Bandage covers: personal details and watch words the user hasn't marked fine to share.
+  // Bandage covers personal details and watch words the user hasn't already marked fine to share. It never
+  // covers the codes a scammer asks for, since those are marked `bandage: false` in patterns.js and keep
+  // their normal warning.
   const bandageOn = () => bandage === true && !orphaned();
   const coverable = (r, m) =>
-    r.group !== "credentials" && !bandageFailed.has(m) && !allowedValues.has(m) && respFor(r, m) !== "log";
+    r.group !== "credentials" &&
+    r.bandage !== false &&
+    !bandageFailed.has(m) &&
+    !allowedValues.has(m) &&
+    respFor(r, m) !== "log";
 
   // Swaps the details in `text` (the chat box's text right now) for their labels. If the box won't take the edit,
-  // those details fall back to the normal warning (D30: never stuck, never silent).
+  // those details fall back to the normal warning.
   async function bandageCover(editor, text, results) {
     const now = Date.now();
     bandageRounds = bandageRounds.filter((t) => now - t < 2000).concat(now);
@@ -711,7 +771,7 @@
     message({ type: "clotr:setBandage", on }).catch(() => {});
   }
 
-  // The answer to the Bandage offer in the warning (D93), the first time a personal detail shows up on a site.
+  // The answer to the Bandage offer in the warning, the first time a personal detail shows up on a site.
   function answerBandage(on) {
     setBandageHere(on);
     if (on) {
@@ -736,8 +796,8 @@
 
   // ---------- Editor helpers (editor.js) ----------
 
-  // Replaces the chat box's text; true only if it really changed. Clotr's own edit isn't
-  // something to rescan, and nothing in it was removed by hand.
+  // Replaces the chat box's text, returning true only if it really changed. Clotr's own edit isn't
+  // something to rescan, and nothing in it counts as removed by hand.
   async function setText(editor, text) {
     try {
       return await replaceText(editor, text);
@@ -747,9 +807,10 @@
     }
   }
 
-  // Hide the found items in the chat box, or with `general`, swap a birth date for its month and year and an
-  // address for its town (the rest is hidden). Counted as hidden only once the text really changed; otherwise say
-  // so plainly, so nobody sends a key they think is gone (Kimi, M2). Either way the exact detail never goes out.
+  // Hides the found items in the chat box. With `general` set, a birth date becomes just its month and year
+  // and an address becomes just its town, with everything else still hidden outright. This only counts as
+  // hidden once the text actually changed; if it didn't, I say so plainly, so nobody sends a detail believing
+  // it's gone. Either way, the exact detail itself never goes out.
   async function coverIn(editor, results, general = false) {
     const text = editor ? getText(editor) : "";
     const next = general ? generalize(text, results, navigator.language) : redact(text, results);
@@ -764,8 +825,9 @@
   }
 
   // ---------- What the person's choices do (warning-ui.js draws them) ----------
-  // Every warning offers: this time only (Hide it / Leave it in), and from now on, for this
-  // item (vault fingerprint: "fine to share" or "always watch") or for this kind of data (D40).
+  // Every warning offers a choice for just this once, Hide it or Leave it in, plus a lasting choice: either
+  // for this exact item, saved to the vault as "fine to share" or "always watch", or for this whole kind of
+  // data.
 
   function addToVault(results, mode) {
     const entries = results.flatMap((r) =>
@@ -782,7 +844,7 @@
 
   // "Ask before sending": one decision for everything found, the warn-level items included.
   function askFirst(results) {
-    // Opened by a send attempt: leaving it in sends the message (D121).
+    // Opened by a send attempt: leaving it in sends the message.
     const resend = heldVia;
     const answer = (doRedact, general = false) => {
       if (doRedact) {
@@ -816,7 +878,7 @@
       leave: () => answer(false),
       cover: () => answer(true),
       general: () => answer(true, true),
-      // Back to the message without choosing (D41): the dialog comes back when you send.
+      // Back to the message without choosing: the dialog comes back when you send.
       back: () => {
         ui.closeDialog();
         backToEdit = true;
@@ -825,8 +887,8 @@
     });
   }
 
-  // The corner warning (doesn't block, doesn't take focus). `file` = { name, lines } for an attached file: it can't
-  // be redacted, only removed by the user.
+  // Shows the corner warning, which never blocks or takes focus. The `file` argument is { name, lines } for
+  // an attached file, which can't be redacted in place, only removed by the user.
   function warn(results, file = null) {
     ui.showNotice(results, file, {
       leave: () => {
@@ -853,7 +915,7 @@
   // The user deleted flagged items by hand before sending: offer to always watch for them.
   function offerVault(removed) {
     const items = removed.filter(
-      (f) => !offered.has(f.value) && !VAULT_TYPES.has(f.id) && vaultMode(f.id, f.value) === null,
+      (f) => !offered.has(f.value) && !isVaultType(f.id) && vaultMode(f.id, f.value) === null,
     );
     if (!items.length || !saltValue) return;
     items.forEach((f) => offered.add(f.value));
@@ -880,15 +942,20 @@
     );
   }
 
-  // The user kept (ignored) a warning. After a few of the same type, offer to relax it.
+  // The user kept, or ignored, a warning. After a few of the same type, I offer to relax it. The background's
+  // answer can come back late, and if some other warning is already showing by then, like one for the next
+  // picture or for what's currently being typed, that one has priority and stays. The relax offer just
+  // waits for the next kept warning, which asks the background again.
   function noteIgnored(results) {
     if (orphaned()) return;
-    const types = [...new Set(results.map((r) => r.id))];
+    const types = [...new Set(results.map((r) => r.id).filter((id) => !isTeamKind(id)))];
+    if (!types.length) return;
     message({ type: "clotr:ignored", types })
       .then((r) => {
         const id = r?.offer;
         const p = id && results.find((x) => x.id === id);
-        if (!p || !["warn", "block"].includes(responseOf(id)) || ui.isDialogOpen()) return;
+        if (!p || holds(id) || !["warn", "block"].includes(responseOf(id)) || ui.isDialogOpen()) return;
+        if (ui.isNoticeOpen() && ui.noticeKind() !== "offer") return; // a warning has priority
         ui.offerRelax(
           p.name,
           r.count,
@@ -922,10 +989,10 @@
 
   function scan(editor) {
     activeEditor = editor;
-    const lost = orphaned(); // after an update: warn only, record nothing (D37)
+    const lost = orphaned(); // after an update: warn only, record nothing
     if (lost) {
       noteOrphaned();
-      // No updated copy took over (D39 couldn't start it here): ask for a reload (D37).
+      // No updated copy took over: ask for a reload.
       if (!ui.reloadAsked()) setTimeout(safely(ui.showReloadPrompt), 0);
     }
     if (isPaused()) return;
@@ -941,7 +1008,7 @@
       report(silenced, "suppressed");
     }
 
-    // Bandage: personal details become labels; they're neither warned about nor held.
+    // Bandage turns personal details into labels, so they're never warned about or held.
     const covering = bandageOn() && !composing ? filterMatches(all, coverable) : [];
     const willCover = (r, m) => covering.some((c) => c.id === r.id && c.matches.includes(m));
     if (covering.length && !bandaging) bandageCover(editor, draft, covering);
@@ -954,8 +1021,8 @@
       pending = [];
     }
 
-    // Learning: flagged values that vanished while the message is still being written
-    // were removed by hand.
+    // A flagged value that disappeared while the message was still being written was removed by hand,
+    // which is worth learning from.
     const text = getText(editor);
     const removed = [];
     for (const [value, f] of flagged) {
@@ -979,7 +1046,7 @@
       ui.closeNotice();
       askFirst(pending.concat(warnings));
     } else {
-      if (ui.isDialogOpen()) ui.closeDialog();
+      if (ui.isDialogOpen() && ui.dialogKind() === "ask") ui.closeDialog(); // a file's question stays: the file's still there
       if (warnings.length) {
         console.info(
           LOG,
@@ -994,24 +1061,71 @@
     }
   }
 
-  // Re-check right before a send, in case the debounced scan hasn't run yet.
-  // Block-level items stop the send; warn-level items go through and count as allowed.
-  // `unsure`: the click was on an unlabeled button in the chat box that may or may not send.
-  // It can hold a message only for Ask before sending; for warnings nothing is recorded until
-  // the box really empties (confirmSent), so an Attach or microphone click never counts.
+  // Re-checks right before a send, in case the debounced scan hasn't run yet. Block-level items stop the
+  // send, while warn-level items go through and count as allowed. The `unsure` flag means the click landed
+  // on an unlabeled button in the chat box that may or may not actually send. This can only hold a message
+  // for an Ask-before-sending item; for warnings, nothing gets recorded until the box actually empties in
+  // confirmSent, so clicking Attach or the microphone never counts as sending.
   function shouldBlock(opts) {
     const held = shouldHold(opts);
     if (!held && activeEditor) openReplyWindow();
+    if (!held && !opts?.unsure) filesWentOut();
     return held;
   }
 
+  // ---------- Ready before the first send ----------
+  // A word a team's policy or your vault says to ask about can only be matched once this page has its
+  // settings and the salt loaded. Right after a page loads, a send can come in before the background has
+  // answered, maybe the computer's busy or the background is still waking up, so that send waits for them,
+  // for at most 3 seconds, then gets the normal check anyway. If settings don't arrive in time, or asking
+  // for them failed outright, the message goes the way it would have without Clotr. Getting ready can
+  // delay a message a little, but it never stops one.
+  const READY_WAIT_MS = 3000;
+  let readyWait = 0; // the timer of the send that's waiting now
+  let readyGaveUp = false; // waited the full 3 s once: later sends don't wait again
+  let passThrough = false; // the send being let through after the wait: already checked
+  const ready = () => settingsLoaded && Boolean(saltValue);
+  const shouldWait = () => !ready() && !prepFailed && !readyGaveUp && !orphaned();
+  function waitUntilReady(via) {
+    if (readyWait) return true; // another Enter while waiting: still the one wait
+    const started = Date.now();
+    const check = safely(() => {
+      if (shouldWait() && Date.now() - started < READY_WAIT_MS) {
+        readyWait = setTimeout(check, 50);
+        return;
+      }
+      readyWait = 0;
+      if (!ready()) {
+        readyGaveUp = true;
+        console.info(LOG, "settings didn't come in time; the message goes");
+      }
+      if (!via?.isConnected) return; // the chat box or its button is gone: nothing to send
+      try {
+        if (!orphaned() && shouldBlock({ via })) return; // the normal check asks first
+      } catch (err) {
+        console.warn(LOG, "the check after waiting failed; the message goes", err);
+      }
+      passThrough = true;
+      try {
+        sendAgain(via);
+      } finally {
+        passThrough = false;
+      }
+    });
+    readyWait = setTimeout(check, 50);
+    return true;
+  }
+
   function shouldHold({ unsure = false, via = null } = {}) {
+    if (passThrough) return false;
     if (isPaused() || health.uiRemoved) return false; // a page removing Clotr's dialog must not leave you stuck
     if (ui.isDialogOpen()) {
       if (!orphaned()) return true;
       ui.closeDialog(); // opened before the update: an orphaned copy never holds a message
     }
-    if (!activeEditor || !activeEditor.isConnected) return false;
+    // Nothing typed: an attached file can still be sent on its own.
+    if (!activeEditor || !activeEditor.isConnected) return holdForFiles(via, unsure);
+    if (!unsure && shouldWait()) return waitUntilReady(via || activeEditor);
     clearTimeout(scanTimer);
     backToEdit = false; // a send attempt brings the dialog back
     // Was a warning on screen long enough to read before this send? (fast paste-and-Enter)
@@ -1023,11 +1137,14 @@
       heldVia = null;
     }
     if (bandaging) {
-      // Typed fast: the details are being covered right now. This send waits; the next one sends the labels.
+      // Typed fast enough that the details are still being covered right now, so this send waits and the
+      // next one sends the labels instead.
       bandageHeldSend = true;
       return true;
     }
     if (pending.length) return true;
+    // Text comes first: a held file is asked about once the typed details are answered (the next send).
+    if (holdForFiles(via || activeEditor, unsure)) return true;
     if (warnings.length && (!seen || unsure)) {
       confirmSent(activeEditor, warnings.slice(), !seen);
       return false;
@@ -1036,21 +1153,21 @@
     allowWarnings();
     flagged.clear(); // the message is going out: an emptied box isn't a removal
     // After this send attempt, not during it: a form's send button is two attempts (the click, then the
-    // submit), and the second must still see what you allowed (A3b).
+    // submit), and the second must still see what you allowed.
     setTimeout(() => retired || newMessage(), 0);
     return false;
   }
 
-  // Warn never holds a message (D30). When it went out before the warning could be read,
-  // say what went, right after, and offer to ask first next time (D52).
+  // Warn never holds a message. When it went out before the warning could be read,
+  // say what went, right after, and offer to ask first next time.
   const SEEN_MS = 1500;
   const CONFIRM_MS = 1200;
-  // Only say "Just sent" (and record it) once the message really left: sites sometimes ignore
-  // an Enter pressed too soon (Gemini did). If the text is still in the box, show the normal
-  // warning instead, now that there's time to read it.
+  // Only say "Just sent", and record it, once the message really left. Some sites ignore an Enter pressed
+  // too soon, Gemini among them, so if the text is still sitting in the box, I show the normal warning
+  // instead, now that there's time to read it.
   function confirmSent(editor, results, tell = true) {
     const before = getText(editor).replace(/\s+/g, " ").trim();
-    ui.closeNotice(); // the half-shown warning; it comes back if the message didn't go
+    ui.closeNotice(); // the half-shown warning, which comes back if the message didn't go
     warnings = [];
     setTimeout(
       safely(() => {
@@ -1069,10 +1186,11 @@
     );
   }
 
-  // "Leave it in and send" (D121): the dialog stopped a send, so leaving it in sends the message the
-  // way it was sent: the button or form the user used; for Enter, the site's send button near the chat box
-  // (a click works from a script on every site), else Enter again. If nothing sends, the text is still in
-  // the box and the next Enter goes through: its details are allowed now.
+  // When "Leave it in and send" answers a dialog that stopped a send, I send the message the same way it
+  // was originally sent: the button or form the user used, or for Enter, the site's own send button near
+  // the chat box, since a script click works on every site, and failing that, Enter again. If none of that
+  // actually sends anything, the text stays in the box and the next real Enter goes through on its own,
+  // now that its details are allowed.
   function sendAgain(via) {
     if (!via.isConnected || orphaned()) return;
     if (via instanceof HTMLFormElement) return via.requestSubmit();
@@ -1133,13 +1251,16 @@
     );
   });
   window.addEventListener("input", onTyping, true);
-  // Editors that cancel beforeinput and apply the edit themselves (Slate, CKEditor 5) never fire
-  // input; the scan waits for typing to pause, so the edit has landed by the time it reads the text.
+  // Editors that cancel beforeinput and apply the edit themselves, Slate and CKEditor 5 do this, never fire
+  // input. The scan still works, since it waits for typing to pause, so the edit has already landed by the
+  // time it reads the text.
   window.addEventListener("beforeinput", onTyping, true);
 
+  let enterDown = false; // true while Enter is physically down, so its own check decides, not the new line it types
   window.addEventListener(
     "keydown",
     safely((e) => {
+      enterDown = e.key === "Enter";
       if (e.key !== "Enter" || e.shiftKey || e.isComposing || !byUser(e)) return;
       const editor = findEditor(realTarget(e));
       if (!editor) return;
@@ -1148,9 +1269,35 @@
     }),
     true,
   );
+  window.addEventListener(
+    "keyup",
+    safely(() => (enterDown = false)),
+    true,
+  );
 
-  // Send buttons without a "send" label (an icon in a div, DeepSeek-style): a button close
-  // around the chat box whose label isn't one of the chat box's other tools.
+  // Some phone keyboards never send a real Enter keydown, only the keyCode 229 placeholder, and just type
+  // the new line directly. A phone chat built on an editor like ProseMirror treats that new line as if it
+  // were Enter, on Android at least. So I treat a new line typed without an Enter key as a send and check
+  // it the same way Enter gets checked. Shift+Enter and an actual Enter keydown never reach this listener.
+  window.addEventListener(
+    "beforeinput",
+    safely((e) => {
+      const newLine =
+        e.inputType === "insertParagraph" ||
+        e.inputType === "insertLineBreak" ||
+        (e.inputType === "insertText" && /^\r?\n$/.test(e.data || ""));
+      if (!newLine || enterDown || e.isComposing || !e.cancelable || !byUser(e)) return;
+      if (globalThis.Clotr.editor.isEditing()) return;
+      const editor = findEditor(realTarget(e));
+      if (!editor) return;
+      activeEditor = editor;
+      if (shouldBlock({ via: editor })) block(e, "a phone keyboard's new line");
+    }),
+    true,
+  );
+
+  // Finds a send button with no "send" label at all, just an icon in a div the way DeepSeek does it: any
+  // button close around the chat box whose label doesn't match one of the chat box's other tools.
   const NOT_SEND =
     /attach|upload|file|image|photo|camera|mic|voice|dictat|speak|record|model|mode|picker|select|switch|tool|plus|add|emoji|search|research|think|reason|canvas|setting|menu|more|option|stop|cancel|close|new|share|copy|edit|regenerat|retry|like|thumb|expand|collapse/i;
   function composerButton(target) {
@@ -1184,11 +1331,12 @@
     true,
   );
 
-  // ---------- Reply check: the AI mentions your own details that you didn't type here (D63) ----------
-  // Only your vault details (fingerprints), only text that appears in the 90 s after you send (so an
-  // old conversation opening never counts), never what you typed on this page, once per detail.
-  // One check per message you send, once the reply has been quiet for a moment: the page controls
-  // what appears, so more checks would let it test guess after guess (S24).
+  // ---------- Reply check: the AI mentions your own details that you didn't type here ----------
+  // Checks only for your own vault details, matched by fingerprint, and only in text that shows up within
+  // 90 seconds of you sending, so an old conversation loading back up never counts. It never flags anything
+  // you typed yourself on this page, and each detail only ever gets flagged once. I run one check per
+  // message you send, after the reply has gone quiet for a moment, because the page controls what appears
+  // on screen and more frequent checks would let it test guess after guess against your vault.
   const REPLY_WINDOW_MS = 90000;
   const REPLY_QUIET_MS = 3000;
   const OWN_WORD_TYPES = new Set(["my_name", "family_name", "employer", "watch_list"]);
@@ -1199,7 +1347,7 @@
   let replyWindowUntil = 0;
   let replyTimer = null;
   let replyObserver = null;
-  let replyChecked = false; // this message's reply check is done (one per message you send, S24)
+  let replyChecked = false; // this message's reply check is done
 
   function fpOf(r, m) {
     return saltValue ? fingerprint(saltValue, r.id, m) : null;
@@ -1214,8 +1362,8 @@
   const isOwn = (r, m) => OWN_WORD_TYPES.has(r.id) || (vaultMode(r.id, m) !== null && vaultMode(r.id, m) !== "allow");
 
   function openReplyWindow() {
-    // Nothing to look for: reply check is off (or nothing of yours in the vault yet), and Bandage
-    // hasn't covered anything in this chat either.
+    // Nothing to look for: reply check is off or the vault is still empty, and Bandage hasn't covered
+    // anything in this chat either.
     const wantsReplyCheck = replyCheck && saltValue && vaultEntries.length;
     const wantsBandage = bandageOn() && bandageChat().byLabel.size;
     if (!wantsReplyCheck && !wantsBandage) return;
@@ -1259,9 +1407,11 @@
     if (isPaused() || health.uiRemoved) return;
     const nodes = [...replyNodes].filter(validReplyNode);
     replyNodes.clear();
-    // Bandage looks at every pause until the window ends: an AI can go quiet for seconds before its answer (Copilot
-    // builds a new chat's own page first, BN17), and finding Clotr's own labels tells the page nothing.
-    // Only while the chat the message was sent in is still the page's chat (bandageSwitched).
+    // Bandage checks every quiet pause until the window ends, since an AI can go quiet for several seconds
+    // before answering at all (Copilot builds a new chat's own page first, for instance), and finding
+    // Clotr's own labels on the page tells it nothing useful anyway. This only runs while the chat the
+    // message was sent in is still the page's current chat; bandageSwitched clears it once that's no
+    // longer true.
     const labelsToFind = bandageOn() && replyChat === bandageChat() && replyChat.byLabel.size > 0;
     if (labelsToFind) bandageMarkLabels(nodes, replyChat);
     if (!replyCheck || replyChecked) {
@@ -1282,7 +1432,7 @@
     });
     if (!own.length) return;
     for (const r of own) for (const m of r.matches) mentioned.add(fpOf(r, m));
-    report(own, "mentioned"); // kind and fingerprint only, for the mind map (D63, D75); even when a warning has priority
+    report(own, "mentioned"); // kind and fingerprint only, for the mind map, recorded even when a warning has priority
     if (ui.isDialogOpen() || (ui.isNoticeOpen() && ui.noticeKind() !== "offer")) return; // a warning has priority
     console.info(
       LOG,
@@ -1292,11 +1442,131 @@
     ui.tellReplyMentions(own);
   }
 
-  // ---------- Bandage step 2 (D93, D99): hover a label in the AI's answer to see the real detail ----------
-  // The AI's page is never changed: rewriting a reply's text under a site's own framework (React and the like) can
-  // break the chat (D30). Clotr finds each known label with a live Range, and warning-ui.js lays its own invisible,
-  // focusable hotspot over it, with a small bubble that shows the real detail. The label ↔ detail map is only the
-  // in-memory one from step 1 (bandageChat().byLabel): nothing new is stored.
+  // ---------- The command check: a copied "paste this command" trick ----------
+  // A page shows a fake "verify you're human" step, puts a command on the clipboard, and tells the person to
+  // press Win+R, paste it, and run it. Microsoft calls this ClickFix, and it now shows up in AI chats too.
+  // Clotr looks only at what the person copies, right at the moment they copy it: the copied text and the
+  // message it came from, checked once, only on the person's own action. Nothing can run until it's
+  // actually pasted somewhere. The copy itself is never stopped or changed, and nothing about it gets
+  // stored, counted, or logged outside this function. This never runs on email and chat apps or on Clotr's
+  // own pages. commands.js decides whether something looks like a trick; this just watches for copies and
+  // shows the note.
+  const MAX_AROUND = 4000;
+  const noted = new Set(); // copied commands already pointed out on this page (in memory only, bounded; never stored)
+
+  // Anything Clotr itself drew on the page. A copy from inside one of its own boxes isn't the person
+  // copying a command.
+  function inOwnUI(node) {
+    for (let e = node instanceof Element ? node : node?.parentElement; e; e = e.parentElement)
+      if (/^CLOTR-/.test(e.nodeName)) return true;
+    return false;
+  }
+
+  // A copy made inside the chat box or any editable field is the person's own text: skip it.
+  function inEditable(node) {
+    for (let e = node instanceof Element ? node : node?.parentElement; e; e = e.parentElement) {
+      if (e.isContentEditable) return true;
+      if (e.nodeName === "TEXTAREA" || e.nodeName === "INPUT") return true;
+    }
+    return false;
+  }
+
+  // Finds the message a copy came from, using the nearest message container's text, so the instruction
+  // sitting beside a code block gets read without reaching into other messages. AI chats usually wrap each
+  // turn in one of these containers. Without one, I climb up a short, bounded distance and stop before any
+  // ancestor that holds a second code block, since that would mean another message. Either way the result
+  // is capped at MAX_AROUND.
+  const MESSAGE_CONTAINER =
+    "[data-message-author-role],[data-message-id],[data-testid*='message' i],[data-testid*='conversation-turn' i],article,li,[role='listitem'],[role='article']";
+  function messageAround(node) {
+    const start = node instanceof Element ? node : node?.parentElement;
+    if (!start) return "";
+    const container = start.closest?.(MESSAGE_CONTAINER);
+    if (container) return (container.textContent || "").slice(0, MAX_AROUND);
+    let best = start.textContent || "";
+    for (let e = start.parentElement, i = 0; e && i < 6; e = e.parentElement, i++) {
+      if ((e.querySelectorAll?.("pre, code")?.length || 0) > 1) break; // reached a block holding another message's code
+      const text = e.textContent || "";
+      if (text.length > MAX_AROUND) break;
+      best = text;
+    }
+    return best.slice(0, MAX_AROUND);
+  }
+
+  // Finds the page's own Copy button beside a code block, which is how AI chats usually offer commands. A
+  // page script that writes to the clipboard directly fires no copy event under the W3C spec, so watching
+  // clicks is the only way to see those copies.
+  const COPY_NAMES = /^(copy|copy code|copiar|copiar c[oó]digo)$/i;
+  function copyButton(node) {
+    for (let e = node instanceof Element ? node : node?.parentElement; e; e = e.parentElement) {
+      if (e.nodeName !== "BUTTON" && e.getAttribute?.("role") !== "button") continue;
+      const name = (e.textContent || e.getAttribute("aria-label") || e.getAttribute("title") || "").trim();
+      if (COPY_NAMES.test(name)) return e;
+    }
+    return null;
+  }
+  // The nearest code block to a Copy button: a <pre> or <code>, at most four levels up.
+  function codeNear(button) {
+    for (let e = button, i = 0; e && i < 5; e = e.parentElement, i++) {
+      if (e.nodeName === "PRE" || e.nodeName === "CODE") return e;
+      const found = e.querySelector?.("pre, code");
+      if (found) return found;
+    }
+    return null;
+  }
+
+  function checkCopiedCommand(copied, source) {
+    // Held back in this build: commands.js isn't even in the package then.
+    if (!FEATURES.commandcheck || !commandCheck || everyday || isPaused() || retired || orphaned() || !settingsLoaded)
+      return;
+    if (typeof copied !== "string" || !copied.trim() || inOwnUI(source)) return;
+    if (ui.isDialogOpen() || (ui.isNoticeOpen() && ui.noticeKind() !== "offer" && ui.noticeKind() !== "command"))
+      return; // a warning about the person's own details has priority
+    const trick = globalThis.Clotr.commandTrick(copied, messageAround(source));
+    if (!trick || noted.has(copied)) return;
+    if (noted.size > 50) noted.clear();
+    noted.add(copied);
+    console.info(LOG, "a copied command looks like a paste-a-command trick", trick.shape); // the shape only, never the command
+    ui.tellCommandCopied(trick.shape, {
+      // Clearing the clipboard uses this click's user gesture (no permission). Returns whether it worked, for the note.
+      clear: () =>
+        navigator.clipboard.writeText("").then(
+          () => true,
+          () => false,
+        ),
+    });
+  }
+
+  window.addEventListener(
+    "copy",
+    safely((e) => {
+      const target = realTarget(e);
+      if (inEditable(target)) return; // the person's own text, not a copied command
+      const sel = window.getSelection?.();
+      const copied = sel ? sel.toString() : "";
+      const source = sel?.anchorNode || target;
+      checkCopiedCommand(copied, source);
+    }),
+    true,
+  );
+
+  window.addEventListener(
+    "click",
+    safely((e) => {
+      const button = copyButton(realTarget(e));
+      if (!button) return;
+      const code = codeNear(button);
+      if (code) checkCopiedCommand(code.innerText || code.textContent || "", code);
+    }),
+    true,
+  );
+
+  // ---------- Bandage step 2: hover a label in the AI's answer to see the real detail ----------
+  // The AI's page itself never gets changed, since rewriting a reply's text under a site's own framework,
+  // React and the like, can break the chat outright. Instead, Clotr finds each known label with a live
+  // Range, and warning-ui.js lays its own invisible, focusable hotspot over it, with a small bubble that
+  // shows the real detail on hover. The label-to-detail map is just the in-memory one built in step 1,
+  // bandageChat().byLabel, so nothing new gets stored here.
   const LABEL_RE = /\[[^[\]]{1,60}\]/g;
 
   function bandageMarkLabels(nodes, chat) {
@@ -1311,8 +1581,8 @@
     if (ui.hasSpots()) ui.placeSpots();
   }
 
-  // Text nobody sees: a screen-reader-only copy of a message ("You said: …", in a 1-pixel clipped box) or a hidden
-  // one. A hotspot there would draw an underline over empty page (seen on claude.ai, BN15).
+  // Text nobody actually sees, like a screen-reader-only copy of a message in a 1-pixel clipped box, or
+  // anything else hidden outright. A hotspot placed there would just draw an underline over empty page.
   function unseenText(elm) {
     for (let e = elm, i = 0; e && e !== document.body && i < 6; e = e.parentElement, i++) {
       const s = getComputedStyle(e);
@@ -1339,17 +1609,18 @@
     }
   }
 
-  // The answer's text with every label's real detail back in, from the chat the answer belongs to (for the clipboard
-  // only, never for the page).
+  // Returns the answer's text with every label's real detail swapped back in, using the chat the answer
+  // belongs to. This is only for the clipboard, never written back to the page.
   function bandageRealText(root, chat) {
     return (root.textContent || "").replace(LABEL_RE, (m) => chat?.byLabel.get(m) ?? m);
   }
 
-  // ---------- Attached files (warn only; the upload itself isn't held, D19) ----------
+  // ---------- Attached files ----------
   // attachments.js reads text files, PDFs and Office documents, with hard caps (hostile files).
 
-  // Several files at once get one notice naming each file with something in it. A drop of
-  // hundreds of files: the first MAX_FILES are read (each is capped), the rest pass unchecked.
+  // Several files dropped at once get one notice that names each file with something in it. If someone
+  // drops hundreds of files, only the first MAX_FILES get read, each one capped, and the rest pass through
+  // unchecked.
   const MAX_FILES = 50;
 
   // Results for the same kind of data, from different files, as one entry per kind.
@@ -1363,42 +1634,323 @@
     return out;
   }
 
+  // Clotr can't read the words inside a picture. The first time someone attaches a picture on an AI site
+  // and nothing else in the drop triggered a warning, a short note says so, once per site. It waits for a
+  // better time, leaving the site unmarked, if a warning, a dialog, or another note is already open, if
+  // this frame doesn't know its settings yet, or if this is an orphaned copy left behind by an update. It
+  // never runs on email and chat apps, since people there can already see the picture themselves, or while
+  // Clotr is paused. Only the site's name gets kept, and only by the background, taken from this frame's
+  // own address.
+  function notePictures() {
+    if (pictureNoted || everyday || !settingsLoaded || isPaused() || retired || orphaned()) return;
+    if (ui.isDialogOpen() || ui.isNoticeOpen()) return;
+    pictureNoted = true;
+    message({ type: "clotr:pictureNoted" }).catch(() => {});
+    ui.tellCantReadPictures();
+  }
+
+  // Reads what an attached file holds, in detect()'s shape, plus its length in lines: either a document's
+  // actual text, or just a picture's name when there's nothing else to go on. The `picture` field is
+  // "photo" for an actual picture, or "scan" for a PDF with no readable text, usually one with a picture
+  // scanned into it, where the file name is all there is to check. Returns null when there's nothing Clotr
+  // can read in the file at all. A document that can't be read, or doesn't finish in time, gets added to
+  // `unchecked` by readChecked instead.
+  async function readFindings(f, unchecked) {
+    if (isPicture(f)) return { all: await readPicture(f), lines: 0, picture: "photo" };
+    const text = await readChecked(f, unchecked); // null: not a kind Clotr reads, unreadable or too slow (fail open)
+    if (!text?.trim())
+      return /\.pdf$/i.test(f.name) || f.type === "application/pdf"
+        ? { all: namedDocument(f), lines: 0, picture: "scan" }
+        : null;
+    return { all: splitOwnIds(detect(text)), lines: text.split("\n").length, picture: false };
+  }
+
   async function scanFiles(files) {
     if (isPaused()) return;
     const list = [...(files || [])];
     if (list.length > MAX_FILES)
       console.info(LOG, "checking the first", MAX_FILES, "of", list.length, "attached files");
+    // While these are read, a send that they could hold waits for them (waitForFiles).
+    const reading = { names: list.slice(0, MAX_FILES).map((f) => f.name), late: false };
+    fileReads.add(reading);
     const names = [];
+    const unchecked = [];
     let found = [];
     let lines = 0;
-    for (const f of list.slice(0, MAX_FILES)) {
-      const text = await readAttachment(f); // null: not a kind Clotr reads, or unreadable (fail open)
-      if (!text) continue;
-      const all = splitOwnIds(detect(text));
-      const silenced = filterMatches(all, (r, m) => respFor(r, m) === "log");
-      if (silenced.length) report(silenced, "suppressed");
-      const hits = filterMatches(all, (r, m) => respFor(r, m) !== "log" && !allowedValues.has(m));
-      if (!hits.length) continue;
-      console.info(
-        LOG,
-        "attached file",
-        (f.name.match(/\.\w+$/) || [""])[0],
-        "contains",
-        hits.map((r) => r.id),
-      ); // extension only: a file name can be personal
-      names.push(f.name);
-      lines += text.split("\n").length;
-      found = mergeResults(found, hits);
+    let pictures = 0;
+    let picture = false; // "photo" or "scan": a picture is among the files with something found
+    try {
+      for (const f of list.slice(0, MAX_FILES)) {
+        if (isPicture(f)) pictures++; // its words can't be read
+        const read = await readFindings(f, unchecked);
+        if (!read) continue;
+        const { all } = read;
+        const silenced = filterMatches(all, (r, m) => respFor(r, m) === "log");
+        if (silenced.length) report(silenced, "suppressed");
+        const hits = filterMatches(all, (r, m) => respFor(r, m) !== "log" && !allowedValues.has(m));
+        if (!hits.length) continue;
+        console.info(
+          LOG,
+          "attached file",
+          (f.name.match(/\.\w+$/) || [""])[0],
+          "contains",
+          hits.map((r) => r.id),
+        ); // extension only: a file name can be personal
+        // Something inside it is set to Ask before sending, so the whole file waits for an answer at the
+        // next send attempt. A picture gets its own separate note instead, since whatever's found in a
+        // picture never gets shown, not even masked.
+        if (holdsSend(hits) && !read.picture && !reading.late && !orphaned()) {
+          holdFile(f.name, hits);
+          continue;
+        }
+        names.push(f.name);
+        lines += read.lines;
+        picture ||= read.picture;
+        found = mergeResults(found, hits);
+      }
+      if (unchecked.length && !found.length) tellUnchecked(unchecked);
+      if (!found.length) {
+        if (pictures) notePictures();
+        return;
+      }
+      fileWarnings = mergeResults(fileWarnings, found); // an earlier file not yet acknowledged stays counted
+      if (!ui.isDialogOpen())
+        warn(
+          found,
+          names.length === 1
+            ? { name: names[0], lines, picture }
+            : { name: quoted(names), lines, count: names.length, picture },
+        );
+    } finally {
+      fileReads.delete(reading);
+      fileReadEnded();
     }
-    if (!found.length) return;
-    fileWarnings = mergeResults(fileWarnings, found); // an earlier file not yet acknowledged stays counted
-    const shown =
-      names
-        .slice(0, 3)
-        .map((n) => `“${n}”`)
-        .join(", ") + (names.length > 3 ? ` ${msg("andMore", "and $1 more", names.length - 3)}` : "");
-    if (!ui.isDialogOpen())
-      warn(found, names.length === 1 ? { name: names[0], lines } : { name: shown, lines, count: names.length });
+  }
+
+  // ---------- Files held for Ask before sending ----------
+  // An attached file holding a kind set to Ask before sending waits for the person's answer at the next
+  // send attempt, the same as a typed detail would. Most sites upload a file as soon as it's attached,
+  // though, so holding the message can't actually take the file back; the dialog explains that and asks
+  // the person to remove it themselves. What was found and the files' names stay only in this page's
+  // memory, until the person answers or the message goes out. Events still get recorded as kind and
+  // fingerprint, just like for typed text.
+  const SCAN_WAIT_MS = 3000; // a send made while a file is still being read waits this long for it
+  const READ_CEILING_MS = 20000; // a read that takes longer counts as not checked
+  let fileHold = null; // { results, names, asked }: what attached files hold that waits for an answer
+  const fileReads = new Set(); // files being read: { names, late } (late: the message went without waiting for them)
+  let fileWait = null; // a send waiting for files still being read: { via, reading, timer, asking }
+  // An organization's policy can ask before sending for some kind. In that case, a held file's question
+  // says the organization is the one asking, and a file still being read after SCAN_WAIT_MS turns into a
+  // question too, never a silent send.
+  let teamHold = false;
+
+  // Something is set to Ask before sending here, so a file could hold a message.
+  const couldHoldFiles = () => (siteMode ? siteMode === "block" : Object.values(responses).includes("block"));
+  const holdsSend = (hits) => hits.some((r) => r.matches.some((m) => respFor(r, m) === "block"));
+  // “a.pdf”, “b.txt”, “c.csv” and 2 more
+  const quoted = (names) =>
+    names
+      .slice(0, 3)
+      .map((n) => `“${n}”`)
+      .join(", ") + (names.length > 3 ? ` ${msg("andMore", "and $1 more", names.length - 3)}` : "");
+
+  // Returns the text of one attached file, or null. A read that throws, or takes longer than
+  // READ_CEILING_MS, gets listed in `unchecked` and counts as nothing found, so a message never gets held
+  // waiting for it.
+  async function readChecked(file, unchecked) {
+    let timer = 0;
+    try {
+      const tooSlow = new Promise((_, reject) => {
+        timer = setTimeout(() => reject(new Error("too slow")), READ_CEILING_MS);
+      });
+      // Looked up at each read, so a test can stand in a slow or broken reader.
+      return await Promise.race([globalThis.Clotr.readAttachment(file), tooSlow]);
+    } catch {
+      const kind = (file.name.match(/\.\w+$/) || [""])[0];
+      console.info(LOG, "couldn't check an attached file", kind); // the kind of file only, never its name
+      unchecked.push(file.name);
+      return null;
+    } finally {
+      clearTimeout(timer);
+    }
+  }
+
+  // A file holding something set to Ask before sending joins the set of held files, with the same file
+  // added twice still only counting once. Adding a new one brings the first question back up again.
+  function holdFile(name, hits) {
+    const results = mergeResults(fileHold?.results || [], hits).map((r) => ({
+      ...r,
+      matches: [...new Set(r.matches)],
+    }));
+    const names = (fileHold?.names || []).filter((n) => n !== name).concat(name);
+    fileHold = { results, names, asked: false };
+  }
+
+  // The message went out, so whatever was held went out with it. A file still being read just gets noted
+  // once it finishes.
+  function filesWentOut() {
+    fileHold = null;
+    for (const r of fileReads) r.late = true;
+  }
+
+  function dropFileHold() {
+    filesWentOut();
+    if (fileWait) endFileWait(fileWait);
+  }
+
+  // Holds a send that has files attached, either because a file is already waiting for an answer, or
+  // because one is still being read and could end up holding it. This never applies to a button that might
+  // not even be a send, to an orphaned copy, or anywhere the page has removed Clotr's dialog.
+  function holdForFiles(via, unsure = false) {
+    if (unsure || orphaned() || isPaused() || health.uiRemoved) return false;
+    if (fileWait) {
+      fileWait.via = via || fileWait.via; // pressed again while waiting: the same message
+      return true;
+    }
+    if (fileHold) {
+      askAboutFiles(via);
+      return true;
+    }
+    const reading = [...fileReads].filter((r) => !r.late);
+    if (!reading.length || !couldHoldFiles()) return false;
+    waitForFiles(via, reading);
+    return true;
+  }
+
+  // Waits up to SCAN_WAIT_MS for the files still being read, showing a small note in the corner meanwhile.
+  // After that, it asks the question if one of them holds something, or lets the message go the way it
+  // was originally sent.
+  function waitForFiles(via, reading) {
+    const wait = { via, reading, timer: 0 };
+    fileWait = wait;
+    const names = reading.flatMap((r) => r.names);
+    ui.showChecking(quoted(names), names.length);
+    console.info(LOG, "a send waits for an attached file being checked");
+    wait.timer = setTimeout(
+      safely(() => fileWaitTimedOut(wait)),
+      SCAN_WAIT_MS,
+    );
+  }
+
+  function endFileWait(wait) {
+    clearTimeout(wait.timer);
+    if (fileWait === wait) fileWait = null;
+    ui.closeChecking();
+    if (wait.asking && ui.isDialogOpen() && ui.dialogKind() === "wait") ui.closeDialog();
+  }
+
+  // A file just finished reading. If a send was waiting only on files that are now read, it goes on.
+  function fileReadEnded() {
+    const wait = fileWait;
+    if (!wait || wait.reading.some((r) => fileReads.has(r))) return;
+    endFileWait(wait);
+    if (fileHold && !orphaned() && !health.uiRemoved) askAboutFiles(wait.via);
+    else if (wait.via)
+      setTimeout(
+        safely(() => sendAgain(wait.via)),
+        0,
+      );
+  }
+
+  // The files took too long to check. The message goes anyway, and whatever they find later just gets
+  // noted.
+  function fileWaitTimedOut(wait) {
+    if (fileWait !== wait) return;
+    if (teamHold && !orphaned() && !health.uiRemoved) return askStillChecking(wait);
+    for (const r of wait.reading) r.late = true;
+    endFileWait(wait);
+    console.info(LOG, "an attached file took too long to check; the message goes");
+    if (wait.via) sendAgain(wait.via);
+  }
+
+  // Under an organization's policy, a file still being read after SCAN_WAIT_MS turns into a question
+  // instead of just a wait. Wait for the check (Enter) keeps waiting, with the corner note still up. Send
+  // now sends without waiting, and whatever the file turns out to hold just gets noted afterward. Esc goes
+  // back to the message, and the next send attempt asks the same question again. If the read finishes
+  // while this question is still open, the file's own question takes over, or the message just goes if
+  // nothing turned up, through fileReadEnded. A read never takes longer than READ_CEILING_MS, so the wait
+  // always ends one way or another.
+  function askStillChecking(wait) {
+    wait.asking = true;
+    ui.closeChecking();
+    const names = wait.reading.flatMap((r) => r.names);
+    ui.showFileWait(quoted(names), names.length, {
+      wait: () => {
+        ui.closeDialog();
+        wait.asking = false;
+        if (fileWait === wait) ui.showChecking(quoted(names), names.length);
+      },
+      now: () => {
+        for (const r of wait.reading) r.late = true;
+        endFileWait(wait);
+        ui.closeDialog();
+        console.info(LOG, "user sent without waiting for an attached file's check");
+        if (wait.via)
+          setTimeout(
+            safely(() => sendAgain(wait.via)),
+            0,
+          );
+      },
+      back: () => {
+        endFileWait(wait);
+        ui.closeDialog();
+        focusChatBox();
+      },
+    });
+  }
+
+  // Asks about the held files. The first time, it says "This file looks private" with a Go back to remove
+  // it option; a later send instead asks "Is the file off?".
+  function askAboutFiles(via) {
+    const hold = fileHold;
+    ui.showFileHold(
+      hold.results,
+      { name: quoted(hold.names), names: hold.names, count: hold.names.length, second: hold.asked, team: teamHold },
+      {
+        send: () => answerFiles(hold, false, via),
+        off: () => answerFiles(hold, true, via),
+        back: () => {
+          ui.closeDialog();
+          hold.asked = true;
+          focusChatBox();
+        },
+      },
+    );
+  }
+
+  // Either Send with the file, counted as allowed, or It's off, send, counted as taken out by hand. Either
+  // way, the message goes out the same way it was originally sent.
+  function answerFiles(hold, off, via) {
+    ui.closeDialog();
+    if (fileHold === hold) fileHold = null;
+    report(hold.results, off ? "redacted" : "allowed");
+    if (!off) {
+      for (const r of hold.results) for (const m of r.matches) allowedValues.add(m);
+      noteIgnored(hold.results);
+    }
+    console.info(
+      LOG,
+      off ? "user took the file off" : "user sent the file",
+      hold.results.map((r) => r.id),
+    );
+    if (via)
+      setTimeout(
+        safely(() => sendAgain(via)),
+        0,
+      );
+    else focusChatBox();
+  }
+
+  // Back to writing: the chat box Clotr last saw, or the one on the page (a file can be sent before anything's typed).
+  function focusChatBox() {
+    const box = activeEditor?.isConnected ? activeEditor : findChatBox();
+    box?.focus();
+  }
+
+  // A file Clotr couldn't read: said plainly where a file could have held the message.
+  function tellUnchecked(names) {
+    if (orphaned() || !couldHoldFiles()) return;
+    ui.tellFileUnchecked(quoted(names), names.length);
   }
 
   window.addEventListener(
@@ -1427,8 +1979,8 @@
     true,
   );
 
-  // The background asks before an update reload. Only a frame showing a dialog or a
-  // warning answers; if none does, the reload goes ahead.
+  // The background asks before an update reload. Only a frame currently showing a dialog or a warning
+  // answers back; if none does, the reload goes ahead.
   chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     if (msg?.type === "clotr:busy?" && (ui.isDialogOpen() || (ui.isNoticeOpen() && ui.noticeKind() !== "offer")))
       sendResponse(true);
@@ -1442,7 +1994,7 @@
         sendResponse({ found: false });
       }
     }
-    // Still here after an in-page navigation: tell the background again (HC4).
+    // Still here after an in-page navigation: tell the background again.
     if (msg?.type === "clotr:ping" && IS_TOP && !retired) sendResponse({ alive: true, paused: isPaused(), ...health });
     return false;
   });

@@ -1,0 +1,61 @@
+[
+  {
+    "header": "Apps de Gemini",
+    "title": "Prompted My medicare number is 1EG4-TE5-MK73, what does it cover?",
+    "time": "2025-05-10T14:03:22.118Z",
+    "products": [
+      "Apps de Gemini"
+    ],
+    "activityControls": [
+      "Gemini Apps Activity"
+    ],
+    "safeHtmlItem": [
+      {
+        "html": "<p>Thanks. Medicare covers hospital stays. Call 555-555-0188 for help.</p>"
+      }
+    ]
+  },
+  {
+    "header": "Apps de Gemini",
+    "title": "Prompted Write to me at jamie.rivera@example.com please, draft a short email to my landlord",
+    "time": "2025-05-10T14:20:05.502Z",
+    "products": [
+      "Apps de Gemini"
+    ],
+    "activityControls": [
+      "Gemini Apps Activity"
+    ],
+    "safeHtmlItem": [
+      {
+        "html": "<p>Here's a draft. You can reach the office at sam.lee@example.org.</p>"
+      }
+    ]
+  },
+  {
+    "header": "Apps de Gemini",
+    "title": "Prompted is passport number X12345678 still valid?",
+    "time": "2025-08-30T07:45:51.000Z",
+    "products": [
+      "Apps de Gemini"
+    ],
+    "activityControls": [
+      "Gemini Apps Activity"
+    ],
+    "safeHtmlItem": [
+      {
+        "html": "<p>I can't check passports. Ask the passport office.</p>"
+      }
+    ]
+  },
+  {
+    "header": "Apps de Gemini",
+    "title": "Used Gemini Apps",
+    "time": "2025-08-30T07:50:00.000Z",
+    "products": [
+      "Apps de Gemini"
+    ],
+    "activityControls": [
+      "Gemini Apps Activity"
+    ]
+  }
+]

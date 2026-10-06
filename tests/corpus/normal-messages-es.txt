@@ -1,7 +1,8 @@
 # Mensajes normales en español que la gente envía a herramientas de IA. Ninguno contiene datos
 # personales ni secretos, así que cualquier detección aquí es una falsa alarma. Separados por "---".
 # Muchos números a propósito: versiones, precios, horas, medidas, fechas, resultados y códigos.
-# Presupuesto: como máximo 1 falsa alarma por cada 50 mensajes.
+# El objetivo es ninguna falsa alarma: el trinquete de tests/patterns.test.js falla con cualquiera que no
+# esté en su lista ACCEPTED.
 ---
 ¿Me ayudas a escribir un correo para rechazar una reunión el martes que viene?
 ---
@@ -137,6 +138,46 @@ El número de la seguridad social de España tiene 12 dígitos, ¿cómo se calcu
 ---
 Vivo en la calle de al lado hace 5 años y vivo en madrid desde 2010. Mándalo a la avenida principal en 2 horas; mi dirección es la misma que hace 2 años.
 ---
+La cédula del contrato dice que pagamos el día 15 de cada mes, ¿qué significa exactamente?
+---
+La calle 72 es bonita en diciembre, ¿qué más puedo visitar en Bogotá en 3 días?
+---
+El DNI tiene 8 cifras y una letra, ¿cómo se calcula esa letra en Perú y en Argentina?
+---
+La historia clínica del hospital está en papel, ¿cómo convenzo a la dirección de digitalizarla en 2026?
+---
+Voy a correr la carrera 15 de la maratón de relevos, ¿cómo entreno en 6 semanas?
+---
+La carrera 7 es la avenida más larga de Bogotá, ¿desde cuándo existe?
+---
+¿Por qué en Colombia las direcciones llevan # y un guion, como 93-47? ¿Qué significa cada número?
+---
+¿Cuántos años dura un pasaporte mexicano? Vi que hay de 3, 6 y 10 años.
+---
+Para sacar la licencia de conducir, ¿cuántas preguntas tiene el examen teórico? Creo que son 35.
+---
+El brevete en Perú se renueva cada 10 años, ¿es verdad?
+---
+¿Qué es un expediente clínico electrónico y qué dice la NOM-024 sobre él?
+---
+El expediente académico tiene 12 materias aprobadas, ¿cómo pido el certificado?
+---
+¿Cuánto cuesta afiliarse al IMSS como trabajador independiente en 2026?
+---
+¿El NSS y la CURP son lo mismo? El NSS tiene 11 dígitos y la CURP 18 caracteres.
+---
+En el sindicato somos 3000 afiliados, ¿cómo organizo una votación en línea?
+---
+¿Medicaid es gratis para una familia de 4? Explícame los requisitos de ingresos.
+---
+¿Cómo se calcula el dígito verificador del RUT chileno? Explícalo con el módulo 11.
+---
+Necesito cambiar la dirección de mi cédula de ciudadanía, ¿qué papeles piden?
+---
+La Dra. García y el Dr. López dan la charla a las 5 en la sala 3, ¿cómo la anuncio?
+---
+¿Cuál es la canción más famosa de Calle 13? Creo que fue número 1 en 2009.
+---
 Mi vuelo IB 3456 sale a las 6:45 desde la puerta B12, asiento 23C. ¿Qué llevo para 3 días en Bilbao?
 ---
 El router es un TP-Link AX1500 con firmware 1.0.3. ¿Por qué se corta cada 20 minutos?
@@ -217,6 +258,44 @@ Nos mudamos el mes pasado. ¿Cómo cambio la dirección en Correos?
 ---
 ¿Qué diferencia hay entre el IBAN y el número de cuenta?
 ---
+¿Cómo activo la verificación en dos pasos con una app de autenticación como Google Authenticator?
+---
+La app de autenticador me dice que la clave de configuración no es válida. ¿Qué hago?
+---
+Mi madre cambió de móvil y ya no le llegan los códigos de doble factor. ¿Cómo lo recupera?
+---
+¿Dónde viene el número de bastidor en un Seat Ibiza? Me lo pide el seguro para el parte.
+---
+El coche tiene la ITV pasada y 120.000 km. ¿Me escribes un anuncio para venderlo por 6.500 euros?
+---
+¿Qué significa el código de avería P0171 en mi coche?
+---
+La referencia del filtro de aceite es 15400-PLM-A02. ¿Sirve para un Honda Civic de 2008?
+---
+El seguro me pide el permiso de circulación y la ficha técnica del vehículo. ¿Qué es cada cosa?
+---
+¿Cuánto cuesta cambiar la correa de distribución de un Renault Clio de 2015?
+---
+El plazo de matrícula termina el 15 de septiembre. ¿Me ayudas a hacer una lista de documentos?
+---
+La matrícula de la universidad cuesta 1.200 euros. ¿Hay becas para estudiantes de primer año?
+---
+¿Cómo pido un duplicado del carné de estudiante si lo he perdido?
+---
+Somos 28 alumnos en clase y el profesor quiere hacer grupos de 4. ¿Cuántos grupos salen?
+---
+Soy estudiante de segundo de Derecho. ¿Qué asignaturas optativas me recomiendas?
+---
+¿Qué placa base va con un Ryzen 7 7800X3D?
+---
+¿Cómo se lee una matrícula española? ¿Qué significan las letras?
+---
+La patente del invento caduca en 2030. ¿Qué pasa después con el diseño?
+---
+Pon la placa de 30 cm en el horno a 180 grados durante 25 minutos, ¿se quema?
+---
+Mis placas solares producen 4,5 kW al mediodía. ¿Es normal en octubre?
+---
 Mezcla de dos a cuatro minutos y luego de uno a dos más.
 ---
 Hornea entre veinte y veinticinco minutos, deja reposar de cinco a diez.
@@ -238,3 +317,143 @@ Trabajo de nueve a cinco, cinco o seis días por semana.
 Ganamos dos a uno, tres a dos y cuatro a tres.
 ---
 tallas dos a cuatro, seis a ocho, diez a doce
+---
+Mi gamertag es privado, ¿cómo me encontró un desconocido?
+---
+Agrégame en Discord cuando puedas, estoy casi todas las tardes.
+---
+¿Qué nombre de usuario de Roblox le pongo a mi hijo?
+---
+Mi usuario de Roblox es el mismo que mi nombre real, ¿lo cambio?
+---
+Mi nombre en Fortnite es muy largo, ¿me das ideas más cortas?
+---
+¿Cómo cambio mi ID de PSN sin perder los juegos?
+---
+Leí en IGN que la secuela se retrasa hasta 2027.
+---
+¿Dónde veo mi código de amigo de Switch?
+---
+Mi tag de Discord desapareció con la actualización.
+---
+Mi nick en Minecraft es demasiado largo para el servidor.
+---
+Sígueme en Instagram, soy @lunita.dibuja y subo mis dibujos.
+---
+El nombre en Steam es Hollow Knight, pero en Switch tiene subtítulo.
+---
+Mi ID de Riot se reinició con la actualización y mis amigos no me encuentran.
+---
+Mi usuario de Roblox es secreto, no se lo digas a nadie.
+---
+¿Es seguro Roblox para un niño de 8 años?
+---
+Perdí mi cédula. 2 días después apareció en la lavadora.
+---
+Cambié mi contraseña. Gracias por el consejo del gestor de contraseñas.
+---
+Olvidé mi contraseña otra vez. Tercera vez esta semana, ¿cómo hago una que recuerde?
+---
+Ya renové mi pasaporte. 6 semanas después por fin llegó.
+---
+Me mandaron un código. 10 minutos después ya no servía, ¿por qué?
+---
+Saqué mi licencia de conducir. 3 intentos, ¡pero aprobé!
+---
+Pagué la matrícula. 350 euros este semestre, ¿es normal?
+---
+Me cambié de número. 2024 fue un año raro.
+---
+Necesito mi credencial de estudiante. 10 minutos para que cierre la biblioteca.
+---
+Mi fecha de nacimiento. 1 cosa que odio escribir en cada formulario.
+---
+Ingresa la clave. Gracias, ahora toca Continuar.
+---
+Mi usuario. La verdad no me acuerdo cuál usé en esta página.
+---
+Me pidieron el código. Nunca lo doy, ¿hice bien?
+---
+Mi placa. 3 multas este mes, ¿cómo apelo?
+---
+Olvidé mi contraseña. ¿Algún consejo para crear una que recuerde?
+---
+olvidé mi contraseña también, ¿cómo la recupero?
+---
+No sé cuál es mi usuario. ¿Dónde lo busco?
+---
+Llego en 5 minutos. Calle Mayor estaba cerrada, así que di la vuelta.
+---
+Compramos 2 entradas. Plaza llena, ni un asiento libre.
+---
+Fue en 2019. Cinco minutos después llegó la ambulancia.
+---
+Son las veinte. Cinco minutos más y me voy.
+---
+Tengo 3 hijos. Dos más y somos un equipo de fútbol.
+---
+Ganamos 3 a 2. Cuatro goles anulados, ¡qué partido!
+---
+Llámame a las nueve. Cinco minutos y te cuento todo.
+---
+¿Cuántos eran? Nueve de ellos ya se fueron.
+---
+llego en 5 minutos. calle mayor estaba cerrada
+---
+Olvidé mi contraseña
+Gracias por el recordatorio.
+---
+Olvidé mi contraseña
+Camino a casa me acordé de la nueva.
+---
+Los 3 números de atrás de la camiseta son el dorsal del jugador. ¿Se pueden cambiar?
+---
+La parte de atrás del libro tiene 3 números debajo del código de barras. ¿Qué significan?
+---
+Hay 3 números atrás del recibo: 042, 117 y 380. ¿Son de la tienda y de la caja?
+---
+El código del producto que viene atrás es 123, pero en la web pone 124. ¿Cuál pido?
+---
+Nuestra habitación es la 123 y tiene vistas al puerto. ¿Qué podemos visitar cerca del hotel?
+---
+¿Sacar 123 en el examen de práctica es buena nota?
+---
+¿Para qué sirven los tres números de atrás de la tarjeta y por qué los piden las webs?
+---
+El código de seguridad son 3 dígitos atrás, o 4 delante en las Amex. ¿Las de débito también lo tienen?
+---
+El código de atrás de la tarjeta regalo está borrado. ¿La tienda la puede activar igual?
+---
+Me regalaron una tarjeta regalo de 50 € de El Corte Inglés. ¿Qué libro me recomiendas?
+---
+El saldo de la tarjeta regalo es 25,00 €, pero en la tienda me dicen 20. ¿Quién tiene razón?
+---
+El código de la tarjeta regalo no funciona al pagar. ¿Hay que canjearlo antes en la web?
+---
+¿Puedo pagar el pedido 112-4567890-1234567 con una tarjeta regalo de Amazon?
+---
+El código de seguimiento que me mandaron es 48291345 y no aparece en la web de la paquetería. ¿Qué hago?
+---
+El código de descuento que me enviaron es 4821, pero dice que caducó ayer. ¿Pueden hacer eso?
+---
+28013 es mi código postal, ¿de qué barrio de Madrid es?
+---
+El código de verificación caducó antes de que pudiera escribirlo. ¿Cómo pido otro?
+---
+Mi código tiene 3000 líneas, ¿lo revisas por partes?
+---
+El código del mensaje de error es 5001, ¿qué significa?
+---
+¿Dónde encuentro mi número de cuenta en la app del banco?
+---
+El número de cuenta tiene 10 dígitos y la CLABE tiene 18, ¿cuál les doy para la nómina?
+---
+¿Qué es una cuenta CLABE y para qué sirve?
+---
+El CBU tiene 22 dígitos, ¿dónde lo veo en el home banking?
+---
+¿Cuál es la diferencia entre una cuenta corriente y una cuenta de ahorros?
+---
+Tengo en mi cuenta de ahorros 150000 pesos, ¿cómo los invierto sin riesgo?
+---
+Mi número de pedido es 113-2846159-7730214 y el número de seguimiento es 9361289744390612445812. ¿Dónde está?

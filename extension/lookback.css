@@ -1,0 +1,544 @@
+/* Look back's page. It builds on popup.css's tokens and vault.css's page column, the same way extcheck.css does.
+   Three tag colours carry across every card: red for a key or an ID number, amber for a password, a card or a
+   code, and blue for the rest of a personal detail. These reuse the same --high/--medium/--low tokens the popup
+   already uses for severity. */
+.lookback-page {
+  max-width: 760px;
+  padding: 16px 16px 40px;
+  font-size: 16px;
+  line-height: 1.45;
+}
+.lookback-page main {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+.lookback-page h1,
+.lookback-page h2,
+.lookback-page h3,
+.lookback-page p {
+  margin: 0;
+}
+.lookback-page a {
+  color: var(--brand);
+}
+.lookback-page :focus-visible {
+  outline: 2px solid var(--brand);
+  outline-offset: 2px;
+}
+.lookback-top {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 14px;
+}
+.lb-chip {
+  display: inline-flex;
+  align-items: center;
+  color: var(--brand);
+  font-size: 13px;
+  font-weight: 700;
+}
+.lookback-page h1 {
+  font-size: 26px;
+  line-height: 1.25;
+  color: var(--ink);
+}
+.lookback-page .lead {
+  font-size: 15px;
+  color: var(--ink-2);
+}
+.lb-promises {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 13px;
+  color: var(--muted);
+}
+.lb-promises li::before {
+  content: "✓ ";
+  color: var(--good-ink);
+}
+
+/* Cards: the same lifted, grid-edged card every settings page uses. */
+.lb-card {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 16px;
+  border-radius: 14px;
+  background: var(--card-bg);
+  box-shadow:
+    var(--lift),
+    inset 0 0 0 1px var(--grid);
+}
+.lb-card h2 {
+  font-size: 18px;
+  color: var(--ink);
+}
+.muted {
+  color: var(--muted);
+  font-size: 13px;
+}
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+  margin: 0;
+}
+.lookback-page .btn {
+  padding: 9px 16px;
+  border-radius: 10px;
+  font-size: 15px;
+}
+.lookback-page .btn:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+.as-link {
+  border: none;
+  background: none;
+  padding: 0;
+  color: var(--brand);
+  font-size: 14px;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+  cursor: pointer;
+}
+
+/* Step 1: which tool. */
+.lb-tabs {
+  display: flex;
+  gap: 6px;
+}
+.lb-tab {
+  flex: 1;
+  padding: 8px 10px;
+  border: none;
+  border-radius: 10px;
+  background: var(--surface);
+  color: var(--ink-2);
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  box-shadow: inset 0 0 0 1px var(--grid);
+}
+.lb-tab[aria-selected="true"] {
+  background: var(--brand-wash);
+  color: var(--brand);
+  box-shadow: inset 0 0 0 1px var(--brand);
+}
+.lb-tool-steps {
+  margin: 0;
+  padding-left: 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-size: 14px;
+  color: var(--ink);
+}
+
+/* Step 2: picking the export. */
+.lb-drop {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 28px 16px;
+  border: 2px dashed var(--grid);
+  border-radius: 14px;
+  color: var(--ink-2);
+  font-size: 15px;
+  text-align: center;
+  cursor: pointer;
+}
+.lb-drop.is-over {
+  border-color: var(--brand);
+  background: var(--brand-wash);
+  color: var(--brand);
+}
+
+/* Reading: the bar, the counts, the steps, the feed. */
+.lb-progress {
+  height: 10px;
+  border-radius: 999px;
+  background: var(--surface);
+  box-shadow: inset 0 0 0 1px var(--grid);
+  overflow: hidden;
+}
+.lb-progress-fill {
+  height: 100%;
+  width: 0%;
+  border-radius: 999px;
+  background: var(--brand);
+  transition: width 0.25s ease;
+}
+.lb-progress-text {
+  display: flex;
+  justify-content: space-between;
+  font-size: 13px;
+  color: var(--ink-2);
+}
+.lb-stats {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  font-size: 14px;
+  color: var(--ink);
+}
+.lb-steps {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 14px;
+  color: var(--muted);
+}
+.lb-steps li {
+  padding-left: 22px;
+  position: relative;
+}
+.lb-steps li::before {
+  content: "○";
+  position: absolute;
+  left: 0;
+}
+.lb-steps li.is-active {
+  color: var(--ink);
+  font-weight: 600;
+}
+.lb-steps li.is-active::before {
+  content: "◐";
+  color: var(--brand);
+}
+.lb-steps li.is-done {
+  color: var(--ink-2);
+}
+.lb-steps li.is-done::before {
+  content: "●";
+  color: var(--good-ink);
+}
+.lb-feed {
+  display: flex;
+  flex-direction: column-reverse;
+  gap: 4px;
+  max-height: 160px;
+  overflow-y: auto;
+  font-size: 13px;
+  color: var(--ink-2);
+}
+.lb-feed-row {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  flex-wrap: wrap;
+  animation: lb-feed-in 0.2s ease;
+}
+
+/* Tag chips: red (keys and ID numbers), amber (passwords, cards and codes), blue (the rest). */
+.lb-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.lb-tag {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 600;
+}
+.lb-tag-red {
+  background: var(--high-bg);
+  color: var(--high-fg);
+}
+.lb-tag-amber {
+  background: var(--medium-bg);
+  color: var(--medium-fg);
+}
+.lb-tag-blue {
+  background: var(--low-bg);
+  color: var(--low-fg);
+}
+
+/* Results. */
+.lb-results {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+}
+#results-heading {
+  font-size: 22px;
+  line-height: 1.3;
+  color: var(--ink);
+}
+.lb-shared-rows {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin-top: 6px;
+}
+.lb-shared-row {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 8px 4px;
+  font-size: 15px;
+  border-bottom: 1px solid var(--grid);
+}
+.lb-shared-row:last-child {
+  border-bottom: none;
+}
+.lb-shared-row .lb-kind-name {
+  color: var(--ink);
+  font-weight: 700;
+  min-width: 140px;
+}
+.lb-shared-row .lb-kind-count {
+  color: var(--ink-2);
+}
+
+.lb-cards {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-top: 8px;
+}
+.lb-card-item {
+  border-radius: 14px;
+  background: var(--card-bg);
+  box-shadow:
+    var(--lift),
+    inset 0 0 0 1px var(--grid);
+  overflow: hidden;
+}
+.lb-card-item > summary {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 12px 14px;
+  cursor: pointer;
+  list-style: none;
+}
+.lb-card-item > summary::-webkit-details-marker {
+  display: none;
+}
+.lb-card-head {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.lb-card-title {
+  font-size: 15px;
+  color: var(--ink);
+  font-weight: 600;
+}
+.lb-card-date {
+  font-size: 13px;
+  color: var(--muted);
+}
+.lb-card-teaser {
+  font-size: 13px;
+  color: var(--ink-2);
+}
+.lb-card-body {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 0 14px 14px;
+}
+.lb-finds {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.lb-find-row {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  flex-wrap: wrap;
+  font-size: 13px;
+}
+.lb-find-masked {
+  font-family: monospace;
+  color: var(--ink);
+}
+.lb-find-where {
+  color: var(--muted);
+}
+.lb-advice {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 13px;
+  color: var(--ink-2);
+}
+.lb-advice li::before {
+  content: "• ";
+}
+.lb-manifest-links {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.lb-manifest-link::before {
+  content: "• ";
+}
+.lb-card-actions {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+#more-chats {
+  color: var(--muted);
+}
+
+.lb-notread ul {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 13px;
+  color: var(--muted);
+}
+
+.lb-habit {
+  font-size: 14px;
+  color: var(--ink-2);
+}
+
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+@keyframes lb-feed-in {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* The deletion letter's panel: a fieldset of chat checkboxes, a fieldset of place radios, and the
+   letter itself in an editable box, the same shape as the report's summary box (popup.css's .report-sum-text). */
+.lb-which,
+.lb-places {
+  margin: 0;
+  padding: 0;
+  border: none;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.lb-which legend,
+.lb-places legend {
+  padding: 0;
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--ink);
+}
+.lb-chat-picks {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  max-height: 220px;
+  overflow-y: auto;
+}
+.lb-chat-pick {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  font-size: 13px;
+  color: var(--ink-2);
+}
+.lb-chat-pick .lb-card-date {
+  color: var(--muted);
+}
+.lb-place-options {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 16px;
+}
+.lb-place-options label {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 14px;
+  color: var(--ink-2);
+}
+.lb-letter-label {
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--ink);
+}
+.lb-letter-box {
+  display: block;
+  width: 100%;
+  min-height: 14em;
+  resize: vertical;
+  font: inherit;
+  font-size: 13px;
+  line-height: 1.5;
+  padding: 10px 12px;
+  border: none;
+  border-radius: 10px;
+  color: var(--ink);
+  background: var(--surface);
+  box-shadow: inset 0 0 0 1px var(--axis);
+}
+.lb-letter-box:focus {
+  outline: 2px solid var(--brand);
+  outline-offset: 1px;
+}
+.lb-letter-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+}
+.lb-copy-status {
+  font-size: 13px;
+  color: var(--muted);
+}
+.lb-next h3 {
+  font-size: 14px;
+  color: var(--ink);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .lb-progress-fill {
+    transition: none;
+  }
+  .lb-feed-row {
+    animation: none;
+  }
+}

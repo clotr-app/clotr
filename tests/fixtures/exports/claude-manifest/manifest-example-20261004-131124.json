@@ -1,0 +1,16 @@
+{
+  "version": "1.0",
+  "created_at": "2026-10-04T13:11:24.000000Z",
+  "data_files": [
+    {
+      "category": "conversations",
+      "filename": "conversations-000.zip",
+      "export_url": "https://claude.ai/api/organizations/example/export/download/conversations-000"
+    },
+    {
+      "category": "conversations",
+      "filename": "conversations-001.zip",
+      "export_url": "https://claude.ai/api/organizations/example/export/download/conversations-001"
+    }
+  ]
+}

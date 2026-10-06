@@ -1,4 +1,10 @@
 * text=auto eol=lf
+# Windows double-click files: cmd.exe reads them with Windows line endings.
+*.cmd text eol=crlf
 *.png binary
 *.jpg binary
 *.ico binary
+*.pdf binary
+*.xlsx binary
+*.docx binary
+*.pptx binary

@@ -1,5 +1,5 @@
-// README badges (A4, the "what's inside" proof): the Tests badge must point at a workflow file
-// that actually exists, and the "no AI inside" badge must point at the rule check that enforces it.
+// README badges: the Tests badge must point at a workflow file that actually exists, and the License badge
+// must point at the actual license file.
 "use strict";
 
 const test = require("node:test");
@@ -10,7 +10,7 @@ const path = require("path");
 const ROOT = path.join(__dirname, "..");
 const README = fs.readFileSync(path.join(ROOT, "README.md"), "utf8");
 
-// Only the top of the file: badges live right under the title.
+// Only looks at the top of the file, since badges live right under the title.
 const HEAD = README.split("\n").slice(0, 10).join("\n");
 
 test("README has a Tests badge linking to a workflow file that exists", () => {
@@ -30,13 +30,17 @@ test("README has a Tests badge linking to a workflow file that exists", () => {
   );
 });
 
-test('README has a "no AI inside" badge linking to the rule check', () => {
-  assert.match(HEAD, /no%20AI%20inside/i, 'no "no AI inside" badge found near the top of README.md');
-  assert.match(HEAD, /tests\/rules\.test\.js/, 'the "no AI inside" badge doesn\'t link to tests/rules.test.js');
+test("README has a License badge linking to LICENSE", () => {
+  assert.match(HEAD, /license-AGPL/i, "no License badge found near the top of README.md");
+  assert.match(HEAD, /\]\(LICENSE\)/, "the License badge doesn't link to LICENSE");
 });
 
-// The text outside HTML comments, cut by position rather than a replace pattern (a link only inside a comment, like
-// the old "once Mozilla approves" placeholder, must not count as live).
+test('README has no "no AI inside" slogan badge (the claim is made once, in the text, not as a badge)', () => {
+  assert.doesNotMatch(HEAD, /no%20AI%20inside/i, 'README still has the "no AI inside" badge');
+});
+
+// Returns the text outside HTML comments, cut by position rather than a replace pattern. A link that only
+// appears inside a comment, like the old "once Mozilla approves" placeholder, must not count as live.
 function outsideComments(s) {
   let out = "";
   let i = 0;
@@ -50,14 +54,14 @@ function outsideComments(s) {
   }
 }
 
-test("README's Install section links to all three stores, none of them a placeholder", () => {
+test("README's Install section links to the stores that are live, and is honest about Chrome", () => {
   const live = outsideComments(README);
   const stores = [
-    ["Chrome", /https:\/\/chromewebstore\.google\.com\/detail\/[\w-]+/],
     ["Microsoft Edge", /https:\/\/microsoftedge\.microsoft\.com\/addons\/detail\/[\w-]+/],
     ["Firefox", /https:\/\/addons\.mozilla\.org\/firefox\/addon\/[\w-]+\//],
   ];
   for (const [name, re] of stores) assert.match(live, re, `README has no live ${name} store link`);
+  assert.match(live, /Chrome Web Store/, "README doesn't mention the Chrome Web Store");
   assert.doesNotMatch(README, /REPLACE-WITH|is on its way to/i, "README still has a placeholder store link");
 });
 

@@ -2,6 +2,9 @@
   "extDescription": {
     "message": "Detecta contraseñas, claves y datos personales antes de enviarlos en chats y herramientas de IA. Todo se revisa en tu ordenador."
   },
+  "cmdFocusNotice": {
+    "message": "Ir al aviso de Clotr (Esc vuelve a tu mensaje)"
+  },
   "type_private_key": {
     "message": "Clave privada"
   },
@@ -53,6 +56,12 @@
   "type_credit_card": {
     "message": "Número de tarjeta de crédito"
   },
+  "type_card_code": {
+    "message": "Código de seguridad de la tarjeta"
+  },
+  "type_gift_card": {
+    "message": "Código de tarjeta regalo"
+  },
   "type_stripe_publishable_key": {
     "message": "Clave publicable de Stripe"
   },
@@ -82,6 +91,18 @@
   },
   "type_insurance_id": {
     "message": "Número de afiliado del seguro"
+  },
+  "type_vin": {
+    "message": "Número de bastidor (VIN)"
+  },
+  "type_student_id": {
+    "message": "Número de estudiante"
+  },
+  "type_license_plate": {
+    "message": "Matrícula o placa del vehículo"
+  },
+  "type_gamer_tag": {
+    "message": "Nombre de jugador (gamertag)"
   },
   "type_date_of_birth": {
     "message": "Fecha de nacimiento"
@@ -124,6 +145,9 @@
   },
   "leaveIt": {
     "message": "Dejarlo"
+  },
+  "editIt": {
+    "message": "Editarlo"
   },
   "leaveItSend": {
     "message": "Dejarlo y enviar"
@@ -191,6 +215,25 @@
   },
   "noticeFileHint": {
     "message": "Para que siga siendo privado, quita el archivo antes de enviar."
+  },
+  "teamKindLine": {
+    "message": "$p1$ es un tipo de dato que añadió tu organización.",
+    "placeholders": {
+      "p1": {
+        "content": "$1"
+      }
+    }
+  },
+  "teamKindsLine": {
+    "message": "$p1$ son tipos de datos que añadió tu organización.",
+    "placeholders": {
+      "p1": {
+        "content": "$1"
+      }
+    }
+  },
+  "teamKindAnon": {
+    "message": "Un tipo que añadió tu organización"
   },
   "noticeUpdated": {
     "message": "Clotr se acaba de actualizar. Recarga esta página para que pueda guardar tus decisiones."
@@ -472,6 +515,9 @@
   "reloadAnyway": {
     "message": "Recargar de todos modos"
   },
+  "popup_pageTitle": {
+    "message": "Clotr"
+  },
   "popup_localOnly": {
     "message": "Solo en este equipo"
   },
@@ -575,6 +621,9 @@
   },
   "popup_seeWhatsApplied": {
     "message": "Ver qué se aplica"
+  },
+  "popup_officeTraining": {
+    "message": "Formación de la oficina"
   },
   "popup_managedDetail": {
     "message": "Los ajustes de Clotr en este equipo los fija tu equipo de informática. Sigue revisando solo chats de IA, en este equipo, y no informa de nada a nadie."
@@ -921,7 +970,7 @@
     }
   },
   "pp_daySummary": {
-    "message": "$p1$ — ocultados: $p2$, enviados: $p3$, solo contados: $p4$",
+    "message": "$p1$: ocultados $p2$, enviados $p3$, solo contados $p4$",
     "placeholders": {
       "p1": {
         "content": "$1"
@@ -1018,6 +1067,20 @@
       }
     }
   },
+  "pp_gTeam": {
+    "message": "Tipos que añadió tu organización"
+  },
+  "pp_setByOrg": {
+    "message": "Los fija tu organización"
+  },
+  "pp_seeEach": {
+    "message": "Ver cada uno ($p1$)",
+    "placeholders": {
+      "p1": {
+        "content": "$1"
+      }
+    }
+  },
   "pp_other": {
     "message": "Otros"
   },
@@ -1086,16 +1149,13 @@
     "message": "Solo huellas"
   },
   "vault_clotrChecksWhatYouType": {
-    "message": "Clotr funciona en chats de IA como ChatGPT, Claude y Gemini, y en tu correo o tus apps de chat cuando los activas en Ajustes. Te avisa antes de que salga una contraseña, una clave o un dato personal, y luego tú decides: quitarlo o enviarlo igualmente."
-  },
-  "vault_fivePromises": {
-    "message": "Sin IA dentro. Sin red. Sin cuentas. Código abierto. Gratis para las personas."
+    "message": "Clotr funciona en chats de IA como ChatGPT, Claude y Gemini, y en tu correo o tus apps de chat si los activas abajo o en Ajustes. Te avisa antes de que salga una contraseña, una clave o un dato personal, y luego tú decides: quitarlo o enviarlo igualmente."
   },
   "vault_onlyOnAiChats": {
     "message": "Solo donde tú eliges."
   },
   "vault_fact1": {
-    "message": "De serie, solo en chats de IA. En tu correo o una app de chat solo si lo activas, sitio por sitio. Nunca en un sitio que no elegiste, nunca en todas partes a la vez."
+    "message": "De serie, solo en chats de IA. En tu correo y tus apps de chat, solo en las que eliges, y tu navegador te pregunta antes. Nunca en un sitio que no elegiste, nunca en todas partes a la vez."
   },
   "vault_nothingLeavesThisComputer": {
     "message": "Nada sale de este equipo."
@@ -1143,7 +1203,7 @@
     "message": "Este cuadro es solo para practicar y nada de lo que escribas aquí sale de tu equipo. En un chat de IA de verdad, el aviso aparece en la esquina superior derecha."
   },
   "vault_optionalTellClotrWhatTo": {
-    "message": "Opcional: dile a Clotr qué vigilar"
+    "message": "Dile a Clotr qué vigilar"
   },
   "vault_addLater": {
     "message": "Añade tus datos abajo y Clotr los reconocerá se escriban como se escriban. Sin prisa. Puedes volver cuando quieras desde el botón de Clotr en la barra de herramientas → Ajustes →"
@@ -1374,6 +1434,32 @@
   "vt_pinned": {
     "message": "✓ Clotr está fijado. Su contador aparece en el escudo de tu barra de herramientas."
   },
+  "vault_allowTitle": {
+    "message": "Deja que Clotr revise tus chats de IA"
+  },
+  "vault_allowHow": {
+    "message": "Le pide a tu navegador solo esos chats de IA, nunca otro sitio."
+  },
+  "vault_allowButton": {
+    "message": "Permitir Clotr en mis chats de IA"
+  },
+  "vt_allowAll": {
+    "message": "Tu navegador todavía no ha dejado entrar a Clotr en tus chats de IA, así que no puede avisarte allí."
+  },
+  "vt_allowSome": {
+    "message": "Tu navegador todavía no ha dejado entrar a Clotr en $p1$ de los chats de IA que conoce, así que no puede avisarte allí.",
+    "placeholders": {
+      "p1": {
+        "content": "$1"
+      }
+    }
+  },
+  "vt_allowDone": {
+    "message": "✓ Listo. Clotr ya puede revisar tus chats de IA."
+  },
+  "vt_allowNo": {
+    "message": "Tu navegador no lo permitió, así que Clotr todavía no puede avisarte en esos chats de IA. Usa el botón para pedirlo de nuevo."
+  },
   "dash_yourAiExposureReport": {
     "message": "Tu informe de exposición"
   },
@@ -1546,7 +1632,7 @@
     "message": "Aquí no hay nada todavía. El mapa se irá llenando a medida que Clotr detecte cosas en tus chats y tu correo."
   },
   "db_weekLabel": {
-    "message": "Semana del $p1$ — ocultados: $p2$, enviados: $p3$, solo contados: $p4$",
+    "message": "Semana del $p1$: ocultados $p2$, enviados $p3$, solo contados $p4$",
     "placeholders": {
       "p1": {
         "content": "$1"
@@ -1674,6 +1760,12 @@
   },
   "ad_card": {
     "message": "Revisa tus movimientos y, si tienes dudas, pide una tarjeta nueva a tu banco."
+  },
+  "ad_card_code": {
+    "message": "Llama al número de tu tarjeta y pide una nueva si otra persona pudo verla."
+  },
+  "ad_gift_card": {
+    "message": "Llama a la empresa de la tarjeta al número que aparece detrás. Di que un estafador consiguió el número y el PIN, y pide que te devuelvan el dinero."
   },
   "ad_bank": {
     "message": "Avisa a tu banco si no querías compartirla y vigila si hay movimientos extraños."
@@ -1808,7 +1900,7 @@
     "message": "Los datos cortos se pueden adivinar a partir de sus huellas"
   },
   "st_t9": {
-    "message": "si alguien puede abrir el perfil de este navegador en este equipo. No hay tantos números de teléfono posibles, así que una persona decidida podría probarlos todos. Las huellas protegen tus datos de miradas casuales, no de alguien con acceso total a tu equipo."
+    "message": "si alguien puede abrir el perfil de este navegador en este equipo. No hay tantos números de teléfono posibles, ni tantos lugares donde se pudo tomar una foto, así que una persona decidida podría probarlos todos. Las huellas protegen tus datos de miradas casuales, no de alguien con acceso total a tu equipo."
   },
   "st_aiSitesMayKeepYour": {
     "message": "Los sitios de IA pueden guardar en este navegador el mensaje que aún no has enviado."
@@ -1816,11 +1908,17 @@
   "st_t10": {
     "message": "Algunos (como ChatGPT) guardan lo que escribes para que siga ahí tras recargar. No se envía nada hasta que pulsas Enviar, y al ocultar algo también se sustituye la copia guardada."
   },
-  "st_clotrOnlyReadsText": {
-    "message": "Clotr solo lee texto."
+  "st_picturesLimit": {
+    "message": "Clotr no puede leer imágenes."
   },
-  "st_t11": {
-    "message": "Revisa lo que escribes y los archivos de texto, PDF, Word, Excel y PowerPoint que adjuntas, pero no imágenes, capturas de pantalla ni voz. Si tu caja fuerte tiene datos, también lee la respuesta de la IA durante 90 segundos después de enviar, solo para notar tus propios datos; no se guarda nada de la respuesta."
+  "st_picturesLimitText": {
+    "message": "Revisa lo que escribes y el texto de los archivos que adjuntas (texto, PDF, Word, Excel y PowerPoint). En una imagen o una captura de pantalla solo revisa el nombre del archivo y, en una foto, si guarda el lugar donde se tomó. No puede leer las palabras ni ver lo que muestra una imagen, así que revisa tú las imágenes. No oye la voz. Si tu caja fuerte tiene datos, también lee la respuesta de la IA durante 90 segundos después de enviar, solo para notar tus propios datos; no se guarda nada de la respuesta."
+  },
+  "st_longList": {
+    "message": "Una lista larga enviada de una vez se cuenta, no se guarda uno por uno."
+  },
+  "st_longListText": {
+    "message": "Pasados 10 del mismo tipo de una vez, Clotr guarda un solo registro con la cuenta del resto, así tu historial conserva su espacio. Todas las cuentas cuadran, pero el resto no tiene huella, así que Clotr no puede saber si alguno vuelve a aparecer más tarde."
   },
   "st_clotrOnlyWorksOnAi": {
     "message": "Clotr solo funciona en los chats de IA"
@@ -1833,6 +1931,18 @@
   },
   "st_t13": {
     "message": "Es una red de seguridad, no una garantía."
+  },
+  "st_underlineFaintEffects": {
+    "message": "El subrayado de un nombre de reemplazo puede verse a través de efectos suaves de la página."
+  },
+  "st_underlineFaintEffectsText": {
+    "message": "Clotr oculta el subrayado de puntos de un nombre de reemplazo mientras uno de los menús o ventanas emergentes del propio sitio está encima. Un efecto suave sobre el texto, como un degradado al final del chat, no cuenta, así que el subrayado puede verse a través de él. Solo afecta a cómo se ve: no se envía nada."
+  },
+  "st_underlineFramedChat": {
+    "message": "Clotr no ve las ventanas emergentes alrededor de un chat mostrado dentro de otra página."
+  },
+  "st_underlineFramedChatText": {
+    "message": "Si un sitio pone su chat en un marco dentro de otra página, el subrayado de un nombre de reemplazo puede verse a través de las ventanas emergentes de esa página. Ninguno de los chats de IA que Clotr conoce funciona así hoy."
   },
   "sj_changed": {
     "message": "Cambiado respecto al valor predeterminado (avisar)"
@@ -1921,7 +2031,7 @@
     "message": "Permite al navegador mostrar el punto ámbar en páginas que parecen un chat de IA, sin que Clotr las lea."
   },
   "sj_pAlarms": {
-    "message": "Actualiza el contador del día después de medianoche y borra el historial antiguo según lo previsto."
+    "message": "Actualiza el contador del día después de medianoche, borra el historial antiguo según lo previsto y termina a tiempo los 30 días de Tourniquet después de una estafa."
   },
   "sj_pOther": {
     "message": "Lo usan funciones propias de Clotr en este equipo."
@@ -1989,6 +2099,87 @@
   },
   "whyScam": {
     "message": "Ningún banco, empresa ni servicio de ayuda de verdad te va a pedir esto. "
+  },
+  "ss_askWhatToDo": {
+    "message": "Qué hacer"
+  },
+  "ss_askLoginCodeName": {
+    "message": "Código de acceso"
+  },
+  "ss_askRemoteCodeName": {
+    "message": "Código de acceso remoto"
+  },
+  "ss_askRecoveryCodesName": {
+    "message": "Códigos de respaldo"
+  },
+  "ss_askSecurityAnswerName": {
+    "message": "Respuesta de seguridad"
+  },
+  "ss_askHomeCodeName": {
+    "message": "PIN o código de puerta"
+  },
+  "ss_askCardCodeQ": {
+    "message": "¿Quién pide los 3 números de atrás de tu tarjeta?"
+  },
+  "ss_askCardCodeA": {
+    "message": "Tu banco no: ya los tiene. Escríbelos solo en una página de pago que abriste tú."
+  },
+  "ss_askCardCodeDo": {
+    "message": "No los envíes. Si ya se los diste a alguien, llama al número de tu tarjeta y pide una nueva."
+  },
+  "ss_askGiftCardQ": {
+    "message": "¿Quién pide los números de una tarjeta regalo?"
+  },
+  "ss_askGiftCardA": {
+    "message": "Los estafadores. Ninguna empresa ni organismo público de verdad te pedirá que le pagues con una tarjeta regalo."
+  },
+  "ss_askGiftCardDo": {
+    "message": "No los envíes. Si ya lo hiciste, llama a la empresa de la tarjeta al número que aparece detrás y pide que te devuelvan el dinero."
+  },
+  "ss_askLoginCodeQ": {
+    "message": "¿Quién pide un código que te enviaron?"
+  },
+  "ss_askLoginCodeA": {
+    "message": "Solo los estafadores: con él entran en tu cuenta. Ningún banco, empresa ni comprador de verdad lo pide."
+  },
+  "ss_askLoginCodeDo": {
+    "message": "No lo envíes. Si alguien te llamó o te escribió para pedirlo, cuelga y llama al número de tu tarjeta."
+  },
+  "ss_askRemoteCodeQ": {
+    "message": "¿Quién pide un código para entrar en tu ordenador?"
+  },
+  "ss_askRemoteCodeA": {
+    "message": "El falso soporte técnico. Las empresas de tecnología de verdad no te llaman ni te escriben por un problema en tu ordenador."
+  },
+  "ss_askRemoteCodeDo": {
+    "message": "No lo envíes. Si ya dejaste entrar a alguien, actualiza tu antivirus, haz un análisis y cambia tus contraseñas."
+  },
+  "ss_askRecoveryCodesQ": {
+    "message": "¿Quién pide tus códigos de respaldo?"
+  },
+  "ss_askRecoveryCodesA": {
+    "message": "Solo alguien que quiere entrar en tu cuenta sin ti. Son sus llaves de repuesto."
+  },
+  "ss_askRecoveryCodesDo": {
+    "message": "Guárdalos en papel o en tu gestor de contraseñas, nunca en un chat."
+  },
+  "ss_askSecurityAnswerQ": {
+    "message": "¿Quién pide tus respuestas de seguridad?"
+  },
+  "ss_askSecurityAnswerA": {
+    "message": "Abren tu cuenta como una contraseña. Quien las pide en un chat puede querer cambiar la tuya."
+  },
+  "ss_askSecurityAnswerDo": {
+    "message": "No las envíes. Si ya lo hiciste, cambia la respuesta en los ajustes de esa cuenta."
+  },
+  "ss_askHomeCodeQ": {
+    "message": "¿Quién necesita tu PIN o un código de puerta?"
+  },
+  "ss_askHomeCodeA": {
+    "message": "Solo tú y las personas a las que darías tus llaves. Si te contactaron primero y te lo piden, probablemente es una estafa."
+  },
+  "ss_askHomeCodeDo": {
+    "message": "No lo envíes por chat. Si enviaste el PIN de una tarjeta, llama al número de tu tarjeta."
   },
   "vault_onlyThisBrowser": {
     "message": "Solo en este navegador."
@@ -2234,7 +2425,7 @@
     "message": "Configura Clotr para otra persona"
   },
   "hp_intro": {
-    "message": "Para tu madre, tu abuelo o un niño. Cuatro pasos y unos minutos, en su ordenador, en el navegador que usa para los chats de IA."
+    "message": "Para un niño, tus padres o tus abuelos. Cinco pasos y unos minutos, en su ordenador, en el navegador que usa para los chats de IA y el correo."
   },
   "hp_step1": {
     "message": "Dile a Clotr qué proteger"
@@ -2267,7 +2458,7 @@
     "message": "Lo que verá"
   },
   "hp_whatTheyllSeeText": {
-    "message": "Una nota en la esquina del chat de IA cuando su mensaje lleva algo privado, con un botón para ocultarlo. Con el paso 3 activado, Clotr pregunta antes de que salga un dato personal. Clotr en sí nunca envía nada a ningún sitio."
+    "message": "Una nota en la esquina del chat de IA cuando su mensaje lleva algo privado, con un botón para ocultarlo. Con Preguntar antes de enviar datos personales activado, Clotr pregunta antes de que salga uno. Clotr en sí nunca envía nada a ningún sitio."
   },
   "hp_tryItTogether": {
     "message": "Pruébalo juntos: abre un chat de IA y escribe un teléfono inventado."
@@ -2283,6 +2474,9 @@
   },
   "hp_printAGuide": {
     "message": "Imprimir una guía de una página para esa persona"
+  },
+  "hp_printTheCard": {
+    "message": "Imprimir guía de seguridad"
   },
   "sh_shareClotr": {
     "message": "Compartir Clotr con alguien"
@@ -2306,7 +2500,7 @@
     "message": "Configúralo juntos"
   },
   "sh_setItUpText": {
-    "message": "En su ordenador, después de instalarlo: avisos más grandes, sus datos y un PIN, paso a paso."
+    "message": "En su ordenador, después de instalarlo: Tourniquet para un niño o un adulto, sus datos y un PIN, paso a paso."
   },
   "sh_printTheGuide": {
     "message": "Imprimir la guía"
@@ -2320,20 +2514,11 @@
   "sh_guideTitle": {
     "message": "tapa tus fugas de datos"
   },
-  "sh_whatItIs": {
-    "message": "Qué es"
-  },
   "sh_whatItIsText": {
     "message": "Un ayudante en tu navegador. Cuando escribes a un chat de IA como ChatGPT, Gemini o Copilot, o en un correo o una app de chat donde lo activaste, se da cuenta de las cosas privadas antes de que las envíes, como una contraseña, tu teléfono, tu dirección o una tarjeta."
   },
-  "sh_whatYoullSee": {
-    "message": "Lo que verás"
-  },
   "sh_whatYoullSeeText": {
-    "message": "Una nota en la esquina del chat, como: \"Atención: tu mensaje contiene un número de teléfono.\""
-  },
-  "sh_whatToDo": {
-    "message": "Qué hacer"
+    "message": "Aparece una nota en la esquina del chat, como \"Atención, tu mensaje contiene un número de teléfono.\""
   },
   "sh_hideItText": {
     "message": "lo quita de tu mensaje."
@@ -2343,9 +2528,6 @@
   },
   "sh_notSure": {
     "message": "¿No estás seguro? Ocúltalo. Siempre puedes volver a escribirlo."
-  },
-  "sh_whatItNeverDoes": {
-    "message": "Lo que nunca hace"
   },
   "sh_whatItNeverDoesText": {
     "message": "Nunca envía nada a ningún sitio y nunca guarda lo que escribes. Funciona en los chats de IA, y en tu correo o una app de chat solo si alguien lo activó allí."
@@ -2358,6 +2540,72 @@
   },
   "sh_phone": {
     "message": "Teléfono:"
+  },
+  "sh_cardTitle": {
+    "message": "Imprimir guía de seguridad"
+  },
+  "sh_cardText": {
+    "message": "Lo que los estafadores piden que la gente diga en voz alta, quién lo pide de verdad, y una línea para el número de alguien a quien llamar primero. Escribe el nombre y el número a mano: Clotr no los guarda."
+  },
+  "sh_cardPrint": {
+    "message": "Imprimir la tarjeta"
+  },
+  "sh_cardLanguage": {
+    "message": "En inglés o en español, según el idioma de tu navegador."
+  },
+  "sh_cardNever": {
+    "message": "Nunca digas esto en voz alta"
+  },
+  "sh_cardNotEven": {
+    "message": "Ni por teléfono, ni por mensaje, ni en un chat, ni aunque te digan que es urgente."
+  },
+  "sh_cardCode": {
+    "message": "El código que te manda tu banco o una app"
+  },
+  "sh_cardCodeWho": {
+    "message": "Solo los estafadores lo piden. Cuelga y llama al número de tu tarjeta."
+  },
+  "sh_cardBack": {
+    "message": "Los 3 números de atrás de tu tarjeta"
+  },
+  "sh_cardBackWho": {
+    "message": "Tu banco nunca te los pide: ya los tiene."
+  },
+  "sh_cardGift": {
+    "message": "Números de tarjetas regalo"
+  },
+  "sh_cardGiftWho": {
+    "message": "Ninguna empresa ni organismo público de verdad pide que le pagues con tarjetas regalo."
+  },
+  "sh_cardComputer": {
+    "message": "Un código para que alguien entre en tu ordenador"
+  },
+  "sh_cardComputerWho": {
+    "message": "Las empresas de tecnología de verdad no te llaman ni te escriben por un problema en tu ordenador."
+  },
+  "sh_cardPasswords": {
+    "message": "Tus contraseñas y códigos de respaldo"
+  },
+  "sh_cardPasswordsWho": {
+    "message": "Son las llaves de tus cuentas. Nadie más las necesita."
+  },
+  "sh_cardNumbers": {
+    "message": "Números de banco, de tarjeta o de identificación, a quien te contactó primero"
+  },
+  "sh_cardNumbersWho": {
+    "message": "Cuelga. Llama tú a un número que ya conozcas."
+  },
+  "sh_cardNotSure": {
+    "message": "¿No estás seguro? Para y llama primero a alguien de confianza."
+  },
+  "sh_cardName": {
+    "message": "Nombre"
+  },
+  "sh_cardPhone": {
+    "message": "Teléfono"
+  },
+  "sh_cardFrom": {
+    "message": "Esta tarjeta es de Clotr. Avisa antes de que salga casi todo esto en tu ordenador, y es para las llamadas y los mensajes."
   },
   "popup_ownWords": {
     "message": "Tus propias palabras y formatos"
@@ -2372,7 +2620,7 @@
     "message": "Lleva tus ajustes, tu caja fuerte y tu PIN a otro ordenador en un solo archivo. Queda cerrado con una contraseña que eliges, se crea en este ordenador y nunca se envía a ningún sitio. Tu historial se queda aquí."
   },
   "mv_saveTitle": {
-    "message": "En este ordenador: guarda el archivo"
+    "message": "Guarda el archivo en este ordenador"
   },
   "mv_password": {
     "message": "Una contraseña para el archivo (al menos 8 caracteres)"
@@ -2384,7 +2632,7 @@
     "message": "Guardar el archivo"
   },
   "mv_loadTitle": {
-    "message": "En el otro ordenador: cárgalo"
+    "message": "Cárgalo en el otro ordenador"
   },
   "mv_loadHint": {
     "message": "Esto sustituye los ajustes, la caja fuerte y el PIN de Clotr de ese ordenador por los del archivo. Los sitios que añadiste tú hay que añadirlos otra vez."
@@ -2596,6 +2844,9 @@
   "pa_presetClinic": {
     "message": "Clínica"
   },
+  "pa_presetTaxOffice": {
+    "message": "Oficina fiscal"
+  },
   "pa_custom": {
     "message": "Personalizado"
   },
@@ -2621,6 +2872,40 @@
   },
   "pa_countWatchFormats": {
     "message": "Formatos vigilados"
+  },
+  "pa_kindsTitle": {
+    "message": "Tipos que añadió tu organización"
+  },
+  "pa_kindsLead": {
+    "message": "Clotr los nombra en sus avisos y los usa para los nombres de reemplazo de Bandage. Sus palabras no se muestran aquí: Clotr las convierte en códigos cifrados en cada equipo y nunca las guarda."
+  },
+  "pa_kindsKind": {
+    "message": "Tipo"
+  },
+  "pa_kindsResponse": {
+    "message": "Respuesta"
+  },
+  "pa_kindsWords": {
+    "message": "Palabras"
+  },
+  "pa_kindsFormats": {
+    "message": "Formatos"
+  },
+  "pa_kindsWithNear": {
+    "message": "$p1$, con palabras cercanas",
+    "placeholders": {
+      "p1": {
+        "content": "$1"
+      }
+    }
+  },
+  "pa_kindsCovers": {
+    "message": "Nombres de reemplazo para estos tipos: $p1$.",
+    "placeholders": {
+      "p1": {
+        "content": "$1"
+      }
+    }
   },
   "pa_pausingAllowed": {
     "message": "Se permite pausar"
@@ -2700,6 +2985,15 @@
   "noticeSharedBulkHere": {
     "message": " Si lo envías, quienes lo lean aquí lo reciben."
   },
+  "noticeCopiedContains": {
+    "message": "Lo que copiaste contiene "
+  },
+  "noticeCopiedShared": {
+    "message": ". Si lo pegas aquí, esta app de IA lo recibe."
+  },
+  "noticeCopiedSharedHere": {
+    "message": ". Si lo pegas aquí, quienes lo lean lo reciben."
+  },
   "justSentTitleHere": {
     "message": "⚠️ Acabas de enviarlo"
   },
@@ -2759,5 +3053,2505 @@
   },
   "pp_turnOn": {
     "message": "Activar"
+  },
+  "pp_defaultWarnSomeCount": {
+    "message": "Predeterminado (avisar; algunos, solo contar)"
+  },
+  "sj_everydayOffer": {
+    "message": "Oferta de usar Clotr en tu correo y tus apps de chat"
+  },
+  "sj_offerWelcome": {
+    "message": "Hecha en la página de bienvenida"
+  },
+  "sj_offerPopup": {
+    "message": "Aparece una vez, la próxima vez que abras el botón de Clotr en la barra de herramientas"
+  },
+  "sj_offerDone": {
+    "message": "Respondida, o ya había una app activada"
+  },
+  "rpt_thenPickOne": {
+    "message": "Luego elige uno:"
+  },
+  "rpt_sumAdd": {
+    "message": "Añadir lo que contó Clotr (opcional)"
+  },
+  "rpt_sumNote": {
+    "message": "Esto se publica con tu informe. Borra cualquier línea que prefieras guardarte y luego pégalo en el formulario."
+  },
+  "rpt_sumCopy": {
+    "message": "Copiarlo"
+  },
+  "rpt_sumCopied": {
+    "message": "Copiado. Ahora elige un formulario abajo."
+  },
+  "rpt_sumCopyFailed": {
+    "message": "No se pudo copiar. El texto está seleccionado: cópialo tú y luego elige un formulario abajo."
+  },
+  "rpt_sumReadFailed": {
+    "message": "Ahora mismo no se pudieron leer los recuentos de Clotr. Inténtalo de nuevo en un momento."
+  },
+  "rpt_sumHeader": {
+    "message": "$1 en $2, últimos 30 días. Solo recuentos: ni datos, ni sitios, ni horas."
+  },
+  "rpt_sumHeaderNoBrowser": {
+    "message": "$1, últimos 30 días. Solo recuentos: ni datos, ni sitios, ni horas."
+  },
+  "rpt_sumFound": {
+    "message": "encontrados: $1"
+  },
+  "rpt_sumHidden": {
+    "message": "ocultos: $1"
+  },
+  "rpt_sumByBandage": {
+    "message": "(con Bandage: $1)"
+  },
+  "rpt_sumSent": {
+    "message": "enviados: $1"
+  },
+  "rpt_sumJustCounted": {
+    "message": "solo contados: $1"
+  },
+  "rpt_sumTeamKinds": {
+    "message": "Tipos que añadió tu organización"
+  },
+  "rpt_sumOtherKinds": {
+    "message": "Otros tipos"
+  },
+  "rpt_sumNothing": {
+    "message": "No se encontró nada en los últimos 30 días."
+  },
+  "rpt_sumMentions": {
+    "message": "Respuestas de la IA que mencionaron tus datos: $1"
+  },
+  "rpt_sumAskBefore": {
+    "message": "Tipos en «Preguntar antes de enviar»: $1"
+  },
+  "rpt_sumJustCount": {
+    "message": "Tipos en «Solo contar»: $1"
+  },
+  "rpt_sumBandage": {
+    "message": "Sitios de IA con Bandage activado: $1"
+  },
+  "dash_historyFullTitle": {
+    "message": "Tu historial está lleno"
+  },
+  "dash_historyFullAsk": {
+    "message": "¿Quieres que Clotr guarde más? Dilo en GitHub: así es como se añade, con el informe de alguien a quien le pasó."
+  },
+  "dash_historyFullTellUs": {
+    "message": "Repórtalo en GitHub"
+  },
+  "dash_historyFullSendsNothing": {
+    "message": "Abre una página de GitHub que lees antes de publicar. Clotr no envía nada."
+  },
+  "db_historyFullText": {
+    "message": "Clotr guarda hasta 10.000 registros. Para hacer sitio, borró los registros anteriores al $p1$, antes de lo que marca tu ajuste $p2$. Todo lo más reciente sigue aquí.",
+    "placeholders": {
+      "p1": {
+        "content": "$1"
+      },
+      "p2": {
+        "content": "$2"
+      }
+    }
+  },
+  "db_keepSetting90": {
+    "message": "de 3 meses"
+  },
+  "db_keepSetting365": {
+    "message": "de 1 año"
+  },
+  "db_keepSetting730": {
+    "message": "de 2 años"
+  },
+  "sj_historyFull": {
+    "message": "Historial lleno"
+  },
+  "sj_historyFullWhat": {
+    "message": "El $p1$, para no pasar de 10.000 registros, Clotr borró los registros anteriores al $p2$. Solo se guardan estas dos fechas.",
+    "placeholders": {
+      "p1": {
+        "content": "$1"
+      },
+      "p2": {
+        "content": "$2"
+      }
+    }
+  },
+  "tqLineCodes": {
+    "message": "Las contraseñas y los códigos de acceso son solo para ti. Con uno, otra persona puede entrar en tu cuenta."
+  },
+  "tqLineChild": {
+    "message": "Comparte esto solo con personas que conoces en la vida real. Si alguien en internet te lo pide, díselo a un adulto de confianza."
+  },
+  "tqLineAdult": {
+    "message": "Si alguien dice ser de un banco, una aseguradora o el gobierno y te pide esto, no sigas. Llámalos tú a un número que ya conozcas."
+  },
+  "tqLineAfterScam": {
+    "message": "Los estafadores suelen volver diciendo que pueden recuperar tu dinero. Quien te pida una comisión o tus datos para hacerlo también es un estafador."
+  },
+  "tqTipAsks": {
+    "message": "Tourniquet está activado, así que Clotr pregunta antes de que salga este tipo de dato ($p2$). Siempre puedes dejarlo.",
+    "placeholders": {
+      "p2": {
+        "content": "$2"
+      }
+    }
+  },
+  "tqTipNotes": {
+    "message": "Tourniquet está activado, así que Clotr avisa de este tipo de dato ($p2$) cada vez. Siempre puedes dejarlo.",
+    "placeholders": {
+      "p2": {
+        "content": "$2"
+      }
+    }
+  },
+  "pp_tqChip": {
+    "message": "Tourniquet activado"
+  },
+  "pp_tqChipLabel": {
+    "message": "Tourniquet activado: ver qué cambia"
+  },
+  "pp_tqWhatItChanges": {
+    "message": "Qué cambia"
+  },
+  "pp_tqTitle": {
+    "message": "Tourniquet está activado"
+  },
+  "pp_tqTitleAfterScam": {
+    "message": "Tourniquet: 30 días después de una estafa"
+  },
+  "pp_tqNothingSent": {
+    "message": "Clotr no envía nada a ningún sitio, y enviar cada mensaje sigue siendo decisión tuya."
+  },
+  "pp_tqForChild": {
+    "message": "Para un niño"
+  },
+  "pp_tqForAdult": {
+    "message": "Para un adulto"
+  },
+  "pp_tqForAfterScam": {
+    "message": "Después de una estafa"
+  },
+  "pp_tqForAdultInstead": {
+    "message": "Mantener Tourniquet para un adulto"
+  },
+  "pp_tqOff": {
+    "message": "Desactivado"
+  },
+  "pp_tqOffAgain": {
+    "message": "Haz clic otra vez"
+  },
+  "pp_tqOffWhy": {
+    "message": "Vuelve a hacer clic para desactivar Tourniquet. Las apps de correo y chat siguen activadas hasta que las desactives más abajo."
+  },
+  "pp_tqHistoryTitle": {
+    "message": "Tu historial es tuyo"
+  },
+  "pp_tqHistoryWhy": {
+    "message": "Guarda tipos de dato, sitios y horas, nunca lo que escribiste. Se queda en este ordenador, y puedes borrarlo aunque los ajustes estén bloqueados."
+  },
+  "pp_tqClearMine": {
+    "message": "Borrar mi historial"
+  },
+  "pp_tqKeepsNote": {
+    "message": "Tourniquet mantiene algunos tipos más estrictos. Mientras está activado, no se pueden elegir las opciones por debajo de lo que mantiene."
+  },
+  "pp_tqKeeps": {
+    "message": "Tourniquet mantiene esto"
+  },
+  "pp_tqLineChild": {
+    "message": "Tourniquet está activado: Clotr pregunta antes de que salgan datos personales, contraseñas y códigos de acceso. Clotr no envía nada a ningún sitio."
+  },
+  "pp_tqLineAdult": {
+    "message": "Tourniquet está activado: Clotr pregunta antes de que salgan números de banco, de tarjeta y de identificación, contraseñas y códigos de acceso. Clotr no envía nada a ningún sitio."
+  },
+  "pp_tqLineAfterScam": {
+    "message": "Tourniquet está activado durante 30 días después de una estafa: Clotr pregunta antes de que salgan números de banco, de tarjeta y de identificación, números de tarjetas regalo, contraseñas y códigos de acceso. Clotr no envía nada a ningún sitio."
+  },
+  "pp_tqSince": {
+    "message": "Activado desde el $p1$.",
+    "placeholders": {
+      "p1": {
+        "content": "$1"
+      }
+    }
+  },
+  "pp_tqDay": {
+    "message": "Día $p1$ de $p2$",
+    "placeholders": {
+      "p1": {
+        "content": "$1"
+      },
+      "p2": {
+        "content": "$2"
+      }
+    }
+  },
+  "pp_tqStepsDown": {
+    "message": "Se desactiva el $p1$",
+    "placeholders": {
+      "p1": {
+        "content": "$1"
+      }
+    }
+  },
+  "pp_tqClockBack": {
+    "message": "El reloj de este ordenador se atrasó. Clotr mantiene sus propias fechas, así que los 30 días terminan cuando este reloj llegue al $p1$.",
+    "placeholders": {
+      "p1": {
+        "content": "$1"
+      }
+    }
+  },
+  "pp_tqEndTitle": {
+    "message": "Los 30 días de Tourniquet terminaron"
+  },
+  "pp_tqEndText": {
+    "message": "Clotr volvió a como estaba antes. Si los estafadores siguen en contacto, mantenlo más tiempo."
+  },
+  "pp_tqEndMore": {
+    "message": "Mantenerlo 30 días más"
+  },
+  "pp_tqAsksChild": {
+    "message": "Clotr pregunta antes de que salgan: nombres, direcciones, teléfonos, correos, fechas de nacimiento, números de tarjeta y de identificación, contraseñas y códigos de acceso, y las palabras añadidas para vigilar."
+  },
+  "pp_tqAsksAdult": {
+    "message": "Clotr pregunta antes de que salgan: números de banco, de tarjeta y de identificación, números de Medicare y de seguro, fechas de nacimiento, contraseñas y códigos de acceso."
+  },
+  "pp_tqAsksAfterScam": {
+    "message": "Clotr pregunta antes de que salgan: números de banco, de tarjeta y de identificación, números de tarjetas regalo, números de Medicare y de seguro, fechas de nacimiento, contraseñas y códigos de acceso."
+  },
+  "pp_tqNotesAdult": {
+    "message": "Los avisos son más grandes. Los nombres, las direcciones, los teléfonos y los correos siempre reciben una nota en la esquina."
+  },
+  "pp_tqApps": {
+    "message": "También en tu correo y tus apps de chat: $p1$.",
+    "placeholders": {
+      "p1": {
+        "content": "$1"
+      }
+    }
+  },
+  "pp_seeWhatsNew": {
+    "message": "Ver las novedades ($p1$)",
+    "placeholders": {
+      "p1": {
+        "content": "$1"
+      }
+    }
+  },
+  "pp_hideList": {
+    "message": "Ocultar la lista"
+  },
+  "ev_title": {
+    "message": "¿Usar Clotr también en tu correo y tus apps de chat?"
+  },
+  "ev_welcomeAsk": {
+    "message": "Marca las que usas. Luego tu navegador te pregunta una sola vez, solo por esos sitios."
+  },
+  "ev_welcomeThere": {
+    "message": "Allí, Clotr avisa y oculta como en un chat de IA, y nunca lee las respuestas de nadie."
+  },
+  "ev_welcomeHint": {
+    "message": "Nada viene marcado de antemano. Cámbialo cuando quieras: el botón de Clotr en la barra de herramientas → Ajustes."
+  },
+  "ev_email": {
+    "message": "Correo"
+  },
+  "ev_chatApps": {
+    "message": "Apps de chat"
+  },
+  "ev_on": {
+    "message": "Activado"
+  },
+  "ev_switchOn": {
+    "message": "Activar"
+  },
+  "ev_switchOnNames": {
+    "message": "Activar $p1$",
+    "placeholders": {
+      "p1": {
+        "content": "$1"
+      }
+    }
+  },
+  "ev_switchOnCount": {
+    "message": "Activar $p1$ apps",
+    "placeholders": {
+      "p1": {
+        "content": "$1"
+      }
+    }
+  },
+  "ev_switchOffNames": {
+    "message": "Desactivar $p1$",
+    "placeholders": {
+      "p1": {
+        "content": "$1"
+      }
+    }
+  },
+  "ev_switchOffCount": {
+    "message": "Desactivar $p1$ apps",
+    "placeholders": {
+      "p1": {
+        "content": "$1"
+      }
+    }
+  },
+  "ev_tickFirst": {
+    "message": "Primero marca al menos una app."
+  },
+  "ev_onFor": {
+    "message": "✓ Activado en $p1$, también en las pestañas que ya tienes abiertas.",
+    "placeholders": {
+      "p1": {
+        "content": "$1"
+      }
+    }
+  },
+  "ev_offFor": {
+    "message": "✓ Desactivado en $p1$. El sitio sigue funcionando, solo que sin Clotr ahí.",
+    "placeholders": {
+      "p1": {
+        "content": "$1"
+      }
+    }
+  },
+  "ev_refused": {
+    "message": "No se activó nada: la pregunta del navegador se cerró o se respondió que no. Marca y vuelve a intentarlo, o actívalas más tarde en Ajustes."
+  },
+  "ev_popupIntro": {
+    "message": "Novedad: marca las que usas y tu navegador pregunta una sola vez, solo por esos sitios."
+  },
+  "ev_noThanks": {
+    "message": "No, gracias"
+  },
+  "ev_popupHint": {
+    "message": "Ajustes tiene la misma lista cuando quieras."
+  },
+  "pp_moreInOneGo": {
+    "message": "$p1$ más a la vez",
+    "placeholders": {
+      "p1": {
+        "content": "$1"
+      }
+    }
+  },
+  "pp_moreInOneGoWhy": {
+    "message": "Un solo registro para el resto de una lista larga enviada de una vez, así tu historial conserva su espacio."
+  },
+  "sj_historyCount1": {
+    "message": "1 registro, del $p2$ al $p3$. Clotr lo guarda durante el periodo elegido en el informe completo (1 año si no lo cambiaste), hasta 10.000.",
+    "placeholders": {
+      "p2": {
+        "content": "$2"
+      },
+      "p3": {
+        "content": "$3"
+      }
+    }
+  },
+  "sj_historyCountN": {
+    "message": "$p1$ registros, del $p2$ al $p3$. Clotr los guarda durante el periodo elegido en el informe completo (1 año si no lo cambiaste), hasta 10.000.",
+    "placeholders": {
+      "p1": {
+        "content": "$1"
+      },
+      "p2": {
+        "content": "$2"
+      },
+      "p3": {
+        "content": "$3"
+      }
+    }
+  },
+  "sj_historyCountFolded": {
+    "message": "$p1$ registros (algunos representan una lista larga enviada de una vez), del $p2$ al $p3$. Clotr los guarda durante el periodo elegido en el informe completo (1 año si no lo cambiaste), hasta 10.000.",
+    "placeholders": {
+      "p1": {
+        "content": "$1"
+      },
+      "p2": {
+        "content": "$2"
+      },
+      "p3": {
+        "content": "$3"
+      }
+    }
+  },
+  "picNoteTitle": {
+    "message": "ℹ️ Clotr no puede leer imágenes"
+  },
+  "picNoteText": {
+    "message": "Clotr revisa las palabras que escribes y el texto de los archivos que adjuntas. No puede leer las palabras de una imagen o una captura de pantalla, así que revísala tú por si lleva tus datos antes de enviarla."
+  },
+  "picNoteOk": {
+    "message": "Vale, la reviso"
+  },
+  "sj_pictureNote": {
+    "message": "La nota sobre imágenes se mostró en"
+  },
+  "type_photo_location": {
+    "message": "Ubicación de la foto"
+  },
+  "picFoundPlace": {
+    "message": "La foto «$p1$» lleva guardado dentro el lugar donde se tomó.",
+    "placeholders": {
+      "p1": {
+        "content": "$1"
+      }
+    }
+  },
+  "picPlaceSent": {
+    "message": " Si la envías, ese lugar puede ir con ella."
+  },
+  "picPlaceSentHere": {
+    "message": " Si la envías, quienes la vean aquí también pueden saber ese lugar."
+  },
+  "picPlaceHint": {
+    "message": "Para que el lugar siga siendo privado, quita la foto antes de enviar. Una captura de pantalla de la foto no lleva el lugar."
+  },
+  "picFoundOther": {
+    "message": "La imagen «$p1$» lleva dentro: $p2$.",
+    "placeholders": {
+      "p1": {
+        "content": "$1"
+      },
+      "p2": {
+        "content": "$2"
+      }
+    }
+  },
+  "picSent": {
+    "message": " Si la envías, esta IA la recibe."
+  },
+  "picSentHere": {
+    "message": " Si la envías, quienes la vean aquí la reciben."
+  },
+  "picHint": {
+    "message": "Para que siga siendo privada, quita la imagen antes de enviar."
+  },
+  "picHonest": {
+    "message": "Clotr no puede leer las palabras de una imagen, así que revísala tú."
+  },
+  "type_id_picture": {
+    "message": "Imagen de un documento o identificación"
+  },
+  "picFoundId": {
+    "message": "La imagen «$p1$» parece la foto de un documento o una identificación, a juzgar por su nombre.",
+    "placeholders": {
+      "p1": {
+        "content": "$1"
+      }
+    }
+  },
+  "picFoundBoth": {
+    "message": "La imagen «$p1$» parece la foto de un documento o una identificación, a juzgar por su nombre, y lleva guardado dentro el lugar donde se tomó.",
+    "placeholders": {
+      "p1": {
+        "content": "$1"
+      }
+    }
+  },
+  "picFoundScan": {
+    "message": "El archivo «$p1$» parece el escaneo de un documento o una identificación, a juzgar por su nombre.",
+    "placeholders": {
+      "p1": {
+        "content": "$1"
+      }
+    }
+  },
+  "picScanHonest": {
+    "message": "Clotr no puede leer las palabras de un escaneo, así que revísalo tú."
+  },
+  "type_otp_secret": {
+    "message": "Clave de verificación en dos pasos"
+  },
+  "ad_otp": {
+    "message": "Desactiva y vuelve a activar la verificación en dos pasos en esa cuenta. Así se crea una clave nueva y la antigua deja de servir."
+  },
+  "mv_holdsTourniquet": {
+    "message": "Tourniquet"
+  },
+  "sj_tourniquet": {
+    "message": "Tourniquet"
+  },
+  "sj_tqOnChild": {
+    "message": "Activado desde el $p1$. Clotr pregunta antes de que salgan datos personales, contraseñas y códigos de acceso.",
+    "placeholders": {
+      "p1": {
+        "content": "$1"
+      }
+    }
+  },
+  "sj_tqOnAdult": {
+    "message": "Activado desde el $p1$. Clotr pregunta antes de que salgan números de banco, de tarjeta y de identificación, contraseñas y códigos de acceso.",
+    "placeholders": {
+      "p1": {
+        "content": "$1"
+      }
+    }
+  },
+  "sj_tqOnAfterScam": {
+    "message": "Después de una estafa, desde el $p1$ hasta el $p2$. Clotr pregunta antes de que salgan números de banco, de tarjeta y de identificación, números de tarjetas regalo, contraseñas y códigos de acceso.",
+    "placeholders": {
+      "p1": {
+        "content": "$1"
+      },
+      "p2": {
+        "content": "$2"
+      }
+    }
+  },
+  "sj_tqEnded": {
+    "message": "Fin de los 30 días de Tourniquet"
+  },
+  "sj_tqEndedWhat": {
+    "message": "$p1$. Se guarda hasta que respondas al aviso en la ventana de Clotr, para decirlo una sola vez.",
+    "placeholders": {
+      "p1": {
+        "content": "$1"
+      }
+    }
+  },
+  "sj_tqSeen": {
+    "message": "Última hora vista durante los 30 días de Tourniquet"
+  },
+  "sj_tqSeenWhat": {
+    "message": "$p1$. La última hora que mostró el reloj de este ordenador mientras duraban los 30 días, para que Clotr sepa si alguien atrasa el reloj.",
+    "placeholders": {
+      "p1": {
+        "content": "$1"
+      }
+    }
+  },
+  "sj_knownKinds": {
+    "message": "Tipos de datos que Clotr conoce"
+  },
+  "sj_knownKindsWhat": {
+    "message": "$p1$ tipos, solo por su nombre, para que tras una actualización un tipo nuevo siga a Preguntar antes de enviar datos personales.",
+    "placeholders": {
+      "p1": {
+        "content": "$1"
+      }
+    }
+  },
+  "hp_tqWho": {
+    "message": "¿Para quién es?"
+  },
+  "hp_tqChild": {
+    "message": "Un niño o adolescente"
+  },
+  "hp_tqChildText": {
+    "message": "Clotr pregunta antes de que salga cualquier cosa que diga quién es o dónde vive. También en sus apps de chat."
+  },
+  "hp_tqChildName": {
+    "message": "Tourniquet para un niño"
+  },
+  "hp_tqAdult": {
+    "message": "Un adulto"
+  },
+  "hp_tqAdultText": {
+    "message": "Clotr pregunta antes de que salgan números de banco, de tarjeta y de identificación, y códigos de acceso. Avisos más grandes, también en su correo."
+  },
+  "hp_tqAdultName": {
+    "message": "Tourniquet para un adulto"
+  },
+  "hp_tqAfterScam": {
+    "message": "Alguien a quien acaban de estafar, o casi"
+  },
+  "hp_tqAfterScamText": {
+    "message": "Durante 30 días, Clotr pregunta antes de que salgan números de banco, de tarjeta y de identificación, números de tarjetas regalo y códigos de acceso, en todos los sitios donde está. Los estafadores suelen volver. Después se desactiva solo y lo avisa."
+  },
+  "hp_tqAfterScamName": {
+    "message": "Tourniquet durante 30 días después de una estafa"
+  },
+  "ss_name": {
+    "message": "Revisión de estafas"
+  },
+  "ss_check": {
+    "message": "¿Es una estafa?"
+  },
+  "ss_practice": {
+    "message": "Practicar"
+  },
+  "ss_settingsLead": {
+    "message": "Cuando alguien te pide algo, Clotr te ayuda. Sus avisos dicen quién pide de verdad códigos, números de tarjeta y tarjetas regalo."
+  },
+  "ss_practiceSpotting": {
+    "message": "Practicar con estafas"
+  },
+  "ss_printCard": {
+    "message": "Imprimir guía de seguridad"
+  },
+  "ss_tq30Ask": {
+    "message": "¿Acabas de sufrir una estafa, o casi?"
+  },
+  "ss_tq30Open": {
+    "message": "Tourniquet puede preguntar primero durante 30 días."
+  },
+  "ss_welcomeText": {
+    "message": "Cuando alguien te pide un código, los números de tu tarjeta o tarjetas regalo, el aviso de Clotr dice quién los pide de verdad. ¿Te preocupa un mensaje? Clotr te da una segunda opinión."
+  },
+  "ss_practiceSix": {
+    "message": "Practicar con seis estafas inventadas"
+  },
+  "ss_shareTogether": {
+    "message": "Practicar juntos"
+  },
+  "ss_shareTogetherText": {
+    "message": "Seis mensajes de estafa inventados para responder codo con codo, revisados por Clotr en este ordenador."
+  },
+  "ss_shareCheckText": {
+    "message": "¿Le preocupa un mensaje? Clotr le da una segunda opinión."
+  },
+  "ss_showCheck": {
+    "message": "Enséñale «¿Es una estafa?»"
+  },
+  "ss_secondOpinionQ": {
+    "message": "¿Te pidieron esto en un mensaje?"
+  },
+  "ss_secondOpinion": {
+    "message": "Pide una segunda opinión"
+  },
+  "hp_tqSelf": {
+    "message": "O elige tú cada ajuste, sin Tourniquet"
+  },
+  "hp_tqTurnOnTitle": {
+    "message": "Activa Tourniquet"
+  },
+  "hp_tqTurnOnAfterScamTitle": {
+    "message": "Activa Tourniquet durante 30 días"
+  },
+  "hp_tqWhatAfterScam": {
+    "message": "Durante 30 días, Clotr pregunta antes de que salgan números de banco, de tarjeta y de identificación, números de tarjetas regalo, contraseñas y códigos de acceso, en todos los sitios donde está. Sus avisos son más grandes, y cada mensaje sigue siendo suyo: siempre puede enviarlo."
+  },
+  "hp_tqToday": {
+    "message": "Hoy, $p1$",
+    "placeholders": {
+      "p1": {
+        "content": "$1"
+      }
+    }
+  },
+  "hp_tqThen": {
+    "message": "Después Clotr vuelve a como estaba y lo avisa en su ventana. Puedes desactivarlo antes, cuando quieras (con el PIN, si hay uno)."
+  },
+  "hp_tqTurnOnAfterScam": {
+    "message": "Activar durante 30 días"
+  },
+  "hp_tqTurnOn": {
+    "message": "Activar Tourniquet"
+  },
+  "hp_tqWhatChild": {
+    "message": "Esto es lo que cambia: Clotr pregunta antes de que salga cualquiera de estos datos, y sus avisos ya no ofrecen formas de avisar menos. Sus propios ajustes siguen debajo, como estaban."
+  },
+  "hp_tqWhatAdult": {
+    "message": "Esto es lo que cambia: Clotr pregunta antes de que salga el primer grupo y siempre avisa del segundo, con avisos más grandes. Sus avisos ya no ofrecen formas de avisar menos. Sus propios ajustes siguen debajo, como estaban."
+  },
+  "hp_tqMapThem": {
+    "message": "Esa persona"
+  },
+  "hp_tqAsks": {
+    "message": "Pregunta antes de enviar"
+  },
+  "hp_tqNotes": {
+    "message": "Una nota más grande en la esquina"
+  },
+  "hp_tqWords": {
+    "message": "También pregunta por las palabras que añadas"
+  },
+  "hp_tqLeafNames": {
+    "message": "Su nombre y los de su familia"
+  },
+  "hp_tqLeafHome": {
+    "message": "Dirección y teléfono"
+  },
+  "hp_tqLeafOnline": {
+    "message": "Correo y fecha de nacimiento"
+  },
+  "hp_tqLeafCardIds": {
+    "message": "Números de tarjeta y de identificación"
+  },
+  "hp_tqLeafCodes": {
+    "message": "Contraseñas y códigos de acceso"
+  },
+  "hp_tqLeafSchool": {
+    "message": "Su colegio"
+  },
+  "hp_tqLeafTeam": {
+    "message": "Su equipo o club"
+  },
+  "hp_tqLeafCards": {
+    "message": "Números de tarjeta y de banco"
+  },
+  "hp_tqLeafIds": {
+    "message": "Seguro Social, Medicare, pasaporte"
+  },
+  "hp_tqLeafBirthday": {
+    "message": "Su fecha de nacimiento"
+  },
+  "hp_tqLeafContact": {
+    "message": "Teléfono, dirección y correo"
+  },
+  "hp_tqWordsHint": {
+    "message": "Añade su colegio, su equipo o su club en el paso 3, y Clotr también preguntará por ellos."
+  },
+  "hp_tqIsOnChild": {
+    "message": "Tourniquet está activado para un niño desde el $p1$.",
+    "placeholders": {
+      "p1": {
+        "content": "$1"
+      }
+    }
+  },
+  "hp_tqIsOnAdult": {
+    "message": "Tourniquet está activado para un adulto desde el $p1$.",
+    "placeholders": {
+      "p1": {
+        "content": "$1"
+      }
+    }
+  },
+  "hp_tqIsOnAfterScam": {
+    "message": "Tourniquet está activado durante 30 días después de una estafa: día $p1$ de 30, se desactiva el $p2$.",
+    "placeholders": {
+      "p1": {
+        "content": "$1"
+      },
+      "p2": {
+        "content": "$2"
+      }
+    }
+  },
+  "ss_nowTitle": {
+    "message": "Qué hacer ahora"
+  },
+  "ss_nowGiftQ": {
+    "message": "¿Pagaste con una tarjeta regalo?"
+  },
+  "ss_nowGift": {
+    "message": "Llama a la empresa de la tarjeta al número que aparece detrás. Di que un estafador consiguió el número y el PIN, y pide que te devuelvan el dinero."
+  },
+  "ss_nowComputerQ": {
+    "message": "¿Dejaste que alguien entrara en tu ordenador?"
+  },
+  "ss_nowComputer": {
+    "message": "Actualiza tu antivirus y haz un análisis. Después cambia tus contraseñas y activa la verificación en dos pasos."
+  },
+  "ss_nowPasswordQ": {
+    "message": "¿Diste una contraseña o un código de acceso?"
+  },
+  "ss_nowPassword": {
+    "message": "Cambia esa contraseña y activa la verificación en dos pasos."
+  },
+  "ss_nowRecoveryQ": {
+    "message": "¿Alguien se ofrece a recuperar tu dinero a cambio de una comisión?"
+  },
+  "ss_nowRecovery": {
+    "message": "También es una estafa."
+  },
+  "ss_nowUsQ": {
+    "message": "En EE. UU.,"
+  },
+  "ss_nowUsReport": {
+    "message": "denúncialo en"
+  },
+  "ss_nowUsSsn": {
+    "message": "¿Diste tu número de la Seguridad Social?"
+  },
+  "ss_nowUsPlan": {
+    "message": "te da un plan para recuperarte."
+  },
+  "ss_nowKeepsNothing": {
+    "message": "Clotr no pregunta qué pasó y no guarda nada sobre ello."
+  },
+  "hp_tqSwitchToChild": {
+    "message": "Cambiar a Tourniquet para un niño"
+  },
+  "hp_tqSwitchToAdult": {
+    "message": "Cambiar a Tourniquet para un adulto"
+  },
+  "hp_tqSwitchToAfterScam": {
+    "message": "Cambiar a Tourniquet durante 30 días después de una estafa"
+  },
+  "hp_tqTurnOff": {
+    "message": "Desactivarlo"
+  },
+  "hp_tqTurnOffAgain": {
+    "message": "Vuelve a hacer clic para desactivarlo"
+  },
+  "hp_tqTurnedOff": {
+    "message": "Tourniquet está desactivado, y sus propios ajustes están como estaban. Las apps de correo y chat siguen activadas hasta que las desactives en Ajustes."
+  },
+  "hp_tqDetailsChild": {
+    "message": "Su nombre, su dirección, su teléfono y su correo, los nombres de su familia, y palabras como su colegio o su equipo. Clotr solo guarda huellas de un solo sentido, nunca los datos."
+  },
+  "hp_tqShareOne": {
+    "message": "1 dato está marcado como «Se puede compartir», así que Clotr no avisa de él."
+  },
+  "hp_tqShareMany": {
+    "message": "Hay datos marcados como «Se puede compartir» ($p1$), así que Clotr no avisa de ellos.",
+    "placeholders": {
+      "p1": {
+        "content": "$1"
+      }
+    }
+  },
+  "hp_tqReview": {
+    "message": "Revisar"
+  },
+  "hp_tqAppsTitle": {
+    "message": "También en su correo y sus apps de chat"
+  },
+  "hp_tqAppsText": {
+    "message": "Marca las que usa. Luego el navegador pregunta una sola vez, solo por esos sitios."
+  },
+  "hp_tqPinChild": {
+    "message": "Guarda tú el PIN. Hará falta para desactivar Tourniquet o cambiar los ajustes de Clotr, pero no para enviar, ocultar un dato o borrar su propio historial."
+  },
+  "hp_tqPinAdult": {
+    "message": "Elige el PIN con esa persona y apúntaselo. Hará falta para desactivar Tourniquet o cambiar los ajustes de Clotr, pero no para enviar, ocultar un dato o borrar su propio historial."
+  },
+  "hp_tqHowTitle": {
+    "message": "Cómo funciona"
+  },
+  "hp_tqHow1": {
+    "message": "Clotr pregunta antes de que salgan estos datos, y siempre puede enviarlo igualmente."
+  },
+  "hp_tqHow2": {
+    "message": "Cada pantalla de Clotr le muestra que Tourniquet está activado y qué hace."
+  },
+  "hp_tqHow3": {
+    "message": "Su historial se queda en este ordenador, y puede borrarlo sin el PIN."
+  },
+  "hp_tqHow4": {
+    "message": "Clotr no envía nada a ningún sitio."
+  },
+  "hp_tqTryChild": {
+    "message": "Pruébalo juntos: en un chat de IA o en una app de chat, escribe «vivo en la calle Mayor 12». Clotr pregunta antes de que salga."
+  },
+  "hp_tqTryAdult": {
+    "message": "Pruébalo juntos: en un chat de IA o en su correo, escribe «mi contraseña es Tulip123». Clotr pregunta antes de que salga."
+  },
+  "vt_tqOfferStart": {
+    "message": "¿Configuras Clotr para otra persona?"
+  },
+  "vt_tqOfferEnd": {
+    "message": "le da a un niño o a un adulto ajustes más estrictos en un solo paso."
+  },
+  "sh_tqTitle": {
+    "message": "Tourniquet está activado"
+  },
+  "sh_tqChild": {
+    "message": "Clotr pregunta antes de que salgan datos personales, contraseñas y códigos de acceso. Siempre puedes dejarlos y enviar."
+  },
+  "sh_tqAdult": {
+    "message": "Clotr pregunta antes de que salgan números de banco, de tarjeta y de identificación, contraseñas y códigos de acceso, y sus avisos son más grandes. Siempre puedes dejarlos y enviar."
+  },
+  "sh_tqUntil": {
+    "message": "Hasta el $p1$, Clotr pregunta antes de que salgan números de banco, de tarjeta y de identificación, números de tarjetas regalo, contraseñas y códigos de acceso, y sus avisos son más grandes. Siempre puedes dejarlos y enviar.",
+    "placeholders": {
+      "p1": {
+        "content": "$1"
+      }
+    }
+  },
+  "fileHoldTitle": {
+    "message": "⚠️ Este archivo parece privado"
+  },
+  "fileHoldTitleMany": {
+    "message": "⚠️ Estos archivos parecen privados"
+  },
+  "fileHoldLead": {
+    "message": "Si lo envías, este servicio de IA recibe el archivo que adjuntaste, que contiene:"
+  },
+  "fileHoldLeadMany": {
+    "message": "Si envías tu mensaje, este servicio de IA recibe los archivos que adjuntaste, que contienen:"
+  },
+  "fileHoldLeadHere": {
+    "message": "Si lo envías, quienes lo lean aquí reciben el archivo que adjuntaste, que contiene:"
+  },
+  "fileHoldLeadManyHere": {
+    "message": "Si envías tu mensaje, quienes lo lean aquí reciben los archivos que adjuntaste, que contienen:"
+  },
+  "fileHoldNote": {
+    "message": "La mayoría de los sitios suben un archivo en cuanto lo adjuntas, así que este servicio de IA puede tener ya una copia. Para que no llegue al chat, quita el archivo antes de enviar."
+  },
+  "fileHoldNoteMany": {
+    "message": "La mayoría de los sitios suben un archivo en cuanto lo adjuntas, así que este servicio de IA puede tener ya copias. Para que no lleguen al chat, quita los archivos antes de enviar."
+  },
+  "fileHoldNoteHere": {
+    "message": "La mayoría de los sitios suben un archivo en cuanto lo adjuntas, así que este sitio puede tener ya una copia. Para que no llegue a quienes lo lean aquí, quita el archivo antes de enviar."
+  },
+  "fileHoldNoteManyHere": {
+    "message": "La mayoría de los sitios suben un archivo en cuanto lo adjuntas, así que este sitio puede tener ya copias. Para que no lleguen a quienes lo lean aquí, quita los archivos antes de enviar."
+  },
+  "fileSendWith": {
+    "message": "Enviar con el archivo"
+  },
+  "fileSendWithMany": {
+    "message": "Enviar con los archivos"
+  },
+  "fileGoBack": {
+    "message": "Volver para quitarlo"
+  },
+  "fileGoBackMany": {
+    "message": "Volver para quitarlos"
+  },
+  "fileHoldKeys": {
+    "message": "Intro o Esc: volver a tu mensaje"
+  },
+  "fileOffTitle": {
+    "message": "⚠️ ¿Ya quitaste el archivo?"
+  },
+  "fileOffTitleMany": {
+    "message": "⚠️ ¿Ya quitaste los archivos?"
+  },
+  "fileOffLead": {
+    "message": "Si quitaste $p1$, tu mensaje puede salir. Si sigue adjunto, este servicio de IA lo recibe.",
+    "placeholders": {
+      "p1": {
+        "content": "$1"
+      }
+    }
+  },
+  "fileOffLeadMany": {
+    "message": "Si quitaste $p1$, tu mensaje puede salir. Si siguen adjuntos, este servicio de IA los recibe.",
+    "placeholders": {
+      "p1": {
+        "content": "$1"
+      }
+    }
+  },
+  "fileOffLeadHere": {
+    "message": "Si quitaste $p1$, tu mensaje puede salir. Si sigue adjunto, quienes lo lean aquí lo reciben.",
+    "placeholders": {
+      "p1": {
+        "content": "$1"
+      }
+    }
+  },
+  "fileOffLeadManyHere": {
+    "message": "Si quitaste $p1$, tu mensaje puede salir. Si siguen adjuntos, quienes lo lean aquí los reciben.",
+    "placeholders": {
+      "p1": {
+        "content": "$1"
+      }
+    }
+  },
+  "fileOffNote": {
+    "message": "Clotr no puede ver los adjuntos de un sitio, así que se fía de tu palabra."
+  },
+  "fileOffSend": {
+    "message": "Ya no está, enviar"
+  },
+  "fileOffSendMany": {
+    "message": "Ya no están, enviar"
+  },
+  "enterKey": {
+    "message": "Intro: $p1$",
+    "placeholders": {
+      "p1": {
+        "content": "$1"
+      }
+    }
+  },
+  "fileChecking": {
+    "message": "Revisando tu archivo"
+  },
+  "fileCheckingMany": {
+    "message": "Revisando tus archivos"
+  },
+  "fileCheckingBody": {
+    "message": "Clotr está leyendo $p1$ antes de que salga tu mensaje. Tarda unos segundos como mucho; luego lo envía o te pregunta.",
+    "placeholders": {
+      "p1": {
+        "content": "$1"
+      }
+    }
+  },
+  "fileUncheckedTitle": {
+    "message": "ℹ️ Clotr no pudo revisar un archivo"
+  },
+  "fileUncheckedTitleMany": {
+    "message": "ℹ️ Clotr no pudo revisar algunos archivos"
+  },
+  "fileUncheckedText": {
+    "message": "Clotr no pudo leer $p1$, así que no se revisó. Si tiene algo privado, sácalo del chat.",
+    "placeholders": {
+      "p1": {
+        "content": "$1"
+      }
+    }
+  },
+  "fileUncheckedTextMany": {
+    "message": "Clotr no pudo leer $p1$, así que no se revisaron. Si tienen algo privado, sácalos del chat.",
+    "placeholders": {
+      "p1": {
+        "content": "$1"
+      }
+    }
+  },
+  "fileTeamLine": {
+    "message": "Tu organización pide a Clotr que revise los archivos con estos datos antes de que lleguen a un chat de IA. Enviarlo sigue siendo decisión tuya."
+  },
+  "fileTeamLineHere": {
+    "message": "Tu organización pide a Clotr que revise los archivos con estos datos antes de que se envíen. Enviarlo sigue siendo decisión tuya."
+  },
+  "fileWaitTitle": {
+    "message": "Clotr sigue revisando tu archivo"
+  },
+  "fileWaitTitleMany": {
+    "message": "Clotr sigue revisando tus archivos"
+  },
+  "fileWaitLead": {
+    "message": "$p1$ es grande y Clotr aún no ha terminado de leerlo. Tu organización pide a Clotr que revise los archivos antes de que se envíen.",
+    "placeholders": {
+      "p1": {
+        "content": "$1"
+      }
+    }
+  },
+  "fileWaitLeadMany": {
+    "message": "$p1$ son grandes y Clotr aún no ha terminado de leerlos. Tu organización pide a Clotr que revise los archivos antes de que se envíen.",
+    "placeholders": {
+      "p1": {
+        "content": "$1"
+      }
+    }
+  },
+  "fileWaitNote": {
+    "message": "Suele tardar unos segundos. Si no aparece nada privado, tu mensaje sale solo. Si aparece algo, primero verás qué es."
+  },
+  "fileWaitNow": {
+    "message": "Enviar ya, sin la revisión"
+  },
+  "fileWaitWait": {
+    "message": "Esperar la revisión"
+  },
+  "pa_files": {
+    "message": "Archivos adjuntos"
+  },
+  "pa_filesHeld": {
+    "message": "retenidos hasta que la persona responde, cuando contienen un tipo de dato marcado como Preguntar antes de enviar"
+  },
+  "vault_findClotrPhone": {
+    "message": "Busca Clotr"
+  },
+  "vault_findClotrPhoneText": {
+    "message": "En el móvil, Clotr está en el menú del navegador: toca ⋮, luego Extensiones (o Complementos) y después Clotr, para ver su contador y abrir su panel."
+  },
+  "vault_practicePhone": {
+    "message": "Este cuadro es solo para practicar y nada de lo que escribas aquí sale de tu equipo. En un chat de IA de verdad, el aviso aparece arriba de la pantalla y sigue a la vista mientras te desplazas."
+  },
+  "cmdTitle": {
+    "message": "⚠️ Atención: copiaste un comando"
+  },
+  "cmdDownload": {
+    "message": "Descarga algo y lo ejecuta en tu ordenador."
+  },
+  "cmdHidden": {
+    "message": "Ejecuta instrucciones ocultas en tu ordenador."
+  },
+  "cmdQuestion": {
+    "message": "¿Quién te pide pegar un comando para demostrar que eres humano?"
+  },
+  "cmdAnswer": {
+    "message": "Ninguna comprobación de verdad lo hace: es un truco habitual para meter programas dañinos en un ordenador. Ejecuta solo un comando que hayas pedido y entiendas."
+  },
+  "cmdClear": {
+    "message": "Borrar lo que copié"
+  },
+  "cmdKeep": {
+    "message": "Dejarlo"
+  },
+  "cmdCleared": {
+    "message": "Hecho: ya no hay nada que pegar."
+  },
+  "cmdClearFailed": {
+    "message": "Clotr no pudo borrarlo. Mientras no lo pegues, no se ejecuta."
+  },
+  "cmdWhy": {
+    "message": "Clotr mira los comandos que copias en los chats de IA. Este es del tipo que reparte el truco de «demuestra que eres humano»: ejecuta algo en tu ordenador sin enseñarte qué. Clotr solo leyó lo que copiaste, en este ordenador, y no guarda nada."
+  },
+  "pp_commandCheck": {
+    "message": "Comprobar los comandos que copio en los chats de IA"
+  },
+  "pp_commandCheckMeans": {
+    "message": "Si un comando que copias parece el truco de «demuestra que eres humano», Clotr te lo señala. Solo mira lo que copias y no guarda nada."
+  },
+  "sj_commandCheck": {
+    "message": "Comprobar los comandos que copio en los chats de IA"
+  },
+  "pd_d1Who": {
+    "message": "«tu banco»"
+  },
+  "pd_d1From": {
+    "message": "Equipo de fraude de Banco Ejemplo"
+  },
+  "pd_d1Message": {
+    "message": "Hola, somos el equipo de fraude de Banco Ejemplo. Hemos parado un pago extraño con tu tarjeta. Para cancelarlo, dime el código de 6 cifras que te acabamos de enviar por SMS."
+  },
+  "pd_d1Reply": {
+    "message": "vale, el código que me mandaron es 482913"
+  },
+  "pd_d1Safer": {
+    "message": "Llamaré yo al número que aparece detrás de mi tarjeta"
+  },
+  "pd_d1Why": {
+    "message": "Llamas tú, a un número en el que ya confías."
+  },
+  "pd_d1Bare": {
+    "message": "Esto parece el código que te acaban de pedir. Un banco real nunca te pide que le leas un código que te acaba de enviar: eso solo lo hace un estafador. Pero escrito como un número suelto, Clotr no puede distinguirlo de uno inocente en un chat real: tiene que quedarse callado. Así que detectar este ha sido cosa tuya."
+  },
+  "pd_d2Who": {
+    "message": "«tu nieto»"
+  },
+  "pd_d2From": {
+    "message": "Tu nieto"
+  },
+  "pd_d2Message": {
+    "message": "Abuela, soy yo. Estoy en un lío y no se lo puedo contar a mamá. ¿Puedes comprar dos tarjetas regalo de 200 € y mandarme los números de atrás? Te lo devuelvo, te lo prometo."
+  },
+  "pd_d2Reply": {
+    "message": "el código de la tarjeta regalo es 7KQ2-9PMX-4RT8 y el pin es 4471"
+  },
+  "pd_d2Safer": {
+    "message": "Llámame desde tu móvil. Primero quiero oír tu voz"
+  },
+  "pd_d2Why": {
+    "message": "Un nieto de verdad puede llamar. El FBI aconseja además acordar una palabra secreta en familia."
+  },
+  "pd_d2Bare": {
+    "message": "Esto parece el pin que te acaban de pedir. Un nieto de verdad en apuros te llama, no te pide que le leas números de una tarjeta de regalo. Pero escrito como un número suelto, Clotr no puede distinguirlo de uno inocente en un chat real: tiene que quedarse callado. Así que detectar este ha sido cosa tuya."
+  },
+  "pd_d3Who": {
+    "message": "un comprador de la bici"
+  },
+  "pd_d3From": {
+    "message": "Comprador de la bici"
+  },
+  "pd_d3Message": {
+    "message": "Hola, ¿sigue a la venta la bici? Antes de ir necesito comprobar que eres real. Te mando un código, dime qué pone."
+  },
+  "pd_d3Reply": {
+    "message": "el código de verificación es 552019"
+  },
+  "pd_d3Safer": {
+    "message": "No hace falta ningún código. Pagas en efectivo al recogerla"
+  },
+  "pd_d3Why": {
+    "message": "Un comprador nunca necesita un código tuyo. Con uno, un estafador puede conectar tu número de teléfono a una cuenta suya."
+  },
+  "pd_d3Bare": {
+    "message": "Esto parece el código que te acaban de pedir. Un comprador real nunca necesita un código tuyo: con uno, un estafador puede abrir una cuenta a tu nombre. Pero escrito como un número suelto, Clotr no puede distinguirlo de uno inocente en un chat real: tiene que quedarse callado. Así que detectar este ha sido cosa tuya."
+  },
+  "pd_d4Who": {
+    "message": "«soporte técnico»"
+  },
+  "pd_d4From": {
+    "message": "Centro de Soporte Informático"
+  },
+  "pd_d4Message": {
+    "message": "Somos el equipo de soporte de tu ordenador. Tu ordenador nos envió una alerta de virus. Instala AnyDesk y dime el número de 9 cifras que ves en pantalla para arreglarlo."
+  },
+  "pd_d4Reply": {
+    "message": "el código de AnyDesk es 666 197 342"
+  },
+  "pd_d4Safer": {
+    "message": "No pedí ayuda. Voy a colgar"
+  },
+  "pd_d4Why": {
+    "message": "Las empresas de tecnología de verdad no te llaman ni te escriben por un problema en tu ordenador."
+  },
+  "pd_d4Bare": {
+    "message": "Esto parece el número que te acaban de pedir. El soporte técnico real no te llama de la nada para pedirte que le leas un número de la pantalla. Pero escrito como un número suelto, Clotr no puede distinguirlo de uno inocente en un chat real: tiene que quedarse callado. Así que detectar este ha sido cosa tuya."
+  },
+  "pd_d5Who": {
+    "message": "«una tienda»"
+  },
+  "pd_d5From": {
+    "message": "Pedidos de Tienda Ejemplo"
+  },
+  "pd_d5Message": {
+    "message": "Tu pedido no se pudo completar. Para confirmar que eres tú, responde con los 3 números de atrás de tu tarjeta antes de 1 hora."
+  },
+  "pd_d5Reply": {
+    "message": "los 3 números de atrás son 482"
+  },
+  "pd_d5Safer": {
+    "message": "Revisaré mi pedido en la web de la tienda"
+  },
+  "pd_d5Why": {
+    "message": "Tu banco nunca te pide esos números, y una tienda solo los necesita en la página de pago que abriste tú."
+  },
+  "pd_d5Bare": {
+    "message": "Esto parece los números que te acaban de pedir. Tu banco o tarjeta nunca te los pide así, y una tienda solo los necesita en su propia página de pago. Pero escritos como un número suelto, Clotr no puede distinguirlos de unos inocentes en un chat real: tiene que quedarse callado. Así que detectar estos ha sido cosa tuya."
+  },
+  "pd_d6Who": {
+    "message": "un amigo nuevo de un juego"
+  },
+  "pd_d6From": {
+    "message": "Un amigo nuevo de un juego"
+  },
+  "pd_d6Message": {
+    "message": "¡¡qué bien juegas!! ¿cuál es tu dirección? te mando una tarjeta regalo para las skins"
+  },
+  "pd_d6Reply": {
+    "message": "vivo en la calle Arce 42"
+  },
+  "pd_d6Safer": {
+    "message": "No doy mi dirección a gente que solo conozco por internet"
+  },
+  "pd_d6Why": {
+    "message": "Alguien a quien solo conoces por internet no necesita saber dónde vives. Si insiste, díselo a un adulto de confianza."
+  },
+  "pd_l1": {
+    "message": "¿Me ayudas a escribirle a mi casero por la calefacción? Vivo en la calle Arce 42, piso 3, y mi teléfono es el 555-0142."
+  },
+  "pd_l2": {
+    "message": "¿Por qué no se conecta mi wifi? La contraseña es Girasol-2024 y el router está arriba."
+  },
+  "pd_l2Instead": {
+    "message": "La IA no necesita la contraseña para ayudarte con el wifi: quítala."
+  },
+  "pd_l3": {
+    "message": "Escribe una respuesta amable a mi vecina y fírmala con mi correo, juana.perez@example.com."
+  },
+  "pd_l4": {
+    "message": "Me cobraron dos veces el gimnasio en mi tarjeta 4111 1111 1111 1111. Escríbeme una carta de reclamación."
+  },
+  "pd_l5": {
+    "message": "Este script falla con un 403, esta es mi configuración: AWS_ACCESS_KEY_ID=AKIA4HPQ7XZ2R6TWLJ3N"
+  },
+  "pd_l5Instead": {
+    "message": "La IA no necesita la clave para ayudarte: envía el error sin ella."
+  },
+  "pd_l6": {
+    "message": "Nací el 14 de marzo de 1961. ¿Qué debo saber sobre el ahorro para la jubilación a mi edad?"
+  },
+  "pd_l7": {
+    "message": "Ayúdame a rellenar este formulario de nómina: mi IBAN es ES26 0000 1234 5612 3456 7890."
+  },
+  "pd_l8": {
+    "message": "Mi formulario de impuestos pide mi SSN, es el 219-09-9999, ¿dónde va?"
+  },
+  "pd_l9": {
+    "message": "Escríbele a mi amigo Sam al (555) 555-0177 y dile que llego tarde."
+  },
+  "pd_l10": {
+    "message": "Escribe una nota para el repartidor: déjalo en la calle Abedul 15, la puerta azul."
+  },
+  "pd_l11": {
+    "message": "Me mandaron este código por SMS: 482913. ¿Es de mi banco de verdad?"
+  },
+  "pd_l11Instead": {
+    "message": "Pregunta por el mensaje sin el código: la IA no lo necesita para ayudarte."
+  },
+  "pd_l12": {
+    "message": "Escríbeme una carta de presentación. Mi correo es sam.lee@example.com y mi número es el (555) 555-0163."
+  },
+  "pd_l13": {
+    "message": "¿Puedes hacer que este correo a mi equipo suene más amable? Pasamos la reunión al jueves."
+  },
+  "pd_l14": {
+    "message": "¿Qué cena rápida puedo hacer con pollo, arroz y las verduras que tenga?"
+  },
+  "pd_l15": {
+    "message": "Mi número de pedido es 112-4567890-1234567 y no ha llegado. Escribe un mensaje a la tienda."
+  },
+  "pd_l16": {
+    "message": "Explícame la diferencia entre una cuenta de ahorro y un plan de pensiones como si fuera nuevo en esto."
+  },
+  "pd_l17": {
+    "message": "Planea un viaje de tres días a Lisboa en mayo para dos personas a las que les encantan los museos."
+  },
+  "pd_l18": {
+    "message": "La reunión es a las 3:30 en la sala 214. ¿Puedes escribir un recordatorio para el equipo?"
+  },
+  "pd_l19": {
+    "message": "¿Cómo sé si un mensaje de mi banco es de verdad o una estafa?"
+  },
+  "pd_l20": {
+    "message": "Mi nieto cumple años la semana que viene y le encantan los dinosaurios. ¿Ideas de regalo por menos de 30 €?"
+  },
+  "pd_l21": {
+    "message": "Corrige la gramática: haber si mañana vamos a la tienda a las 9 a comprar 12 huevos."
+  },
+  "pd_l22": {
+    "message": "¿Qué hace que una contraseña sea fuerte? Explícalo sin darme ninguna."
+  },
+  "pd_l23": {
+    "message": "Traduce al inglés: El paquete llegará entre las 2 y las 4 de la tarde."
+  },
+  "pd_l24": {
+    "message": "Nuestro equipo ganó 42 a 17 anoche. Escribe un ánimo corto para el grupo."
+  },
+  "pd_pageTitle": {
+    "message": "Practicar con estafas"
+  },
+  "pd_title": {
+    "message": "¿Qué responderías?"
+  },
+  "pd_lead": {
+    "message": "Seis mensajes inventados, como los que mandan los estafadores. Escribe la respuesta que darías y mira qué hace Clotr. Nada de lo que escribas sale de esta página ni se guarda, así que usa números inventados."
+  },
+  "pd_step": {
+    "message": "Ejercicio $p1$ de $p2$: un mensaje de $p3$",
+    "placeholders": {
+      "p1": {
+        "content": "$1"
+      },
+      "p2": {
+        "content": "$2"
+      },
+      "p3": {
+        "content": "$3"
+      }
+    }
+  },
+  "pd_madeUp": {
+    "message": "inventado"
+  },
+  "pd_yourReply": {
+    "message": "Tu respuesta"
+  },
+  "pd_replyHint": {
+    "message": "Escribe la respuesta que enviarías"
+  },
+  "pd_check": {
+    "message": "Revisar mi respuesta"
+  },
+  "pd_useMadeUp": {
+    "message": "O usa una respuesta inventada"
+  },
+  "pd_back": {
+    "message": "Atrás"
+  },
+  "pd_leakTitle": {
+    "message": "¿Enviarías esto a un chatbot?"
+  },
+  "pd_backToDrills": {
+    "message": "Volver a los ejercicios"
+  },
+  "pd_quoted": {
+    "message": "«$p1$».",
+    "placeholders": {
+      "p1": {
+        "content": "$1"
+      }
+    }
+  },
+  "pd_wouldShow": {
+    "message": "Lo que Clotr mostraría en un chat de verdad"
+  },
+  "pd_nothingNow": {
+    "message": "Ahora tu respuesta no tiene nada de lo que Clotr sabe que piden los estafadores."
+  },
+  "pd_nothing": {
+    "message": "Tu respuesta no tiene nada de lo que Clotr sabe que piden los estafadores."
+  },
+  "pd_nothingHint": {
+    "message": "Clotr solo ve lo que hay en tus palabras, así que compara tu respuesta con la de abajo."
+  },
+  "pd_nothingBare": {
+    "message": "Aquí Clotr también se quedaría callado: un número suelto nunca avisa en un chat real, para no dar la alarma con uno inocente."
+  },
+  "pd_failed": {
+    "message": "Clotr no pudo revisar esta respuesta."
+  },
+  "pd_safer": {
+    "message": "Una respuesta más segura"
+  },
+  "pd_nextLeak": {
+    "message": "Siguiente: encuentra la fuga"
+  },
+  "pd_next": {
+    "message": "Siguiente ejercicio: $p1$",
+    "placeholders": {
+      "p1": {
+        "content": "$1"
+      }
+    }
+  },
+  "pd_titleLeak": {
+    "message": "Encuentra la fuga"
+  },
+  "pd_leftIn": {
+    "message": "Lo dejaste. En un chat de verdad, Clotr solo avisa por defecto: el mensaje sigue siendo tuyo para enviarlo."
+  },
+  "pd_leakCount": {
+    "message": "$p1$ de $p2$",
+    "placeholders": {
+      "p1": {
+        "content": "$1"
+      },
+      "p2": {
+        "content": "$2"
+      }
+    }
+  },
+  "pd_typedInto": {
+    "message": "Escrito en un chat de IA:"
+  },
+  "pd_leakQuestion": {
+    "message": "¿Lo enviarías?"
+  },
+  "pd_sendIt": {
+    "message": "Lo enviaría"
+  },
+  "pd_changeIt": {
+    "message": "Primero lo cambiaría"
+  },
+  "pd_leakNext": {
+    "message": "Siguiente mensaje"
+  },
+  "pd_leakDone": {
+    "message": "Ver cómo te fue"
+  },
+  "pd_leakFailed": {
+    "message": "Clotr no pudo revisar este mensaje."
+  },
+  "pd_seesOne": {
+    "message": "Clotr ve 1 dato aquí"
+  },
+  "pd_seesMany": {
+    "message": "Clotr ve $p1$ datos aquí",
+    "placeholders": {
+      "p1": {
+        "content": "$1"
+      }
+    }
+  },
+  "pd_seesNothing": {
+    "message": "Clotr no encuentra nada privado aquí. Puedes enviarlo."
+  },
+  "pd_and": {
+    "message": " y "
+  },
+  "pd_bandage": {
+    "message": "Con Bandage activado, Clotr puede enviar $p1$ en su lugar, y volver a poner tus datos en la respuesta de la IA.",
+    "placeholders": {
+      "p1": {
+        "content": "$1"
+      }
+    }
+  },
+  "pd_score": {
+    "message": "Habrías cambiado $p1$ de los $p2$ que tenían algo privado.",
+    "placeholders": {
+      "p1": {
+        "content": "$1"
+      },
+      "p2": {
+        "content": "$2"
+      }
+    }
+  },
+  "pd_allSpotted": {
+    "message": "Los encontraste todos."
+  },
+  "pd_clotrIsThere": {
+    "message": "Para eso está Clotr: en un chat de IA de verdad, avisa antes de que salgan datos como estos."
+  },
+  "pd_keptNothing": {
+    "message": "No se guarda nada de tus respuestas."
+  },
+  "pd_worried": {
+    "message": "¿Te preocupa un mensaje? Clotr te da una segunda opinión."
+  },
+  "pd_isThisAScam": {
+    "message": "¿Es una estafa?"
+  },
+  "pd_tenMore": {
+    "message": "Diez mensajes más"
+  },
+  "sc_title": {
+    "message": "¿Es una estafa?"
+  },
+  "sc_lead": {
+    "message": "Pega un mensaje que recibiste, un SMS, un correo o un chat, y Clotr te señala las señales de alerta que conoce. Todo se queda en este ordenador y no se guarda nada."
+  },
+  "sc_box": {
+    "message": "El mensaje que recibiste"
+  },
+  "sc_hint": {
+    "message": "Pégalo aquí"
+  },
+  "sc_check": {
+    "message": "Revisarlo"
+  },
+  "sc_try": {
+    "message": "Probar con un mensaje inventado"
+  },
+  "sc_madeUp": {
+    "message": "Somos el equipo de fraude de Banco Ejemplo. Hemos parado un pago extraño con tu tarjeta. Para cancelarlo, responde ya con el código de 6 cifras que te acabamos de enviar. No se lo digas a nadie de la oficina, pueden estar metidos."
+  },
+  "sc_empty": {
+    "message": "Primero pega un mensaje."
+  },
+  "sc_found": {
+    "message": "Clotr encontró $p1$ señales de alerta",
+    "placeholders": {
+      "p1": {
+        "content": "$1"
+      }
+    }
+  },
+  "sc_foundOne": {
+    "message": "Clotr encontró 1 señal de alerta"
+  },
+  "sc_foundSub": {
+    "message": "Cada una está marcada en el mensaje."
+  },
+  "sc_none": {
+    "message": "Clotr no encontró ninguna de las señales que conoce"
+  },
+  "sc_noneWhy": {
+    "message": "Eso no quiere decir que el mensaje sea de verdad: las estafas cambian y ninguna lista las conoce todas."
+  },
+  "sc_beforeTitle": {
+    "message": "Antes de responder"
+  },
+  "sc_beforeCall": {
+    "message": "No uses el número de teléfono ni el enlace del mensaje. Llama a la empresa o a la persona a un número que ya conozcas, como el de tu tarjeta o tu extracto."
+  },
+  "sc_beforeTalk": {
+    "message": "Habla antes con alguien de confianza."
+  },
+  "sc_hasPhone": {
+    "message": "Tiene un número de teléfono: no llames a ese número para comprobarlo."
+  },
+  "sc_hasLink": {
+    "message": "Tiene un enlace: no lo uses para comprobarlo."
+  },
+  "sc_answered": {
+    "message": "¿Ya respondiste, pagaste o dejaste entrar a alguien?"
+  },
+  "sc_tourniquet": {
+    "message": "Tourniquet puede preguntar antes durante 30 días"
+  },
+  "sc_again": {
+    "message": "Revisar otro mensaje"
+  },
+  "sc_failed": {
+    "message": "Clotr no pudo revisarlo. No se guardó nada."
+  },
+  "sc_never": {
+    "message": "Clotr solo lee lo que pegas aquí, en este ordenador, y lo olvida al cerrar la página. Nunca dice que un mensaje está bien: ninguna lista conoce todas las estafas."
+  },
+  "sc_source": {
+    "message": "Fuente (en inglés):"
+  },
+  "sc_sources": {
+    "message": "Fuentes (en inglés):"
+  },
+  "sc_srcFtc": {
+    "message": "FTC de EE. UU."
+  },
+  "sc_srcGeorgia": {
+    "message": "Fiscal General de Georgia (EE. UU.)"
+  },
+  "sc_srcMunster": {
+    "message": "Universidad de Münster"
+  },
+  "sc_quote": {
+    "message": "«$p1$»",
+    "placeholders": {
+      "p1": {
+        "content": "$1"
+      }
+    }
+  },
+  "sc_group_asks": {
+    "message": "Pide un código o un dato"
+  },
+  "sc_group_pay": {
+    "message": "Quiere que pagues de una forma concreta"
+  },
+  "sc_group_press": {
+    "message": "Te presiona"
+  },
+  "sc_group_pret": {
+    "message": "Se hace pasar por alguien de confianza"
+  },
+  "sc_group_prob": {
+    "message": "Dice que hay un problema o un premio"
+  },
+  "sc_asks_code": {
+    "message": "Pide un código que te enviaron"
+  },
+  "sc_asks_code_means": {
+    "message": "Quien pide un código que te enviaron es un estafador: con él entra en tu cuenta."
+  },
+  "sc_asks_card_code": {
+    "message": "Pide los números de atrás de tu tarjeta"
+  },
+  "sc_asks_card_code_means": {
+    "message": "Tu banco nunca te los pide: ya los tiene."
+  },
+  "sc_asks_gift_card": {
+    "message": "Pide tarjetas regalo"
+  },
+  "sc_asks_gift_card_means": {
+    "message": "Ninguna empresa ni organismo público de verdad te pedirá que pagues con una tarjeta regalo."
+  },
+  "sc_asks_remote": {
+    "message": "Pide entrar en tu ordenador"
+  },
+  "sc_asks_remote_means": {
+    "message": "Las empresas de tecnología de verdad no te contactan por un problema en tu ordenador."
+  },
+  "sc_asks_details": {
+    "message": "Te pide confirmar datos personales o bancarios"
+  },
+  "sc_asks_details_means": {
+    "message": "Los mensajes que piden confirmar tus datos son un truco habitual: no hace falta."
+  },
+  "sc_asks_command": {
+    "message": "Te pide pegar un comando"
+  },
+  "sc_asks_command_means": {
+    "message": "Ninguna comprobación de verdad te pide pulsar Win+R o abrir la Terminal y pegar algo."
+  },
+  "sc_pay_crypto": {
+    "message": "Quiere criptomonedas o un cajero de Bitcoin"
+  },
+  "sc_pay_crypto_means": {
+    "message": "Solo los estafadores exigen pagos en criptomonedas."
+  },
+  "sc_pay_hard_to_undo": {
+    "message": "Quiere una transferencia, efectivo, oro o una app de pagos"
+  },
+  "sc_pay_hard_to_undo_means": {
+    "message": "Los estafadores piden formas de pago difíciles de recuperar."
+  },
+  "sc_pay_move_money": {
+    "message": "Te dice que muevas tu dinero para protegerlo"
+  },
+  "sc_pay_move_money_means": {
+    "message": "Quien te dice que muevas tu dinero para protegerlo es un estafador."
+  },
+  "sc_press_rush": {
+    "message": "Te mete prisa"
+  },
+  "sc_press_rush_means": {
+    "message": "Los estafadores te empujan a actuar ya, para que no te pares a comprobarlo."
+  },
+  "sc_press_secret": {
+    "message": "Te pide que lo guardes en secreto"
+  },
+  "sc_press_secret_means": {
+    "message": "Los estafadores piden secreto para que no hables con alguien que lo descubriría."
+  },
+  "sc_press_threat": {
+    "message": "Amenaza con detenciones, multas o cerrar tu cuenta"
+  },
+  "sc_press_threat_means": {
+    "message": "Amenazas así son cosa de estafadores, para asustarte y que pagues."
+  },
+  "sc_press_stay": {
+    "message": "Te dice que no cuelgues"
+  },
+  "sc_press_stay_means": {
+    "message": "Tenerte al teléfono evita que lo compruebes con nadie."
+  },
+  "sc_pret_gov": {
+    "message": "Dice que es del gobierno y pide dinero o datos"
+  },
+  "sc_pret_gov_means": {
+    "message": "Según la FTC de EE. UU., los organismos públicos no llaman, escriben ni mandan mensajes para pedir dinero o datos personales."
+  },
+  "sc_pret_bank": {
+    "message": "Dice que es el equipo de fraude de tu banco y te pide algo"
+  },
+  "sc_pret_bank_means": {
+    "message": "Cuelga y llama al número de tu tarjeta o de tu extracto, nunca al que te den."
+  },
+  "sc_pret_support": {
+    "message": "Dice que es soporte técnico"
+  },
+  "sc_pret_support_means": {
+    "message": "Las empresas de tecnología de verdad no te contactan por un problema en tu ordenador."
+  },
+  "sc_pret_family": {
+    "message": "Dice que un familiar está en apuros"
+  },
+  "sc_pret_family_means": {
+    "message": "No te fíes de la voz ni del nombre: llámale a un número que sepas que es suyo."
+  },
+  "sc_pret_romance": {
+    "message": "Alguien a quien no conoces en persona te pide dinero"
+  },
+  "sc_pret_romance_means": {
+    "message": "Nunca mandes dinero ni regalos a alguien a quien no conoces en persona."
+  },
+  "sc_pret_knows_you": {
+    "message": "Menciona datos tuyos"
+  },
+  "sc_pret_knows_you_means": {
+    "message": "Que sepan tu nombre o tu dirección no demuestra quiénes son: los estafadores suelen tener datos así."
+  },
+  "sc_prob_account": {
+    "message": "Dice que hay un problema con tu cuenta, un pago o un envío"
+  },
+  "sc_prob_account_means": {
+    "message": "Es un comienzo habitual. Compruébalo con la empresa en un número o una web que ya conozcas."
+  },
+  "sc_prob_prize": {
+    "message": "Dice que ganaste algo"
+  },
+  "sc_prob_prize_means": {
+    "message": "Los premios de verdad son gratis: si hay que pagar algo antes, es una estafa."
+  },
+  "sc_mine_my_name": {
+    "message": "tu nombre"
+  },
+  "sc_mine_family_name": {
+    "message": "el nombre de un familiar"
+  },
+  "sc_mine_employer": {
+    "message": "dónde trabajas"
+  },
+  "sc_mine_my_id": {
+    "message": "tu número de identificación"
+  },
+  "sc_mine_watch_list": {
+    "message": "una palabra de tu lista"
+  },
+  "sc_mine_street_address": {
+    "message": "tu dirección"
+  },
+  "sc_mine_phone_number": {
+    "message": "tu número de teléfono"
+  },
+  "sc_mine_email": {
+    "message": "tu correo"
+  },
+  "sc_mine_other": {
+    "message": "uno de tus datos"
+  },
+  "tw_pageTitle": {
+    "message": "El recorrido de IA"
+  },
+  "tw_lead": {
+    "message": "Un recorrido guiado y sin conexión, de quince a veinte minutos. Nada de lo que escribas aquí se guarda ni se envía a ningún sitio."
+  },
+  "tw_next": {
+    "message": "Siguiente"
+  },
+  "tw_stepOf": {
+    "message": "Paso $1 de $2: $3"
+  },
+  "tw_s1Title": {
+    "message": "Por qué importa"
+  },
+  "tw_s2Title": {
+    "message": "Pruébalo"
+  },
+  "tw_s3Title": {
+    "message": "Las palabras de tu oficina"
+  },
+  "tw_s4Title": {
+    "message": "Detecta la fuga"
+  },
+  "tw_s5Title": {
+    "message": "¿Esta IA está bien configurada?"
+  },
+  "tw_s6Title": {
+    "message": "Revisa el trabajo de la IA"
+  },
+  "tw_s7Title": {
+    "message": "La prueba"
+  },
+  "tw_s8Title": {
+    "message": "Finalización"
+  },
+  "tw_why1": {
+    "message": "Lo que escribes en un chat de IA puede salir de tus manos para siempre, así que vale la pena saber qué dejar fuera y cómo revisar lo que te responde."
+  },
+  "tw_why2": {
+    "message": "Este recorrido trata ambas cosas en unos quince minutos, sin conexión: nada de lo que escribas aquí se guarda ni se envía a ningún sitio."
+  },
+  "tw_why1Tax": {
+    "message": "En junio de 2026, la Oficina de Responsabilidad Profesional del IRS pidió a las oficinas fiscales mantener los datos de sus clientes fuera de herramientas de IA públicas, formar a su personal para usarlas con cuidado, revisar las herramientas que usan y comprobar el trabajo de la IA antes de enviarlo."
+  },
+  "tw_why2Tax": {
+    "message": "Este recorrido cubre las cuatro cosas, en unos quince minutos, y nada de lo que escribas aquí se guarda ni se envía a ningún sitio."
+  },
+  "tw_whySourceTax": {
+    "message": "Oficina de Responsabilidad Profesional del IRS, Introductory Guidelines for Responsible AI Use in Federal Tax Practice (24 de junio de 2026)"
+  },
+  "tw_tryLead": {
+    "message": "Escribe este número de la Seguridad Social inventado en el cuadro de abajo, como podrías hacerlo sin pensarlo: $1"
+  },
+  "tw_tryLeadTax": {
+    "message": "Escribe este número de la Seguridad Social inventado de un cliente ficticio en el cuadro de abajo, como podrías hacerlo sin pensarlo: $1"
+  },
+  "tw_tryScript": {
+    "message": "Mi número es $1, ¿es suficiente para confirmar quién soy?"
+  },
+  "tw_tryAiReply": {
+    "message": "Claro, ya lo he anotado. ¿En qué más puedo ayudarte?"
+  },
+  "tw_pretendAi": {
+    "message": "Un chat de IA de prueba"
+  },
+  "tw_yourMessage": {
+    "message": "Tu mensaje"
+  },
+  "tw_useExample": {
+    "message": "Usar el ejemplo inventado"
+  },
+  "tw_send": {
+    "message": "Enviar"
+  },
+  "tw_tryNothing": {
+    "message": "Clotr no encuentra nada que detectar aquí. Prueba el ejemplo inventado de arriba para ver un aviso real."
+  },
+  "tw_tryHideExplain": {
+    "message": "Ocultado. En un chat real, la IA nunca vería el número: Clotr lo sustituye por una etiqueta como esta antes de enviar nada."
+  },
+  "tw_tryEditExplain": {
+    "message": "De vuelta a tu mensaje, sin cambios. En un chat real, aquí es donde quitarías el número tú mismo antes de enviarlo."
+  },
+  "tw_tryLeaveExplain": {
+    "message": "Enviado. En un chat real, el aviso de Clotr nunca bloquea un mensaje por sí solo: enviarlo siempre es tu decisión."
+  },
+  "tw_startOver": {
+    "message": "Empezar de nuevo"
+  },
+  "tw_wordsNone": {
+    "message": "Tu oficina aún no ha añadido palabras propias. Un administrador puede añadir el nombre de un cliente, un formato de número de expediente o cualquier otra cosa que valga la pena vigilar, desde los ajustes de tu organización. Nadie fuera de tu oficina ve nunca esa lista, y Clotr convierte cada palabra en un código cifrado antes de compararla con nada de lo que escribas."
+  },
+  "tw_wordsSome": {
+    "message": "Tu oficina ha añadido $1 palabras propias. Aquí tienes un ejemplo inventado, nunca las palabras reales: si un mensaje nombrara una de ellas, Clotr la detectaría igual que detecta un número de la Seguridad Social, sin que la lista de tu oficina salga nunca de este ordenador."
+  },
+  "tw_leakDone": {
+    "message": "Ver cómo te fue"
+  },
+  "tw_checkLead": {
+    "message": "Unas preguntas sencillas que vale la pena hacerse sobre cualquier herramienta de IA antes de usarla para algo más que una charla rápida. Aquí no hay puntuación."
+  },
+  "tw_checkTraining": {
+    "message": "¿Usa tus chats para entrenar su IA, y se puede desactivar eso?"
+  },
+  "tw_checkTrainingHint": {
+    "message": "La mayoría de las herramientas de IA tienen un ajuste para esto. Desactivarlo suele afectar solo a los chats nuevos, no a los que ya has enviado."
+  },
+  "tw_checkKept": {
+    "message": "¿Cuánto tiempo guarda tus chats, y puedes borrar uno?"
+  },
+  "tw_checkKeptHint": {
+    "message": "Un chat borrado suele desaparecer de tu historial al momento, pero puede seguir un tiempo en los sistemas de la empresa."
+  },
+  "tw_checkBusiness": {
+    "message": "¿Ofrece un plan de empresa o equipo con condiciones de privacidad más estrictas?"
+  },
+  "tw_checkBusinessHint": {
+    "message": "Un plan de empresa puede venir con un acuerdo escrito sobre el uso de tus datos, algo que una cuenta personal no suele tener."
+  },
+  "tw_yes": {
+    "message": "Sí"
+  },
+  "tw_no": {
+    "message": "No"
+  },
+  "tw_unsure": {
+    "message": "No lo sé"
+  },
+  "tw_accLead": {
+    "message": "Una IA escribió esta respuesta. Antes de seguir leyendo, haz clic en la cifra que está mal y en la cita que no existe."
+  },
+  "tw_accAnswer": {
+    "message": "Firmaron 23 personas y 19 rellenaron el formulario, así que en total participaron 42 personas. Esto coincide con la tasa habitual descrita en el 2024 Workplace Participation Standard, sección 4.2."
+  },
+  "tw_accAnswerTax": {
+    "message": "Tu cliente tiene 3 formularios W-2 y 2 formularios 1099, así que son 6 declaraciones informativas en total para adjuntar. Esto sigue el IRC §6724(d)(3), que fija la norma para contar los adjuntos de una declaración conjunta."
+  },
+  "tw_accCheck": {
+    "message": "Comprobar mis respuestas"
+  },
+  "tw_accGotFigure": {
+    "message": "Encontraste la cifra equivocada."
+  },
+  "tw_accMissedFigure": {
+    "message": "No encontraste la cifra equivocada."
+  },
+  "tw_accGotCitation": {
+    "message": "Encontraste la cita inventada."
+  },
+  "tw_accMissedCitation": {
+    "message": "No encontraste la cita inventada."
+  },
+  "tw_accCorrectFigure": {
+    "message": "El total real: $1"
+  },
+  "tw_accFigure": {
+    "message": "23 (no 42: los 19 que rellenaron el formulario son parte de los 23)"
+  },
+  "tw_accFigureTax": {
+    "message": "5 (3 W-2 + 2 1099)"
+  },
+  "tw_accExplain": {
+    "message": "23 y 19 no suman 42 aquí: los 19 forman parte de los 23 que firmaron, así que el total es 23. El «2024 Workplace Participation Standard» no existe. Una IA puede dar una cifra equivocada o una cita inventada, y sonar segura en ambos casos."
+  },
+  "tw_accExplainTax": {
+    "message": "3 y 2 suman 5, no 6. El IRC §6724(d)(3) no dice esto: el §6724 trata las multas por declaraciones informativas incorrectas, nada que ver con contar los adjuntos de una declaración conjunta. Una IA puede dar una cifra equivocada o una cita inventada, y sonar segura en ambos casos."
+  },
+  "tw_quizOf": {
+    "message": "Pregunta $1 de $2"
+  },
+  "tw_quizRight": {
+    "message": "Correcto."
+  },
+  "tw_quizWrong": {
+    "message": "No exactamente."
+  },
+  "tw_quizNext": {
+    "message": "Siguiente pregunta"
+  },
+  "tw_quizSeeScore": {
+    "message": "Ver tu puntuación"
+  },
+  "tw_q1": {
+    "message": "¿Cuál de estos mensajes es correcto escribir en un chat de IA que no está aprobado para datos personales?"
+  },
+  "tw_q1Tax": {
+    "message": "¿Cuál de estos mensajes es correcto escribir en un chat de IA que tu oficina no ha aprobado para datos de clientes?"
+  },
+  "tw_q1a": {
+    "message": "Mi número de la Seguridad Social es 123-45-6789, ¿qué créditos podrían aplicarme?"
+  },
+  "tw_q1aTax": {
+    "message": "El número de la Seguridad Social de mi cliente es 123-45-6789, ¿qué créditos podrían aplicarle?"
+  },
+  "tw_q1b": {
+    "message": "Un matrimonio que declara en conjunto, con dos hijos menores de 17 años, ¿qué créditos podrían aplicarles?"
+  },
+  "tw_q1c": {
+    "message": "Mi número de cuenta bancaria es 123456789012, ¿es correcto?"
+  },
+  "tw_q1cTax": {
+    "message": "El número de cuenta bancaria de mi cliente es 123456789012, ¿es correcto?"
+  },
+  "tw_q1Explain": {
+    "message": "(b) hace la misma pregunta sin datos personales. (a) tiene un número de la Seguridad Social, (c) un número de cuenta bancaria."
+  },
+  "tw_q2": {
+    "message": "Estás escribiendo en un chat de IA y Clotr avisa sobre una fecha de nacimiento. ¿Qué haces?"
+  },
+  "tw_q2a": {
+    "message": "Enviarlo de todos modos. La empresa de IA no guarda los chats."
+  },
+  "tw_q2b": {
+    "message": "Quitar el dato, o consultarlo antes con quien puso esas reglas."
+  },
+  "tw_q2c": {
+    "message": "Pausar Clotr en ese sitio para que deje de avisar."
+  },
+  "tw_q2Explain": {
+    "message": "(b) mantiene el dato fuera del chat. Que una empresa guarde los chats depende de la herramienta y sus propios ajustes (la lista del paso 5), y pausar Clotr solo quita el aviso."
+  },
+  "tw_q3": {
+    "message": "Escribiste el nombre completo de alguien en un chat de IA y Clotr no avisó. ¿Qué significa eso?"
+  },
+  "tw_q3Tax": {
+    "message": "Escribiste el nombre completo de un cliente en un chat de IA y Clotr no avisó. ¿Qué significa eso?"
+  },
+  "tw_q3a": {
+    "message": "Que el mensaje no tiene nada privado."
+  },
+  "tw_q3b": {
+    "message": "Nada por sí solo: Clotr solo reconoce un nombre si alguien lo añadió a una lista, y aun así puede pasarlo por alto."
+  },
+  "tw_q3c": {
+    "message": "Que la herramienta de IA está aprobada."
+  },
+  "tw_q3Explain": {
+    "message": "(b): Clotr encuentra números, fechas y direcciones por su forma, pero un nombre solo si está en una lista que alguien añadió. Que no avise no es lo mismo que no haya nada privado."
+  },
+  "tw_q4": {
+    "message": "Una IA redacta algo que cita una norma y suma dos cifras. Antes de enviarlo:"
+  },
+  "tw_q4a": {
+    "message": "Enviarlo. La IA es buena con las citas y las sumas."
+  },
+  "tw_q4b": {
+    "message": "Leer la cita tú mismo, y comprobar cada cifra con los números reales."
+  },
+  "tw_q4c": {
+    "message": "Preguntarle a la IA si está segura."
+  },
+  "tw_q4Explain": {
+    "message": "(b): una IA puede dar una cifra equivocada o una cita que no existe, y sonar segura en ambos casos. Quien envía el trabajo es quien lo revisa, como acabas de hacer en el paso 6."
+  },
+  "tw_q5": {
+    "message": "Información personal llegó a una herramienta de IA que no está aprobada para ello. ¿Qué pasa después?"
+  },
+  "tw_q5Tax": {
+    "message": "La información de un cliente llegó a una herramienta de IA que no está aprobada para ello. ¿Qué pasa después?"
+  },
+  "tw_q5a": {
+    "message": "Nada, si no parece haber causado daño."
+  },
+  "tw_q5b": {
+    "message": "Decírselo hoy mismo a quien corresponda, para que se pueda resolver."
+  },
+  "tw_q5bTax": {
+    "message": "Decírselo hoy mismo al coordinador, para que la oficina siga su plan."
+  },
+  "tw_q5c": {
+    "message": "Borrar el chat y no mencionarlo."
+  },
+  "tw_q5Explain": {
+    "message": "(b): un plan dice a quién avisar y cuándo. Borrar el chat no deshace lo que ya se envió."
+  },
+  "tw_yourName": {
+    "message": "Tu nombre (solo para este impreso, no se guarda)"
+  },
+  "tw_noName": {
+    "message": "(nombre no indicado)"
+  },
+  "tw_completedLine": {
+    "message": "completó el recorrido de IA de Clotr"
+  },
+  "tw_dateLine": {
+    "message": "Fecha: $1"
+  },
+  "tw_scoreLine": {
+    "message": "Puntuación de la prueba: $1 de $2"
+  },
+  "tw_topicsLine": {
+    "message": "Temas tratados:"
+  },
+  "tw_printOrSave": {
+    "message": "Imprimir o guardar como PDF"
+  },
+  "hp_openTraining": {
+    "message": "Recorrido de formación de la oficina"
+  },
+  "pd_wantMore": {
+    "message": "¿Buscas un recorrido más completo, para una oficina o un grupo?"
+  },
+  "pd_officeTraining": {
+    "message": "Formación para oficinas"
+  },
+  "pa_officeTraining": {
+    "message": "Hacer el recorrido de formación de la oficina"
+  },
+  "tw_accCitation": {
+    "message": "2024 Workplace Participation Standard, sección 4.2"
+  },
+  "lb_name": {
+    "message": "Mirar atrás"
+  },
+  "lb_title": {
+    "message": "Mira lo que ya le contaste a la IA"
+  },
+  "lb_lead": {
+    "message": "Tu historial de ChatGPT, Claude o Gemini, leído en este ordenador a partir de tu propia exportación. Clotr te muestra qué chats contienen una contraseña, una clave, un número de tarjeta o de documento, una dirección o el lugar de una foto, para que puedas borrarlos."
+  },
+  "lb_promises": {
+    "message": "Se lee aquí, nunca se sube\nSolo lo que escribiste tú, nunca las respuestas de la IA\nNo se guarda nada salvo los recuentos"
+  },
+  "lb_step1": {
+    "message": "1. Pide tu exportación"
+  },
+  "lb_step2": {
+    "message": "2. Ábrela aquí"
+  },
+  "lb_chatgptSteps": {
+    "message": "En ChatGPT, abre el menú de tu perfil y luego Settings.\nData controls > Export data > Export, y luego Confirm export.\nOpenAI te envía un enlace por correo. Puede tardar hasta 7 días en llegar, y el enlace funciona durante 24 horas."
+  },
+  "lb_claudeSteps": {
+    "message": "En Claude, en la web o en la aplicación de escritorio (no en la del móvil), haz clic en tus iniciales y luego en Settings.\nPrivacy > Export data.\nAnthropic te envía por correo un enlace que funciona durante 24 horas."
+  },
+  "lb_geminiSteps": {
+    "message": "Ve a Google Takeout y haz clic en Deselect all.\nMarca My Activity, haz clic en All activity data included, luego en Deselect all y marca solo Gemini Apps.\nEn Multiple formats, elige JSON para My Activity, y elige un archivo .zip.\nGoogle te envía un enlace por correo. Puede tardar unas horas o unos días."
+  },
+  "lb_menuNames": {
+    "message": "Los nombres de los menús están en inglés, como los escribe cada empresa."
+  },
+  "lb_openTool": {
+    "message": "Abrir $1"
+  },
+  "lb_help": {
+    "message": "Página de ayuda de $1"
+  },
+  "lb_cantAsk": {
+    "message": "Clotr no puede pedirla por ti. Vuelve aquí cuando llegue el correo."
+  },
+  "lb_drop": {
+    "message": "Suelta aquí tu exportación"
+  },
+  "lb_choose": {
+    "message": "Elegir mi exportación"
+  },
+  "lb_folder": {
+    "message": "Es una carpeta"
+  },
+  "lb_kinds": {
+    "message": "El archivo .zip tal como llegó, la carpeta que descomprimiste o el archivo conversations.json o MyActivity.json que contiene."
+  },
+  "lb_parts": {
+    "message": "Si eliges varios archivos a la vez (como conversations-000.zip y conversations-001.zip), Clotr los lee todos como una sola exportación."
+  },
+  "lb_local": {
+    "message": "Clotr la lee aquí, en este ordenador. Nunca la sube, y la olvida cuando cierras esta página. Funciona sin internet."
+  },
+  "lb_reading": {
+    "message": "Leyendo tu exportación de $1"
+  },
+  "lb_onlyYou": {
+    "message": "Solo se lee lo que escribiste o enviaste tú: tus mensajes, los archivos que adjuntaste y tus fotos. Nunca las respuestas de la IA."
+  },
+  "lb_bytes": {
+    "message": "$1 de $2"
+  },
+  "lb_left": {
+    "message": "Quedan unos $1"
+  },
+  "lb_stats": {
+    "message": "chats leídos\ncontienen algo que merece un vistazo\nhasta ahora"
+  },
+  "lb_steps": {
+    "message": "Abrir el zip\nLeer tus chats\nMirar tus fotos"
+  },
+  "lb_stop": {
+    "message": "Detener"
+  },
+  "lb_stopNote": {
+    "message": "Al detenerlo no se guarda nada."
+  },
+  "lb_soFar": {
+    "message": "Encontrado hasta ahora"
+  },
+  "lb_found": {
+    "message": "Encontrado en $1 de $2 chats"
+  },
+  "lb_foundNone": {
+    "message": "Nada de lo que Clotr sabe buscar, en $1 chats."
+  },
+  "lb_resNote": {
+    "message": "Tu exportación de $1, leída hoy a las $2. Esto se queda en pantalla hasta que cierres esta página. Clotr solo guarda los recuentos, nunca lo que encontró ni los títulos de tus chats."
+  },
+  "lb_shared": {
+    "message": "Lo que compartiste"
+  },
+  "lb_countIn": {
+    "message": "$1 en $2 chats"
+  },
+  "lb_countInOne": {
+    "message": "$1 en 1 chat"
+  },
+  "lb_different": {
+    "message": "($1 distintos)"
+  },
+  "lb_differentNote": {
+    "message": "Distintos significa que Clotr los comparó solo en esta página y luego los olvidó."
+  },
+  "lb_chats": {
+    "message": "Chats con datos privados"
+  },
+  "lb_newest": {
+    "message": "Primero los más recientes"
+  },
+  "lb_more": {
+    "message": "y $1 chats más"
+  },
+  "lb_where": {
+    "message": "tu mensaje\nun mensaje que editaste después\nun archivo que adjuntaste\nuna nota de voz\ntus instrucciones personalizadas"
+  },
+  "lb_whyKey": {
+    "message": "Una clave en un chat antiguo sigue funcionando hasta que la cambies."
+  },
+  "lb_whyPassword": {
+    "message": "Una contraseña en un chat es tan privada como el chat."
+  },
+  "lb_whyId": {
+    "message": "Un número de documento en un chat se queda ahí hasta que se borre el chat."
+  },
+  "lb_whyPhoto": {
+    "message": "La foto lleva el lugar donde se tomó, con precisión suficiente para encontrar una casa."
+  },
+  "lb_whatToDo": {
+    "message": "Qué hacer"
+  },
+  "lb_openChat": {
+    "message": "Abrir el chat"
+  },
+  "lb_openActivity": {
+    "message": "Abrir tu actividad de Gemini"
+  },
+  "lb_askDelete": {
+    "message": "Pedir a $1 que lo borre"
+  },
+  "lb_instructions": {
+    "message": "Tus instrucciones personalizadas"
+  },
+  "lb_instructionsWhy": {
+    "message": "ChatGPT las añade a cada chat. Cámbialas en ChatGPT: Settings > Personalization."
+  },
+  "lb_geminiDays": {
+    "message": "Google guarda Gemini como una lista de peticiones, no de chats, así que Clotr las agrupa por día."
+  },
+  "lb_notRead": {
+    "message": "Lo que Clotr no pudo leer"
+  },
+  "lb_tooBig": {
+    "message": "$1 chats eran demasiado grandes para leerlos (más de 32 MB)."
+  },
+  "lb_photosNotRead": {
+    "message": "No se leyeron $1 fotos."
+  },
+  "lb_noOcr": {
+    "message": "Clotr no puede leer palabras dentro de las imágenes."
+  },
+  "lb_deletedGone": {
+    "message": "Los chats que ya borraste no están en la exportación."
+  },
+  "lb_nothingKnown": {
+    "message": "Que no encuentre nada significa que no encontró nada de lo que sabe buscar."
+  },
+  "lb_deleteNote": {
+    "message": "Borrar un chat no siempre significa que desaparezcan todas las copias: la empresa decide qué guarda."
+  },
+  "lb_habit": {
+    "message": "A partir de ahora, Clotr revisa lo que escribes en los chats con IA antes de que se envíe."
+  },
+  "lb_forget": {
+    "message": "Olvidar estos resultados"
+  },
+  "lb_unknown": {
+    "message": "Clotr aún no puede leer esta exportación. Lee exportaciones de ChatGPT, Claude y Gemini (Google Takeout)."
+  },
+  "lb_manifestTitle": {
+    "message": "Esto es una lista de enlaces, no tu exportación"
+  },
+  "lb_manifestLead": {
+    "message": "Claude te envió primero este archivo por correo. Solo contiene enlaces para descargar tus datos; tus chats no están aquí. Descarga el archivo de conversaciones de abajo (o los archivos, si hay más de uno) y luego ábrelo aquí."
+  },
+  "lb_manifestExpiry": {
+    "message": "Estos enlaces caducan 24 horas después de que pediste tu exportación, el $1, y cada uno puede funcionar solo una vez."
+  },
+  "lb_manifestChoose": {
+    "message": "Elegir el archivo"
+  },
+  "lb_html": {
+    "message": "Esta es la exportación de Takeout en forma de página web. Pídela otra vez en Takeout y elige JSON para My Activity (el paso 1 te dice dónde)."
+  },
+  "lb_tgz": {
+    "message": "Este es un archivo .tgz. Pídelo otra vez en Takeout y elige .zip."
+  },
+  "lb_damaged": {
+    "message": "Este archivo parece dañado o incompleto. Prueba a descargarlo de nuevo."
+  },
+  "lb_unpackLimit": {
+    "message": "Un archivo se descomprime en mucho más que su tamaño, así que Clotr dejó de leerlo."
+  },
+  "lb_letterLead": {
+    "message": "Una carta que envías tú, hecha con lo que encontró Mirar atrás: los tipos de datos, las fechas y los enlaces de los chats, nunca los datos. Clotr no la envía."
+  },
+  "lb_quicker": {
+    "message": "Antes, más rápido: abre cada chat y bórralo tú. Luego envía la carta por las copias a las que no llegas."
+  },
+  "lb_whichChats": {
+    "message": "Qué chats"
+  },
+  "lb_wherePlace": {
+    "message": "¿Dónde vives?"
+  },
+  "lb_placeNote": {
+    "message": "Decide qué ley nombra la carta. Esto no es asesoramiento legal."
+  },
+  "lb_placeEu": {
+    "message": "En la UE"
+  },
+  "lb_placeUk": {
+    "message": "En el Reino Unido"
+  },
+  "lb_placeCalifornia": {
+    "message": "En California"
+  },
+  "lb_placeOther": {
+    "message": "En otro lugar"
+  },
+  "lb_yourLetter": {
+    "message": "Tu carta"
+  },
+  "lb_blanks": {
+    "message": "Quedan $1 huecos por rellenar. Puedes cambiar cualquier palabra antes de copiarla."
+  },
+  "lb_copyLetter": {
+    "message": "Copiar la carta"
+  },
+  "lb_copied": {
+    "message": "Copiado."
+  },
+  "lb_copyFailed": {
+    "message": "No se pudo copiar. El texto está seleccionado: cópialo tú."
+  },
+  "lb_openRequests": {
+    "message": "Abrir las solicitudes de privacidad de $1"
+  },
+  "lb_emailIt": {
+    "message": "O envíala a $1 desde tu propio correo."
+  },
+  "lb_nextTitle": {
+    "message": "Lo que pase ahora depende de $1"
+  },
+  "lb_nextText": {
+    "message": "La ley permite a las empresas guardar algunos datos, por ejemplo por seguridad o por motivos legales, y lo que ya se usó para entrenar un modelo puede quedarse en él. Puede que te pidan demostrar quién eres. Clotr no envía nada y no sabrá su respuesta."
+  },
+  "ec_name": {
+    "message": "Revisión de extensiones"
+  },
+  "ec_title": {
+    "message": "¿Qué extensiones pueden leer tus chats con IA?"
+  },
+  "ec_lead": {
+    "message": "Las extensiones del navegador pueden leer las páginas que abres, también tus chats con IA. Clotr te muestra las que pueden, y señala las que, según informes públicos, recogieron chats con IA de la gente."
+  },
+  "ec_button": {
+    "message": "Revisar mis extensiones"
+  },
+  "ec_askOnce": {
+    "message": "Tu navegador te preguntará una vez:"
+  },
+  "ec_askNote": {
+    "message": "Clotr solo lee la lista. Nunca desactiva ni quita una extensión, y devuelve el permiso en cuanto termina."
+  },
+  "ec_reading": {
+    "message": "Leyendo tus extensiones…"
+  },
+  "ec_facts": {
+    "message": "Solo lee la lista: los nombres y qué sitios puede leer cada una.\nNada sale de este ordenador: Clotr no tiene servidores y nunca se conecta.\nPuede leer, no hace: Clotr dice lo que cada una puede leer, no lo que hace con ello."
+  },
+  "ec_listDate": {
+    "message": "La lista de extensiones señaladas de Clotr se revisó por última vez el $1. Llega con las actualizaciones de Clotr; Clotr nunca la descarga."
+  },
+  "ec_count": {
+    "message": "$1 de tus $2 extensiones pueden leer tus chats con IA"
+  },
+  "ec_givenBack": {
+    "message": "Revisado ahora mismo en este navegador. Clotr ha devuelto el permiso."
+  },
+  "ec_worth": {
+    "message": "Merece un vistazo ($1)"
+  },
+  "ec_canReadAi": {
+    "message": "Pueden leer tus chats con IA ($1)"
+  },
+  "ec_reported": {
+    "message": "Señalada por $1 el $2 por recoger chats con IA."
+  },
+  "ec_readReport": {
+    "message": "Leer el informe"
+  },
+  "ec_all": {
+    "message": "Puede leer todos los sitios, también tus chats con IA"
+  },
+  "ec_sites": {
+    "message": "Puede leer $1"
+  },
+  "ec_some": {
+    "message": "Puede leer algunos sitios; la página de tu navegador los muestra"
+  },
+  "ec_sideload": {
+    "message": "Instalada por otro programa, no desde una tienda."
+  },
+  "ec_dev": {
+    "message": "Cargada a mano, en modo de desarrollador."
+  },
+  "ec_admin": {
+    "message": "Añadida por tu organización."
+  },
+  "ec_isClotr": {
+    "message": "Clotr en sí lee las páginas de chats con IA para revisar lo que escribes; no guarda nada y no envía nada."
+  },
+  "ec_normal": {
+    "message": "Los bloqueadores de anuncios y los gestores de contraseñas necesitan todos los sitios para funcionar. Conserva los que conozcas; Clotr solo dice lo que cada uno puede leer, no lo que hace."
+  },
+  "ec_cant": {
+    "message": "No pueden leer tus chats con IA ($1)"
+  },
+  "ec_off": {
+    "message": "$1 está desactivada, así que ahora no puede leer nada"
+  },
+  "ec_none": {
+    "message": "Ninguna de tus extensiones está en la lista de Clotr. La lista solo tiene las señaladas hasta ahora."
+  },
+  "ec_limits": {
+    "message": "La lista de Clotr solo tiene las extensiones señaladas hasta el $1.\nVe lo que tu navegador deja leer ahora a cada extensión. Una extensión puede pedir más después.\nQue no esté en la lista no la exculpa: significa que nadie la ha señalado todavía."
+  },
+  "ec_firefoxScripts": {
+    "message": "Firefox no muestra aquí los scripts de página de los complementos antiguos; su página de complementos sí."
+  },
+  "ec_remove": {
+    "message": "Muéstrame dónde quitarla"
+  },
+  "ec_removeShort": {
+    "message": "Dónde quitarla"
+  },
+  "ec_keep": {
+    "message": "Conservarla"
+  },
+  "ec_no": {
+    "message": "Clotr no puede ver tus extensiones sin ese permiso"
+  },
+  "ec_noLead": {
+    "message": "No pasa nada. Nada ha cambiado, y Clotr solo vuelve a preguntar si pulsas el botón."
+  },
+  "ec_byHand": {
+    "message": "Revísalas tú"
+  },
+  "ec_stepsChromium": {
+    "message": "Escribe $1 en la barra de direcciones y pulsa Intro.\nHaz clic en Detalles en cada extensión.\nEn Acceso a sitios, busca \"En todos los sitios\" o un sitio de IA como chatgpt.com.\nQuita las que no uses o no reconozcas."
+  },
+  "ec_stepsFirefox": {
+    "message": "Abre el menú de Firefox, luego Complementos y temas, luego Extensiones.\nHaz clic en una extensión y luego en su pestaña Permisos.\nBusca \"Acceder a tus datos de todos los sitios web\" o un sitio de IA como chatgpt.com.\nQuita las que no uses o no reconozcas."
+  },
+  "ec_windows": {
+    "message": "Clotr para Windows (próximamente) revisa todos los navegadores de este ordenador, a partir de sus archivos, sin pedir nada."
+  },
+  "ec_again": {
+    "message": "Pregúntame otra vez"
+  },
+  "pp_scans": {
+    "message": "Lo que ya está ahí fuera"
+  },
+  "pp_lookBackSub": {
+    "message": "Lo que ya le contaste a ChatGPT, Claude o Gemini"
+  },
+  "pp_extCheckSub": {
+    "message": "Qué extensiones pueden leer tus chats con IA"
+  },
+  "pp_open": {
+    "message": "Abrir"
+  },
+  "pp_check": {
+    "message": "Revisar"
+  },
+  "pp_lastLook": {
+    "message": "La última vez, el $1: $2 de $3 chats contenían algo"
+  },
+  "vt_lookBackOffer": {
+    "message": "¿Ya has usado ChatGPT, Claude o Gemini? Mirar atrás te muestra lo que ya les contaste."
+  },
+  "hp_extCheckLine": {
+    "message": "Ya que estás, Revisión de extensiones muestra qué extensiones suyas pueden leer chats con IA."
+  },
+  "tw_accDecoy": {
+    "message": "la tasa habitual"
+  },
+  "tw_accDecoyTax": {
+    "message": "los adjuntos de una declaración conjunta"
+  },
+  "tw_accDecoyFlagged": {
+    "message": "“$1” estaba bien tal cual."
   }
 }

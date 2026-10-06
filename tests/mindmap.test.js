@@ -1,4 +1,4 @@
-// The mind map of everything you could be leaking (D75): its model and its layout, without a browser.
+// Tests the mind map of everything you could be leaking: its model and its layout, without a browser.
 // Run from the repo root: npm test
 "use strict";
 
@@ -184,11 +184,11 @@ test("outline layout (narrow windows): one row per node, children indented under
   assert.equal(new Set(ys).size, ys.length, "no two nodes share a row");
 });
 
-// The drawing's layout (mindMapLayout): places, lines, shapes, labels and the frame, without a browser.
+// Tests mindMapLayout, the drawing's layout: places, lines, shapes, labels and the frame, without a browser.
 const ROOM = { width: 960, height: 690 };
 const nodesOf = (n) => [n, ...n.children.flatMap(nodesOf)];
 const byId = (items) => new Map(items.map((i) => [i.node.id, i]));
-// A hand-made radial tree: You, one branch, and AI services at chosen angles.
+// Builds a hand-made radial tree: You, one branch, and AI services placed at chosen angles.
 const handMade = (services, { branch = "has" } = {}) => ({
   id: "you",
   type: "you",
@@ -380,4 +380,30 @@ test("blind spots: spotted AI sites Clotr doesn't protect at all (a protected se
   );
   assert.deepEqual(unprotectedHosts({}, covered), []);
   assert.deepEqual(unprotectedHosts(null, covered), []);
+});
+
+// A record that stands for a long list is counted as what it stands for, not as a single item.
+test("exposureModel: a record that stands for a long list counts as its n", () => {
+  require("../extension/sites.js");
+  const one = (fp, extra = {}) => ({
+    t: 1,
+    site: "chatgpt.com",
+    type: "email",
+    name: "Email Address",
+    severity: "low",
+    action: "allowed",
+    fp,
+    ...extra,
+  });
+  const events = [
+    ...Array.from({ length: 10 }, (_, i) => one(String(i).padStart(16, "0"))),
+    one("", { n: 290 }),
+    one("", { n: 40, action: "redacted" }),
+  ];
+  const model = exposureModel({ events });
+  assert.equal(model.has.bySite[0].count, 300);
+  assert.equal(model.has.byType[0].count, 300);
+  assert.equal(model.has.bySite[0].parts.get("Email Address"), 300);
+  assert.equal(model.has.byType[0].parts.get("chatgpt.com"), 300);
+  assert.equal(model.near.bySite[0].count, 40);
 });

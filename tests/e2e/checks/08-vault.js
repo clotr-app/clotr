@@ -29,7 +29,7 @@ module.exports = async function (env) {
     withSite,
   } = env;
   await check("V0", 'First install opens "What should I protect?"', async () => {
-    // Waits a moment: run first (--only V), the check can start before the install opened the tab.
+    // When this check runs first (--only V), it can start before the install has even opened the tab, so I wait.
     const t = await waitFor(() => ctx.browser.targets().find((x) => x.url().includes("/vault.html?welcome=1")), 5000);
     expect(
       t,
@@ -66,11 +66,11 @@ module.exports = async function (env) {
         const pin = await page.evaluate(() => document.getElementById("pin-step")?.innerText || "");
         expect(/puzzle piece/i.test(pin) || /Clotr is pinned/.test(pin), `pin step: ${JSON.stringify(pin)}`);
         for (const fact of [
-          "Only where you choose",
-          "Nothing leaves this computer",
+          "the sites you've chosen",
+          "leaves this computer",
           "never saves what you type",
-          "It only warns",
-          "Only in this browser",
+          "it only warns",
+          "only works in this browser",
         ]) {
           expect(intro.text.includes(fact), `missing: "${fact}"`);
         }
@@ -124,7 +124,7 @@ module.exports = async function (env) {
             globalThis.Clotr.fingerprint(salt, "street_address_accented", "Avenida Andalucía 12"),
           ];
         });
-        // "Just count" for addresses, so only a vault entry ("always watch") makes a warning.
+        // Addresses are set to "just count" here, so only a vault entry marked "always watch" should warn.
         await store.set(ctx, {
           events: [],
           guided: ALL_GUIDED,
@@ -164,7 +164,7 @@ module.exports = async function (env) {
       await sleep(300);
       await shot(vp, "vault-page.png");
       await vp.close();
-      expect(/Saved 10 new items/.test(msg || ""), `message: ${msg}`); // AB-123456 = its format + a fingerprint (D23)
+      expect(/Saved 10 new items/.test(msg || ""), `message: ${msg}`); // AB-123456 = its format + a fingerprint
       expect(leftover === "", `text left in the form: ${leftover}`);
       const stored = JSON.stringify((await store.get(ctx, "vault")).vault);
       const plain = /jane|emma|initech|oak|5636|123456|falcon|gmail/i.exec(stored);
@@ -196,7 +196,6 @@ module.exports = async function (env) {
     },
   );
 
-  // Pre-release Batch 5: "your own rules" from Settings.
   await check(
     "V9",
     'Settings → "Your own words and formats" opens the vault with "Anything else to watch for" ready to type in',
@@ -270,7 +269,7 @@ module.exports = async function (env) {
     expect((await store.get(ctx, "vault")).vault.length === before - 1, "entry not removed");
   });
 
-  // Deletes `part` from the chat box the way a user would: select it, press Backspace.
+  // Deletes `part` from the chat box the way a person actually would, by selecting it and pressing Backspace.
   async function deleteByHand(page, part) {
     await page.evaluate(
       (sel, p) => {

@@ -76,7 +76,7 @@ body.vault-page {
   margin-top: 2px;
   user-select: all;
 }
-/* The author's note on the welcome page (D98, D104): the brand's mind map draws itself once (branches
+/* The author's note on the welcome page: the brand's mind map draws itself once (branches
    grow out of "You", the plasters land on each detail, the cut-off lines keep drifting), then the note.
    Everything rests in its final state, so with reduced motion it's simply there. */
 .author-hero {
@@ -322,22 +322,51 @@ body.vault-page {
   margin: 0;
   color: var(--ink-2);
 }
+/* The practice warning looks like the real one: light steel paper with a plum edge, the same in both themes. */
 .try-notice {
   padding: 10px 12px;
   border-radius: 10px;
-  background: var(--card-bg);
-  box-shadow:
-    var(--lift),
-    inset 0 0 0 1px var(--ring);
-  border-left: 5px solid #e8a200;
+  background: #d9dde1;
+  color: #1f2226;
+  box-shadow: inset 0 0 0 1px #9ea4ab;
+  border-left: 5px solid var(--plum);
 }
-.try-notice b {
+.try-notice .notice-title {
   display: block;
   margin-bottom: 2px;
 }
 .try-notice p {
   margin: 0 0 8px;
-  color: var(--ink-2);
+  color: #1f2226;
+}
+/* Who really asks for this: the real warning's warm box, a question mark in a disc beside it. */
+.try-notice .try-ask {
+  display: flex;
+  gap: 8px;
+  align-items: flex-start;
+  padding: 8px 10px;
+  border-left: 3px solid var(--signal);
+  border-radius: 6px;
+  background: var(--brand-wash);
+  color: var(--ink);
+}
+.try-ask b {
+  display: block;
+  margin-bottom: 2px;
+}
+.ask-dot {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 1.15em;
+  height: 1.15em;
+  margin-top: 0.1em;
+  border-radius: 50%;
+  background: var(--brand);
+  color: var(--card-bg);
+  font-size: 0.9em;
+  font-weight: 700;
+  line-height: 1;
 }
 .vault-page .btn:focus-visible {
   outline: 2px solid var(--brand);
@@ -348,10 +377,128 @@ body.vault-page {
   color: var(--ink-2);
   line-height: 1.5;
 }
+/* The email and chat card on the welcome page: bigger rows (40px targets), the two groups side by side, stacked on
+   a narrow window. */
+#welcome .ev-groups {
+  gap: 12px;
+}
+#welcome .ev-app {
+  min-height: 40px;
+  font-size: 14px;
+}
+#welcome .ev-hint {
+  font-size: 12px;
+}
+#welcome .ev-status {
+  margin-top: 8px;
+}
+@media (max-width: 480px) {
+  #welcome .ev-groups {
+    grid-template-columns: 1fr;
+  }
+}
+/* A finger, not a mouse: rows at least 44 px. */
+@media (pointer: coarse) {
+  #welcome .ev-app {
+    min-height: 44px;
+  }
+}
+/* Tourniquet's one line, after the email and chat card: the page's quiet text, one link. */
+.tq-offer {
+  margin: 14px 0 0;
+  color: var(--ink-2);
+  line-height: 1.5;
+}
+.tq-offer a {
+  font-weight: 700;
+}
 .pin-step.done {
   color: var(--good-ink);
   font-weight: 600;
 }
 .try-notice .btn.primary {
-  background: #b3261e;
-} /* same red as the real warning (white text 6.5:1) */
+  background: var(--plum);
+  color: var(--on-plum);
+}
+/* "Let Clotr check your AI chats": first on the welcome page, only while the browser keeps Clotr out of
+   some of its AI chats. */
+.allow-card {
+  margin: 14px 0 18px;
+  padding: 12px 16px 14px;
+  border-radius: 14px;
+  background: var(--card-bg);
+  box-shadow:
+    var(--lift),
+    inset 0 0 0 1px var(--ring);
+  border-left: 5px solid var(--signal);
+}
+#welcome .allow-card h2 {
+  margin: 0 0 6px;
+}
+.allow-card p {
+  margin: 0 0 8px;
+  line-height: 1.5;
+}
+.allow-card .hint {
+  color: var(--muted);
+  font-size: 12px;
+}
+.allow-status {
+  font-weight: 600;
+}
+.allow-status:empty {
+  display: none;
+}
+.allow-status.done {
+  margin: 0;
+  color: var(--good-ink);
+}
+
+/* Clotr Antibody under Try it: a warm card with an orange edge, the shield in its heading. On a narrow
+   screen its two buttons take the card's width, one under the other. */
+.ss-welcome {
+  margin: 22px 0 8px;
+  padding: 14px 16px 16px;
+  border-radius: 14px;
+  background: var(--brand-wash);
+  box-shadow:
+    var(--lift),
+    inset 0 0 0 1px var(--signal);
+}
+#welcome .ss-welcome h2 {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0 0 6px;
+}
+.ss-welcome h2 .tq-shield {
+  width: 16px;
+  height: 16px;
+}
+.ss-welcome p {
+  margin: 0;
+  line-height: 1.5;
+}
+.ss-welcome .ss-buttons {
+  margin: 12px 0 0;
+  gap: 8px;
+}
+@media (max-width: 480px) {
+  .ss-welcome .ss-buttons .btn {
+    flex: 1 1 100%;
+  }
+}
+
+/* A phone says it the phone's way: no toolbar puzzle piece, no top-right corner. The same test as the popup's
+   phone layout, so a touch laptop keeps the computer's words. */
+.on-phone {
+  display: none;
+}
+@media (hover: none) and (pointer: coarse) and (max-device-width: 600px) {
+  .on-computer {
+    display: none;
+  }
+  .on-phone {
+    display: inline;
+  }
+}

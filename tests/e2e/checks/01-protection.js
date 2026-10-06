@@ -1,4 +1,4 @@
-// E2E checks: A. Protection basics. Run in order by ../run.js with one shared env (helpers from ../lib.js).
+// E2E checks: A. Protection basics: the warning dialog itself, and what each of its choices does.
 "use strict";
 
 module.exports = async function (env) {
@@ -55,10 +55,10 @@ module.exports = async function (env) {
 
   await check(
     "K1",
-    "Keys typed by habit never choose: Space never, Enter not right away; after a moment Enter = Hide it (D36, D41)",
+    "Keys typed by habit never choose: Space never, Enter not right away; after a moment Enter = Hide it",
     () =>
-      // D36: "a space shouldn't make a decision for the user"; then (D41) the
-      // dialog takes the keys: Enter goes forward, Esc/Backspace go back.
+      // A space shouldn't make the choice for the person. Only after a short delay does the dialog start
+      // listening for keys, where Enter moves forward and Esc or Backspace goes back.
       withSite(ctx, "chatgpt", async (page) => {
         await resetState(ctx);
         await typeText(page, `my key is ${KEY}`);
@@ -76,7 +76,7 @@ module.exports = async function (env) {
         expect(!(await readDialog(page)), "Enter didn't choose");
         const text = await editorText(page);
         expect(text.includes("[REDACTED AWS ACCESS KEY]") && !text.includes(KEY), `Enter should hide it: "${text}"`);
-        // Recorded once the edit is confirmed (Kimi fix): wait for it like R2 and KM1 do.
+        // Clotr only records the event once the edit is confirmed, so I wait for it instead of reading too soon.
         const events =
           (await waitFor(async () => {
             const ev = await store.events(ctx);
@@ -117,7 +117,7 @@ module.exports = async function (env) {
         await page.keyboard.press("Enter");
         await sleep(300);
         expect(!(await readDialog(page)), "Tab + Enter didn't choose");
-        // The dialog stopped a send, so leaving it in sends it, unchanged (D121).
+        // The dialog stopped a send, so leaving it in sends it, unchanged.
         const sent =
           (await waitFor(async () => ((await sentMessages(page)).length ? sentMessages(page) : null), 2000)) || [];
         expect(sent.length === 1 && sent[0].includes(KEY), `sent: ${JSON.stringify(sent)}`);
@@ -134,7 +134,7 @@ module.exports = async function (env) {
       expect(await waitForDialog(page), "no dialog appeared");
       await clickDialogButton(page, "Leave it in");
       expect((await editorText(page)).includes(KEY), "text was changed");
-      // The dialog came from typing, not from a send: leaving it in doesn't send (D121 is only for sends).
+      // This dialog came from typing, not from a send, so leaving it in shouldn't send anything on its own.
       await sleep(300);
       expect((await sentMessages(page)).length === 0, "Leave it in sent a message nobody had sent");
       await pressEnter(page);
@@ -149,8 +149,8 @@ module.exports = async function (env) {
     }),
   );
 
-  // One click on a form's send button is two send attempts (the click, then the form's submit): the first
-  // must not forget what you allowed before the second is checked.
+  // One click on a form's send button actually fires two send attempts: the click itself, then the form's own
+  // submit. The first attempt must not forget what you just allowed before the second one gets checked.
   await check("A3b", "Leave it in, then the send button of a form: it sends, and the dialog doesn't come back", () =>
     withSite(ctx, "chatgpt", async (page) => {
       await resetState(ctx);
@@ -187,11 +187,12 @@ module.exports = async function (env) {
     }),
   );
 
-  // D121: when the dialog stopped a send (settings reset before the page opens, as in UB1), "Leave it in and send" sends the message, once and
-  // unchanged, the way it was sent: the site's send button, the button the user clicked, or Enter.
+  // When the dialog has already stopped a send, like after a settings reset before the page even opens (UB1),
+  // "Leave it in and send" sends the message exactly once, unchanged, however it was originally sent: the site's
+  // own send button, or Enter.
   const leaveAndSend = (site, send, value) => async (page) => {
     await typeText(page, `key ${value}`);
-    await send(page); // before the 400 ms pause: the send is held
+    await send(page); // Sent before the 400 ms pause, so this send is still held.
     expect(await waitForDialog(page), "no dialog appeared");
     expect((await sentMessages(page)).length === 0, `${site}: sent before the choice`);
     if (site === "chatgpt") await page.screenshot({ path: path.join(OUT, "dialog-held-send.png") });
@@ -224,7 +225,8 @@ module.exports = async function (env) {
       await clickDialogButton(page, "More choices");
       await clickDialogButton(page, "Leave it in, and stop warning me about: AWS Access Key");
       expect(!(await readDialog(page)), "dialog still open");
-      // Storage writes are asynchronous: wait for them instead of reading once (A5 flaked 1 in 3 full runs).
+      // Storage writes are asynchronous, so I wait for one instead of reading just once. Without the wait, A5
+      // flaked about 1 run in 3.
       const responses = await waitFor(
         async () => ((await store.get(ctx, "responses")).responses?.aws_access_key === "log" ? true : null),
         2000,
@@ -264,8 +266,9 @@ module.exports = async function (env) {
       await store.set(ctx, { paused: {} });
       await sleep(300);
       await typeText(page, KEY2);
-      // Clotr hears of the resume through a storage event, which under load can come after these keystrokes: the next
-      // keystroke is scanned like any other (A7 failed once in a full run, 2026-09-30, and passed alone every time).
+      // Clotr learns about the resume through a storage event, and under load that event can arrive after these
+      // keystrokes. So waiting for the dialog here may also mean typing one more keystroke, which gets scanned
+      // like any other.
       const dialog =
         (await waitFor(() => readDialog(page), 1500)) || (await typeText(page, " "), await waitForDialog(page));
       expect(dialog, "no dialog after resume");

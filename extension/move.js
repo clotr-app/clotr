@@ -1,4 +1,4 @@
-// Clotr — "Move to a new computer" (pre-release Batch 5), on the "What Clotr stores" page. Saving builds an encrypted
+// "Move to a new computer", on the "What Clotr stores" page. Saving builds an encrypted
 // file here and hands it to the browser's download; loading opens it here and asks the background to write it (it
 // cleans every entry again, backup.js). Nothing is sent anywhere, and history stays on the computer it's on.
 // Its own scope: this page's other scripts already declare `msg` and friends at the top level.
@@ -13,7 +13,7 @@
   };
 
   // What a file holds, or what came back, in the popup's words: "3 vault items (Phones: 2, Emails: 1), your choices
-  // for 12 kinds of detail, cover names on 2 sites and a PIN" (a file loaded, and nothing said what).
+  // for 12 kinds of detail, cover names on 2 sites, a PIN and Tourniquet" (a file loaded, and nothing said what).
   const VAULT_WORDS = {
     my_name: ["pp_vName", "Name"],
     family_name: ["pp_vFamily", "Family"],
@@ -54,6 +54,8 @@
           : msg("mv_holdsBandage", "cover names on $1 sites", covered),
       );
     if (s.lock) parts.push(msg("mv_holdsPin", "a PIN"));
+    // Tourniquet by name only, and only one that loading would keep.
+    if (Backup.clean({ tourniquet: s.tourniquet }).tourniquet) parts.push(msg("mv_holdsTourniquet", "Tourniquet"));
     return parts.length > 1 ? `${parts.slice(0, -1).join(", ")} ${msg("mv_and", "and")} ${parts.at(-1)}` : parts[0];
   }
 

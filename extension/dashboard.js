@@ -1,4 +1,4 @@
-// Clotr: "Your exposure report", the full-page dashboard.
+// "Your exposure report", the full-page dashboard.
 // Reads the stored history (kind, site, time, outcome, fingerprint; never values). Fingerprints
 // are only used to count "different" details and repeats; they're never shown. Nothing leaves
 // the page except an export file the user asks for.
@@ -33,12 +33,16 @@ const fmtDay = new Intl.DateTimeFormat([], { month: "short", day: "numeric" });
 const fmtWhen = new Intl.DateTimeFormat([], { dateStyle: "medium", timeStyle: "short" });
 
 const advice = globalThis.ClotrInsights.adviceFor;
+// How many details a record stands for: one, or the count of the rest of a long list sent at once.
+const { weight } = globalThis.ClotrSites;
+const sum = (list) => list.reduce((n, e) => n + weight(e), 0);
+const moreInOneGo = (e) => msg("pp_moreInOneGo", "$1 more in one go", weight(e).toLocaleString());
 
 function renderTotals(events) {
-  const count = (a) => events.filter((e) => e.action === a).length;
+  const count = (a) => sum(events.filter((e) => e.action === a));
   $("totals").replaceChildren(
     el("div", { className: "stat" }, [
-      el("b", { textContent: String(events.length) }),
+      el("b", { textContent: String(sum(events)) }),
       el("span", { textContent: msg("db_foundTotal", "found in total") }),
     ]),
     ...SERIES.map((s) =>
@@ -96,13 +100,13 @@ function renderExposure(events) {
   );
 }
 
-// What Bandage kept from each AI (pre-release Batch 2, D93): "redacted" events with `via: "bandage"`,
+// What Bandage kept from each AI: "redacted" events with `via: "bandage"`,
 // apart from what you hid by hand. Only shown once Bandage has covered something.
 function renderBandageKept(events) {
   const bySite = new Map();
   for (const e of events) {
     if (e.action !== "redacted" || e.via !== "bandage") continue;
-    bySite.set(e.site, (bySite.get(e.site) || 0) + 1);
+    bySite.set(e.site, (bySite.get(e.site) || 0) + weight(e));
   }
   $("bandage-section").hidden = bySite.size === 0;
   if (!bySite.size) return;
@@ -127,7 +131,7 @@ function renderBandageKept(events) {
   );
 }
 
-// Mind map of everything you could be leaking (D75): history, reply mentions, your vault and the
+// Mind map of everything you could be leaking: history, reply mentions, your vault and the
 // AI tools Clotr spotted but doesn't protect. The model and layout live in insights.js / mindmap.js.
 const mapData = { events: [], mentions: [], vault: [], spotted: {} };
 let mapView = readView();
@@ -217,7 +221,7 @@ function renderWeeks(events) {
   }));
   for (const e of events) {
     const i = Math.floor((e.t - start) / (7 * DAY));
-    if (i >= 0 && i < 12 && e.action in weeks[i]) weeks[i][e.action]++;
+    if (i >= 0 && i < 12 && e.action in weeks[i]) weeks[i][e.action] += weight(e);
   }
   const W = 720,
     H = 200,
@@ -288,6 +292,8 @@ function renderRisky(events) {
       (e.action === "allowed" &&
         [
           "credit_card",
+          "card_code",
+          "gift_card",
           "us_ssn",
           "bank_account",
           "national_id",
@@ -305,6 +311,7 @@ function renderRisky(events) {
           .map((e) =>
             el("div", { className: "moment" }, [
               el("div", { className: "what", textContent: msg("db_sentTo", "$1 sent to $2", nameOf(e), e.site) }),
+              ...(weight(e) > 1 ? [el("div", { className: "more", textContent: moreInOneGo(e) })] : []),
               el("div", { className: "when", textContent: fmtWhen.format(e.t) }),
               el("div", { className: "todo", textContent: msg("db_whatToDo", "What to do now: $1", advice(e.type)) }),
             ]),
@@ -350,13 +357,11 @@ function renderRepeats(events) {
 }
 
 function renderCard(events) {
-  const sent = events.filter((e) => e.action === "allowed").length;
-  const covered = events.filter((e) => e.action === "redacted").length;
+  const sent = sum(events.filter((e) => e.action === "allowed"));
+  const covered = sum(events.filter((e) => e.action === "redacted"));
   const toolCount = new Set(events.map((e) => e.site)).size;
-  const caught =
-    events.length === 1
-      ? msg("db_private1", "1 private detail")
-      : msg("db_privateN", "$1 private details", events.length);
+  const total = sum(events);
+  const caught = total === 1 ? msg("db_private1", "1 private detail") : msg("db_privateN", "$1 private details", total);
   const text = msg(
     "db_card",
     "Clotr caught $1 on its way to $2: $3 hidden, $4 sent anyway. Checked on my own computer; nothing ever left it.",
@@ -409,13 +414,46 @@ $("export").addEventListener("click", async () => {
       : msg("db_exportedN", "Exported $1 records.", events.length);
 });
 
-// The background removes older records when this changes (D54).
+// The background removes older records when this changes.
 chrome.storage.local.get("keepDays").then(({ keepDays = 365 }) => {
   $("keep-days").value = String(keepDays);
 });
 $("keep-days").addEventListener("change", async (e) => {
   await chrome.storage.local.set({ keepDays: Number(e.target.value) });
   $("data-msg").textContent = msg("db_keeping", "Keeping $1 of history.", e.target.selectedOptions[0].textContent);
+});
+
+// "Your history is full": the 10,000-record cap removed records sooner than the keep period would have. The
+// background stores two times (`historyFull`: when, and the oldest record kept) and removes the note once there's
+// room again. "Tell us" opens the bug form with a fixed title and nothing from the history: the report that decides
+// whether history moves to bigger storage. The title stays English so it's easy to search bug reports for.
+const fmtLong = new Intl.DateTimeFormat([], { dateStyle: "long" });
+// Hyphens and spaces that never break, so "1-year" stays on one line on a phone.
+const KEEP_SETTING = {
+  90: msg("db_keepSetting90", "3\u2011month"),
+  365: msg("db_keepSetting365", "1\u2011year"),
+  730: msg("db_keepSetting730", "2\u2011year"),
+};
+$("history-full-tell").href =
+  globalThis.Clotr.Report?.formUrl("bug.yml", null, "History full (10,000 records)") ||
+  "https://github.com/clotr-app/clotr/issues/new";
+function renderHistoryFull({ historyFull, keepDays }) {
+  const before = historyFull?.before;
+  const days = KEEP_SETTING[keepDays] ? keepDays : 365;
+  const show = Number.isFinite(before) && before >= Date.now() - days * DAY;
+  $("history-full").hidden = !show;
+  if (!show) return;
+  $("history-full-text").textContent = msg(
+    "db_historyFullText",
+    "Clotr keeps up to 10,000 records. To make room, it removed records from before $1, sooner than your $2 setting. Everything newer is still here.",
+    fmtLong.format(before),
+    KEEP_SETTING[days],
+  );
+}
+const refreshHistoryFull = () => chrome.storage.local.get(["historyFull", "keepDays"]).then(renderHistoryFull);
+refreshHistoryFull();
+chrome.storage.onChanged.addListener((changes, area) => {
+  if (area === "local" && (changes.historyFull || changes.keepDays)) refreshHistoryFull();
 });
 
 let armed = null;
@@ -434,7 +472,7 @@ $("delete-history").addEventListener("click", async () => {
   }
   clearTimeout(armed);
   armed = null;
-  await chrome.storage.local.set({ events: [], mentions: [], spotted: {} });
+  await chrome.runtime.sendMessage({ type: "clotr:clearHistory" });
   b.classList.remove("armed");
   b.textContent = msg("dash_deleteMyHistory", "Delete my history");
   $("data-msg").textContent = msg("db_deleted", "History deleted. Your settings and vault are still here.");

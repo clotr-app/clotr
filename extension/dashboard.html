@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Your exposure report</title>
+  <title data-i18n="dash_yourAiExposureReport">Your exposure report</title>
   <link rel="stylesheet" href="popup.css">
   <link rel="stylesheet" href="dashboard.css">
 </head>
@@ -85,6 +85,15 @@
 
   <section aria-labelledby="h-data">
     <h2 id="h-data" data-i18n="dash_yourData">Your data</h2>
+    <div id="history-full" class="history-full" hidden>
+      <h3 data-i18n="dash_historyFullTitle">Your history is full</h3>
+      <p id="history-full-text"></p>
+      <p data-i18n="dash_historyFullAsk">Want Clotr to keep more? Say so on GitHub: a report from someone it happened to is how that gets built.</p>
+      <p class="actions-row">
+        <a id="history-full-tell" class="btn" target="_blank" rel="noopener" data-i18n="dash_historyFullTellUs">Report it on GitHub</a>
+        <span class="muted" data-i18n="dash_historyFullSendsNothing">Opens a GitHub page you read before posting. Clotr sends nothing.</span>
+      </p>
+    </div>
     <p>
       <label for="keep-days" data-i18n="dash_keepHistoryFor">Keep history for</label>
       <select id="keep-days">

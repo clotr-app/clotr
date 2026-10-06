@@ -1,10 +1,10 @@
-// Clotr — reading attached files as text, on this computer (content script).
+// Reading attached files as text, on this computer (content script).
 // Loaded after detector.js (it uses xmlToText, findPdfStreams and pdfPageText) and before
 // content.js, which calls Clotr.readAttachment(file) when a file is attached, dropped or pasted.
 //
 // Everything here reads files that could be hostile, so each format has hard caps: file size,
 // text inflated per part and in total, number of parts. Reading stops at a cap; an unreadable
-// file gives null (the message is never held for it: fail open, D30).
+// file gives null.
 (() => {
   "use strict";
 
@@ -12,6 +12,8 @@
 
   const TEXT_FILE =
     /\.(?:txt|csv|tsv|md|json|jsonl|log|env|ini|conf|cfg|toml|ya?ml|xml|sql|js|mjs|ts|py|rb|go|java|cs|php|sh|ps1|html?)$/i;
+  // An SVG picture is text inside: the words it shows are in its text elements, its drawing in attributes.
+  const SVG_FILE = /\.svg$/i;
   const OFFICE_FILE = /\.(?:docx|docm|xlsx|xlsm|pptx|pptm|odt|ods|odp)$/i;
   // The parts of an Office/OpenDocument zip that hold the document's text.
   const OFFICE_PART =
@@ -27,6 +29,13 @@
   const latin1 = new TextDecoder("latin1");
   const utf8 = new TextDecoder();
 
+  // Bytes from the page, made this script's own. Firefox gives a content script the page's own copy of a file's
+  // bytes (from arrayBuffer(), or a stream's pieces) and won't let the script cut them up: subarray() fails with
+  // "Permission denied". Such bytes are copied over first. Chrome, Brave and Edge already give a content script its
+  // own, so nothing changes there. Used by pictures.js too.
+  const ownBytes = (bytes) =>
+    bytes instanceof ArrayBuffer || bytes instanceof Uint8Array ? bytes : structuredClone(bytes);
+
   // Decompresses with the browser's own DecompressionStream ("deflate-raw" in zips, "deflate" in
   // PDFs), stopping at `cap` bytes (zip bombs) and keeping what was read if the data is corrupt.
   async function inflateCapped(bytes, format, cap) {
@@ -38,7 +47,7 @@
       for (;;) {
         const { done, value } = await reader.read();
         if (done) break;
-        chunks.push(value);
+        chunks.push(ownBytes(value));
         size += value.length;
         if (size >= cap) {
           reader.cancel().catch(() => {});
@@ -63,7 +72,7 @@
   // central directory, unpack only the text parts, and turn their XML into plain text.
   async function officeText(file) {
     if (file.size > MAX_DOC_BYTES) return null;
-    const buf = new Uint8Array(await file.arrayBuffer());
+    const buf = new Uint8Array(ownBytes(await file.arrayBuffer()));
     const view = new DataView(buf.buffer);
     let eocd = -1; // end of central directory, within the last 64 KB
     for (let i = buf.length - 22; i >= Math.max(0, buf.length - 65557); i--) {
@@ -106,7 +115,7 @@
   // through the fonts' ToUnicode maps (detector.js). Scanned images have no text: nothing to find.
   async function pdfText(file) {
     if (file.size > MAX_DOC_BYTES) return null;
-    const buf = new Uint8Array(await file.arrayBuffer());
+    const buf = new Uint8Array(ownBytes(await file.arrayBuffer()));
     const raw = latin1.decode(buf);
     if (!raw.startsWith("%PDF")) return null;
     const streams = [];
@@ -136,6 +145,8 @@
     try {
       if (OFFICE_FILE.test(file.name)) return await officeText(file);
       if (/\.pdf$/i.test(file.name) || file.type === "application/pdf") return await pdfText(file);
+      if (SVG_FILE.test(file.name) || file.type === "image/svg+xml")
+        return file.size <= MAX_TEXT_FILE_BYTES ? xmlToText(await file.text()) : null;
       if (file.size <= MAX_TEXT_FILE_BYTES && (TEXT_FILE.test(file.name) || /^text\/|json/.test(file.type)))
         return await file.text();
     } catch {
@@ -144,5 +155,5 @@
     return null;
   }
 
-  Object.assign(globalThis.Clotr, { readAttachment });
+  Object.assign(globalThis.Clotr, { readAttachment, ownBytes });
 })();

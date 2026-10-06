@@ -14,8 +14,9 @@ Clotr's versions have three numbers, MAJOR.MINOR.PATCH, and every place that sho
 
 ## How a release is made
 
-- A regular release comes out at most every two weeks. An urgent fix (a security problem, a leak, a chat Clotr breaks)
-  can come out at any time, as a patch.
+- A regular release comes out at most every two weeks, counted from 1.2.0 on, though an urgent fix for a security
+  problem, a leak or a chat Clotr breaks can come out at any time, as a patch. Launch week moved faster while all
+  three stores caught up, so 1.1.1, 1.1.2 and 1.2.0 came out within a week.
 - Every release has:
   - a `vX.Y.Z` tag;
   - a GitHub release with the packages and their SHA-256 checksums;

@@ -1,5 +1,0 @@
-# zizmor (workflow security linter): findings checked by hand and accepted. Each entry names one line, so a moved or
-# changed line shows its finding again.
-rules:
-  # cache-poisoning: none to accept since the release job switches setup-node's cache off (release review 2026-10-01).
-  {}

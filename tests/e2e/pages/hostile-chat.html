@@ -1,5 +1,5 @@
 <!doctype html>
-<!-- A hostile AI page (security tests HP1-HP3): it can remove Clotr's warnings from its DOM and
+<!-- A hostile AI page (security tests): it can remove Clotr's warnings from its DOM and
      script its own chat box (fill it, empty it) to try to plant fake entries in Clotr's history. -->
 <html lang="en">
 <head><meta charset="utf-8"><title>Hostile chat (Clotr test page)</title></head>
@@ -27,7 +27,7 @@
     };
 
     // Probe Clotr: put guesses in the box by script (a fake input event, or a fake Enter) and watch
-    // whether any of Clotr's elements appear. Resolves true if Clotr reacted (S24).
+    // whether any of Clotr's elements appear. Resolves true if Clotr reacted.
     const clotrShows = () => Boolean(document.querySelector("clotr-guard, clotr-notice"));
     const watch = (ms) => new Promise((r) => {
       if (clotrShows()) return r(true);

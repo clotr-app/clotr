@@ -1,0 +1,46 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title data-i18n="tw_pageTitle">The AI walkthrough</title>
+  <link rel="stylesheet" href="popup.css">
+  <link rel="stylesheet" href="vault.css">
+  <link rel="stylesheet" href="practice.css">
+  <link rel="stylesheet" href="training.css">
+</head>
+<body class="vault-page training-page">
+  <header class="top no-print">
+    <img src="icons/icon-on-32.png" alt="" width="24" height="24">
+    <span class="wordmark" data-i18n-skip>Clotr</span>
+    <h1 id="tw-title" data-i18n="tw_pageTitle">The AI walkthrough</h1>
+  </header>
+
+  <p class="lead no-print" data-i18n="tw_lead">A self-paced, offline walkthrough, about fifteen to twenty minutes. Nothing you type in it is stored or sent anywhere.</p>
+
+  <div id="tw-progress" class="segments no-print" aria-hidden="true"></div>
+  <p id="tw-step-of" class="step-of no-print"></p>
+
+  <main id="tw-body"></main>
+
+  <p class="nav no-print">
+    <button id="tw-next" class="btn primary" type="button" data-i18n="tw_next">Next</button>
+    <button id="tw-back" class="link-button" type="button" data-i18n="pd_back" hidden>Back</button>
+  </p>
+
+  <footer class="app-footer no-print">
+    <div id="report-root"></div>
+  </footer>
+
+  <script src="page-i18n.js"></script>
+  <script src="patterns.js"></script>
+  <script src="report.js"></script>
+  <script src="detector.js"></script>
+  <script src="decide.js"></script>
+  <script src="sites.js"></script>
+  <script src="page-notice.js"></script>
+  <script src="practice-data.js"></script>
+  <script src="training-data.js"></script>
+  <script src="training.js"></script>
+</body>
+</html>

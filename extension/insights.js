@@ -1,4 +1,4 @@
-// Clotr: plain-words advice and the mind map's model, shared by the popup and the full report (dashboard).
+// Plain-words advice and the mind map's model, shared by the popup and the full report (dashboard).
 // Extension pages only; not a content script.
 "use strict";
 
@@ -25,9 +25,10 @@
     "medicare_id",
     "insurance_id",
     "medical_record",
+    "id_picture", // a picture named like an ID or a document (pictures.js): an ID all the same
   ]);
 
-  // English is written here and is the fallback (D65); patterns.js provides msg() on every page that loads this.
+  // English is written here and is the fallback; patterns.js provides msg() on every page that loads this.
   const msg = (...a) =>
     globalThis.Clotr?.msg
       ? globalThis.Clotr.msg(...a)
@@ -41,10 +42,22 @@
         "ad_crypto",
         "Move your funds to a new wallet. A seed phrase or key can't be changed, only left behind.",
       );
+    if (type === "otp_secret")
+      return msg(
+        "ad_otp",
+        "Turn two-step sign-in off and on again for that account. That makes a new key, and the old one stops working.",
+      );
     if (KEYS.has(type))
       return msg(
         "ad_key",
         "Turn it off and make a new one (or change the password) now. Once it's been sent, treat it as public.",
+      );
+    if (type === "card_code")
+      return msg("ad_card_code", "Call the number on your card and ask for a new one if someone else could have it.");
+    if (type === "gift_card")
+      return msg(
+        "ad_gift_card",
+        "Call the gift card company on the number on the back of the card. Say a scammer got the number and PIN, and ask for your money back.",
       );
     if (type === "credit_card")
       return msg("ad_card", "Watch your statements, and ask your bank for a new card if you're unsure.");
@@ -58,7 +71,7 @@
     return msg("ad_other", "Delete that chat in the AI service if you can, and turn off training on your chats.");
   }
 
-  // ---------- Mind map of everything you could be leaking (D75; was the connection map, D57) ----------
+  // ---------- Mind map of everything you could be leaking ----------
   // Pure data in, data out (unit-tested): history, reply mentions, your vault and spotted AI sites
   // become one tree. mindmap.js lays it out and draws it; the table view reads the same tree.
   const RANK = { high: 3, medium: 2, low: 1 };
@@ -86,23 +99,26 @@
       if (!map.has(key)) map.set(key, { key, label, count: 0, severity: "none", parts: new Map() });
       return map.get(key);
     };
+    // A record that stands for the rest of a long list counts as its n.
+    const weight = globalThis.ClotrSites?.weight || (() => 1);
     for (const e of list) {
       const name = typeName(e);
+      const w = weight(e);
       const site = row(bySite, e.site, e.site);
-      site.count++;
+      site.count += w;
       site.severity = riskier(site.severity, e.severity);
-      site.parts.set(name, (site.parts.get(name) || 0) + 1);
+      site.parts.set(name, (site.parts.get(name) || 0) + w);
       const kind = row(byType, e.type, name);
-      kind.count++;
+      kind.count += w;
       kind.severity = riskier(kind.severity, e.severity);
-      kind.parts.set(e.site, (kind.parts.get(e.site) || 0) + 1);
+      kind.parts.set(e.site, (kind.parts.get(e.site) || 0) + w);
     }
     const sorted = (m) => [...m.values()].sort((a, b) => b.count - a.count || a.label.localeCompare(b.label));
     return { bySite: sorted(bySite), byType: sorted(byType) };
   }
 
-  // events: history (found in your own messages); mentions: replies that brought up your details
-  // (D63); vault: your saved details (fingerprints/formats); blind: spotted AI site names Clotr
+  // events: history (found in your own messages); mentions: replies that brought up your details;
+  // vault: your saved details (fingerprints/formats); blind: spotted AI site names Clotr
   // doesn't protect. Never sees a value: only kinds, sites, outcomes and fingerprints.
   function exposureModel({ events = [], mentions = [], vault = [], blind = [] } = {}) {
     const sentList = events.filter((e) => e.action === "allowed" || e.action === "suppressed");

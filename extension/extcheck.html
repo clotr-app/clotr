@@ -1,0 +1,88 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title data-i18n="ec_title">Which of your extensions can read your AI chats?</title>
+  <link rel="stylesheet" href="popup.css">
+  <link rel="stylesheet" href="vault.css">
+  <link rel="stylesheet" href="extcheck.css">
+</head>
+<!-- Extension check: reads the browser's own extension list with one optional,
+     momentary permission, says which extensions can read AI chats and which are worth a look, then gives the
+     permission back. Nothing it reads is ever stored: the list lives on this page until it's closed. -->
+<body class="vault-page extcheck-page">
+  <header class="extcheck-top">
+    <img src="icons/icon-on-32.png" alt="" width="24" height="24">
+    <span class="ec-chip" data-i18n="ec_name">Extension check</span>
+  </header>
+
+  <main>
+    <h1 data-i18n="ec_title">Which of your extensions can read your AI chats?</h1>
+    <p class="lead" data-i18n="ec_lead">Browser extensions can read the pages you open, AI chats included. Clotr lists the ones that can, and points out any that public reports say collected people's AI chats.</p>
+
+    <section id="start" class="ec-card">
+      <ul id="facts" class="ec-facts"></ul>
+      <p id="list-date" class="note muted"></p>
+      <p class="ec-ask">
+        <span data-i18n="ec_askOnce">Your browser will ask you once:</span>
+        <span id="permission-sentence" class="ec-quote"></span>
+      </p>
+      <p class="note muted" data-i18n="ec_askNote">Clotr only reads the list. It never turns an extension off or removes one, and it gives the permission back as soon as it's done.</p>
+      <button id="start-check" class="btn primary" type="button" data-i18n="ec_button">Check my extensions</button>
+      <p id="reading-note" class="note" role="status" hidden data-i18n="ec_reading">Reading your extensions…</p>
+    </section>
+
+    <section id="results" class="ec-results" hidden aria-labelledby="results-heading">
+      <h2 id="results-heading" tabindex="-1"></h2>
+      <p id="given-back" class="note muted" data-i18n="ec_givenBack">Checked just now in this browser. Clotr has given the permission back.</p>
+
+      <section id="worth-a-look-section" hidden aria-labelledby="worth-a-look-heading">
+        <h3 id="worth-a-look-heading"></h3>
+        <div id="worth-a-look-cards" class="ec-cards"></div>
+      </section>
+
+      <p id="none-worth-a-look" class="note" hidden data-i18n="ec_none">None of your extensions is on Clotr's list. The list holds only the ones reported so far.</p>
+
+      <section id="can-read-section" aria-labelledby="can-read-heading">
+        <h3 id="can-read-heading"></h3>
+        <p id="normal-note" class="note muted" hidden data-i18n="ec_normal">Ad blockers and password managers need every site to work. Keep the ones you know; Clotr only says what each one can read, not what it does.</p>
+        <div id="can-read-rows" class="ec-rows"></div>
+      </section>
+
+      <details id="cant-details" class="ec-fold" hidden>
+        <summary id="cant-summary"></summary>
+        <div id="cant-list"></div>
+      </details>
+      <details id="off-details" class="ec-fold" hidden>
+        <summary id="off-summary"></summary>
+        <div id="off-list"></div>
+      </details>
+
+      <section id="limits" class="ec-limits"></section>
+
+      <p id="about-clotr" class="note muted"></p>
+    </section>
+
+    <section id="said-no" class="ec-card" hidden aria-labelledby="said-no-heading">
+      <h2 id="said-no-heading" tabindex="-1" data-i18n="ec_no">Clotr can't see your extensions without that permission</h2>
+      <p data-i18n="ec_noLead">That's fine. Nothing changed, and Clotr asks again only if you press the button.</p>
+      <h3 data-i18n="ec_byHand">Check them yourself</h3>
+      <ol id="by-hand-steps"></ol>
+      <p data-i18n="ec_windows">Clotr for Windows (coming) checks every browser on this computer, from their files, without asking for anything.</p>
+      <button id="ask-again" class="btn" type="button" data-i18n="ec_again">Ask me again</button>
+    </section>
+  </main>
+
+  <footer class="app-footer">
+    <div id="report-root"></div>
+  </footer>
+
+  <script src="page-i18n.js"></script>
+  <script src="patterns.js"></script>
+  <script src="reported-extensions.js"></script>
+  <script src="extcheck-core.js"></script>
+  <script src="report.js"></script>
+  <script src="extcheck.js"></script>
+</body>
+</html>

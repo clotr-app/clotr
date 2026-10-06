@@ -1,0 +1,1213 @@
+# Health, quiet: made-up English messages that must never warn as a health detail (the detection design, 3.4
+# and 4.1). Clotr is to speak up about health only when the same message says who the person is, and none of these
+# does: no full name, birthday, address, ID number, phone number or email. A lone first name ("my mom Linda") is
+# there on purpose. Every name and number is made up. Numbers are everywhere on purpose too: doses, lab values,
+# ages, weeks of pregnancy, appointment times, room numbers, 988 and 911.
+# Each message starts with one label line, then the message:
+#   [question]       a general health question; some use a health word in another sense on purpose (a cold start,
+#                    tire pressure, the Great Depression, "my son has Pokemon fever")
+#   [essay]          school work, research, explainers, summaries of studies
+#   [someone else]   another person's (or a pet's) health, with no first-person or family anchor
+#   [own, no who]    the person's own or their family's health, with nothing that says who they are (exactly 100)
+# Messages are separated by lines of "---". tests/health-study.test.js checks the labels and counts, and that today's
+# detector finds nothing here; its ACCEPTED list names the messages that still warn, each waiting on a fix.
+---
+[question]
+What counts as high blood pressure now? Is 142/91 stage 2 or still stage 1?
+---
+[question]
+Is an A1C of 7.2 diabetes or prediabetes? Where exactly is the cutoff?
+---
+[question]
+What does a fasting glucose of 145 mg/dL usually mean?
+---
+[question]
+How much acetaminophen is too much in 24 hours for an adult? I've seen both 3,000 mg and 4,000 mg online.
+---
+[question]
+Can you take ibuprofen and acetaminophen together, or do you have to alternate them every 3 hours?
+---
+[question]
+What are the early signs of a stroke? What does BE FAST stand for?
+---
+[question]
+When should someone call 911 for chest pain instead of driving to urgent care?
+---
+[question]
+What happens when you call or text 988? Do they send the police?
+---
+[question]
+Difference between a cold and the flu, in a simple table please
+---
+[question]
+How long is someone contagious with strep throat after starting antibiotics, 12 hours or 24?
+---
+[question]
+What's a normal resting heart rate for a 70 year old? Is 48 bpm too low?
+---
+[question]
+What's the difference between type 1 and type 2 diabetes, explained simply?
+---
+[question]
+How does PrEP work and how often do you take it?
+---
+[question]
+Is PEP still effective if it's started 60 hours after an exposure?
+---
+[question]
+What does undetectable = untransmittable mean for HIV?
+---
+[question]
+How soon after a missed period does a home pregnancy test show positive?
+---
+[question]
+Can you get pregnant if you miss 2 birth control pills in a row?
+---
+[question]
+How much bleeding is normal after a miscarriage at 9 weeks, and when is it an emergency?
+---
+[question]
+How many weeks is 7 months pregnant?
+---
+[question]
+What is naloxone (Narcan) and can you buy it without a prescription?
+---
+[question]
+How long do alcohol withdrawal symptoms usually last, and at what point do they get dangerous?
+---
+[question]
+What's the difference between Suboxone and methadone for opioid use disorder?
+---
+[question]
+Is it safe to drink alcohol while on metronidazole? The label says to avoid it for 72 hours after the last dose.
+---
+[question]
+What's the max melatonin dose for kids? Is 5 mg too much for a 6-year-old?
+---
+[question]
+At what temperature should you take a baby under 3 months to the ER? Is 100.4 the line?
+---
+[question]
+How do you tell if a burn needs a doctor? Say it's about 2 inches across and blistered.
+---
+[question]
+What are the common side effects of sertraline in the first 2 weeks?
+---
+[question]
+Does Medicare Part B cover the flu shot and the shingles vaccine, or is that Part D?
+---
+[question]
+What's the difference between an HSA and an FSA for paying for prescriptions?
+---
+[question]
+How does Medicaid expansion work, and which states still haven't done it?
+---
+[question]
+What does "deductible met" mean on an EOB? And what's "patient responsibility $412.18"?
+---
+[question]
+What does a positive ANA test mean? Is it always lupus?
+---
+[question]
+TB skin test read at 48 hours: is 12 mm of induration positive for a healthcare worker?
+---
+[question]
+If a COVID rapid test shows a faint line at 15 minutes, does that count as positive?
+---
+[question]
+What does CPT code 99214 mean on a doctor's bill?
+---
+[question]
+What condition is ICD-10 code F41.1?
+---
+[question]
+Can you explain what an ejection fraction of 35% means?
+---
+[question]
+What does an eGFR of 58 mean? Is that stage 3a kidney disease?
+---
+[question]
+LDL 162, HDL 38, triglycerides 210. What do doctors usually recommend for numbers like these?
+---
+[question]
+Is 0.5 mg of lorazepam considered a lot?
+---
+[question]
+How long does Lexapro 10 mg usually take to start working?
+---
+[question]
+What's the difference between ADHD inattentive type and combined type?
+---
+[question]
+Can adults be diagnosed with autism? How does that evaluation work?
+---
+[question]
+Postpartum depression vs the baby blues: how do you tell them apart?
+---
+[question]
+Is it normal for a 2 year old to say only about 10 words?
+---
+[question]
+Which vaccines does a baby usually get at the 4 month visit?
+---
+[question]
+How many hours of sleep does a 15-year-old need?
+---
+[question]
+What's the safest way to keep insulin cool on a 9 hour flight?
+---
+[question]
+Can you get a flu shot and a COVID booster on the same day?
+---
+[question]
+Why is a 90-day supply at the pharmacy often cheaper than three 30-day fills?
+---
+[question]
+What does "take 1 tab PO BID x 10 days" mean on a prescription label?
+---
+[question]
+What's the half-life of caffeine? If you have coffee at 3 pm, how much is left at 11?
+---
+[question]
+Does the 5-4-3-2-1 grounding technique actually help with panic attacks?
+---
+[question]
+What's the difference between a psychologist, a psychiatrist, and an LCSW?
+---
+[question]
+How do you find a therapist who takes Medicaid?
+---
+[question]
+Are hearing aids covered by Medicare Advantage plans?
+---
+[question]
+What's the difference between hospice and palliative care?
+---
+[question]
+What does DNR mean, and how is it different from a POLST?
+---
+[question]
+How do you use an EpiPen? Thigh, and hold it for 3 seconds or 10?
+---
+[question]
+What does "positive for nitrites" mean on a urine dipstick?
+---
+[question]
+Ice or heat on a sprained ankle in the first 48 hours?
+---
+[question]
+Is a blood oxygen of 93% on a finger pulse oximeter dangerous?
+---
+[question]
+Can you have a heart attack and not know it?
+---
+[question]
+What happens if you get shingles twice? Is that even possible?
+---
+[question]
+If you have high blood pressure, is coffee off limits?
+---
+[question]
+What should blood sugar be 2 hours after a meal for someone without diabetes?
+---
+[question]
+what is the diffrence between a panic attack and a heart attack
+---
+[question]
+Can stress cause chest pressure, or is that always the heart?
+---
+[question]
+Why does cabin pressure on a plane make ear infections hurt so much in kids?
+---
+[question]
+What does the Great Depression have to do with the New Deal? Give me 5 bullet points.
+---
+[question]
+Is a recession the same as a depression? What's the official difference between them?
+---
+[question]
+I have a cold start problem in my AWS Lambda, about 3 seconds on the first call. How do I fix it?
+---
+[question]
+My Python script has a memory leak and the server keeps crashing under pressure. Where do I start looking?
+---
+[question]
+My laptop has a virus, I think. It opens 20 tabs every time it starts up.
+---
+[question]
+My Sims character has a cold and keeps sneezing. How do I cure her in the game?
+---
+[question]
+I have a cold brew concentrate that's 2 weeks old. Is it still good to drink?
+---
+[question]
+My tires have low pressure, 26 psi instead of 35. Is it safe to drive 40 miles to a shop?
+---
+[question]
+My son has a serious case of Pokémon fever and wants a $90 booster box for his birthday. Is that a good deal?
+---
+[question]
+My daughter is positive she's the best goalie on her team. How do I keep her confident but humble?
+---
+[question]
+My car has a cold start knock in the mornings. 2014 Civic, 120k miles. Should I worry?
+---
+[question]
+The stock has been in a depression since March. Is it smarter to sell or hold?
+---
+[question]
+Our server has a heartbeat timeout of 30 seconds. What does that mean, and should it be shorter?
+---
+[question]
+I'm addicted to this show. What should I watch after I finish season 4?
+---
+[question]
+My phone's battery health is 79%. Is it worth replacing the battery?
+---
+[question]
+What's the best cold medicine for a stuffy nose that won't keep you up at night?
+---
+[question]
+Is it a cold or allergies if it's been going on for 3 weeks?
+---
+[question]
+What blood pressure cuff size is right for an arm that's about 15 inches around?
+---
+[question]
+What should a first aid kit for a classroom of 25 kids include?
+---
+[question]
+How many milligrams of iron are in 1 cup of cooked spinach?
+---
+[question]
+What's a safe rate of weight loss per week? Is 1 to 2 pounds still the advice?
+---
+[question]
+How does a smartwatch detect AFib, and how accurate is it?
+---
+[question]
+What's a normal PSA level for a man in his 60s? Is 4.1 considered high?
+---
+[question]
+How often should women over 40 get a mammogram now, every 1 or 2 years?
+---
+[question]
+What's a colonoscopy prep schedule usually like? When do clear liquids start?
+---
+[question]
+What does a BMI of 31.4 mean, and is BMI even useful anymore?
+---
+[question]
+Is it dangerous to mix Benadryl and melatonin?
+---
+[question]
+What's the difference between a 504 plan and an IEP for a kid with ADHD?
+---
+[question]
+How do you talk to a teenager about vaping without it turning into a fight?
+---
+[question]
+Which foods are high in potassium? A dialysis diet sheet says to stay under 2,000 mg a day.
+---
+[question]
+What are the signs of dehydration in older adults? They don't always say they're thirsty.
+---
+[question]
+What is sundowning in dementia, and why does it happen around 4 or 5 pm?
+---
+[question]
+How can you tell a seizure from fainting?
+---
+[question]
+What should you do if someone is having a seizure? Time it and call 911 after 5 minutes?
+---
+[question]
+Can a person with a pacemaker go through airport security scanners?
+---
+[question]
+What's the usual recovery time for a total knee replacement? 6 weeks? 12?
+---
+[question]
+What does "NPO after midnight" mean before surgery? Does that include water?
+---
+[question]
+Why do hospitals ask about pain on a scale from 0 to 10? It feels so arbitrary.
+---
+[question]
+How is endometriosis diagnosed? Is surgery the only way to know for sure?
+---
+[question]
+How long after a vasectomy is someone considered sterile? 3 months, or after a test?
+---
+[question]
+What's the success rate of IVF for people over 40?
+---
+[question]
+How does the abortion pill work, and up to how many weeks can it be used?
+---
+[question]
+Is Plan B less effective for people over 165 pounds?
+---
+[question]
+What's the difference between being Deaf and being hard of hearing?
+---
+[question]
+What do "person-first language" and "identity-first language" mean when talking about disability?
+---
+[question]
+How do you apply for SSDI, and how long does a decision usually take?
+---
+[question]
+Can you work part time and still get SSI? Is there an income limit like $1,050 a month?
+---
+[question]
+What is a 12-step program, and does it work for people who aren't religious?
+---
+[question]
+What is harm reduction? Like fentanyl test strips and syringe programs?
+---
+[question]
+Are fentanyl test strips legal in every state now?
+---
+[question]
+Why would a fitness tracker show 112 bpm during sleep? Is that just a sensor error?
+---
+[question]
+what's the normal range for vitamin D, is 18 ng/mL low
+---
+[question]
+Can kids take adult Tylenol if you cut a 500 mg tablet in half?
+---
+[question]
+How do you know if a cut needs stitches? Like one that's maybe half an inch deep.
+---
+[question]
+Hi there. My eyesight is fine but my reading glasses went from +1.50 to +2.25 in two years. Is that a normal change in your 50s or a sign of something?
+---
+[question]
+Quick one: is it Tylenol or Advil that's harder on the liver?
+---
+[question]
+what age should kids stop using a booster seat? 4 ft 9 in or 8 years?
+---
+[question]
+How long can breast milk sit out at room temperature? 4 hours?
+---
+[question]
+What's the difference between a CT scan and an MRI, and why would a doctor order one over the other?
+---
+[question]
+How do I look up which drug NDC 0093-7146-56 is? The bottle just says the generic name.
+---
+[question]
+Do nurse advice lines, like the 1-800-555-0134 kind on the back of insurance cards, actually have RNs answering?
+---
+[essay]
+Write a 500-word essay on the history of insulin, from its discovery in 1921 to the insulin pumps of today.
+---
+[essay]
+Summarize this abstract in plain words: "In a randomized trial of 2,481 adults with type 2 diabetes, weekly semaglutide 1 mg lowered A1C by 1.6 percentage points at 40 weeks, compared with 0.4 for placebo (p<0.001). Nausea occurred in 20% vs 6% of participants."
+---
+[essay]
+I'm writing a research paper on buprenorphine access in rural counties. Can you help me outline it in 5 sections?
+---
+[essay]
+Explain the Krebs cycle for a high school biology test. Keep it to one page.
+---
+[essay]
+Make 24 flashcards for the 12 cranial nerves: one card for the name and number, one for the function.
+---
+[essay]
+Write a 45-minute lesson plan for 5th graders about handwashing and germs, with one hands-on activity.
+---
+[essay]
+Compare the DSM-5 criteria for major depressive disorder and persistent depressive disorder in a table.
+---
+[essay]
+For my nursing care plan assignment: a 67-year-old man with CHF, ejection fraction 30%, weight up 4 lb in 2 days, ankles swollen. Which nursing diagnoses fit, in priority order?
+---
+[essay]
+Patient: Mrs. K, 72, admitted with community-acquired pneumonia, SpO2 89% on room air, temp 101.3. Write a sample SOAP note for my clinical class.
+---
+[essay]
+Summarize the main findings of the Framingham Heart Study for an intro to public health class.
+---
+[essay]
+Explain herd immunity with a simple example: a town of 10,000 people and a measles outbreak.
+---
+[essay]
+Write a 300-word explainer for a newsletter on how mRNA vaccines work.
+---
+[essay]
+What's the difference between incidence and prevalence? Give an example with 120 new cases in a population of 50,000.
+---
+[essay]
+Help me write a discussion post on the ethics of the Tuskegee syphilis study for my bioethics class.
+---
+[essay]
+Outline an argumentative essay: should every school keep naloxone in the nurse's office?
+---
+[essay]
+Explain the five stages of grief and the main criticisms of that model, for an intro psychology class.
+---
+[essay]
+Write a summary of the history of HIV treatment, from AZT in 1987 to long-acting injectables.
+---
+[essay]
+Translate this into plain language for a patient handout: "Among 1,204 participants, the hazard ratio for hip fracture was 0.72 (95% CI 0.58-0.89) in the treatment arm."
+---
+[essay]
+Create a 10-question multiple choice quiz on the endocrine system, with an answer key.
+---
+[essay]
+Write an explainer on "positive predictive value": why a positive mammogram often doesn't mean cancer.
+---
+[essay]
+Summarize this finding for a school newspaper: "Adolescents who slept fewer than 7 hours had 1.4 times the odds of reporting depressive symptoms (n = 3,218)."
+---
+[essay]
+My essay prompt is "Discuss how the opioid epidemic changed between 1999 and 2020." Can you suggest three possible thesis statements?
+---
+[essay]
+Explain the difference between Medicare and Medicaid for a civics class, as a table with 6 rows.
+---
+[essay]
+Write a 2-minute speech for my health class on why sleep matters for teenagers.
+---
+[essay]
+Help me make a poster about the signs of heat stroke for a summer camp staff room.
+---
+[essay]
+Explain what a double-blind, placebo-controlled trial is, like I'm 12.
+---
+[essay]
+Summarize the WHO's definition of disability, and compare the social model with the medical model.
+---
+[essay]
+For a sociology paper: how does stigma affect people with schizophrenia seeking care? Give me 3 scholarly angles to research.
+---
+[essay]
+Make a study guide for the ACLS algorithms: bradycardia, tachycardia, and cardiac arrest.
+---
+[essay]
+Explain absorption, distribution, metabolism and excretion, using ibuprofen 400 mg as the example.
+---
+[essay]
+Write the methods section for a survey study: 412 college students completed the PHQ-9 and GAD-7 in fall 2025.
+---
+[essay]
+How do I format an APA citation for a 2019 journal article with 7 authors? Mine is about screen time and sleep in children.
+---
+[essay]
+Explain how the Great Depression affected public health in the 1930s, for example nutrition and tuberculosis rates.
+---
+[essay]
+Explain how the body regulates blood pressure (the renin-angiotensin-aldosterone system), step by step, for physiology.
+---
+[essay]
+Write a short history of the polio vaccine for a 4th grade report. Use simple words.
+---
+[essay]
+Why was the death rate of the 1918 flu pandemic so high among young adults? For a history essay.
+---
+[essay]
+Summarize the arguments about the 4-day work week and mental health, and what kinds of studies exist on it.
+---
+[essay]
+Write an informative essay on how type 1 diabetes is managed at school: glucagon, CGMs and 504 plans.
+---
+[essay]
+Help me explain to my 8th grade science class what an allergy is and why an EpiPen works.
+---
+[essay]
+Draft a literature review paragraph on music therapy for dementia, with 3 example study designs.
+---
+[essay]
+Write a 30-second public service announcement script about the 988 Suicide & Crisis Lifeline.
+---
+[essay]
+Explain sensitivity and specificity with a COVID test example: 95% sensitive and 99% specific.
+---
+[essay]
+Statistics homework: a test is 90% sensitive and 95% specific, and prevalence is 2%. What's the chance a positive result is a true positive? Show the steps.
+---
+[essay]
+Write a blog post explaining endometriosis for readers who have never heard of it.
+---
+[essay]
+Summarize the steps of the nursing process (ADPIE) with an example about a patient with diabetes.
+---
+[essay]
+Create a 7-day heart-healthy meal plan for an article, keeping each day under 2,300 mg of sodium.
+---
+[essay]
+Explain how SSRIs work, and why they can take 4 to 6 weeks to help.
+---
+[essay]
+Help me write a grant summary for a community program that offers free blood pressure checks in 3 barbershops.
+---
+[essay]
+Write an explainer about long COVID: what's known as of 2026, and what still isn't.
+---
+[essay]
+For a debate: give me the strongest arguments for and against requiring flu shots for hospital workers.
+---
+[essay]
+Compare harm reduction and abstinence-based models of addiction treatment in about 600 words.
+---
+[essay]
+Write a summary of a made-up study for my research methods class: 60 adults with insomnia, CBT-I vs sleep hygiene advice, 8 weeks, sleep diaries.
+---
+[essay]
+Explain the genetics of sickle cell disease with a Punnett square for two carrier parents.
+---
+[essay]
+Write a short report on why ADHD diagnoses rose between 2003 and 2022.
+---
+[essay]
+What does "evidence-based" mean in medicine? Explain it with the levels of evidence.
+---
+[essay]
+Help me summarize this for a parent newsletter: "Children ages 6 to 12 need 9 to 12 hours of sleep a night, and screens in the hour before bed make it harder to fall asleep."
+---
+[essay]
+Draft an op-ed arguing that insulin should cost no more than $35 a month for everyone.
+---
+[essay]
+Explain the HIPAA privacy rule for an intro to health informatics class, with 3 everyday examples.
+---
+[essay]
+Reflection paper for nursing school, first person: "During my pediatric rotation I cared for a toddler with RSV who needed high-flow oxygen." Can you help me write the rest about what I learned?
+---
+[essay]
+My psychology class asked whether "OCD" is used wrongly in everyday speech. Help me argue yes, with examples like "I'm so OCD about my desk."
+---
+[essay]
+Explain the bystander effect and how it relates to CPR training in public places.
+---
+[essay]
+Write a 1-page handout for seniors about preventing falls at home.
+---
+[essay]
+What's the difference between a pandemic and an epidemic? Use cholera and COVID-19 as examples.
+---
+[essay]
+Summarize the main criticisms of BMI as a health measure for my kinesiology class.
+---
+[essay]
+For a nutrition class: explain glycemic index vs glycemic load, using white rice (GI about 73) as the example.
+---
+[essay]
+Write a brief history of the Americans with Disabilities Act of 1990 and what it changed.
+---
+[essay]
+Outline a presentation on postpartum depression screening, including what an EPDS score of 13 or more means.
+---
+[essay]
+Write an explainer about what happens in the body during a panic attack, for a teen health website.
+---
+[essay]
+Summarize this for a veterans' newsletter: "In a cohort of 8,915 veterans, PTSD was associated with a 1.5-fold higher risk of heart disease over 10 years."
+---
+[essay]
+Explain the difference between bacteria and viruses for a 3rd grade science fair poster.
+---
+[someone else]
+My coworker just told me she has MS. What's a kind thing to say, and what should I avoid saying?
+---
+[someone else]
+My best friend was diagnosed with bipolar disorder last month. How can I support him without being pushy?
+---
+[someone else]
+My roommate takes Adderall and sometimes offers me one before exams. How risky is that?
+---
+[someone else]
+A friend from church has stage 4 breast cancer and I want to bring meals. What foods are easier to eat during chemo?
+---
+[someone else]
+One of my students has type 1 diabetes and wears a CGM. What should I do if it beeps during a test?
+---
+[someone else]
+I'm a nurse. I have a patient with CHF who keeps refusing his Lasix 40 mg because he hates getting up at night. How do I approach it?
+---
+[someone else]
+I have a client with COPD on 2 L of oxygen who still smokes. As her home health aide, what can I actually do?
+---
+[someone else]
+Can someone who has epilepsy legally drive in most states?
+---
+[someone else]
+Can people with celiac disease eat oats?
+---
+[someone else]
+How do people with ALS communicate once they can't speak anymore?
+---
+[someone else]
+My neighbor is 84 and seems confused lately. She left her stove on twice this week. Who should I call?
+---
+[someone else]
+My boss has cancer and is still coming in every day. Should the team do something, or is that awkward?
+---
+[someone else]
+A kid on my son's soccer team has a severe peanut allergy. What snacks are safe to bring to games?
+---
+[someone else]
+My friend's mom has Alzheimer's and my friend is burning out from caring for her. How can I help?
+---
+[someone else]
+In my novel, the main character, Tess, has schizophrenia. How do I write her hallucinations respectfully and accurately?
+---
+[someone else]
+In the story I'm writing, a 9-year-old boy uses a wheelchair. What details would make it realistic without being a cliché?
+---
+[someone else]
+The quarterback on our local team tore his ACL. How long does recovery usually take for athletes?
+---
+[someone else]
+A famous singer just announced she has lupus. What is lupus, actually?
+---
+[someone else]
+The senator in the news has had two strokes. Can someone fully recover their thinking after that?
+---
+[someone else]
+My dog has diabetes and needs 12 units of Vetsulin twice a day. Is it ok to give the shot 30 minutes late?
+---
+[someone else]
+My cat has hyperthyroidism and takes methimazole 2.5 mg. Can I hide it in her food?
+---
+[someone else]
+My dog takes gabapentin 100 mg for arthritis and now he's wobbly. Is that a side effect?
+---
+[someone else]
+A customer collapsed at my store today and someone did CPR until the ambulance came. I can't stop thinking about it. Is that normal?
+---
+[someone else]
+My coworker is in recovery and I don't know whether to invite him to happy hour. What's considerate?
+---
+[someone else]
+A guy at the recovery center where I volunteer relapsed after 3 years. How do I support him without enabling?
+---
+[someone else]
+My teammate has asthma and forgot her inhaler at an away game. What should we do if she has an attack?
+---
+[someone else]
+My mentee told me she's pregnant and scared to tell her parents. She's 17. How do I support her?
+---
+[someone else]
+The elderly man next door has dementia and his daughter only visits once a week. Should I be worried for him?
+---
+[someone else]
+A child in my daycare class has epilepsy and takes Keppra. What's my role if she has a seizure?
+---
+[someone else]
+I'm a teacher and one of my students has a 504 plan for anxiety. What accommodations are typical?
+---
+[someone else]
+How do I support a friend who just found out he's HIV positive?
+---
+[someone else]
+My girlfriend's dad has Parkinson's and I'm meeting him for the first time. Anything I should know so I don't make him uncomfortable?
+---
+[someone else]
+I'm a pharmacist. I have a customer on warfarin who wants to start turmeric supplements. What do I tell him?
+---
+[someone else]
+Patients with dementia often get agitated in the evening. What are evidence-based ways nurses handle it?
+---
+[someone else]
+For a client on lithium, what labs should a case manager keep an eye on?
+---
+[someone else]
+My lab partner has ADHD and keeps getting distracted. How can we work better together?
+---
+[someone else]
+A coworker uses a cane and our office is on the 3rd floor with no elevator. How do I raise this with HR without speaking for her?
+---
+[someone else]
+My carpool buddy is on dialysis 3 times a week. How can I be flexible with rides?
+---
+[someone else]
+In the TV show I'm watching, the surgeon has a heroin addiction and still operates. Is that realistic at all?
+---
+[someone else]
+The actor who plays the dad in that sitcom said he has OCD. How common is OCD in adults?
+---
+[someone else]
+Our pastor has been diagnosed with prostate cancer. What's a respectful way for the congregation to help?
+---
+[someone else]
+My student's mom told me he has autism and gets overwhelmed by noise. How can I set up my classroom?
+---
+[someone else]
+My client's son has cerebral palsy and comes to her sessions sometimes. How do I make my office more accessible?
+---
+[someone else]
+A woman in my building uses oxygen and smokes on her balcony. Is that a fire risk for everyone?
+---
+[someone else]
+The kid I babysit has eczema and her parents left me a cream. How much do I use?
+---
+[someone else]
+A resident at the nursing home where I volunteer keeps asking for her husband, who died years ago. What should I say?
+---
+[someone else]
+My friend thinks she might have an eating disorder but won't see a doctor. How do I bring it up?
+---
+[someone else]
+One of the guys on my crew drinks on the job. Is that something I should report?
+---
+[someone else]
+A friend took 3 edibles and is freaking out, saying her heart is racing. Should I take her to the ER?
+---
+[someone else]
+My coworker's husband has early-onset Alzheimer's at 54. What resources exist for her?
+---
+[someone else]
+What should I say to a friend whose baby was stillborn at 38 weeks?
+---
+[someone else]
+How do I support a friend after a miscarriage? I don't want to say the wrong thing.
+---
+[someone else]
+my classmate self harms and showed me her arm today. im 15. what do i do
+---
+[someone else]
+A friend texted me that she wants to die. I called 988 for advice, but what do I do now?
+---
+[someone else]
+My roommate hasn't left her bed in 4 days and barely eats. Could this be depression?
+---
+[someone else]
+Someone in my D&D group is Deaf. How can we make our sessions more accessible?
+---
+[someone else]
+My new coworker is blind and uses a screen reader. How do I make my spreadsheets accessible?
+---
+[someone else]
+Does someone with a pacemaker need to stay away from microwaves?
+---
+[someone else]
+Can a person with hemophilia play contact sports?
+---
+[someone else]
+If someone has sickle cell trait, can they donate blood?
+---
+[someone else]
+My scout troop has a kid with type 1 diabetes going on a 3-day camping trip. What do the leaders need to know?
+---
+[someone else]
+Our neighbor's toddler swallowed a button battery. They're at the ER now. What happens next?
+---
+[someone else]
+My manager takes medical leave every few months, I think for chemo. Should I say something or wait for her to?
+---
+[someone else]
+My ex has bipolar disorder and stopped his meds, and we share custody. What signs should I watch for?
+---
+[someone else]
+The man who sits next to me on the train coughs constantly. Could it be TB?
+---
+[someone else]
+Nursing student question: a patient in bed 12 has a potassium of 6.1. What's the first thing I should report?
+---
+[someone else]
+As an EMT, if a patient says he took 10 mg of oxycodone and 4 beers, what's the main concern?
+---
+[someone else]
+My tenant says she has a service dog for PTSD. Am I allowed to ask for paperwork?
+---
+[someone else]
+An employee asked for accommodations for migraines. What are reasonable options for a small office?
+---
+[someone else]
+Our church van driver had a seizure last week. Should he still be driving?
+---
+[someone else]
+What should a coach do if a player has a concussion during a game?
+---
+[someone else]
+My friend from college just told me he's trans and starting hormones. What should I know to be supportive?
+---
+[someone else]
+A viewer messaged me (I'm a streamer) saying he's suicidal. How should I respond in the moment?
+---
+[someone else]
+My Uber driver started shaking and sweating at a red light and said his sugar was low. What should I have done?
+---
+[someone else]
+A girl in my gym class keeps fainting. Should I tell the teacher even if she asked me not to?
+---
+[someone else]
+My bandmate is going through opioid withdrawal on my couch. What do I do, and when is it an emergency?
+---
+[someone else]
+A character in my comic has vitiligo. How do I draw it accurately and respectfully?
+---
+[someone else]
+The lady at the bus stop told me she takes 14 pills a day. Is that normal for someone in her 80s?
+---
+[someone else]
+My neighbor's kid has leukemia and the school is doing a fundraiser. What do families in that situation need most?
+---
+[someone else]
+How long do people usually live after a heart transplant?
+---
+[someone else]
+My friend is 32 weeks pregnant and her feet are really swollen. Should she call her doctor?
+---
+[someone else]
+My friend's baby was born at 29 weeks and is in the NICU. How long do preemies usually stay?
+---
+[someone else]
+I'm a case manager. One of my patients has HIV and is scared to tell his family. How do I support him?
+---
+[someone else]
+As a social worker, I have a client who uses meth and has 2 kids. When do I have to report?
+---
+[someone else]
+A coworker has been coming in hungover a lot. How do I bring it up kindly?
+---
+[someone else]
+How do people with dyslexia learn to read? What methods work?
+---
+[someone else]
+My best friend has an eating disorder and is in treatment. What shouldn't I say at dinner?
+---
+[someone else]
+A kid at my school has Tourette's and gets teased. How can I stand up for him?
+---
+[someone else]
+A woman on my team just came back from maternity leave and seems really down. Could it be postpartum depression, and is it my place to say anything?
+---
+[someone else]
+My friend's dad takes warfarin and wants to eat a lot of spinach for his health. Is that a problem?
+---
+[someone else]
+Our youth pastor was just diagnosed with Crohn's disease. What foods should we avoid at the potluck for him?
+---
+[someone else]
+My roommate's girlfriend has epilepsy and stays over often. What should I know in case she has a seizure?
+---
+[someone else]
+What do you say to a coworker who tells you she's going through IVF?
+---
+[someone else]
+My client at the salon has alopecia and is nervous about her wig. How can I make her appointment more comfortable?
+---
+[someone else]
+A player on the team I coach has a heart condition and his parents gave me a note. Should I make him sit out sprints?
+---
+[someone else]
+My friend's grandma has stage 3 kidney disease and the doctors mentioned dialysis. What does that involve?
+---
+[someone else]
+A guest at my B&B told me he has severe food allergies, 9 different foods. How do I plan breakfast safely?
+---
+[someone else]
+Is it ok to ask a new coworker why she uses a wheelchair, or is that rude?
+---
+[someone else]
+How can a manager support someone on the team who has cancer without being nosy?
+---
+[someone else]
+My mentor at work has had depression for years and just told me. Should I treat her any differently?
+---
+[own, no who]
+I was diagnosed with type 2 diabetes last month and my A1C was 8.1. What should I eat for breakfast?
+---
+[own, no who]
+I have high blood pressure, usually around 142/91. Is it safe for me to drink coffee?
+---
+[own, no who]
+I take sertraline 50 mg and my doctor wants to raise it to 100. What should I expect?
+---
+[own, no who]
+My son has asthma and uses his albuterol inhaler 3 times a week. Is that too much?
+---
+[own, no who]
+My mom Linda has dementia and keeps asking to "go home" when she's already home. What do I say to her?
+---
+[own, no who]
+My 3-year-old has a fever of 102.4 and is still playing. Can we wait until morning?
+---
+[own, no who]
+I'm 22 weeks pregnant and my 1-hour glucose test came back at 145. Does that mean gestational diabetes?
+---
+[own, no who]
+I have HIV and I've been undetectable for 6 years. Is it safe for me to breastfeed?
+---
+[own, no who]
+I'm 2 years sober from alcohol today! Any ideas to celebrate that don't involve a bar?
+---
+[own, no who]
+I'm on Suboxone 8 mg and I'm having a tooth pulled on Friday. What do I tell the dentist about pain meds?
+---
+[own, no who]
+I use a wheelchair and I'm planning a trip to Chicago. What should I ask hotels before booking?
+---
+[own, no who]
+My dad has Parkinson's and his hands shake so much he can't button his shirts. Are there tools that help?
+---
+[own, no who]
+I was diagnosed with ADHD at 34. Is it normal to feel grief about all the years before?
+---
+[own, no who]
+I have endometriosis and my periods are so painful I miss 2 days of work a month. What can I ask my gyno about?
+---
+[own, no who]
+My daughter has type 1 diabetes and her CGM showed 54 at 3 am. Do I wake her up for juice?
+---
+[own, no who]
+I take levothyroxine 75 mcg. Can I have it with coffee or do I need to wait 30 minutes?
+---
+[own, no who]
+I had a miscarriage at 8 weeks last Tuesday. How long until my period comes back?
+---
+[own, no who]
+I've had depression on and off since I was 19. Lately I can't get out of bed before noon. Where do I even start?
+---
+[own, no who]
+My husband has sleep apnea and refuses to use his CPAP. How do I convince him without nagging?
+---
+[own, no who]
+I have psoriasis on my elbows and scalp. Does diet actually help?
+---
+[own, no who]
+My grandma has COPD and uses oxygen at 2 liters. Can she fly to visit us at Thanksgiving?
+---
+[own, no who]
+I was diagnosed with breast cancer, stage 2, ER positive. What should I ask the oncologist at my first appointment on 11/3?
+---
+[own, no who]
+I'm on Lexapro 10 mg and want to start having a drink or two on weekends again. Is that ok?
+---
+[own, no who]
+My appointment is at 3 with Dr. Okafor about my thyroid nodule. What questions should I ask?
+---
+[own, no who]
+My son Mateo has autism and starts kindergarten next month. How do I prepare him for the first day?
+---
+[own, no who]
+I have panic attacks almost every night around 2 am. What can I do in the moment?
+---
+[own, no who]
+My mom is in room 412 after hip surgery and seems really confused. Is delirium after surgery common?
+---
+[own, no who]
+I have 14 oxycodone pills left over from my surgery. How do I get rid of them safely?
+---
+[own, no who]
+I've been having thoughts of not wanting to be here. I called 988 last week and it helped a little. What else can I do tonight?
+---
+[own, no who]
+I have Crohn's and I'm starting Humira next week. What should I know about the first injection?
+---
+[own, no who]
+My father has stage 3 kidney disease and his eGFR is 41. What foods should he cut back on?
+---
+[own, no who]
+I'm HIV negative and on PrEP. Do I still need to get tested every 3 months?
+---
+[own, no who]
+My wife has postpartum depression and our baby is 7 weeks old. How can I help her day to day?
+---
+[own, no who]
+I have bipolar II and take lamotrigine 200 mg. Is it safe to get pregnant on it?
+---
+[own, no who]
+My 15-year-old has been vaping and I found nicotine pods in her backpack. How do I talk to her about it?
+---
+[own, no who]
+I've been deaf in my left ear since birth. Can hearing aids help with single-sided deafness?
+---
+[own, no who]
+My dad Ray takes metoprolol and his heart rate this morning was 52. Is that too low?
+---
+[own, no who]
+I was diagnosed with PCOS and my doctor just said "lose weight." It feels impossible. Where do I start?
+---
+[own, no who]
+i have really bad anxiety and my heart races at work. is it ok to take propranolol before big meetings
+---
+[own, no who]
+My baby was born at 34 weeks and she's still on the small side at 4 months. When do preemies usually catch up?
+---
+[own, no who]
+I have a cold and I'm 30 weeks pregnant. What medicine is safe to take?
+---
+[own, no who]
+I take metformin 500 mg twice a day and it really upsets my stomach. Would the extended release help?
+---
+[own, no who]
+My son has ADHD and takes Ritalin 10 mg. The school nurse sent a medication form home. What do these forms usually ask?
+---
+[own, no who]
+I have lupus and I'm getting a flu shot on Thursday. Should I skip my methotrexate that week?
+---
+[own, no who]
+I've been in recovery from opioids for 18 months. My surgeon wants to give me oxycodone after my knee surgery. How do I talk about safer options?
+---
+[own, no who]
+I have type 1 diabetes and I'm running a half marathon on Sunday. How do people usually adjust basal insulin for that?
+---
+[own, no who]
+My grandpa has dementia and keeps trying to drive. How do we take the keys away kindly?
+---
+[own, no who]
+I get migraines with aura 4 or 5 times a month. Is that a lot?
+---
+[own, no who]
+My mom Rosa has diabetes and her feet are going numb. Should she see a podiatrist?
+---
+[own, no who]
+I have OCD (diagnosed, not the joke kind) and my checking is getting worse. What's ERP and does it work?
+---
+[own, no who]
+I'm on a Medicare Part D plan and my Eliquis costs $587 for 30 days. Is there any help?
+---
+[own, no who]
+My son has a peanut allergy and his class is having a party on Friday. What can I send so he isn't left out?
+---
+[own, no who]
+I had a stroke 6 months ago and my left hand is still weak. Are there exercises I can do at home?
+---
+[own, no who]
+I've had tinnitus in both ears since a concert in 2019. Will it ever go away?
+---
+[own, no who]
+My daughter has an eating disorder and is in residential treatment. What should we plan for her first weekend home?
+---
+[own, no who]
+I just found out I'm pregnant, about 6 weeks, and I take sertraline 100 mg. Should I stop?
+---
+[own, no who]
+My husband has early-onset Alzheimer's at 58. How do I explain it to our kids, who are 10 and 13?
+---
+[own, no who]
+I was diagnosed with prediabetes, A1C 6.1. Can I reverse it?
+---
+[own, no who]
+I'm on dialysis Monday, Wednesday and Friday. Can I still travel for my nephew's wedding in another state?
+---
+[own, no who]
+My 80-year-old mother fell twice this month. She has osteoporosis. What equipment would help at home?
+---
+[own, no who]
+I take 20 mg of Adderall XR for ADHD. Is coffee ok on top of that?
+---
+[own, no who]
+My son was diagnosed with epilepsy after a seizure at school. Does he need to wear a helmet now?
+---
+[own, no who]
+I have sickle cell disease and I'm going to Denver for a week. Is the altitude going to be a problem?
+---
+[own, no who]
+I'm 67 and my PSA went from 3.2 to 5.8 in a year. Should I be worried?
+---
+[own, no who]
+My sister has schizophrenia and stopped taking her medicine. What can our family do?
+---
+[own, no who]
+I'm a trans woman on estradiol 4 mg a day. My labs are due next week. What levels are usually the target?
+---
+[own, no who]
+I've had long COVID for 2 years now. The brain fog is the worst part. Is there anything that helps?
+---
+[own, no who]
+My baby has jaundice and her bilirubin was 14.2 at 3 days old. Is that high?
+---
+[own, no who]
+My mom has stage 4 lung cancer and hospice starts Monday. What should we expect in the first week?
+---
+[own, no who]
+I've had an IUD for 4 years. Can I still get an MRI?
+---
+[own, no who]
+I had a medication abortion at 7 weeks, 3 days ago. Is this much bleeding normal?
+---
+[own, no who]
+My brother is an alcoholic and he's going to detox on the 14th. What happens there?
+---
+[own, no who]
+I have asthma and the AQI today is 162. Should I skip my run?
+---
+[own, no who]
+My son Eli takes guanfacine 1 mg at night. If he misses a dose, should we give it late?
+---
+[own, no who]
+I was diagnosed with fibromyalgia. My doctor said "exercise," but everything hurts. How do I start?
+---
+[own, no who]
+I have gout and I'm going to a crawfish boil Saturday lol. What should I stay away from?
+---
+[own, no who]
+My wife takes warfarin and her INR came back 4.1. What does that mean?
+---
+[own, no who]
+My 9-year-old has anxiety and won't sleep in her own room. How can we help her?
+---
+[own, no who]
+I'm a recovering alcoholic, 9 months now, and my work has a holiday party with an open bar. Any tips?
+---
+[own, no who]
+My dad's on oxygen at 3 liters and the power just went out. How long does a portable tank last?
+---
+[own, no who]
+I was diagnosed with PTSD after my deployment. Nightmares 4 nights a week. What actually helps?
+---
+[own, no who]
+I'm on birth control pills and just started amoxicillin 500 mg. Do I need a backup method?
+---
+[own, no who]
+I take lisinopril 20 mg and my potassium came back 5.4. Is that dangerous?
+---
+[own, no who]
+I'm 38 weeks and my blood pressure was 148/94 at my appointment. They want me back tomorrow at 9. Why so soon?
+---
+[own, no who]
+My dad Hector had a heart attack in March and now he's scared to walk around the block. How do we encourage him?
+---
+[own, no who]
+I was diagnosed with celiac. Is my kitchen safe if the rest of my family still eats regular bread?
+---
+[own, no who]
+I'm autistic and job interviews are really hard for me. Can I ask for the questions in writing?
+---
+[own, no who]
+My daughter Sofia has scoliosis, 28 degrees. Is a brace or surgery more likely at that number?
+---
+[own, no who]
+My mom takes 11 medications a day. How do we keep track so she doesn't double up?
+---
+[own, no who]
+I have chronic back pain and I'm on gabapentin 300 mg three times a day. It makes me so tired. Are there alternatives?
+---
+[own, no who]
+My husband was diagnosed with prostate cancer, Gleason 7. What are his options, roughly?
+---
+[own, no who]
+I've used a wheelchair since a spinal cord injury at T10. What does that mean for having kids?
+---
+[own, no who]
+Here are my labs from today: WBC 11.2, Hgb 10.9, Plt 412, Na 134, K 5.4, Cr 1.3, eGFR 52, glucose 145, A1C 7.4. I have type 2 diabetes and stage 3 kidney disease. What stands out?
+---
+[own, no who]
+My meds: metformin 1000 mg BID, lisinopril 10 mg daily, atorvastatin 40 mg at bedtime, aspirin 81 mg. I have diabetes and high cholesterol. Are there any interactions I should know about?
+---
+[own, no who]
+Can you explain my discharge papers? "Diagnosis: community-acquired pneumonia. Take amoxicillin-clavulanate 875 mg twice daily for 7 days. Follow up with your PCP in 1 week. Return to the ED for fever over 101 or trouble breathing."
+---
+[own, no who]
+This is the reminder I got, what should I bring? "Your appointment with Dr. Lee is on Tue 10/14 at 2:30 PM, Suite 210. Please arrive 15 minutes early. Reason for visit: follow-up for hypertension."
+---
+[own, no who]
+Hi, I'm Joyce, 71. I was just told I have atrial fibrillation and I'm scared. Is it dangerous?
+---
+[own, no who]
+My readings this week: 138/88, 142/91, 151/94, 129/84, 135/90. I have high blood pressure and take amlodipine 5 mg. Is it working?
+---
+[own, no who]
+My fasting sugars this week: 112, 118, 131, 109, 124, 140, 117. I was diagnosed with prediabetes in June. Are these ok?
+---
+[own, no who]
+I'm pregnant with twins, due April 12, 2027, and I have hypothyroidism. How often should my levels be checked?

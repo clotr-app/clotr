@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Clotr: Share it with someone</title>
+  <title data-i18n="sh_shareClotr">Share Clotr with someone</title>
   <link rel="stylesheet" href="popup.css">
   <link rel="stylesheet" href="vault.css">
   <link rel="stylesheet" href="share.css">
@@ -24,11 +24,25 @@
     </div>
     <p id="copy-msg" class="msg" role="status"></p>
     <h2 data-i18n="sh_setItUpTogether">Set it up together</h2>
-    <p><span data-i18n="sh_setItUpText">On their computer, after installing: bigger warnings, their details and a PIN, one step at a time.</span>
+    <p><span data-i18n="sh_setItUpText">On their computer, after installing: Tourniquet for a child or a grown-up, their details and a PIN, one step at a time.</span>
       <button id="open-helper" class="btn" type="button" data-i18n="popup_setItUpStepByStep">Set it up step by step</button></p>
     <h2 data-i18n="sh_printTheGuide">Print the guide</h2>
     <p><span data-i18n="sh_printText">One page, in large type, to leave next to their computer.</span>
-      <button id="print" class="btn primary" type="button" data-i18n="sh_print">Print the guide</button></p>
+      <button id="print" class="btn" type="button" data-i18n="sh_print">Print the guide</button></p>
+ <!-- The card for next to the phone: what scammers ask people to read out, and who really asks for each. -->
+    <div id="card-section">
+      <h2 id="card" data-i18n="sh_cardTitle">Print Safety Guide</h2>
+      <p class="ss-tag-row"><span class="ss-tag"><svg class="tq-shield" viewBox="0 0 16 16" aria-hidden="true" focusable="false"><path d="M8 1 14 3.4V8c0 3.4-2.5 6.1-6 7-3.5-.9-6-3.6-6-7V3.4Z"/></svg><span data-i18n="ss_name">Scam check</span></span></p>
+      <p><span data-i18n="sh_cardText">What scammers ask people to read out, who really asks for each, and a line for the number of someone to call first. Write the name and number by hand: Clotr doesn't keep them.</span>
+        <button id="print-card" class="btn primary" type="button" data-i18n="sh_cardPrint">Print the card</button></p>
+      <p class="card-hint" data-i18n="sh_cardLanguage">In English or Spanish, as your browser is set.</p>
+    </div>
+ <!-- Clotr Antibody's pages: six made-up scams to answer together, and a second opinion on a real message. -->
+    <h2 id="practice-check-heading" data-i18n="ss_shareTogether">Practice together</h2>
+    <p id="practice-row"><span data-i18n="ss_shareTogetherText">Six made-up scam messages to answer side by side, checked by Clotr on this computer.</span>
+      <button id="open-practice" class="btn" type="button" data-i18n="ss_shareTogether">Practice together</button></p>
+    <p id="check-row"><span data-i18n="ss_shareCheckText">Got a message that worries them? Clotr can give a second opinion.</span>
+      <button id="open-check" class="btn" type="button" data-i18n="ss_check">Is this a scam?</button></p>
   </section>
 
   <footer class="app-footer no-print">
@@ -40,17 +54,18 @@
       <img src="icons/icon-on-128.png" alt="" width="56" height="56">
       <h2 id="guide-title"><span data-i18n-skip>Clotr</span>: <span data-i18n="sh_guideTitle">clot your data leaks</span></h2>
     </div>
-    <h3 data-i18n="sh_whatItIs">What it is</h3>
     <p data-i18n="sh_whatItIsText">A helper in your web browser. When you type to an AI chat like ChatGPT, Gemini or Copilot, or in an email or chat app you switched it on for, it notices private things before you send them, like a password, your phone number, your address or a card number.</p>
-    <h3 data-i18n="sh_whatYoullSee">What you'll see</h3>
-    <p data-i18n="sh_whatYoullSeeText">A note in the corner of the chat, like: "Heads up: your message contains a phone number."</p>
-    <h3 data-i18n="sh_whatToDo">What to do</h3>
+    <p data-i18n="sh_whatYoullSeeText">A note shows in the corner of the chat, like "Heads up, your message contains a phone number."</p>
     <ul>
-      <li><b data-i18n="coverIt">Hide it</b> <span data-i18n="sh_hideItText">takes it out of your message.</span></li>
-      <li><b data-i18n="leaveIt">Leave it in</b> <span data-i18n="sh_leaveItText">if you meant to share it.</span></li>
+      <li><span data-i18n="coverIt">Hide it</span> <span data-i18n="sh_hideItText">takes it out of your message.</span></li>
+      <li><span data-i18n="leaveIt">Leave it in</span> <span data-i18n="sh_leaveItText">if you meant to share it.</span></li>
       <li data-i18n="sh_notSure">Not sure? Hide it. You can always type it again.</li>
     </ul>
-    <h3 data-i18n="sh_whatItNeverDoes">What it never does</h3>
+ <!-- Tourniquet, only while it's on: that it's on and what it does, never who it's for. -->
+    <section id="guide-tq" class="guide-tq" hidden>
+      <h3><svg class="tq-shield" viewBox="0 0 16 16" aria-hidden="true" focusable="false"><path d="M8 1 14 3.4V8c0 3.4-2.5 6.1-6 7-3.5-.9-6-3.6-6-7V3.4Z"/></svg> <span data-i18n="sh_tqTitle">Tourniquet is on</span></h3>
+      <p id="guide-tq-text"></p>
+    </section>
     <p data-i18n="sh_whatItNeverDoesText">It never sends anything anywhere and never saves what you type. It works in AI chats, and on your email or a chat app only if someone switched it on there.</p>
     <p class="guide-scam" data-i18n="sh_scam">Real support never asks for your password, a code texted to you, or your card. If someone does, stop and call the person below.</p>
     <p class="guide-report"><span data-i18n="sh_reportAt">Something wrong, or a warning that shouldn't be there? Tell Clotr's maker at</span> <b data-i18n-skip>github.com/clotr-app/clotr/issues</b> <span data-i18n="sh_reportNever">(it's public: never write the real detail there).</span></p>
@@ -58,9 +73,51 @@
     <p class="guide-fill"><span data-i18n="sh_phone">Phone:</span> <span class="blank"></span></p>
   </article>
 
+ <!-- "Never read these out": a card for next to the phone, black on white on paper. Each row's advice carries
+       the public page it stands on (data-source), or "plain fact" for what the detail itself does. The name and number
+       are blanks to fill in by hand: nothing is typed into the page and nothing is kept. -->
+  <article class="card-sheet" id="card-sheet" aria-labelledby="card-title">
+    <p class="card-brand" data-i18n-skip>Clotr</p>
+    <h2 id="card-title" data-i18n="sh_cardNever">Never read these out</h2>
+    <p class="card-lead" data-i18n="sh_cardNotEven">Not on the phone, not in a text, not in a chat, not even when they say it's urgent.</p>
+    <dl class="card-rows">
+      <div class="card-row" data-source="https://consumer.ftc.gov/consumer-alerts/2024/03/whats-verification-code-why-would-someone-ask-me-it https://consumer.ftc.gov/consumer-alerts/2021/10/google-voice-scam-how-verification-code-scam-works-how-avoid-it">
+        <dt data-i18n="sh_cardCode">The code your bank or an app texts you</dt>
+        <dd data-i18n="sh_cardCodeWho">Only scammers ask for it. Hang up and call the number on your card.</dd>
+      </div>
+      <div class="card-row" data-source="https://consumer.georgia.gov/credit-card-scams">
+        <dt data-i18n="sh_cardBack">The 3 numbers on the back of your card</dt>
+        <dd data-i18n="sh_cardBackWho">Your card company never asks: it already has them.</dd>
+      </div>
+      <div class="card-row" data-source="https://consumer.ftc.gov/articles/avoiding-and-reporting-gift-card-scams">
+        <dt data-i18n="sh_cardGift">Gift card numbers</dt>
+        <dd data-i18n="sh_cardGiftWho">No real business or government agency asks to be paid with gift cards.</dd>
+      </div>
+      <div class="card-row" data-source="https://consumer.ftc.gov/articles/how-spot-avoid-and-report-tech-support-scams">
+        <dt data-i18n="sh_cardComputer">A code that lets someone into your computer</dt>
+        <dd data-i18n="sh_cardComputerWho">Real tech companies don't call or text you about a problem with your computer.</dd>
+      </div>
+      <div class="card-row" data-source="plain fact">
+        <dt data-i18n="sh_cardPasswords">Your passwords and backup codes</dt>
+        <dd data-i18n="sh_cardPasswordsWho">They're the keys to your accounts. Nobody else needs them.</dd>
+      </div>
+      <div class="card-row" data-source="https://consumer.ftc.gov/consumer-alerts/2024/03/never-move-your-money-protect-it-thats-scam https://consumer.ftc.gov/articles/how-recognize-and-avoid-phishing-scams">
+        <dt data-i18n="sh_cardNumbers">Bank, card or Social Security numbers, to someone who contacted you first</dt>
+        <dd data-i18n="sh_cardNumbersWho">Hang up. Call back on a number you already know.</dd>
+      </div>
+    </dl>
+    <div class="card-box" data-source="https://consumer.ftc.gov/articles/how-avoid-scam">
+      <p class="card-box-lead" data-i18n="sh_cardNotSure">Not sure? Stop, and call someone you trust first.</p>
+      <p class="card-fill"><span class="fill"><span data-i18n="sh_cardName">Name</span> <span class="blank"></span></span>
+        <span class="fill"><span data-i18n="sh_cardPhone">Phone</span> <span class="blank"></span></span></p>
+    </div>
+    <p id="card-from" class="card-from"></p>
+  </article>
+
   <script src="page-i18n.js"></script>
   <script src="patterns.js"></script>
   <script src="report.js"></script>
+  <script src="sites.js"></script>
   <script src="share.js"></script>
 </body>
 </html>

@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>What Clotr stores</title>
+  <title data-i18n="st_whatClotrStores">What Clotr stores</title>
   <link rel="stylesheet" href="popup.css">
   <link rel="stylesheet" href="vault.css">
   <link rel="stylesheet" href="stored.css">
@@ -69,7 +69,7 @@
   <section id="move" aria-labelledby="h-move">
     <h2 id="h-move" data-i18n="mv_title">Move to a new computer</h2>
     <p data-i18n="mv_intro">Take your settings, your vault and your PIN to another computer in one file. It's locked with a password you choose, made on this computer and never sent anywhere. Your history stays here.</p>
-    <h3 data-i18n="mv_saveTitle">On this computer: save the file</h3>
+    <h3 data-i18n="mv_saveTitle">Save the file on this computer</h3>
     <div class="field">
       <label for="mv-pass" data-i18n="mv_password">A password for the file (at least 8 characters)</label>
       <input id="mv-pass" type="password" autocomplete="new-password">
@@ -80,7 +80,7 @@
     </div>
     <button id="mv-save" class="btn primary" type="button" data-i18n="mv_save">Save the file</button>
     <p id="mv-save-msg" class="msg" role="status"></p>
-    <h3 data-i18n="mv_loadTitle">On the other computer: load it</h3>
+    <h3 data-i18n="mv_loadTitle">Load it on the other computer</h3>
     <p class="muted" data-i18n="mv_loadHint">This replaces that computer's Clotr settings, vault and PIN with the file's. Sites you added yourself need adding again.</p>
     <div class="field">
       <label for="mv-file" data-i18n="mv_file">The file</label>
@@ -96,11 +96,14 @@
 
   <h2 data-i18n="st_knownLimits">Known limits</h2>
   <ul class="facts">
-    <li><b data-i18n="st_shortDetailsCanBeGuessed">Short details can be guessed from their fingerprints</b> <span data-i18n="st_t9">by someone who can open this browser's profile on this computer. There aren't that many possible phone numbers, so a determined person could try them all. Fingerprints keep your details from casual eyes, not from someone with full access to your computer.</span></li>
-    <li><b data-i18n="st_aiSitesMayKeepYour">AI sites may keep your unsent message in this browser.</b> <span data-i18n="st_t10">Some (like ChatGPT) save what you're typing so it's still there after a reload. Nothing is sent until you press Send, and hiding something replaces the saved copy too.</span></li>
-    <li><b data-i18n="st_clotrOnlyReadsText">Clotr only reads text.</b> <span data-i18n="st_t11">It checks what you type and attached text, PDF, Word, Excel and PowerPoint files, but not pictures, screenshots or voice. If your vault has details, it also reads the AI's reply for 90 seconds after you send, only to notice your own details; nothing from a reply is kept.</span></li>
-    <li><b data-i18n="st_clotrOnlyWorksOnAi">Clotr only works on the AI chats</b> <span data-i18n="st_t12">it knows and on the sites you switched on, and only in this browser.</span></li>
-    <li><b data-i18n="st_itCanMissThingsAnd">It can miss things and sometimes warn about ordinary text.</b> <span data-i18n="st_t13">It's a safety net, not a guarantee.</span></li>
+    <li><span data-i18n="st_shortDetailsCanBeGuessed">Short details can be guessed from their fingerprints</span> <span data-i18n="st_t9">by someone who can open this browser's profile on this computer. There aren't that many possible phone numbers, or places a photo could be taken, so a determined person could try them all. Fingerprints keep your details from casual eyes, not from someone with full access to your computer.</span></li>
+    <li><span data-i18n="st_aiSitesMayKeepYour">AI sites may keep your unsent message in this browser.</span> <span data-i18n="st_t10">Some, like ChatGPT, save what you're typing so it's still there after a reload. Nothing is sent until you press Send, and hiding something replaces the saved copy too.</span></li>
+    <li><span data-i18n="st_picturesLimit">Clotr can't read pictures.</span> <span data-i18n="st_picturesLimitText">It checks what you type and the text in files you attach (text, PDF, Word, Excel and PowerPoint). In a picture or a screenshot it checks only the file's name and, for a photo, whether the place it was taken is saved inside it. It can't read the words or see what a picture shows, so look pictures over yourself. It doesn't hear voice. If your vault has details, it also reads the AI's reply for 90 seconds after you send, only to notice your own details, and nothing from a reply is kept.</span></li>
+    <li><span data-i18n="st_longList">A long list sent at once is counted, not kept one by one.</span> <span data-i18n="st_longListText">Past 10 of the same kind in one go, Clotr keeps one record with a count for the rest, so your history keeps its room. Every count adds up, but the rest have no fingerprint, so Clotr can't tell if one of them comes back later.</span></li>
+    <li><span data-i18n="st_clotrOnlyWorksOnAi">Clotr only works on the AI chats</span> <span data-i18n="st_t12">it knows and on the sites you switched on, and only in this browser.</span></li>
+    <li><span data-i18n="st_itCanMissThingsAnd">It can miss things and sometimes warn about ordinary text.</span> <span data-i18n="st_t13">It's a safety net, not a guarantee.</span></li>
+    <li><span data-i18n="st_underlineFaintEffects">A cover name's underline can show through faint page effects.</span> <span data-i18n="st_underlineFaintEffectsText">Clotr hides a cover name's dotted underline while one of the site's own menus or pop-ups is on top of it. A faint effect over the text, like a fade at the bottom of the chat, doesn't count, so the underline can show through it. Nothing is sent, it's only how it looks.</span></li>
+    <li><span data-i18n="st_underlineFramedChat">Clotr can't see pop-ups around a chat shown inside another page.</span> <span data-i18n="st_underlineFramedChatText">If a site puts its chat in a frame inside another page, a cover name's underline can show through that page's pop-ups. None of the AI chats Clotr knows works this way today.</span></li>
   </ul>
 
   <footer class="app-footer">
@@ -109,6 +112,7 @@
 
   <script src="page-i18n.js"></script>
   <script src="patterns.js"></script>
+  <script src="sites.js"></script>
   <script src="report.js"></script>
   <script src="helper-core.js"></script>
   <script src="backup.js"></script>

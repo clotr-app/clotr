@@ -1,0 +1,3 @@
+id,permalink,date,ip,subreddit,gildings,title,url,body
+t3_abc123,/r/personalfinance/comments/abc123/help_with_my_taxes/,2025-02-11 14:32:00 UTC,,personalfinance,0,"Help with my taxes","https://old.reddit.com/r/personalfinance/comments/abc123/help_with_my_taxes/","My accountant's email is sam.lee@example.org and my SSN is 219-09-9999, can someone check if this deduction is right?"
+t3_def456,/r/homeautomation/comments/def456/my_new_server_setup/,2025-05-03 09:15:00 UTC,,homeautomation,0,"My new server setup","https://old.reddit.com/r/homeautomation/comments/def456/my_new_server_setup/","Finally got Home Assistant running. AWS key for my backups is AKIA4HPQ7XZ2R6TWLJ3N, remind me to rotate it."

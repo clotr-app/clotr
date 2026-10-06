@@ -1,15 +1,15 @@
-# The guard rails: changes here wait for the maintainer's review, so no automation (or
-# contributor) can loosen its own checks, the release build or what Clotr may access.
+# These are the guard rails, so changes here wait for my review. Otherwise a dependency bump or a contributor's
+# pull request could quietly loosen a check, the release build or what Clotr may access.
 /.github/                         @BilliamBaSH
 /tools/package.js                 @BilliamBaSH
 /tests/rules.test.js              @BilliamBaSH
 /extension/manifest.json   @BilliamBaSH
 /extension/ai-sites.json   @BilliamBaSH
-# What the agents read as instructions, and what decides the installed and linted code (release review 2026-09-30).
+# Project instructions, and what decides the installed and linted code.
 /package.json                     @BilliamBaSH
 /package-lock.json                @BilliamBaSH
 /.npmrc                           @BilliamBaSH
 /eslint.config.js                 @BilliamBaSH
 /.gitleaks.toml                   @BilliamBaSH
-# Tool settings the automation loads, and what decides how a diff shows (release review 2026-09-30).
+# Tool settings I rely on, and what decides how a diff shows.
 /.gitattributes                   @BilliamBaSH

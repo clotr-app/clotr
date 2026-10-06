@@ -1,4 +1,4 @@
-// E2E checks: Stress (only with --stress: npm run test:stress; slow, run before releases). Run in order by ../run.js with one shared env (helpers from ../lib.js).
+// E2E checks: Stress. Slow, so it only runs with --stress (npm run test:stress), before a release.
 "use strict";
 
 module.exports = async function (env) {
@@ -209,7 +209,7 @@ module.exports = async function (env) {
           await page.evaluate(() => 1 + 1);
           const pingMs = Date.now() - t1;
           fs.rmSync(dir, { recursive: true });
-          // Files 3, 13, 23, 33, 43 are within the first 50; 53 isn't checked (MAX_FILES).
+          // Files 3, 13, 23, 33, and 43 fall within the first 50 Clotr checks (MAX_FILES); file 53 doesn't.
           expect(
             notice && /5 files you attached/.test(notice.text) && /and 2 more/.test(notice.text),
             `notice: ${notice?.text}`,

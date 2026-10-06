@@ -1,0 +1,83 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title data-i18n="pd_pageTitle">Practice spotting scams</title>
+  <link rel="stylesheet" href="popup.css">
+  <link rel="stylesheet" href="vault.css">
+  <link rel="stylesheet" href="practice.css">
+</head>
+<body class="vault-page practice-page">
+  <header class="top">
+    <img src="icons/icon-on-32.png" alt="" width="24" height="24">
+    <span class="wordmark" data-i18n-skip>Clotr</span>
+    <span class="chip ss-chip"><svg class="ss-shield" viewBox="0 0 16 16" aria-hidden="true" focusable="false"><path d="M8 1 14 3.4V8c0 3.4-2.5 6.1-6 7-3.5-.9-6-3.6-6-7V3.4Z"/></svg><span data-i18n="ss_name">Scam check</span></span>
+    <h1 id="title" data-i18n="pd_title">What would you reply?</h1>
+  </header>
+
+  <!-- Round 1: six made-up scam messages, one at a time. Every reveal is the real engine's detect() answering on
+       the reply, run on this computer, and nothing typed here in practice.js is kept, counted or sent. -->
+  <section id="drill" aria-labelledby="drill-step">
+    <p class="lead" data-i18n="pd_lead">Six made-up messages, like the ones scammers send. Type the reply you'd give and see what Clotr does. Nothing you type leaves this page or is kept, so use made-up numbers.</p>
+    <h2 id="drill-step" class="step"></h2>
+    <div id="segments" class="segments" aria-hidden="true"></div>
+    <figure class="chat">
+      <figcaption class="chat-from">
+        <span id="drill-initial" class="avatar" aria-hidden="true"></span>
+        <cite id="drill-from"></cite>
+        <span class="tag" data-i18n="pd_madeUp">made up</span>
+      </figcaption>
+      <blockquote id="drill-message" class="bubble"></blockquote>
+    </figure>
+    <div class="field">
+      <label for="reply" data-i18n="pd_yourReply">Your reply</label>
+      <textarea id="reply" rows="3" autocomplete="off" spellcheck="false" placeholder="Type the reply you'd send" data-i18n-placeholder="pd_replyHint"></textarea>
+    </div>
+    <p class="actions">
+      <button id="check" class="btn primary" type="button" data-i18n="pd_check">Check my reply</button>
+      <button id="use-made-up" class="link-button" type="button" data-i18n="pd_useMadeUp">Or use a made-up reply</button>
+    </p>
+    <div id="reveal" class="reveal" role="status" aria-live="polite"></div>
+    <p class="nav">
+      <button id="next" class="btn primary" type="button" hidden></button>
+      <button id="back" class="link-button" type="button" data-i18n="pd_back" hidden>Back</button>
+    </p>
+  </section>
+
+  <!-- Round 2: Spot the leak. Made-up messages typed into an AI chat; the person says what they'd do, then sees what
+       Clotr finds in it. -->
+  <section id="leak" aria-labelledby="leak-title" hidden>
+    <div class="leak-head">
+      <h2 id="leak-title" class="step" tabindex="-1" data-i18n="pd_leakTitle">Would you send this to a chatbot?</h2>
+      <span id="leak-count" class="leak-count"></span>
+    </div>
+    <div id="leak-body"></div>
+    <!-- The end: how many of the private ones the person would have changed. Shown, never kept. -->
+    <div id="leak-end" class="leak-end" hidden>
+      <p id="leak-score" class="leak-score" tabindex="-1"></p>
+      <p id="leak-cheer" class="leak-cheer"></p>
+      <p class="leak-kept" data-i18n="pd_keptNothing">Nothing about your answers is kept.</p>
+      <p class="leak-more"><span data-i18n="pd_worried">Got a message that worries you? Clotr can give a second opinion.</span>
+        <a href="check.html" data-i18n="pd_isThisAScam">Is this a scam?</a></p>
+      <p class="leak-more"><span data-i18n="pd_wantMore">Want a fuller walkthrough, for an office or a group?</span>
+        <a href="training.html" data-i18n="pd_officeTraining">Office training</a></p>
+      <p class="nav"><button id="leak-again" class="btn primary" type="button" data-i18n="pd_tenMore">Ten more messages</button></p>
+    </div>
+    <p class="nav"><button id="leak-back" class="link-button" type="button" data-i18n="pd_backToDrills">Back to the drills</button></p>
+  </section>
+
+  <footer class="app-footer">
+    <div id="report-root"></div>
+  </footer>
+
+  <script src="page-i18n.js"></script>
+  <script src="patterns.js"></script>
+  <script src="report.js"></script>
+  <script src="detector.js"></script>
+  <script src="decide.js"></script>
+  <script src="page-notice.js"></script>
+  <script src="practice-data.js"></script>
+  <script src="practice.js"></script>
+</body>
+</html>

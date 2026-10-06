@@ -1,5 +1,5 @@
-# OpenSSF Scorecard (release review 2026-09-30, R22): scores this repo's security practices every week and on each
-# push to main, and publishes the result the README's badge shows. Public repo only: skipped in a private one.
+# OpenSSF Scorecard scores this repo's security practices every week and on each push to main, then publishes the
+# result the README's badge shows. It only runs on the public repo, and is skipped in a private one.
 name: Scorecard
 
 on:
@@ -9,7 +9,7 @@ on:
     - cron: "17 6 * * 1"
   workflow_dispatch:
 
-# Least privilege: read-only by default; the job may only upload its results and sign them for the badge.
+# Read-only by default. The job can only upload its results and sign them for the badge.
 permissions:
   contents: read
 
@@ -23,7 +23,8 @@ jobs:
       security-events: write # the results in the Security tab (code scanning)
       id-token: write # publishing them for the badge
     steps:
-      # Actions pinned to exact commits (a moved tag can't change what runs); the tag is in the comment.
+      # Every action is pinned to an exact commit, so a moved tag can't change what runs. The version tag stays in
+      # the trailing comment for reference.
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false

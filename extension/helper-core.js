@@ -1,4 +1,4 @@
-// Clotr — helping someone set Clotr up (D61): the pieces the popup's Settings and the guided setup page share.
+// Helping someone set Clotr up: the pieces the popup's Settings and the guided setup page share.
 // Classic script (loaded after patterns.js and detector.js); adds globalThis.Clotr.Helper.
 // The PIN is kept only as a salted PBKDF2 hash. It guards against accidental changes; whoever can remove the
 // extension can reset it (both pages say so). Unlocking lasts 10 minutes, shared through session storage.
@@ -34,18 +34,49 @@
     return until;
   }
 
-  // One control for a whole group: "default" clears the group's overrides (overrides only, so a kind set back to
-  // its default follows future default changes).
+  // One control for a whole group: "default" clears the group's overrides. Routed through the background
+  // (clotr:setResponses), which applies the drop-if-default rule, so this and the popup's per-pattern save
+  // can't race each other's read-modify-write of the same stored map.
   async function setGroupResponse(ids, value) {
-    const { responses = {} } = await chrome.storage.local.get("responses");
-    for (const id of ids) {
-      if (value === "default" || value === C.defaultResponse(id)) delete responses[id];
-      else responses[id] = value;
-    }
-    await chrome.storage.local.set({ responses });
+    await chrome.runtime.sendMessage({ type: "clotr:setResponses", ids, value });
   }
   const asksBeforePersonal = (responses = {}) => PERSONAL_IDS.every((id) => responses[id] === "block");
   const setAskBeforePersonal = (on) => setGroupResponse(PERSONAL_IDS, on ? "block" : "default");
+
+  // The personal kinds in Clotr 1.2.0. A copy updated from 1.2.0 or earlier has no `knownKinds` yet: these count as
+  // the kinds it knew.
+  const PERSONAL_IDS_1_2 = [
+    "us_ssn",
+    "credit_card",
+    "street_address",
+    "bank_account",
+    "national_id",
+    "medical_record",
+    "public_ip",
+    "medicare_id",
+    "passport",
+    "drivers_license",
+    "insurance_id",
+    "date_of_birth",
+    "phone_number",
+    "my_name",
+    "family_name",
+    "employer",
+    "my_id",
+    "email",
+  ];
+  // After an update: if "Ask before sending personal details" was on, every personal kind Clotr knew before
+  // asks first, and the personal kinds the update brought should too, so the switch stays on. Returns those new kinds
+  // (each without a choice of its own). Only kinds the update brought: someone who set a few kinds to ask one by one
+  // never gets the rest. `known`: the kind ids this copy knew before the update.
+  function newPersonalToAsk(responses = {}, known) {
+    const list = Array.isArray(known) && known.every((id) => typeof id === "string") ? known : PERSONAL_IDS_1_2;
+    const knew = new Set(list);
+    const before = PERSONAL_IDS.filter((id) => knew.has(id));
+    const brought = PERSONAL_IDS.filter((id) => !knew.has(id) && !Object.hasOwn(responses, id));
+    if (!before.length || !brought.length) return [];
+    return before.every((id) => responses[id] === "block") ? brought : [];
+  }
 
   C.Helper = {
     PERSONAL_IDS,
@@ -60,5 +91,7 @@
     setGroupResponse,
     asksBeforePersonal,
     setAskBeforePersonal,
+    PERSONAL_IDS_1_2,
+    newPersonalToAsk,
   };
 })();

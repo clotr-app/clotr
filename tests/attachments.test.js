@@ -1,5 +1,5 @@
-// Attached files read as text (extension/attachments.js), in Node: File and
-// DecompressionStream are built in. Browser behavior (warnings on attach) is in the e2e suite.
+// Covers how extension/attachments.js reads attached files as text. Node already has File and
+// DecompressionStream built in, and what the browser shows when someone attaches a file lives in the e2e suite.
 "use strict";
 
 const test = require("node:test");
@@ -11,8 +11,9 @@ require("../extension/patterns.js");
 require("../extension/detector.js");
 require("../extension/attachments.js");
 const { readAttachment } = globalThis.Clotr;
+const { retrySlowAsync, timedAsync } = require("./timing.js");
 
-// A minimal zip: entries [name, text, deflate?].
+// Builds a minimal zip file from a list of [name, text, deflate?] entries.
 function zip(entries) {
   const parts = [];
   const central = [];
@@ -76,13 +77,53 @@ test("text files are read; unknown kinds and broken files give null (fail open)"
   assert.equal(await readAttachment(new File(["%not a pdf"], "x.pdf")), null);
 });
 
+// Firefox hands a content script the page's own bytes, and the script can't slice them up as they are, so
+// ownBytes copies them into the script's own realm first. In Chrome, Brave, Edge and Node the bytes are already
+// its own, so they pass through untouched.
+test("ownBytes: bytes from another realm are copied into this one; this realm's pass through", () => {
+  const { ownBytes } = globalThis.Clotr;
+  const mine = new Uint8Array([1, 2, 3]);
+  assert.equal(ownBytes(mine), mine);
+  assert.equal(ownBytes(mine.buffer), mine.buffer);
+  const theirs = require("node:vm").runInNewContext("new Uint8Array([7, 8, 9])");
+  assert.ok(!(theirs instanceof Uint8Array) && !(theirs.buffer instanceof ArrayBuffer));
+  const bytes = ownBytes(theirs);
+  const buffer = ownBytes(theirs.buffer);
+  assert.ok(bytes instanceof Uint8Array && buffer instanceof ArrayBuffer);
+  assert.deepEqual([...bytes], [7, 8, 9]);
+  assert.deepEqual([...new Uint8Array(buffer)], [7, 8, 9]);
+});
+
 test("zip bomb: a part that inflates far past the cap stops at 2 MB", async () => {
   const bomb = new File(
     [zip([["word/document.xml", `<w:t>${"A".repeat(30 * 1024 * 1024)}</w:t>`, true]])],
     "bomb.docx",
   );
-  const t = performance.now();
   const text = await readAttachment(bomb);
   assert.ok(text.length <= 2 * 1024 * 1024 + 1, `read ${text.length} characters`);
-  assert.ok(performance.now() - t < 5000, "took too long");
+  // Five seconds on a quiet computer, more on a busy one, scaled by how much slower this computer is right
+  // now than the reference timing in tests/timing.js.
+  await retrySlowAsync(async () => {
+    const t = await timedAsync(() => readAttachment(bomb));
+    if (await t.overAsync(5000))
+      return `took ${Math.round(t.wall)} ms (${Math.round(t.allowed)} allowed on this computer now)`;
+  });
+});
+
+// An SVG file is text underneath. The words it displays get read like any text file, but the numbers in its
+// drawing instructions don't, so a path coordinate can't be mistaken for a phone number.
+test("SVG pictures are read as text: the words they show, not their drawing numbers", async () => {
+  const svg = `<?xml version="1.0"?><svg xmlns="http://www.w3.org/2000/svg" width="400" height="80">
+    <path d="M 555 555 0123 L 212 555 0199 Z" fill="#555"/>
+    <text x="10" y="40">Write to ann.lee@gmail.com</text></svg>`;
+  for (const file of [
+    new File([svg], "chart.svg"),
+    new File([svg], "chart", { type: "image/svg+xml" }),
+    new File([svg], "CHART.SVG", { type: "" }),
+  ]) {
+    const text = await readAttachment(file);
+    assert.match(text || "", /ann\.lee@gmail\.com/, file.name);
+    assert.doesNotMatch(text, /0123|0199/, `${file.name}: drawing numbers read as text`);
+  }
+  assert.equal(await readAttachment(new File([svg.repeat(30000)], "huge.svg")), null, "over the 2 MB text cap");
 });

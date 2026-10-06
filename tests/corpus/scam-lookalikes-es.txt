@@ -1,0 +1,301 @@
+# Mensajes de todos los días que parecen estafas, en español: SMS de acceso que dicen que nunca te pedirán el código,
+# avisos del banco sin ninguna petición, envíos, una reunión que cambia, una fiesta sorpresa, un nieto que pide que lo
+# lleven, un aviso de impuestos, una tarjeta regalo de cumpleaños, alguien que pregunta la clave del wifi, el equipo de
+# informática, un sorteo en el trabajo. Todo es inventado: los teléfonos son 555-01xx, los enlaces y correos usan
+# example.com o example.invalid, y cada persona, banco y tienda es ficticio (solo las marcas de tarjetas regalo y de
+# apps que la gente nombra de verdad son reales).
+# Cada mensaje empieza con una línea de etiqueta y después el mensaje. Casi todos son [signs: none]. Unos pocos tienen
+# de verdad una señal (una fiesta sorpresa pide guardar el secreto, alguien del trabajo pide algo urgente, un amigo pide
+# que le devuelvas el dinero por Bizum), y la etiqueta la lista:
+#   [signs: press_secret]
+# El objetivo (tests/scam-signs.test.js y el marcador): ninguna señal que la etiqueta no liste, nunca. Cada señal de la
+# lista debe encontrarse también, para que una etiqueta no esconda una señal que desapareció.
+# Los mensajes se separan con líneas de "---".
+---
+[signs: none]
+Tu código de Ejemplo es 482913. No lo compartas con nadie. Nunca te llamaremos para pedírtelo.
+---
+[signs: none]
+552019 es tu código de verificación de Banco Ejemplo. Banco Ejemplo nunca te pedirá este código. No se lo des a nadie, aunque diga que es del banco.
+---
+[signs: none]
+Usa 731904 para entrar en Correo Ejemplo. Si alguien te pide este código, es una estafa: no lo compartas.
+---
+[signs: none]
+Ejemplo Pagos: tu clave de un solo uso es 118274. Caduca en 10 minutos. No compartas este código con nadie.
+---
+[signs: none]
+Su código de verificación de Ejemplo es 660412. Nunca le llamaremos ni le escribiremos para pedírselo.
+---
+[signs: none]
+Banco Ejemplo: su código es 393021. No lo comparta. El personal del banco nunca se lo pedirá.
+---
+[signs: none]
+Caja Ejemplo: 847261 es tu código de acceso. Si no intentaste entrar, puedes ignorar este mensaje.
+---
+[signs: none]
+Aquí tienes tu código de acceso a Salud Ejemplo: 287743. Si alguien te llama para pedirte este código, cuelga. Es una estafa.
+---
+[signs: none]
+Gracias por registrarte en Ejemplo Puntos. Confirma tu correo escribiendo 703318 en la app.
+---
+[signs: none]
+Banco Ejemplo: se ha aprobado una compra de 82,10 € en Tienda Ejemplo con tu tarjeta acabada en 4421.
+---
+[signs: none]
+Banco Ejemplo, alerta de fraude: ¿has hecho una compra de 82,10 € en Tienda Ejemplo? Responde SÍ o NO. Nunca te pediremos el PIN, la contraseña ni un código.
+---
+[signs: none]
+Caja Ejemplo: se ha ingresado tu nómina de 1.842,16 € en la cuenta.
+---
+[signs: none]
+Recordatorio de Banco Ejemplo: nunca le llamaremos ni le escribiremos para pedirle el PIN, la contraseña o un código que le hayamos enviado. Si alguien lo hace, cuelgue y llame al número de su tarjeta.
+---
+[signs: none]
+Caja Ejemplo: tu nueva tarjeta de débito va de camino. Llegará en 7 a 10 días. Actívala en la app o en cualquier cajero.
+---
+[signs: none]
+Banco Ejemplo: hemos visto que has entrado desde un móvil nuevo. Si fuiste tú, no tienes que hacer nada.
+---
+[signs: none]
+Consejo de Banco Ejemplo: nuestro equipo de fraude nunca te pedirá que muevas tu dinero a una cuenta segura. Si alguien lo hace, es una estafa.
+---
+[signs: none]
+Banco Ejemplo nunca le pedirá por teléfono los 3 números de atrás de su tarjeta.
+---
+[signs: none]
+Tu extracto de septiembre de Banco Ejemplo ya está disponible en la banca en línea.
+---
+[signs: none]
+Hola, señora Pérez, soy Laura de la oficina de la calle Mayor. Su nueva libreta ya está lista para recoger.
+---
+[signs: none]
+Tu paquete sale hoy para entrega. Síguelo en example.com/envio
+---
+[signs: none]
+Ejemplo Paquetería: tu pedido 4417 se ha entregado en tu puerta a las 14:14.
+---
+[signs: none]
+Tienda Ejemplo: ¡tu pedido ya está enviado! Llegará el jueves. Puedes seguirlo en tu cuenta.
+---
+[signs: none]
+¡Hoy no te encontramos en casa! Volveremos a intentarlo mañana entre las 9 y las 13.
+---
+[signs: none]
+Ejemplo Envíos: tu entrega se retrasa por el temporal. Disculpa las molestias, llegará mañana.
+---
+[signs: none]
+Tu pedido de Supermercado Ejemplo va de camino. El repartidor llegará en unos 15 minutos.
+---
+[signs: none]
+Ejemplo Correos: un paquete necesita firma. Volveremos el lunes, o puedes recogerlo en la oficina de la calle Olmo con tu DNI.
+---
+[signs: none]
+Tienda Ejemplo: hemos recibido tu devolución. El reembolso de 34,99 € aparecerá en tu tarjeta en 3 a 5 días.
+---
+[signs: none]
+La vecina ha recogido tu paquete, lo tiene en su casa.
+---
+[signs: none]
+Tu receta de Farmacia Ejemplo ya está lista para recoger.
+---
+[signs: press_rush]
+Urgente: la reunión de las 15:00 pasa a las 16:00, en la misma sala.
+---
+[signs: none]
+Aviso: la revisión del presupuesto es a las 10 en vez de a las 11. ¡Perdón por avisar tan tarde!
+---
+[signs: press_rush]
+¿Me puedes mandar las diapositivas cuanto antes? El cliente adelantó la llamada.
+---
+[signs: none]
+Equipo: la oficina cierra hoy a las 14:00 por la nieve. Conducid con cuidado.
+---
+[signs: none]
+Llámame en cuanto aterrices, papá quiere saber que llegaste bien.
+---
+[signs: press_secret]
+Shh, el sábado le hacemos a mamá una fiesta sorpresa. ¡Guárdalo en secreto!
+---
+[signs: press_secret]
+No se lo digas al abuelo, pero vamos todos a su cumpleaños el finde que viene.
+---
+[signs: none]
+La fiesta sorpresa de Jen es a las 6. Aparcad en la calle de al lado para que no vea los coches.
+---
+[signs: press_secret]
+Que quede entre nosotros hasta que sea oficial, ¡pero me dieron el trabajo!
+---
+[signs: none]
+Hola abuela, soy Leo. ¿Me puedes recoger del entrenamiento a las 5? Mamá sigue en el trabajo.
+---
+[signs: none]
+Abuelo, ¿me sigues llevando mañana al dentista? Es a las 9.
+---
+[signs: none]
+¡Hola, yaya! ¿Vienes a la obra del cole el jueves? Empieza a las 18:30.
+---
+[signs: none]
+Mamá, ya aterricé. Estoy esperando la maleta, te llamo en un rato.
+---
+[signs: none]
+Hola papá, se me acaba la batería y te escribo desde el móvil de Mía. Llego a casa a las 10.
+---
+[signs: none]
+Mamá, tengo número nuevo, este es el bueno. El otro dejó de funcionar. ¡Guárdalo!
+---
+[signs: none]
+Abuelo, ¡aprobé el carnet de conducir! Gracias por todas las prácticas.
+---
+[signs: none]
+Papá, rocé el coche con la puerta del garaje. Estoy bien, es solo la pintura. ¡Perdón!
+---
+[signs: none]
+Hola mamá, estoy en el hospital con Sam, se torció el tobillo jugando al fútbol. Está bien, esperamos la radiografía.
+---
+[signs: none]
+Agencia Tributaria: el plazo para presentar la declaración de la renta termina el 30 de junio. Puedes pedir cita en tu oficina.
+---
+[signs: none]
+Ayuntamiento de Ejemplo: el impuesto de bienes inmuebles vence el 31 de octubre. Puede pagarlo en la oficina o en example.com/impuestos.
+---
+[signs: none]
+Recordatorio: tu ITV caduca el mes que viene. Pide cita en cualquier estación.
+---
+[signs: none]
+Seguridad Social: ya tiene disponible su carta de revalorización de la pensión. Nunca le llamaremos para pedirle dinero ni datos.
+---
+[signs: none]
+Aviso del Ayuntamiento: cortes de tráfico en la calle Mayor esta noche desde las 21:00 por obras.
+---
+[signs: none]
+Colegio Ejemplo: mañana no hay clase por la tormenta.
+---
+[signs: none]
+¡Feliz cumpleaños! Te puse una tarjeta regalo de 50 € de Librería Ejemplo dentro de la tarjeta. ¡Date un capricho!
+---
+[signs: none]
+¡Gracias por la tarjeta regalo de Amazon! Ya me he pedido un libro.
+---
+[signs: none]
+Me tocó una tarjeta regalo de 25 € para el café en el sorteo de la oficina jaja
+---
+[signs: none]
+¿Alguien sabe si el saldo de la tarjeta regalo de Ejemplo Mart se mantiene? A mí me quedan 12,40 €.
+---
+[signs: none]
+¿Puedes comprar una tarjeta regalo para la jubilación de la señora Lee? Ponemos 10 € cada uno.
+---
+[signs: none]
+Oye, ¿cuál era la clave del wifi?
+---
+[signs: none]
+¿La contraseña del wifi de invitados sigue pegada en la nevera?
+---
+[signs: none]
+¿Me mandas el código de la puerta de la casa rural? Llegamos sobre las 4.
+---
+[signs: none]
+Hola, soy Dana de informática. Ya terminó la actualización de tu portátil, reinícialo cuando quieras.
+---
+[signs: none]
+Gracias por contactar con el soporte de Ejemplo. Tu número de caso es 18822. Te escribiremos cuando haya novedades.
+---
+[signs: none]
+Recordatorio de informática: nunca te pediremos la contraseña por correo ni por chat. Avísanos si alguien lo hace.
+---
+[signs: none]
+El análisis del antivirus Ejemplo ha terminado. No se encontraron amenazas.
+---
+[signs: none]
+¡Enhorabuena, ganaste el sorteo de la oficina! Recoge el premio en recepción cuando quieras esta semana.
+---
+[signs: none]
+¿Viste que ganamos el concurso de preguntas? ¡Primer puesto!
+---
+[signs: none]
+Ejemplo Luz: tu factura de 84,20 € vence el 20 de octubre. Gracias por pagar a tiempo el mes pasado.
+---
+[signs: none]
+Ejemplo Música: tu suscripción se renueva el 3 de noviembre por 9,99 €. Puedes gestionarla en los ajustes de la app.
+---
+[signs: none]
+Recordatorio: mañana tienes cita en el dentista a las 15:00. Responde C para confirmar o R para cambiarla.
+---
+[signs: none]
+Hola, te escribo por la bici del anuncio. ¿Sigue disponible? Puedo pasarme el sábado con el dinero en efectivo.
+---
+[signs: none]
+¿Sigue a la venta el sofá? ¿Podría verlo mañana después del trabajo?
+---
+[signs: pay_hard_to_undo]
+Cariño, ¿me haces un Bizum de 20 € de la pizza? La pagué yo.
+---
+[signs: none]
+Te hago un Bizum por la cena cuando llegue a casa. ¡Gracias por invitar!
+---
+[signs: none]
+¿Viste que el bitcoin volvió a subir? Mi hermano no para de hablar de eso.
+---
+[signs: none]
+Mi amor, te echo de menos. Qué ganas de verte esta noche después del trabajo. Llevo la cena.
+---
+[signs: none]
+Nuevo inicio de sesión en tu cuenta de Ejemplo desde un ordenador con Windows. Si fuiste tú, no tienes que hacer nada.
+---
+[signs: none]
+Correo Ejemplo: se ha cambiado tu contraseña. Si fuiste tú, puedes ignorar este mensaje.
+---
+[signs: none]
+Has activado la verificación en dos pasos en tu cuenta de Ejemplo. ¡Bien hecho!
+---
+[signs: none]
+La grúa va de camino, unos 30 minutos. Quédate junto al coche con las luces de emergencia puestas.
+---
+[signs: none]
+Hola, soy Miguel de Fontanería Ejemplo. Te confirmo la cita de mañana entre las 8 y las 10.
+---
+[signs: none]
+Tu coche ya está listo en Talleres Ejemplo. Son 212,50 €, se paga al recogerlo.
+---
+[signs: none]
+Hotel Ejemplo: te esperamos el 14 de octubre. Puedes hacer el registro desde las 15:00.
+---
+[signs: none]
+Aerolínea Ejemplo: tu vuelo 212 sale con 40 minutos de retraso. Nueva salida a las 18:25.
+---
+[signs: none]
+Hola vecina, tu perro se ha vuelto a escapar, está en nuestro patio. Sin prisa, está jugando con el nuestro.
+---
+[signs: none]
+Biblioteca Ejemplo: tu reserva de «El camino largo» ya está disponible. Recógela en 7 días.
+---
+[signs: none]
+Abuela, vendo papeletas para el viaje de fin de curso. ¿Quieres alguna? Son 2 € cada una.
+---
+[signs: asks_details]
+Hola, le llamamos del Centro de Salud Ejemplo. Cuando nos devuelva la llamada, confirme su fecha de nacimiento para encontrar su historia.
+---
+[signs: none]
+Banco Ejemplo: por su seguridad, nunca le pediremos que instale una app para ver su pantalla.
+---
+[signs: none]
+Mamá, ¿me firmas la autorización de la excursión esta noche? Hay que entregarla mañana.
+---
+[signs: none]
+Mamá, ¿me mandas la receta de las croquetas? La quiero hacer hoy.
+---
+[signs: none]
+Banco Ejemplo: nunca le pediremos su contraseña ni sus códigos. Si alguien lo hace, cuelgue.
+---
+[signs: none]
+¿Me pasas el código del portal? Llego en diez minutos.
+---
+[signs: none]
+Tu pedido de Tienda Ejemplo llegará mañana entre las 9 y las 14.
+---
+[signs: none]
+Hola, soy de Recursos Humanos. Te recuerdo que la nómina se ingresa el día 28.
+---
+[signs: none]
+Correo Ejemplo: tu código es 552199. Nadie de Correo Ejemplo te lo pedirá nunca.

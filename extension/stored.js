@@ -1,4 +1,4 @@
-// Clotr — "What Clotr stores": shows the extension's stored records, read-only.
+// "What Clotr stores": shows the extension's stored records, read-only.
 // Nothing here writes to storage or leaves the page. The fingerprint salt is masked.
 "use strict";
 
@@ -15,6 +15,9 @@ function el(tag, props = {}, children = []) {
 const fmt = new Intl.DateTimeFormat([], { dateStyle: "medium", timeStyle: "short" });
 const when = (t) => (Number.isFinite(t) ? fmt.format(t) : "—");
 const fmtShort = new Intl.DateTimeFormat([], { dateStyle: "short", timeStyle: "short" });
+const fmtDay = new Intl.DateTimeFormat([], { dateStyle: "long" });
+// "2 October": the 30 days after a scam, as Clotr's other screens say them.
+const fmtDate = new Intl.DateTimeFormat([], { day: "numeric", month: "long" });
 const OUTCOME = {
   redacted: msg("pp_covered", "Hidden"),
   allowed: msg("pp_sent", "Sent"),
@@ -35,20 +38,60 @@ const VAULT_TYPES = {
   my_id: msg("vt_cIdFormat", "Account/ID format"),
   watch_list: msg("vt_cWatch", "Watch word"),
 };
+// The one-time offer to use Clotr on email and chat apps (`everydayOffer`, one bookkeeping word).
+const OFFER = {
+  welcome: msg("sj_offerWelcome", "Made on the welcome page"),
+  popup: msg("sj_offerPopup", "Shows once, the next time you open Clotr's toolbar button"),
+  done: msg("sj_offerDone", "Answered, or an app was already on"),
+};
 const pretty = (id) => VAULT_TYPES[id] || id.replace(/_/g, " ").replace(/^\w/, (c) => c.toUpperCase());
 
 function facts(target, rows) {
   $(target).replaceChildren(...rows.flatMap(([k, v]) => [el("dt", { textContent: k }), el("dd", { textContent: v })]));
 }
 
-// "Your settings": what you changed from the defaults, how long history is kept, and the sites you added.
-function renderSettings(all) {
+// The email and chat sites Clotr runs on: the ones the browser granted (sites.js `isEveryday`: a listed app, or a
+// site you switched on as one). Read from the grants, not from `siteKinds`: older versions wrote that note before
+// the browser's question and kept it after a No.
+function everydayHosts(granted, siteKinds = {}) {
+  const hosts = granted
+    .filter((o) => /^https:\/\/[^/*]+\/\*?$/.test(o))
+    .map((o) => new URL(o.replace(/\*$/, "")).hostname)
+    .filter((h) => globalThis.ClotrSites.isEveryday(h, siteKinds));
+  return [...new Set(hosts)].sort();
+}
+
+// Tourniquet: since when and what it asks about, in the words its own screens use, never who it's for. A value
+// that isn't exactly its record is off, as the background treats it.
+function tourniquetText(raw) {
+  const t = globalThis.ClotrSites.cleanTourniquet(raw);
+  if (!t) return msg("sj_off", "Off");
+  if (t.for === "after_scam")
+    return msg(
+      "sj_tqOnAfterScam",
+      "After a scam, since $1, until $2. Clotr asks before bank, card and ID numbers, gift card numbers, passwords and sign-in codes go out.",
+      fmtDate.format(t.since),
+      fmtDate.format(t.until),
+    );
+  return t.for === "child"
+    ? msg(
+        "sj_tqOnChild",
+        "On since $1. Clotr asks before personal details, passwords and sign-in codes go out.",
+        fmtDay.format(t.since),
+      )
+    : msg(
+        "sj_tqOnAdult",
+        "On since $1. Clotr asks before bank, card and ID numbers, passwords and sign-in codes go out.",
+        fmtDay.format(t.since),
+      );
+}
+
+// "Your settings": what you changed from the defaults, Tourniquet, how long history is kept, and the sites you added.
+function renderSettings(all, granted) {
   const responses = Object.entries(all.responses || {});
   const siteModes = Object.entries(all.siteModes || {});
   const paused = Object.keys(all.paused || {}).filter((h) => all.paused[h]);
-  const everyday = Object.entries(all.siteKinds || {})
-    .filter(([, k]) => k === "everyday")
-    .map(([h]) => h);
+  const everyday = everydayHosts(granted, all.siteKinds);
   facts("settings", [
     [
       msg("sj_changed", "Changed from the default (warn)"),
@@ -56,6 +99,7 @@ function renderSettings(all) {
         ? responses.map(([id, r]) => `${pretty(id)}: ${RESPONSE[r] || r}`).join(" · ")
         : msg("sj_nothingChanged", "Nothing: everything warns"),
     ],
+    [msg("sj_tourniquet", "Tourniquet"), tourniquetText(all.tourniquet)],
     [
       msg("sj_siteModes", "Stricter or quieter on one AI tool"),
       siteModes.length
@@ -119,9 +163,29 @@ function renderVault(all) {
 // "History": how many records and over what time, then the newest 100.
 function renderHistory(all) {
   const events = all.events || [];
-  $("history-count").textContent = events.length
-    ? `${events.length} ${events.length === 1 ? "record" : "records"}, from ${when(events[0].t)} to ${when(events.at(-1).t)}. Clotr keeps them for the period set in the full report (1 year unless you changed it), up to 10,000.`
-    : msg("sj_noRecords", "No records yet.");
+  // A record with a count `n` stands for the rest of a long list sent at once.
+  const { weight } = globalThis.ClotrSites;
+  const folded = events.some((e) => weight(e) > 1);
+  const span = [events.length.toLocaleString(), when(events[0]?.t), when(events.at(-1)?.t)];
+  $("history-count").textContent = !events.length
+    ? msg("sj_noRecords", "No records yet.")
+    : folded
+      ? msg(
+          "sj_historyCountFolded",
+          "$1 records (some stand for a long list sent at once), from $2 to $3. Clotr keeps them for the period set in the full report (1 year unless you changed it), up to 10,000.",
+          ...span,
+        )
+      : events.length === 1
+        ? msg(
+            "sj_historyCount1",
+            "1 record, from $2 to $3. Clotr keeps them for the period set in the full report (1 year unless you changed it), up to 10,000.",
+            ...span,
+          )
+        : msg(
+            "sj_historyCountN",
+            "$1 records, from $2 to $3. Clotr keeps them for the period set in the full report (1 year unless you changed it), up to 10,000.",
+            ...span,
+          );
   $("history-table").hidden = !events.length;
   $("history-table").tBodies[0].replaceChildren(
     ...events
@@ -131,7 +195,12 @@ function renderHistory(all) {
         el("tr", {}, [
           el("td", { textContent: Number.isFinite(e.t) ? fmtShort.format(e.t) : "—" }),
           el("td", { textContent: e.site }),
-          el("td", { textContent: e.name || pretty(e.type) }),
+          el("td", {}, [
+            e.name || pretty(e.type),
+            ...(weight(e) > 1
+              ? [el("br"), msg("pp_moreInOneGo", "$1 more in one go", weight(e).toLocaleString())]
+              : []),
+          ]),
           el("td", { textContent: OUTCOME[e.action] || e.action }),
           el("td", {}, [el("code", { textContent: e.fp || "—" })]),
         ]),
@@ -176,8 +245,16 @@ function renderOther(all) {
         .join(", ") || msg("sj_noneYet", "None yet"),
     ],
     [
+      msg("sj_pictureNote", "The picture note was shown on"),
+      Object.keys(all.picturesNoted || {}).join(", ") || msg("sj_noneYet", "None yet"),
+    ],
+    [
       msg("sj_replyCheck", "Check the AI's replies for my details"),
       all.replyCheck === false ? msg("sj_off", "Off") : msg("sj_on", "On"),
+    ],
+    [
+      msg("sj_commandCheck", "Check commands I copy on AI chats"),
+      all.commandCheck === false ? msg("sj_off", "Off") : msg("sj_on", "On"),
     ],
     [
       msg("sj_mentions", "AI replies that brought up your details (kind and fingerprint, never the text)"),
@@ -187,7 +264,51 @@ function renderOther(all) {
       msg("sj_spotted", "AI tools you opened Clotr on that it doesn't protect (names only)"),
       Object.keys(all.spotted || {}).join(", ") || msg("sj_none", "None"),
     ],
+    [
+      msg("sj_historyFull", "History full"),
+      Number.isFinite(all.historyFull?.before)
+        ? msg(
+            "sj_historyFullWhat",
+            "On $1, to stay under 10,000 records, Clotr removed records from before $2. Only these two dates are kept.",
+            when(all.historyFull.t),
+            when(all.historyFull.before),
+          )
+        : msg("sj_no", "No"),
+    ],
     [msg("sj_lastUpdate", "Last update"), all.lastUpdate ? `${all.lastUpdate.from} → ${all.lastUpdate.to}` : "—"],
+    // Kind ids only, so the next update can tell which kinds it brought.
+    [
+      msg("sj_knownKinds", "Kinds of detail Clotr knows"),
+      Array.isArray(all.knownKinds)
+        ? msg(
+            "sj_knownKindsWhat",
+            "$1 kinds, by name only, so that after an update a new kind can follow Ask before sending personal details.",
+            all.knownKinds.length,
+          )
+        : "—",
+    ],
+    [msg("sj_everydayOffer", "Offer to use Clotr on your email and chat apps"), OFFER[all.everydayOffer] || "—"],
+    // Tourniquet's 30 days after a scam (Scam Shield): two times, nothing about what happened.
+    [
+      msg("sj_tqEnded", "End of Tourniquet's 30 days"),
+      Number.isFinite(all.tourniquetEnded?.at)
+        ? msg(
+            "sj_tqEndedWhat",
+            "$1. Kept until you answer the note about it in Clotr's popup, so it's said once.",
+            when(all.tourniquetEnded.at),
+          )
+        : "—",
+    ],
+    [
+      msg("sj_tqSeen", "Latest time seen during Tourniquet's 30 days"),
+      Number.isFinite(all.tourniquetSeen)
+        ? msg(
+            "sj_tqSeenWhat",
+            "$1. The latest time this computer's clock showed while the 30 days ran, so Clotr can tell if the clock is turned back.",
+            when(all.tourniquetSeen),
+          )
+        : "—",
+    ],
   ]);
 }
 
@@ -197,9 +318,9 @@ function renderRaw(all) {
   $("raw").textContent = JSON.stringify(shown, null, 2);
 }
 
-// Every section, from one read of the whole storage (again whenever it changes).
-function render(all) {
-  renderSettings(all);
+// Every section, from one read of the whole storage and the browser's site grants (again whenever either changes).
+function render(all, granted) {
+  renderSettings(all, granted);
   renderVault(all);
   renderHistory(all);
   renderOther(all);
@@ -218,7 +339,10 @@ const WHY = {
     "sj_pDeclarative",
     "Lets the browser show the amber dot on pages that look like an AI chat, without Clotr reading them.",
   ),
-  alarms: msg("sj_pAlarms", "Updates today's count after midnight and removes old history on schedule."),
+  alarms: msg(
+    "sj_pAlarms",
+    "Updates today's count after midnight, removes old history on schedule, and ends Tourniquet's 30 days after a scam on time.",
+  ),
 };
 function renderReach() {
   const m = chrome.runtime.getManifest();
@@ -256,7 +380,16 @@ function renderReach() {
 }
 renderReach();
 
-chrome.storage.local.get(null).then(render);
+async function refresh() {
+  const [all, { origins = [] }] = await Promise.all([
+    chrome.storage.local.get(null),
+    chrome.permissions.getAll().catch(() => ({})),
+  ]);
+  render(all, origins);
+}
+refresh();
 chrome.storage.onChanged.addListener((changes, area) => {
-  if (area === "local") chrome.storage.local.get(null).then(render);
+  if (area === "local") refresh();
 });
+chrome.permissions.onAdded.addListener(refresh);
+chrome.permissions.onRemoved.addListener(refresh);

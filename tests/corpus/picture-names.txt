@@ -1,0 +1,170 @@
+# Names of pictures and scanned files people attach to AI chats, for the name check (pictures.js, nameClues).
+# One name per line: "+ " says the picture is a photo of an ID or a document, so Clotr should warn; "- " doesn't,
+# so a warning would be a false alarm. Made-up names in the shapes cameras, phones, scanners and people use, in
+# English and Spanish: camera and screenshot names, everyday pictures, and names about IDs that aren't one (a
+# template, a logo, a license plate, a software license). Held to the floor (no worse than 1 in 50 either way)
+# by tests/pictures.test.js, and to the ratchet by the scorecard. Leave out names that could honestly go either way.
+
+# IDs and documents
++ passport.jpg
++ passport-scan.jpg
++ Passport_Photo_Page.jpg
++ my passport.png
++ MyPassport.HEIC
++ passport2.jpg
++ passport (1).jpeg
++ Screenshot of my passport.png
++ US Passport Card.jpg
++ Pasaporte.jpg
++ pasaporte_mexicano.jpeg
++ drivers_license_front.jpg
++ Drivers License Back.png
++ driver's license.jpg
++ DriversLicense.jpg
++ driver-license-2026.jpg
++ driving licence.jpg
++ Driving_Licence_UK.png
++ DL_front.jpg
++ dl-back.jpeg
++ license.jpg
++ licence_front.png
++ License (2).jpg
++ new license.heic
++ id card.jpg
++ IDCard.png
++ idcard_back.jpg
++ ID_front.jpg
++ id-back.heic
++ front id.jpg
++ national id.jpg
++ NationalID.png
++ state ID.jpeg
++ student id card.png
++ photo id.jpg
++ DNI_frente.jpg
++ dni-reverso.jpg
++ cedula.jpg
++ Cédula de identidad.png
++ ssn.jpg
++ SSN card.png
++ social security card.jpg
++ SocialSecurityCard.jpg
++ green card.jpg
++ GreenCard_front.png
++ residence permit.jpg
++ birth certificate.jpg
++ BirthCertificate.pdf
++ acta de nacimiento.jpg
++ W2.jpg
++ w-2 2025.png
++ W2_2025.pdf
++ 1099-NEC.pdf
++ 1099.jpg
++ form 1099 misc.png
++ tax return 2024.pdf
++ TaxReturn_2025.png
++ bank statement.png
++ Bank Statement March 2026.pdf
++ BankStatement.jpg
++ estado de cuenta.png
++ credit card.jpg
++ credit-card-front.jpg
++ debit card back.png
++ CreditCard.heic
++ insurance card.jpg
++ InsuranceCard_back.png
++ medicare card.jpg
++ medicaid card.png
++ licencia de conducir.jpg
++ licencia_manejo.jpg
++ tarjeta de credito.jpg
++ seguro social.jpg
+
+# Cameras, phones and screenshots
+- IMG_2041.jpg
+- IMG_1099.JPG
+- IMG_20260914_183022.jpg
+- PXL_20260921_141530123.jpg
+- DSC01234.JPG
+- DSCN0042.JPG
+- IMG_4521.HEIC
+- IMG_E4521.HEIC
+- MVIMG_20250612_101010.jpg
+- Screenshot 2026-10-02 at 09.14.22.png
+- Screenshot_20260930-221455_Chrome.png
+- Screen Shot 2025-04-01 at 3.12.45 PM.png
+- Captura de pantalla 2026-09-12 191020.png
+- image.png
+- image (3).png
+- photo.jpg
+- unnamed.jpg
+- download.jpeg
+- WhatsApp Image 2026-09-28 at 18.22.31.jpeg
+- signal-2026-09-30-114422.jpg
+- 20260815_142233.jpg
+- GOPR0123.JPG
+- DJI_0042.JPG
+- ID_2041.jpg
+- logo.png
+
+# Everyday pictures
+- beach-sunset.jpg
+- my-dog-biscuit.png
+- kitchen remodel ideas.webp
+- wedding_invite_draft.png
+- chart-q3-revenue.png
+- error message.png
+- homework question 4.jpg
+- math problem.jpeg
+- receipt-target.jpg
+- recipe card.jpg
+- birthday card.png
+- business card design.png
+- gift card balance.png
+- green tea.jpg
+- greenhouse.jpg
+- greencardigan.jpg
+- cardinal bird.jpg
+- identity crisis meme.png
+- Idaho trip.jpg
+- dining room.jpg
+- 1099 Main Street house.jpg
+- room 1099.jpg
+- return policy.png
+- Statement necklace.jpg
+- statement of purpose draft.jpg
+- driving lessons schedule.png
+- national park.jpg
+- social media post.png
+- birth announcement.jpg
+- certificate of completion.png
+- insurance quote screenshot.png
+- residence hall map.png
+- card game rules.jpg
+- user id error.png
+- ssh key error.png
+- dl speed test.png
+- credit score chart.png
+- tax season meme.png
+- passportal login.png
+
+# About IDs and documents, but not one
+- id badge mockup.png
+- visa logo.png
+- visa application requirements.png
+- mastercard logo.png
+- bank logo.png
+- license plate.jpg
+- license-plate-frame.jpg
+- my license plate.jpg
+- MIT license.png
+- MIT-License-badge.png
+- apache license screenshot.png
+- GPL license diagram.png
+- software license agreement.png
+- license key screenshot.png
+- credit card comparison chart.png
+- bank statement template.png
+- sample passport.jpg
+- blank w2 form.png
+- medicare plans comparison.png

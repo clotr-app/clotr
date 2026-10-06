@@ -1,4 +1,4 @@
-// E2E checks: First-time tips and "Why am I seeing this?" (D21, D43). Run in order by ../run.js with one shared env (helpers from ../lib.js).
+// E2E checks: First-time tips and "Why am I seeing this?". Run in order by ../run.js with one shared env (helpers from ../lib.js).
 "use strict";
 
 module.exports = async function (env) {
@@ -105,15 +105,23 @@ module.exports = async function (env) {
 
   await check(
     "GD4",
-    '"Why am I seeing this?" for a password, code or card adds that real support never asks for it (not for a phone number)',
+    '"Why am I seeing this?" for a password or a card adds that real support never asks for it (not for a phone number); a code a scammer asks for gets What to do instead',
     () =>
       withSite(ctx, "chatgpt", async (page) => {
         await resetState(ctx, {});
-        await typeText(page, "the AnyDesk code is 123 456 789");
+        await typeText(page, "password: Fluffy123!");
         expect(await waitForNotice(page), "no notice");
         await clickDialogButton(page, "Why am I seeing this?", readNotice);
         const n = await readNotice(page);
         expect(/help line will ever ask/.test(n.text), `why: ${n.text}`);
+        // A remote-access code gets its own specific advice here instead of the general sentence above.
+        await withSite(ctx, "chatgpt", async (code) => {
+          await typeText(code, "the AnyDesk code is 123 456 789");
+          expect(await waitForNotice(code), "no notice");
+          await clickDialogButton(code, "Why am I seeing this?", readNotice);
+          const c = await readNotice(code);
+          expect(/What to do/.test(c.text) && !/help line will ever ask/.test(c.text), `code why: ${c.text}`);
+        });
         await withSite(ctx, "chatgpt", async (other) => {
           await typeText(other, "call me at 555-555-0123");
           expect(await waitForNotice(other), "no notice");

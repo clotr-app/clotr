@@ -1,0 +1,278 @@
+# Mensajes de estafa que la gente recibe, en español: SMS, correos, chats y lo que dijo quien llamó, a partir de los
+# casos de la FTC de EE. UU. (el equipo de fraude de un banco, el gobierno, el soporte técnico, un nieto en apuros, el
+# amor, un premio, un paquete, un peaje, un trabajo, el código de un comprador, el truco de pegar un comando), con
+# usted y con tú. Todo es inventado: los teléfonos son 555-01xx, los enlaces y correos usan example.com o
+# example.invalid, y cada persona, banco y tienda es ficticio. Algunos tienen faltas a propósito, como los de verdad.
+# Cada mensaje empieza con una línea de etiqueta, las señales de alerta que la página "¿Es una estafa?" de Clotr debe
+# encontrar (scam-signs.js), y después el mensaje:
+#   [signs: asks_code, press_rush, pret_bank]
+# Cada señal de la lista debe encontrarse, y una señal que la etiqueta no lista es un error (tests/scam-signs.test.js
+# y el marcador). "Menciona datos tuyos" (pret_knows_you) necesita los datos de la persona, así que se prueba aparte.
+# Los mensajes se separan con líneas de "---".
+---
+[signs: asks_code, press_rush, press_secret, pret_bank]
+Somos el equipo de fraude de Banco Ejemplo. Hemos parado un pago extraño con tu tarjeta. Para cancelarlo, responde ya con el código de 6 cifras que te acabamos de enviar. No se lo digas a nadie de la oficina, pueden estar metidos.
+---
+[signs: asks_code, pret_bank]
+Le llamamos del departamento de fraude de Banco Ejemplo. Para bloquear la operación, dígame el código de verificación que le acaba de llegar.
+---
+[signs: asks_card_code, pret_bank]
+Equipo de fraude de Banco Ejemplo: para confirmar que es usted, indíquenos los 3 números de atrás de su tarjeta.
+---
+[signs: asks_code, press_rush, prob_account]
+BANCO EJEMPLO: Hemos detectado un acceso no autorizado a su cuenta. Responda ya con el código SMS para cancelarlo.
+---
+[signs: pay_move_money, press_secret, pret_bank]
+Soy del departamento de seguridad de su banco. Su cuenta está en peligro: transfiera su dinero a esta cuenta segura para protegerlo y no se lo cuente a nadie de la oficina.
+---
+[signs: asks_details, press_threat, pret_bank]
+Banco Ejemplo, área de fraude: su tarjeta será bloqueada si no confirma sus datos bancarios en bancoejemplo.example.invalid.
+---
+[signs: pay_hard_to_undo, press_rush, pret_family]
+Hola mamá, este es mi nuevo número, se me rompió el móvil. Tengo que pagar una factura urgente, ¿me puedes hacer un Bizum de 850 €?
+---
+[signs: pay_hard_to_undo, press_secret, pret_family]
+Abuela, soy yo. Estoy detenido y necesito 3.000 € para la fianza. Por favor, mándamelos por transferencia y no se lo digas a papá.
+---
+[signs: asks_gift_card, press_secret, pret_family]
+Abuela, soy yo. Estoy en un lío y no se lo puedo contar a mamá. ¿Puedes comprar dos tarjetas regalo de 200 € y mandarme los números de atrás? Te lo devuelvo, te lo prometo.
+---
+[signs: asks_remote, pret_support]
+Le llamo del soporte técnico de Microsoft. Su ordenador tiene un virus. Descargue AnyDesk y dígame el número que aparece en la pantalla.
+---
+[signs: asks_remote, press_rush, pret_support]
+¡ALERTA! Su equipo está infectado. Llame ahora al servicio técnico de Windows al 555-0134 y deje que nuestro técnico se conecte a su ordenador.
+---
+[signs: asks_command]
+Verifica que eres humano: pulsa la tecla de Windows + R, pega el texto con Ctrl + V y pulsa Intro.
+---
+[signs: asks_details, pret_gov, press_threat]
+Agencia Tributaria: tiene una deuda pendiente. Confirme su DNI y su número de cuenta en el enlace o se le impondrá una multa.
+---
+[signs: pay_hard_to_undo, pret_gov, press_threat]
+Le habla la Policía Nacional. Hay una orden de detención contra usted. Para evitarla, pague 2.000 € en efectivo al agente que irá a su casa.
+---
+[signs: asks_gift_card, pret_gov, press_rush, press_threat]
+Seguridad Social: tiene una sanción de 500 €. Pague hoy mismo con tarjetas regalo de Google Play y envíenos los códigos.
+---
+[signs: pay_crypto, press_secret, press_threat, pret_gov]
+Soy agente del FBI. Su identidad se usó para blanquear dinero. Para no ser detenido, cambie sus ahorros a bitcoin y envíelos a la cartera que le doy. El caso es confidencial.
+---
+[signs: press_rush, prob_account]
+Ejemplo Envíos: su paquete no pudo ser entregado. Pague 1,99 € en las próximas 24 horas en ejemplo-envios.example.invalid para programar una nueva entrega.
+---
+[signs: asks_details, prob_account]
+Su paquete está retenido en aduanas. Confirme sus datos y su tarjeta en example.invalid/aduana para liberarlo.
+---
+[signs: pay_hard_to_undo, press_rush, prob_prize]
+¡Enhorabuena! Ha ganado 50.000 € en el sorteo de Ejemplo. Para cobrar el premio, envíe 300 € de gastos por Western Union antes de 48 horas.
+---
+[signs: asks_details, prob_prize]
+Has sido seleccionado para recibir un móvil gratis. Entra en example.invalid/premio e introduce los datos de tu tarjeta para pagar el envío.
+---
+[signs: pay_hard_to_undo, pret_romance]
+Mi amor, cuando por fin nos veamos todo será perfecto. Estoy en una plataforma petrolera y mi cuenta está bloqueada. ¿Me puedes enviar 2.000 € por Western Union para el billete?
+---
+[signs: asks_gift_card, pret_romance]
+Cariño, estoy desplegado en el extranjero y no puedo usar mis tarjetas. Cómprame tarjetas regalo de Steam y mándame los códigos.
+---
+[signs: pay_crypto, press_secret, pret_romance]
+Aún no nos conocemos en persona, pero eres el amor de mi vida. Invierte tus ahorros en esta plataforma de criptomonedas como yo, y no se lo digas a tu banco.
+---
+[signs: asks_code]
+Hola, me interesa la bici que vendes. Antes de quedar, te voy a enviar un código para comprobar que eres real, dime qué te dice.
+---
+[signs: asks_code, pret_family]
+Hola mamá, soy yo, he cambiado de número. Te va a llegar un código por SMS, ¿me lo pasas? Lo necesito para entrar en mi WhatsApp.
+---
+[signs: asks_details]
+Recursos Humanos: para darte de alta en la nómina, envíanos tu número de la Seguridad Social y tu cuenta bancaria.
+---
+[signs: pay_hard_to_undo, press_rush, press_threat, prob_account]
+Ejemplo Luz: le cortaremos el suministro en 2 horas por impago. Pague ahora por Bizum al 555 0178.
+---
+[signs: asks_code, press_stay, pret_bank]
+Le habla el equipo antifraude de Banco Ejemplo. No cuelgue, por favor. Le estamos enviando un código, léamelo cuando le llegue.
+---
+[signs: asks_card_code, press_rush, pret_bank]
+URGENTE: el departamento de seguridad de Banco Ejemplo necesita el CVV de su tarjeta para frenar un cargo de 700 €.
+---
+[signs: asks_code, press_threat, pret_bank]
+Banco Ejemplo, fraude: si no nos dice el código de acceso que le hemos enviado, su cuenta quedará bloqueada.
+---
+[signs: asks_details, press_rush, pret_bank]
+Seguridad de Banco Ejemplo: verifique su usuario y su contraseña en bancoejemplo.example.invalid antes de 24 horas.
+---
+[signs: pay_crypto, pay_move_money, press_secret, pret_bank]
+Somos del departamento de fraude de su banco. Su dinero ya no está protegido en la cuenta. Sáquelo en efectivo e ingréselo en un cajero de bitcoin para protegerlo. No le diga al cajero para qué es.
+---
+[signs: asks_details, pret_bank]
+Hola, le llamo del área de fraude de su banco. Antes de seguir, confírmeme el número completo de su tarjeta y la fecha de caducidad.
+---
+[signs: asks_card_code, asks_code, pret_bank]
+Soy Daniel, del equipo de fraude de Caja Ejemplo. Solo necesito dos cosas: el código de seguridad de atrás de su tarjeta y el código que le acabamos de mandar.
+---
+[signs: asks_code, pret_bank]
+hola es el equipo de fraude d tu banco, te hemos mandado un codigo al movil para cancelar la transferencia, dime que pone
+---
+[signs: pay_hard_to_undo, pret_bank]
+Departamento de fraude de Banco Ejemplo: para anular el cargo, haga una transferencia de 1.500 € a nuestra cuenta de recuperación. Le devolveremos el dinero esta noche.
+---
+[signs: asks_details, pay_move_money, press_secret, pret_bank]
+Le llamamos de seguridad de Banco Ejemplo. Alguien de su oficina está robando a los clientes. Le ayudaremos a mover su dinero a una cuenta protegida. Deme su número de cuenta y que esto quede entre nosotros.
+---
+[signs: asks_details, pret_gov, press_threat]
+Seguridad Social: su número ha sido suspendido por actividad sospechosa. Confirme su número de la Seguridad Social para evitar acciones legales.
+---
+[signs: pay_hard_to_undo, pret_gov, press_rush, press_threat]
+Aduanas: un paquete a su nombre contenía artículos ilegales. Pague 350 € por Western Union en las próximas 2 horas para evitar una denuncia.
+---
+[signs: asks_code, pret_gov]
+Hola, le escribimos de Tráfico. Para terminar de renovar su carnet, envíenos el código de verificación que le acabamos de mandar.
+---
+[signs: asks_gift_card, pret_gov, press_secret, press_threat]
+Le habla el juzgado. No se presentó a la citación y hay una orden de detención. Puede pagarla con 500 € en tarjetas regalo de Apple. No hable de esta llamada con nadie.
+---
+[signs: pay_crypto, pret_gov, press_rush]
+Hacienda: tiene un saldo pendiente de 3.200 €. Pague ahora en el cajero de bitcoin más cercano y escanee el código QR que le enviamos.
+---
+[signs: asks_details, pret_gov]
+Le llamamos de la oficina del censo. Necesitamos su número de la Seguridad Social y su número de cuenta para actualizar los datos.
+---
+[signs: pay_hard_to_undo, pret_gov, press_threat]
+Agente de la Guardia Civil: su coche apareció en un delito. Para no ser detenido, pague una fianza de 5.000 € en efectivo al mensajero que enviaremos a su casa.
+---
+[signs: asks_details, pret_gov, press_rush]
+Agencia Tributaria: tiene una devolución de 612,40 €. Facilite su número de cuenta en hacienda-devolucion.example.invalid en las próximas 48 horas.
+---
+[signs: pay_crypto, pay_move_money, pret_gov, press_threat]
+Su DNI está vinculado al narcotráfico. Para no ser detenido, pase sus ahorros a criptomonedas y envíelos a la cartera del gobierno para protegerlos.
+---
+[signs: asks_remote, press_threat, pret_support]
+Le escribe el equipo de seguridad de Apple. Su cuenta fue hackeada. Descargue TeamViewer y denos acceso a su Mac, o se borrarán todas sus fotos.
+---
+[signs: asks_details, pret_support]
+Soporte técnico: su ordenador ha sido pirateado. Para protegerlo necesito la contraseña de su correo y el usuario de su banco.
+---
+[signs: asks_remote, pret_support]
+Hola, soy Kevin del servicio técnico de Windows. Su licencia ha caducado y su ordenador está en peligro. Abra Asistencia rápida y léame el código que aparece.
+---
+[signs: asks_command, pret_support]
+Seguridad de Microsoft: hemos encontrado un virus en su equipo. Para quitarlo, pulse la tecla de Windows + R, pegue el comando que le copiamos y pulse Intro.
+---
+[signs: asks_command]
+Para continuar, demuestra que no eres un robot: abre PowerShell, pega el texto que copiamos y pulsa Intro.
+---
+[signs: asks_gift_card, pret_support]
+Soporte técnico de Windows: su cortafuegos ha caducado y los piratas pueden ver sus archivos. Para renovarlo, compre dos tarjetas de Google Play de 100 € y envíenos una foto de la parte de atrás.
+---
+[signs: asks_remote, prob_account]
+Su suscripción al antivirus se ha renovado por 399,99 €. Si no la autorizó, llame al 555-0163 y nuestro técnico le ayudará a instalar AnyDesk para cancelar el pago.
+---
+[signs: pay_hard_to_undo, press_rush, press_secret, pret_family]
+Abuelo, soy Javi. Tuve un accidente con el coche y necesito 3.000 € para la fianza ahora mismo. Mándamelos por transferencia y no le digas nada a papá, se va a enfadar.
+---
+[signs: pay_hard_to_undo, press_secret, pret_family]
+Soy el abogado de su nieto. Tuvo un accidente y está detenido. La fianza es de 8.500 €. Un mensajero pasará por su casa a recoger el efectivo. Él pidió que no se lo cuente a sus padres.
+---
+[signs: pay_hard_to_undo, pret_family]
+Papá, perdí el móvil y te escribo desde el de un amigo. Estoy tirado en el aeropuerto y necesito 600 € para volver. ¿Me haces un Bizum a este número?
+---
+[signs: asks_gift_card, press_secret, pret_family]
+Abuela, estoy en el hospital y no me atienden hasta que pague. Cómprame tarjetas regalo de Apple, 500 € en total, y mándame los códigos. No se lo digas a nadie, me da vergüenza.
+---
+[signs: pay_crypto, press_rush, pret_family]
+Mamá soy yo, número nuevo. Estoy en un lío con unos tipos a los que debo dinero. ¿Puedes mandarme 2.000 € en bitcoin? Me dan hasta esta noche.
+---
+[signs: asks_code, pret_family]
+Hola papá, soy yo, este es mi número nuevo. Me quedé sin acceso al correo, te va a llegar un código, ¿me lo mandas?
+---
+[signs: pay_hard_to_undo, press_rush, press_secret, pret_family]
+Abuelo, estoy en la cárcel en otra ciudad. Necesito que vayas al banco ahora mismo y saques 5.000 € en efectivo. Un hombre pasará a recogerlos. Si en el banco te preguntan, di que es para arreglar el tejado.
+---
+[signs: pay_hard_to_undo, pret_romance]
+Cariño, mi cámara está rota y aún no podemos hacer videollamada. Necesito 1.500 € para el billete de avión para conocerte. Envíalos por Western Union, es lo más rápido.
+---
+[signs: pay_hard_to_undo, press_secret, pret_romance]
+Sé que nunca nos hemos visto, pero confío en ti más que en nadie. Tengo un envío de oro retenido en aduanas y necesito 9.000 € para liberarlo. Mándalos por transferencia y no le cuentes a tu familia lo nuestro.
+---
+[signs: asks_gift_card, press_secret, pret_romance]
+Mi ángel, estoy en una misión de paz y no puedo usar mis tarjetas. Cómprame dos tarjetas de Google Play de 250 € y mándame los números. Esto tiene que quedar entre nosotros.
+---
+[signs: pay_crypto, pret_romance]
+Como aún no podemos vernos en persona, construyamos nuestro futuro. Descarga la app en example.invalid, compra USDT y envíalos a mi cartera.
+---
+[signs: pay_hard_to_undo, press_rush, prob_prize]
+¡Felicidades! Es el ganador del gran sorteo de Ejemplo. Pague 79 € de envío por Bizum para recibir su televisor. Los premios sin reclamar caducan a medianoche.
+---
+[signs: asks_gift_card, prob_prize]
+Ha ganado un coche y 50.000 € en el concurso de Tienda Ejemplo. Primero hay que pagar los impuestos: compre 900 € en tarjetas regalo de Apple y envíenos los códigos.
+---
+[signs: pay_crypto, press_rush, prob_prize]
+¡ENHORABUENA! Su cartera ha ganado 2 BTC en nuestro sorteo de aniversario. Envíe 0,1 BTC para verificar la cartera y recibir el premio. La oferta termina en 1 hora.
+---
+[signs: asks_details, prob_prize]
+Ha ganado un crucero para dos. Para reservar, responda con su fecha de nacimiento y su número de la Seguridad Social.
+---
+[signs: asks_code, prob_prize]
+¡Ha ganado una tarjeta regalo de 100 € de Tienda Ejemplo! Para canjearla, responda con el código de verificación que le acabamos de enviar.
+---
+[signs: prob_account]
+Ejemplo Paquetería: no pudimos entregar su paquete porque falta el número de la casa. Actualice la dirección aquí: example.invalid/entrega
+---
+[signs: press_rush, press_threat, prob_account]
+Peajes: tiene un peaje pendiente de 6,80 €. Pague ahora en peajes.example.invalid para evitar un recargo y la suspensión de su carnet.
+---
+[signs: asks_card_code, press_rush, prob_account]
+Pedidos de Tienda Ejemplo: tu pedido no se pudo completar. Para confirmar que eres tú, responde con los 3 números de atrás de tu tarjeta antes de 1 hora.
+---
+[signs: asks_details, prob_account]
+Ejemplo Pagos: hemos detectado actividad sospechosa en su cuenta. Confirme su identidad enviando una foto de su DNI.
+---
+[signs: asks_details, press_threat, prob_account]
+Ejemplo Nube: el pago de su almacenamiento ha fallado y se borrarán sus fotos. Introduzca de nuevo el número de su tarjeta en example.invalid/nube.
+---
+[signs: asks_code, prob_account]
+Alguien intentó entrar en su cuenta de Ejemplo desde un dispositivo nuevo. Si no fue usted, responda con el código que le enviamos para bloquearlo.
+---
+[signs: asks_details]
+Hola, somos de Recursos Humanos. Responde con tu número de la Seguridad Social y tus datos bancarios para darte de alta en la nómina.
+---
+[signs: asks_code]
+Quiero comprarte el sofá. Para saber que no eres un estafador, te mando un código de Google Voice a tu número. Reenvíamelo, por favor.
+---
+[signs: pay_hard_to_undo]
+Oferta de trabajo: ¡estás contratado! Te enviamos un cheque de 2.800 €. Ingrésalo, quédate 300 € y manda el resto por Bizum a nuestro proveedor.
+---
+[signs: pay_crypto, press_rush]
+Soy Ana, del grupo de inversión. Nuestros socios ganaron un 300 % el mes pasado. Ingresa al menos 1.000 € en USDT para reservar tu plaza. Las plazas se cierran en 2 horas.
+---
+[signs: asks_gift_card, press_rush]
+De parte de tu jefe: ¿estás libre? Necesito un favor. Compra 5 tarjetas regalo de Apple de 100 € para un cliente ahora mismo y mándame fotos de los códigos.
+---
+[signs: asks_code, press_secret]
+Soy Jen, de la parroquia. Me quedé sin acceso a mi cuenta. Te llegó un código por error, ¿me lo reenvías? no se lo digas a nadie porfa
+---
+[signs: pay_hard_to_undo, press_secret, press_threat]
+Tengo vídeos tuyos de tu cámara. Envía 1.000 € en lingotes de oro o en efectivo en una caja a la dirección que te doy, o los comparto con todos tus contactos. No se lo cuentes a nadie.
+---
+[signs: asks_remote, pret_support]
+Estimado cliente, su ordenador tiene un error grave. Nuestro técnico certificado de Microsoft lo arreglará gratis si nos da acceso remoto a su equipo.
+---
+[signs: asks_code, press_rush, prob_account]
+Su cuenta de Ejemplo Pagos ha sido limitada temporalmente. Para restablecerla, responda ahora con el código de confirmación enviado a su móvil.
+---
+[signs: asks_details, pret_support]
+Hola, le habla el soporte técnico de Windows. Su ordenador está infectado con un virus espía. Para proteger su banco, dígame el usuario y la contraseña de su banca en línea.
+---
+[signs: pay_crypto, pret_gov, press_rush, press_threat]
+Policía Nacional: su orden de detención se anulará si paga 1.500 € en un cajero de bitcoin en la próxima hora.
+---
+[signs: asks_code, press_rush]
+¿Cuál es tu código de verificación? Mándamelo ya, lo necesito urgente.
+---
+[signs: asks_gift_card, pret_gov]
+Hacienda: debe 400 €. Pague con tarjetas regalo de Google Play y díganos los números.
+---
+[signs: asks_details, prob_account]
+Su cuenta ha sido bloqueada. Confirme su usuario y su contraseña en example.invalid/b

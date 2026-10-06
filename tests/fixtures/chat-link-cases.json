@@ -1,0 +1,15 @@
+[
+  { "url": "https://chatgpt.com/c/6a1e0c2f-5b7d-4e1a-9c3f-0d2b8e4f7a10", "ok": true },
+  { "url": "https://chatgpt.com/c/6A1E0C2F-5B7D-4E1A-9C3F-0D2B8E4F7A10", "ok": true },
+  { "url": "https://claude.ai/chat/3f2e1d0c-9b8a-4766-a554-433221100fed", "ok": true },
+  { "url": "https://myactivity.google.com/product/gemini", "ok": true },
+  { "url": "javascript:alert(1)", "ok": false },
+  { "url": "https://chatgpt.com/c/not-a-uuid", "ok": false },
+  { "url": "https://chatgpt.com/c/6a1e0c2f-5b7d-4e1a-9c3f-0d2b8e4f7a1g", "ok": false },
+  { "url": "https://evil.example/c/6a1e0c2f-5b7d-4e1a-9c3f-0d2b8e4f7a10", "ok": false },
+  { "url": "https://chatgpt.com.evil.example/c/6a1e0c2f-5b7d-4e1a-9c3f-0d2b8e4f7a10", "ok": false },
+  { "url": "https://chatgpt.com/c/6a1e0c2f-5b7d-4e1a-9c3f-0d2b8e4f7a10/", "ok": false },
+  { "url": "https://chatgpt.com/c/6a1e0c2f-5b7d-4e1a-9c3f-0d2b8e4f7a10extra", "ok": false },
+  { "url": "https://myactivity.google.com/product/gemini?x=1", "ok": false },
+  { "url": "", "ok": false }
+]

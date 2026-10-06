@@ -1,0 +1,216 @@
+# Honest commands an AI gives every day, for the command check's tests (Scam Shield 3.3): the check must stay quiet on
+# every one. Real installers that fetch and run a script are here on purpose (their own sites tell people to paste
+# them, with no "verify you're human" story), and so are Run-box instructions for harmless programs and hidden-window
+# scripts that run a local file. Each entry: [honest], "copied:", "around:".
+---
+[honest]
+copied: irm get.scoop.sh | iex
+around: To install Scoop, open PowerShell (not as administrator) and run this one-liner from scoop.sh.
+---
+[honest]
+copied: /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
+around: Homebrew's official install command: paste it in Terminal. It explains what it will do before it does it.
+---
+[honest]
+copied: curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
+around: The recommended way to install Rust on macOS or Linux is rustup.
+---
+[honest]
+copied: curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.40.1/install.sh | bash
+around: Install nvm with its install script, then restart your terminal.
+---
+[honest]
+copied: irm https://deno.land/install.ps1 | iex
+around: On Windows, Deno's docs give this PowerShell command.
+---
+[honest]
+copied: powershell -c "irm bun.sh/install.ps1 | iex"
+around: Bun's Windows installer, from bun.sh.
+---
+[honest]
+copied: Set-ExecutionPolicy Bypass -Scope Process -Force; [System.Net.ServicePointManager]::SecurityProtocol = [System.Net.ServicePointManager]::SecurityProtocol -bor 3072; iex ((New-Object System.Net.WebClient).DownloadString('https://community.chocolatey.org/install.ps1'))
+around: Chocolatey's install command, run from an administrator PowerShell, as their install page shows.
+---
+[honest]
+copied: curl -LsSf https://astral.sh/uv/install.sh | sh
+around: uv installs with one command on macOS and Linux.
+---
+[honest]
+copied: msconfig
+around: Press Win+R, type msconfig and press Enter to open System Configuration.
+---
+[honest]
+copied: appwiz.cpl
+around: Press Windows key + R, type appwiz.cpl and press Enter to see your installed programs.
+---
+[honest]
+copied: %temp%
+around: To clear temporary files, press Win+R, paste %temp%, press Enter and delete what's there.
+---
+[honest]
+copied: powershell -WindowStyle Hidden -File "C:\Scripts\nightly-backup.ps1"
+around: In Task Scheduler, set the action to this so the backup runs without a window popping up.
+---
+[honest]
+copied: powershell.exe -NoProfile -WindowStyle Hidden -ExecutionPolicy Bypass -File "%USERPROFILE%\logon.ps1"
+around: Put this in your startup folder's shortcut to run your logon script quietly.
+---
+[honest]
+copied: Get-ChildItem -Recurse -Filter *.log | Remove-Item
+around: This deletes every .log file under the current folder. Check the list first with Get-ChildItem alone.
+---
+[honest]
+copied: Get-Process | Sort-Object CPU -Descending | Select-Object -First 10
+around: Here's how to see the ten processes using the most CPU.
+---
+[honest]
+copied: Invoke-WebRequest -Uri https://example.com/report.csv -OutFile report.csv
+around: Download the file to the current folder with Invoke-WebRequest.
+---
+[honest]
+copied: iwr https://api.github.com/repos/owner/repo/releases/latest | ConvertFrom-Json
+around: To see the latest release's details as an object.
+---
+[honest]
+copied: winget install --id Git.Git -e --source winget
+around: Install Git on Windows with winget.
+---
+[honest]
+copied: npm install --save-dev prettier
+around: Add Prettier to your project.
+---
+[honest]
+copied: npx create-next-app@latest my-app
+around: Start a new Next.js app.
+---
+[honest]
+copied: git clone https://github.com/owner/repo.git && cd repo
+around: Clone the repository and go into it.
+---
+[honest]
+copied: git reset --soft HEAD~1
+around: Undo the last commit but keep its changes staged.
+---
+[honest]
+copied: pip install requests
+around: Install the requests library.
+---
+[honest]
+copied: python -m venv .venv && .venv\Scripts\activate
+around: Make a virtual environment and turn it on (Windows).
+---
+[honest]
+copied: docker run -it --rm ubuntu bash
+around: Start a throwaway Ubuntu container with a shell.
+---
+[honest]
+copied: sudo apt update && sudo apt upgrade -y
+around: Update your packages on Ubuntu.
+---
+[honest]
+copied: ipconfig /flushdns
+around: Press Win+R, type cmd, then run this to clear the DNS cache.
+---
+[honest]
+copied: sfc /scannow
+around: Open Command Prompt as administrator and run the system file checker.
+---
+[honest]
+copied: DISM /Online /Cleanup-Image /RestoreHealth
+around: If sfc finds problems it can't fix, run this first.
+---
+[honest]
+copied: Get-FileHash .\installer.exe -Algorithm SHA256
+around: Check the download's checksum against the one on the website.
+---
+[honest]
+copied: certutil -hashfile installer.exe SHA256
+around: Or with certutil, which is built into Windows.
+---
+[honest]
+copied: echo "aGVsbG8=" | base64 -d
+around: To decode a base64 string in Terminal.
+---
+[honest]
+copied: [Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes("hello"))
+around: Encode text as base64 in PowerShell.
+---
+[honest]
+copied: wget https://example.com/data.zip && unzip data.zip
+around: Download the archive and unpack it.
+---
+[honest]
+copied: curl -I https://example.com
+around: See only the response headers.
+---
+[honest]
+copied: Start-Process notepad
+around: Open Notepad from PowerShell.
+---
+[honest]
+copied: shutdown /r /t 0
+around: Restart now. Save your work first.
+---
+[honest]
+copied: Set-ExecutionPolicy RemoteSigned -Scope CurrentUser
+around: Let your own scripts run while still requiring a signature for downloaded ones.
+---
+[honest]
+copied: osascript -e 'display notification "Done" with title "Backup"'
+around: Show a macOS notification when your script finishes.
+---
+[honest]
+copied: chmod +x ./install.sh && ./install.sh
+around: Make the script you downloaded and read executable, then run it.
+---
+[honest]
+copied: rundll32.exe sysdm.cpl,EditEnvironmentVariables
+around: Press Win+R and paste this to open the environment variables window directly.
+---
+[honest]
+copied: control printers
+around: Pulsa la tecla de Windows + R, escribe control printers y pulsa Intro para ver tus impresoras.
+---
+[honest]
+copied: irm get.scoop.sh | iex
+around: Para instalar Scoop, abre PowerShell y pega este comando de scoop.sh.
+---
+[honest]
+copied: Get-Service | Where-Object Status -eq Running
+around: Lista los servicios que están en marcha.
+---
+[honest]
+copied: msiexec /i C:\Downloads\setup.msi /quiet
+around: Install the package you already downloaded, without the setup windows.
+---
+[honest]
+copied: irm get.scoop.sh | iex
+around: Open PowerShell, paste it with Ctrl+V and press Enter. Scoop installs into your user folder.
+---
+[honest]
+copied: irm https://deno.land/install.ps1 | iex
+around: Abre PowerShell, pégalo y pulsa Intro. Es el instalador oficial de Deno.
+---
+[honest]
+copied: powershell -c "irm bun.sh/install.ps1 | iex"
+around: Bun's Windows support is newer than its Mac and Linux support; this is its official installer.
+---
+[honest]
+copied: /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
+around: If the installer keeps failing on the command line tools, contact Apple Support or reinstall Xcode.
+---
+[honest]
+copied: kubectl get secret db-pass -o jsonpath='{.data.password}' | base64 -d
+around: Kubernetes stores secret values as base64. This prints the decoded value.
+---
+[honest]
+copied: npm install react-google-recaptcha
+around: Add a CAPTCHA to your sign-up form with Google's reCAPTCHA component.
+---
+[honest]
+copied: sha256sum -c SHA256SUMS
+around: Add a verification step before you install: check the download against the published checksums.
+---
+[honest]
+copied: Start-Process powershell -Verb RunAs
+around: Open an administrator PowerShell window from the one you're in.

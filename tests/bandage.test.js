@@ -1,10 +1,11 @@
-// Bandage after a reload (D27): Clotr keeps no details, so it reads the labels a conversation already holds and numbers
-// new details after them. These check the reader (detector.js → readBandageLabels): every label Bandage gives, in
-// English and Spanish, wherever a site or the AI puts it, and nothing that only looks like one.
+// Bandage keeps no details after a reload, so it rereads the labels a conversation already shows and numbers any
+// new ones after them. These tests cover that reader, readBandageLabels in detector.js: every label Bandage
+// writes, in English and Spanish, wherever a site or the AI places it, and nothing that only looks like one.
 "use strict";
 
 const test = require("node:test");
 const assert = require("node:assert/strict");
+const { retrySlow, bestOfBoth } = require("./timing.js");
 const fs = require("node:fs");
 const path = require("node:path");
 
@@ -90,18 +91,20 @@ test("labels inside code blocks, quotes and formatting are found", () => {
   ]);
 });
 
-// The page is read whole (an element's textContent), so a label a site draws across several elements (a highlight,
-// a streamed word, a link) still counts: textContent joins the text nodes with nothing in between.
+// The page is read as one block of text through an element's textContent, so a label split across several
+// elements, like a highlight, a streamed word, or a link, still counts: textContent joins those text nodes with
+// nothing in between.
 test("a label split across a site's elements is found in the joined text", () => {
   const nodes = ["Sure, I'll call [Pho", "ne 3", "] tomorrow and ", "[", "Address", " 2", "]", "."];
   assert.deepEqual(ids(nodes.join("")), ["bl_phone 3", "bl_address 2"]);
-  // Two block elements joined by textContent touch: the label still reads, and nothing new appears.
+  // Two block elements touch directly once textContent joins them, but the label still reads correctly and
+  // nothing new appears.
   assert.deepEqual(ids(["call [Phone 1]", "[Email 2] ok"].join("")), ["bl_phone 1", "bl_email 2"]);
 });
 
 test("text that only looks like a label isn't one", () => {
   for (const text of [
-    "[Phone]", // no number: Bandage numbers every phone
+    "[Phone]", // Bandage always numbers a phone, so one without a number isn't a label
     "[Address one]",
     "[Phone 1",
     "Phone 1]",
@@ -124,19 +127,21 @@ test("text that only looks like a label isn't one", () => {
 test("a long chat is read in one quick pass", () => {
   const chunk = "Here is a long answer about [Phone 3] and [Address 2], with arrays like a[i] and [links](x). ";
   const text = chunk.repeat(20000); // about 2 MB
-  const started = process.hrtime.bigint();
-  const found = readBandageLabels(text);
-  const ms = Number(process.hrtime.bigint() - started) / 1e6;
-  assert.equal(found.length, 40000);
-  assert.ok(ms < 1000, `took ${ms.toFixed(0)} ms`);
+  assert.equal(readBandageLabels(text).length, 40000);
+  retrySlow(() => {
+    const t = bestOfBoth(() => readBandageLabels(text), 1);
+    if (t.over(1000)) return `took ${t.wall.toFixed(0)} ms (${t.allowed.toFixed(0)} allowed on this computer now)`;
+  });
   const plain = "nothing to see here ".repeat(100000);
-  const t2 = process.hrtime.bigint();
   assert.deepEqual(readBandageLabels(plain), []);
-  assert.ok(Number(process.hrtime.bigint() - t2) / 1e6 < 200, "text without a bracket wasn't skipped quickly");
+  retrySlow(() => {
+    const t = bestOfBoth(() => readBandageLabels(plain), 1);
+    if (t.over(200)) return `text without a bracket wasn't skipped quickly: ${t.wall.toFixed(0)} ms`;
+  });
 });
 
-// The reader's words are the words Bandage writes: the English in content.js and the Spanish in _locales. A new or
-// changed label word must change both, or labels from before a reload would be missed.
+// The reader's word list has to match what Bandage actually writes: English lives in content.js, Spanish in
+// _locales. If a label word changes in one place but not the other, labels from before a reload get missed.
 test("the reader's words match the labels content.js gives, in English and Spanish", () => {
   const es = JSON.parse(fs.readFileSync(path.join(EXT, "_locales", "es", "messages.json"), "utf8"));
   const content = fs.readFileSync(path.join(EXT, "content.js"), "utf8");
@@ -162,4 +167,45 @@ test("the reader's words match the labels content.js gives, in English and Spani
       if (m[kind]) assert.ok(BANDAGE_WORDS[kind].includes(m[kind].message), `${loc} ${kind} isn't read`);
     }
   }
+});
+
+// A team can cover its own kinds with its own word, like "[Matter 1]", so after a reload those labels read just
+// like Bandage's built-in ones and keep numbering from where they left off. The cover words come from the kinds
+// set on the page's vault through patterns.js's setVault; without a vault, "[Matter 2]" is just plain text.
+test("a team's cover words are read as labels while its kinds are set, and a built-in word keeps its numbering", () => {
+  const C = globalThis.Clotr;
+  assert.deepEqual(ids("[Matter 2] and [Client 1]"), []);
+  C.setVault({
+    salt: "s",
+    entries: [],
+    kinds: [
+      { id: "team_matter_number", name: "Matter number", cover: "Matter" },
+      { id: "team_client_name", name: "Client name", cover: "Número de cliente" },
+      { id: "team_work_phone", name: "Work phone", cover: "Phone" },
+    ],
+  });
+  try {
+    assert.deepEqual(
+      ids("[Matter 2], [matter 3], [ MATTER 4 ], [numero de cliente 1], [Phone 5], [Matter], [Matters 1]"),
+      ["team:matter 2", "team:matter 3", "team:matter 4", "team:numero de cliente 1", "bl_phone 5"],
+    );
+    assert.deepEqual(ids("[Phone 1] [Matter 1] [Email 1]"), ["bl_phone 1", "team:matter 1", "bl_email 1"]);
+    const [first] = readBandageLabels("see [Matter 12] here");
+    assert.deepEqual(first, { label: "[Matter 12]", index: 4, kind: "team:matter", n: 12, id: "team:matter 12" });
+    // A cover word numbers under its own kind, unless it happens to match one of Bandage's own words in any language.
+    assert.equal(C.bandageKindOf("Matter"), "team:matter");
+    assert.equal(C.bandageKindOf("Phone"), "bl_phone");
+    assert.equal(C.bandageKindOf("Teléfono"), "bl_phone");
+    // Still one quick pass over a long chat.
+    const long = "An answer about [Matter 3] and [Phone 2], with a[i] and [links](x). ".repeat(20000);
+    assert.equal(readBandageLabels(long).length, 40000);
+    retrySlow(() => {
+      const t = bestOfBoth(() => readBandageLabels(long), 1);
+      if (t.over(1000))
+        return `a long chat with team labels took ${t.wall.toFixed(0)} ms (${t.allowed.toFixed(0)} allowed on this computer now)`;
+    });
+  } finally {
+    C.setVault(null);
+  }
+  assert.deepEqual(ids("[Matter 2]"), []);
 });

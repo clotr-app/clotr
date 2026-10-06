@@ -12,25 +12,32 @@ const insideExtension = Object.fromEntries(
     "axe",
     "checkForLocalUpdate",
     "cleanVaultEntry",
+    "clearHistory",
     "ClotrSites",
     "enqueue",
     "ensureSalt",
+    "followPersonalSwitch",
     "handleCommand",
     "migrateOffToLog",
     "migrateSuppressed",
     "migrateToVault",
+    "noteEverydayOffer",
+    "offerTeamTraining",
     "runMigrations",
     "settingsFor",
+    "setResponses",
     "syncUserSites",
   ].map((name) => [name, "readonly"]),
 );
 
 module.exports = [
-  { ignores: ["node_modules/", "dist/", "tests/e2e/output/"] },
+  {
+    ignores: ["node_modules/", "dist/", "**/dist/", "tests/e2e/output/"],
+  },
   js.configs.recommended,
   {
     rules: {
-      // The detector matches control and invisible characters on purpose (D51).
+      // The detector matches control and invisible characters on purpose.
       "no-control-regex": "off",
       // A top-level name in a page script may reuse one the browser also defines.
       "no-redeclare": ["error", { builtinGlobals: false }],

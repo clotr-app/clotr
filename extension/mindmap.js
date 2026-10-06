@@ -1,7 +1,6 @@
-// Clotr: lays out and draws the mind map (D75) that insights.js builds, plus its table view.
-// Extension pages only; not a content script. The layout (layoutRadial(), layoutList() and
-// mindMapLayout()) is pure and unit-tested; the drawing builds SVG and table rows with
-// createElement (no innerHTML).
+// Lays out and draws the mind map that insights.js builds, plus its table view. Extension pages only, not
+// a content script. The layout functions are pure and unit-tested; the drawing builds SVG and table rows
+// with createElement, never innerHTML.
 "use strict";
 
 (() => {
@@ -55,17 +54,12 @@
   const levels = (n) => (n.children?.length ? 1 + Math.max(...n.children.map(levels)) : 0);
   const PAD = 8; // room around the drawing, inside its frame
 
-  // Where everything in the drawing goes, for a tree laid out by layoutRadial() or layoutList().
-  // Pure: reads the tree, changes nothing and touches no page. `width` and `height` are the room
-  // to draw in; `compact` is the popup's small version. Returns:
-  // - you: "You", { x, y, r };
-  // - items: every other node in drawing order (a parent before its children), each with its place
-  //   (x, y), its line from its parent ({ from, via, to, width }: a curve bent towards `via`), its
-  //   shape (the popup's "junction" dot, a branch's "pill" with its name and count, a leaf's "dot"
-  //   or a "ring" around a count), and its label ({ x, y, anchor, text } beside the shape, or null);
-  //   a shape and its label are placed around (0, 0), the node's own place;
-  // - frame: [x, y, width, height], a first guess at the box it all fits in (text widths guessed
-  //   from the number of characters; the drawing then measures the real one).
+  // Where everything in the drawing goes, for a tree laid out by layoutRadial() or layoutList(). Pure:
+  // reads the tree, changes nothing, touches no page. `width`/`height` are the room to draw in, `compact`
+  // is the popup's small version. Returns `you` ("You", with its x/y/r), `items` (every other node in
+  // drawing order with its place, its curved line back to its parent, its shape and its label), and
+  // `frame`, a first guess at the bounding box (text width is just guessed from character count here;
+  // the drawing measures the real one afterwards).
   function mindMapLayout(tree, { width: W, height: H, compact = false }) {
     const cx = W / 2,
       cy = H / 2;
@@ -262,7 +256,7 @@
 
   // Draws a laid-out tree into `svg` (its data-room or first viewBox sets the space). compact: the
   // popup's version (not focusable, drawn still). onSelect(node): a branch or AI service/kind was
-  // chosen. In the report the map moves (D75): it grows out of "You" once, and on a redraw (the
+  // chosen. In the report the map moves: it grows out of "You" once, and on a redraw (the
   // toggle, a resize, new history) every node glides from where it was; new ones come out of their
   // parent. Hover or focus lights a node's line back to "You" and dims the rest. No motion for
   // people who ask their system for less.

@@ -47,9 +47,9 @@ module.exports = async function (env) {
     );
   }
 
-  // Copilot keeps an invisible marker (U+200B U+200C) at the end of its box and puts it back after Clotr's edit, so
-  // the box's text differs from Clotr's only by zero-width characters: that's hidden, not "couldn't hide it here"
-  // (seen on copilot.microsoft.com, 2026-09-30).
+  // Copilot keeps an invisible marker at the end of its box and puts it back after Clotr edits the text. That leaves
+  // the box differing from Clotr's own edit by zero-width characters only, which still counts as hidden rather than
+  // a failed hide.
   await check("CP1", "Hide it in an editor that keeps an invisible marker counts as hidden, with no false alarm", () =>
     withSite(ctx, "copilot", async (page) => {
       await resetState(ctx);
@@ -67,8 +67,8 @@ module.exports = async function (env) {
     }),
   );
 
-  // Cover names in the same editor: the swap has to land once and quickly, and the page must stay responsive
-  // (on copilot.microsoft.com, 2026-09-30, covering took 8 seconds, then the tab froze).
+  // The cover-name swap has to land once and quickly in this editor. A slow swap here once froze the tab for
+  // several seconds.
   await check(
     "CP2",
     "Cover names in an editor that keeps an invisible marker: [Phone 1] within 3 seconds, page responsive",
