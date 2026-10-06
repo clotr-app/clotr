@@ -1,9 +1,8 @@
 {
   "manifest_version": 3,
-  "name": "Clotr: chat privacy, clot your data leaks",
+  "name": "Clotr: clot your data leaks",
   "short_name": "Clotr",
-  "version": "1.1.2",
-  "version_name": "1.1.2",
+  "version": "1.2.0",
   "description": "__MSG_extDescription__",
   "icons": {
     "16": "icons/icon-on-16.png",
@@ -42,11 +41,24 @@
     "https://pi.ai/*",
     "https://character.ai/*",
     "https://arena.ai/*",
-    "https://lmarena.ai/*"
+    "https://lmarena.ai/*",
+    "https://duck.ai/*"
+  ],
+  "optional_permissions": [
+    "management"
   ],
   "optional_host_permissions": [
     "https://*/*"
   ],
+  "clotr_features": {
+    "tourniquet": false,
+    "lookback": false,
+    "extcheck": false,
+    "scamcheck": false,
+    "commandcheck": false,
+    "practice": false,
+    "training": false
+  },
   "content_security_policy": {
     "extension_pages": "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; font-src 'self'; connect-src 'self'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'; form-action 'none'"
   },
@@ -87,12 +99,16 @@
         "https://pi.ai/*",
         "https://character.ai/*",
         "https://arena.ai/*",
-        "https://lmarena.ai/*"
+        "https://lmarena.ai/*",
+        "https://duck.ai/*"
       ],
       "js": [
         "patterns.js",
         "detector.js",
+        "decide.js",
         "attachments.js",
+        "pictures.js",
+        "commands.js",
         "ui-styles.js",
         "editor.js",
         "warning-ui.js",
@@ -107,7 +123,7 @@
       "suggested_key": {
         "default": "Alt+Shift+C"
       },
-      "description": "Jump to Clotr's warning (Esc goes back to your message)"
+      "description": "__MSG_cmdFocusNotice__"
     }
   },
   "storage": {
