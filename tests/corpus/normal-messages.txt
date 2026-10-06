@@ -1,7 +1,8 @@
 # Normal messages people send to AI tools. None contains personal data or a secret,
 # so every detection here is a false alarm. Messages are separated by lines of "---".
 # Heavy on things that look like numbers on purpose: versions, hashes, prices, times,
-# measurements, scores, code, logs, math, dates and IDs. Budget: ≤ 1 false alarm per 50.
+# measurements, scores, code, logs, math, dates and IDs. The target is no false alarm at all: the
+# ratchet in tests/patterns.test.js fails on any one that isn't named in its ACCEPTED list.
 ---
 Can you help me write a polite email declining a meeting invite for next Tuesday?
 ---
@@ -438,6 +439,8 @@ Send it by email to the team at google. Email marketing at hubspot works well.
 ---
 I was born in nineteen ninety and moved in two thousand five. Call me double quick, it's five minutes.
 ---
+My zip code is 90210 and the area code is 212. I got error code 1234 and status code 404.
+---
 My zip code is 45402 and the area code is 555. I got error code 1234 and status code 404.
 ---
 I like five hundred piece puzzles and triple chocolate cake. It cost five hundred dollars and took two thousand hours.
@@ -678,6 +681,76 @@ version 10.2.3 and build 10.0.19041.1
 ---
 the local news and internal memo
 ---
+How do I turn on two-step verification? The site shows a QR code and says to scan the otpauth QR in your app.
+---
+What's the difference between TOTP and HOTP in authenticator apps like Authy or Google Authenticator?
+---
+My authenticator app says the setup key is invalid. What does this mean and what should I check?
+---
+Is it safe to back up my 2FA codes to the cloud, or should I print the recovery sheet and keep it in a drawer?
+---
+Write a short guide for my parents: open Google Authenticator, tap the plus sign, then scan the code on the screen.
+---
+In the docs the setup link looks like otpauth://totp/ACME:you?secret=JBSWY3DPEHPK3PXP&issuer=ACME. How is it built?
+---
+Can't scan the QR code? The page says to enter the setup key instead, but where is it?
+---
+Where do I find the VIN on a 2014 Ford F-150? The dealer asked for it before they'll book the recall.
+---
+What does each part of a VIN mean? I know the 10th character is the model year.
+---
+The VIN is on the dashboard and on the door frame, right? Which one does the DMV want?
+---
+The car's ECU part number is 89661-0C330. Is that the same as 89661-0C331 or do I need the exact one?
+---
+My truck's build sheet shows option code 1SZ and engine code L83. What do those mean?
+---
+Our order export has 17-character SKUs like ABC12345678901234. How do I split them into three columns in Excel?
+---
+The insurance company wants a photo of the odometer and the title. What else should I bring to the claim?
+---
+Write a short ad for my 2012 Honda Civic: 98,000 miles, new tires, one owner, asking $7,500.
+---
+Git says detached HEAD at 4f9c2a1b7e3d5f6a8 after I checked out the truck-tracker branch. How do I get back?
+---
+Recall 23V-456 says the airbag in my car needs replacing. Is it safe to drive until the dealer fixes it?
+---
+Is a Toyota RAV4 or a Honda CR-V better for a family of four with a dog?
+---
+My registration renewal says the vehicle has an open emissions recall. What happens if I ignore it?
+---
+I'm a student at a community college. How do I ask a professor for an extension politely?
+---
+The student ID card office is closed until 9. Can I still pick up my textbooks before class?
+---
+Our school has 1,200 students and 85 teachers. Is that a normal ratio for a high school?
+---
+Do I need my student ID for the 2026 SAT, or is a passport enough?
+---
+Explain the difference between CS 101 and CS 161 at my university.
+---
+Write a note for my class: student numbers 1 to 15 present on Monday, 16 to 30 on Tuesday.
+---
+My school ID photo is awful. Can I ask for a new one, and how do I word the email?
+---
+What's a matriculation ceremony and what do I wear to it?
+---
+How do I read a UK number plate? What do the two letters at the start mean?
+---
+Is the license plate HAPPY still available in Ohio, and how much does a vanity plate cost?
+---
+My rego is due next week. Can I still drive the car if I pay it a day late?
+---
+Company registration number vs VAT number: what's the difference for a small business?
+---
+I need a plate for 12 people and 3 serving bowls. What should I buy for the party?
+---
+The license plate reader at the parking garage didn't open the gate. Who do I complain to?
+---
+What does a green number plate mean on a car in the UK?
+---
+Which plate number is the right one in the cake recipe, the 9-inch or the 10-inch?
+---
 Mix two to four for one to two minutes
 ---
 Mix two to four for one to two minutes.
@@ -781,3 +854,337 @@ two to four. four to six. six to eight. eight to ten.
 cook two to three, two to three, then one
 ---
 nine to five, nine to five, nine to five
+---
+love you too too too too too too too too too too
+---
+love you too, too, too, too, too, too, too, too, too, too, too
+---
+we won, too, and ate, too, then won too, ate too, won too
+---
+me too, me too, me too, me too, me too, me too
+---
+I ate too much too, two nights in a row, too
+---
+fore! fore! fore! we won two to one, too
+---
+we won too, won too, won too, won too, won too
+---
+text to too fore won too fore won fore too won
+---
+We won two games, ate four pizzas and stayed up too late, too.
+---
+I won one, you won two, they won three, we all won too.
+---
+She ate eight cookies, too, and won two prizes.
+---
+We won, two to one, then won, three to two, too.
+---
+I ate, too. Two eggs, four strips of bacon, too.
+---
+Won one, won two, won three, won four: we won too many times.
+---
+Too tired to cook, too broke to order, so I ate two apples.
+---
+Our team won, won, won, won again, eight nine ten wins in a row.
+---
+We won too, ate too, slept too, nine to five tomorrow.
+---
+I ate one, two, three, four, five slices, too many, too.
+---
+Score was won two, ate four, too close, one nine.
+---
+Fore, fore, fore! The ball flew two hundred yards, too.
+---
+I too ate two, then he too ate two, too.
+---
+Ha ha too funny, too true, too real, two thumbs up.
+---
+We ate at eight, too, then won two rounds at nine.
+---
+Can you help? I won two tickets too, for four people on the eighth.
+---
+Our kids ate too much candy: two, three, four bars each, too.
+---
+Team A won, too, three one, four two, five nine.
+---
+He won, too: one seven, two four, three six, eight five.
+---
+I ate too, two, four times today, won one game, won too.
+---
+The puppy ate two socks, too, and won the hearts of four kids, too.
+---
+Seven eight nine ten, too, eleven twelve, won.
+---
+I won too: nine three seven, won too ate.
+---
+won too ate fore, won too ate fore, won too ate fore
+---
+too won, too won, too won, too won, too won
+---
+won, won, won, won, won, won, won, won, won, won, won
+---
+fore too, fore too, fore too, fore too, fore too
+---
+ate too ate too ate too ate too ate too
+---
+too won ate, too won ate, too won ate, too
+---
+Add me on Discord, I'm usually on after school.
+---
+My tag is still on the new jacket, can I return it without the receipt?
+---
+Someone pasted this tweet: "@nightowl_92 just dropped the best Elden Ring guide". Is it worth reading?
+---
+What's a good gamertag for someone who likes space and cats?
+---
+How do I change my Xbox gamertag for free a second time?
+---
+My gamertag is private, so how did a stranger find my games?
+---
+My son wants a Roblox username. What are the rules for kids under 13?
+---
+Roblox username ideas that aren't taken yet?
+---
+Is my Steam name visible to people I'm not friends with?
+---
+My Discord username is case sensitive, right? I keep typing it wrong.
+---
+Why does my PSN ID show a 1 at the end after the name change?
+---
+IGN gave the new Zelda a 9. Is it worth buying at full price?
+---
+I read on IGN that the sequel is delayed to 2027.
+---
+My in-game name is too long for the scoreboard, any shorter ideas?
+---
+The BattleTag change costs $10. Is it worth it just for a new name?
+---
+My Riot ID was reset after the update and my friends can't find me.
+---
+What's the difference between a Steam ID and a Steam username?
+---
+My summoner name is the same as my Discord name, is that a bad idea?
+---
+My kid's Minecraft name is his real first name. Should he change it?
+---
+Use my friend code ABC123 to get $10 off your first order.
+---
+What is a Switch friend code and where do I find it?
+---
+Steam tag: Roguelike. What are the best games with it?
+---
+The epic name of the hero is Beowulf. Write a poem about him.
+---
+Follow us @cityparks on Instagram for event updates.
+---
+My Xbox gamertag is so embarrassing, help me pick a new one.
+---
+The Roblox ID for the song is 1837070127. Can I use it in my game?
+---
+My gamertag is 2nd on the leaderboard this week!
+---
+The Xbox name is Microsoft's, not Sony's. Write a quiz question about it.
+---
+The name on Steam is Hollow Knight, but on Switch it has a subtitle.
+---
+A Discord user is sending my daughter messages. What do I do?
+---
+My gamertag is just numbers, is that weird?
+---
+Is Discord safe for a 12 year old? What settings should I turn on?
+---
+I lost my ID. 2 days later it turned up in the laundry basket.
+---
+I renewed my passport. 6 weeks later it finally showed up in the mail.
+---
+Finally passed and got my driver's license. 3 tries, but I did it!
+---
+I changed my password. Thanks for the tip about the password manager!
+---
+Forgot my password again. Second time this week, how do I make one I'll remember?
+---
+I reset my password. Everything works now, thanks.
+---
+Update your password. Then sign out of every other device. Is that the right order?
+---
+I checked my IP. 3 devices on my network show the same one, is that normal?
+---
+It's my birthday. 40 candles is a fire hazard, right?
+---
+They sent me a code. 20 minutes later it had already expired. Why?
+---
+I need my student ID. 10 minutes until the library closes, should I run?
+---
+I got a new license plate. 150 dollars at the DMV, is that normal?
+---
+Which is better for a savings account. 4% or 4.5% with fees?
+---
+I applied to replace my social security card. 3 weeks and nothing yet, should I call?
+---
+The DMV took my picture for the new DL. 45 minutes in line for a 2-second photo.
+---
+My date of birth. 1 thing I hate typing on every single form.
+---
+Please enter the passcode. Thanks, now tap Continue.
+---
+We counted to twelve. Oak Street was next on the parade route.
+---
+My locker code. Never mind, I found the sticky note.
+---
+Which PIN. The one for the card or the one for the phone?
+---
+My username. Honestly I forget which one I used for this site.
+---
+I need to call about my medical record. 2 pages are missing from what they mailed me.
+---
+Check the routing number. 9 digits, and the bank's name should be on it.
+---
+Lost my passport. Embassy says 10 business days for a new one, is that right?
+---
+My SSN. 3 different people asked for it today, is that a scam?
+---
+I forgot what my password is. Thanks for helping me reset it last time.
+---
+i don't know what my roblox username is. lol can you help me find it
+---
+That's just how my username is. Weird, right?
+---
+I'll be there in 5 minutes. Drive safe!
+---
+We bought 2 tickets. Elm Street Theater was packed, so we sat in the back.
+---
+Order 555 never arrived. Main Street was closed for the parade, maybe that's why?
+---
+We drove 300 miles. Highway traffic was awful the whole way.
+---
+See you at 5 p.m. Drive safe and text me when you leave.
+---
+We land at 6 a.m. Main Street will still be closed, so take the long way.
+---
+i'll be there in 5 min. drive safe
+---
+we bought 2 tickets. elm street theater was packed
+---
+We met at twelve thirty. Elm Street was busy, so we walked.
+---
+Our hotel room is 214. Court Street is right outside the window.
+---
+I finally hit level 50. Way more fun than I expected!
+---
+My son just turned 12. Park Avenue had a parade that day, can you believe it?
+---
+I waited 5 minutes. Way too long for a coffee.
+---
+Season 4 just dropped. Drive is the best episode so far.
+---
+Our flight is 1492. Gate 22 is at the other end of the airport.
+---
+It happened back in 2019. Nine one one is the number I called, and they were great.
+---
+It's 2024. Five five five numbers are still in every movie, why?
+---
+Bake at three fifty for twenty to twenty. Five minutes more if it's not golden.
+---
+I counted 42. Twenty more showed up after lunch.
+---
+We waited ten minutes. Five more and we would have left.
+---
+The final score was 3 to 2. Nine of them stayed for the party.
+---
+What time is it there? Nine thirty here.
+---
+Is my score good? Five hundred seems low.
+---
+We need 4 more chairs! Twenty people are coming.
+---
+The total came to 937. Oh, one more thing, the tip isn't included.
+---
+it happened back in 2019. nine one one is the number i called
+---
+I forgot my password
+Thanks for reminding me to write it down!
+---
+Update the password
+Then sign out of every other device.
+---
+I forgot my password
+Sarah said the reset link expired.
+---
+Call me around five
+Main Street is closed, so I'll be late.
+---
+The. Xbox name is Microsoft's, right?
+---
+My son wants the 3 numbers on the back of the jersey to be his birthday. Is that allowed in youth soccer?
+---
+The 3 numbers on the back of the jersey are the player's old number, right?
+---
+The back of the book has 3 numbers under the barcode. What do they mean?
+---
+There are 3 numbers on the back of the receipt, 042, 117 and 380. Are they the store and the register?
+---
+The product code on the back is 123, but the store's website lists 124. Which one do I order?
+---
+Our hotel room number is 123 and the view is great. What should we see near the harbor?
+---
+Is 123 a good score on the practice test?
+---
+What are the three digits on the back of a credit card for, and why do websites ask for them?
+---
+The CVV is 3 digits on the back, or 4 on the front for Amex. Do debit cards have one too?
+---
+The security code is three to four digits, depending on the card.
+---
+My card's security code rubbed off. How do I get a new card?
+---
+I'm taking CSC 210 this fall. Is it hard if I only know a little Python?
+---
+The code on the back is too faded to read. Can the store still activate the gift card?
+---
+The numbers on the back of the TV remote are 3 and 4 for the batteries.
+---
+Page 123 of the manual says the code on the back of the router resets it.
+---
+Can I take a picture of the back of my card for my records, or is that a bad idea?
+---
+I got a $50 Amazon gift card for my birthday. What's a good book to buy with it?
+---
+My gift card balance says $25.00 but the store says $20. Who do I believe?
+---
+Which of my cards is it, the Amazon gift card ending in 4421 or the other one?
+---
+Order 112-4567890-1234567 hasn't shipped yet. Should I write to the seller?
+---
+Can I pay for order 112-4567890-1234567 with an Amazon gift card, or only part of it?
+---
+The gift card code didn't work at checkout. Do I redeem it at amazon.com/redeem first?
+---
+I bought 3 Roblox gift cards for the kids' birthdays. Which amounts make sense for 9 and 12 year olds?
+---
+Write a thank-you note for a $100 Visa gift card from my coworkers.
+---
+Steam card prices went up this year, from $20 to $23. Is that normal?
+---
+The tracking code they sent me is 48291345 but the courier's site says it doesn't exist. What should I try?
+---
+The promo code they emailed me is 4821 and checkout says it expired yesterday. Can they do that?
+---
+I got error code 5001 and the fix in the help article didn't work. What does 5001 usually mean?
+---
+The ambulance came as a code 3. What does code 3 mean?
+---
+90210 is my zip code. Which county is that in?
+---
+The verification code expired before I could type it in. How do I get a new one?
+---
+The code they texted me expired. Is it safe to ask for another one, or is that how scams start?
+---
+My code is 3000 lines long. Can you review it one function at a time?
+---
+The code I got from the tutorial is 1500 lines. Where do I even start?
+---
+Where do I find my account number on a check, and which one is the routing number?
+---
+212 is the area code for Manhattan, right?
+---
+My order number is 113-2846159-7730214 and the tracking number is 9361289744390612445812. Where's my package?

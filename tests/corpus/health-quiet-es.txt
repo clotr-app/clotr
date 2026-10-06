@@ -1,0 +1,433 @@
+# Salud, sin aviso: mensajes en español, todos inventados, que nunca deben avisar como dato de salud (el diseño
+# de detección, 3.4 y 4.1). Clotr solo hablará de salud cuando el mismo mensaje diga quién es la persona, y ninguno
+# de estos lo dice: ni nombre completo, ni fecha de nacimiento, dirección, documento, teléfono o correo. Un nombre de
+# pila solo ("mi mamá Carmen") está a propósito. Español de España, México, Argentina, Colombia, Chile, Perú y
+# Estados Unidos, con números por todas partes: dosis, análisis, edades, semanas de embarazo, horas y habitaciones.
+# Cada mensaje empieza con una línea de etiqueta (en inglés, como en health-quiet.txt) y luego el mensaje:
+#   [question]       una pregunta general de salud; algunas usan a propósito una palabra de salud con otro sentido
+#                    (un virus en la computadora, "soy de Cáncer", la Gran Depresión, estar constipado)
+#   [essay]          trabajos de clase, investigación, explicaciones, resúmenes de estudios
+#   [someone else]   la salud de otra persona (o de una mascota), sin "yo" ni familia
+#   [own, no who]    la salud propia o de la familia, sin nada que diga quién es
+# Separados por líneas "---". tests/health-study.test.js comprueba las etiquetas y que hoy no avisa nada; su lista
+# ACCEPTED nombra los que todavía avisan, cada uno a la espera de su arreglo.
+---
+[question]
+¿Una tensión de 14/9 ya se considera alta o todavía es normal?
+---
+[question]
+¿A partir de qué valor de hemoglobina glicosilada se considera diabetes? ¿6,5 %?
+---
+[question]
+¿Cuánto paracetamol se le puede dar a un niño de 20 kilos, y cada cuántas horas?
+---
+[question]
+¿Es lo mismo un resfriado que una gripe? Explícamelo fácil.
+---
+[question]
+En España "estar constipado" es tener un resfriado, ¿no? ¿Y en México qué significa?
+---
+[question]
+¿Cuándo hay que llamar al 911 por un dolor en el pecho y cuándo se puede ir uno solo a urgencias?
+---
+[question]
+¿Qué pasa cuando llamas al 112? ¿Siempre mandan una ambulancia?
+---
+[question]
+¿La línea 988 atiende en español?
+---
+[question]
+¿Cuál es la diferencia entre la diabetes tipo 1 y la tipo 2?
+---
+[question]
+¿Cuántos días contagia la varicela?
+---
+[question]
+¿Se puede tomar ibuprofeno con el estómago vacío?
+---
+[question]
+¿Qué es la PrEP y dónde la dan gratis en Ciudad de México?
+---
+[question]
+¿Cada cuánto hay que hacerse la prueba del VIH si tienes pareja nueva?
+---
+[question]
+¿Con cuántos días de retraso ya sale positivo un test de embarazo?
+---
+[question]
+¿Cuánto sangrado es normal después de un aborto espontáneo de 8 semanas?
+---
+[question]
+¿Qué es la naloxona y se vende sin receta en Estados Unidos?
+---
+[question]
+¿Cuánto tarda en hacer efecto la sertralina de 50 mg?
+---
+[question]
+¿Qué cubre Fonasa en el tramo B para una consulta con especialista?
+---
+[question]
+¿Cómo se pide cita con el médico de cabecera por internet en la Comunidad de Madrid?
+---
+[question]
+¿Qué diferencia hay entre una EPS y una IPS en Colombia?
+---
+[question]
+¿Qué pasó con el Seguro Popular? ¿Ahora todo es IMSS-Bienestar?
+---
+[question]
+¿Una prepaga me puede negar la cobertura por una enfermedad preexistente?
+---
+[question]
+¿Un colesterol de 240 es muy alto? ¿Cuánto se considera normal?
+---
+[question]
+¿Una glucosa en ayunas de 126 ya cuenta como diabetes?
+---
+[question]
+¿Qué significa que la TSH salga en 5,2?
+---
+[question]
+¿Cuántas horas tiene que dormir un niño de 6 años?
+---
+[question]
+¿Qué vacunas le tocan a un bebé a los 2 meses en México?
+---
+[question]
+¿Es peligroso mezclar paracetamol con alcohol?
+---
+[question]
+¿En qué se diferencia la depresión posparto de la tristeza normal después de dar a luz?
+---
+[question]
+¿La Gran Depresión de 1929 afectó también a América Latina? Resúmelo en 5 puntos.
+---
+[question]
+¿Qué presión deben llevar las llantas de un Versa 2018?
+---
+[question]
+Tengo un virus en la computadora que abre ventanas solas. ¿Cómo lo quito?
+---
+[question]
+Mi celular tiene un virus, creo, porque se calienta muchísimo. ¿Lo reseteo?
+---
+[question]
+Soy de Cáncer, ¿con qué signos soy más compatible?
+---
+[question]
+Mi oficina tiene fiebre de Mundial. ¿Dónde vemos los partidos en Madrid con pantalla grande?
+---
+[question]
+La empresa cerró el trimestre con un balance positivo. ¿Cómo lo explico en 3 diapositivas?
+---
+[question]
+Estoy en plena crisis con la tesis. ¿Cómo organizo 3 capítulos en 2 semanas?
+---
+[question]
+¿Cómo se usa un inhalador con cámara espaciadora en niños pequeños?
+---
+[question]
+Para un esguince de tobillo, ¿es mejor frío o calor?
+---
+[question]
+¿Cuáles son los síntomas de un infarto en las mujeres?
+---
+[question]
+¿Qué significa "1 cada 8 horas por 7 días" en una receta?
+---
+[question]
+¿Es verdad que el café sube la presión?
+---
+[question]
+¿Qué es la diálisis peritoneal y se puede hacer en casa?
+---
+[question]
+¿Cuántos gramos de azúcar al día recomienda la OMS?
+---
+[question]
+que es el autismo nivel 1? es leve?
+---
+[question]
+¿Qué cubre el Programa Médico Obligatorio en salud mental?
+---
+[essay]
+Escribe un ensayo de 500 palabras sobre la historia de la vacuna contra la viruela.
+---
+[essay]
+Resume este estudio en palabras sencillas: "En un ensayo con 1.204 adultos con hipertensión, reducir la sal a menos de 5 g al día bajó la presión sistólica 6 mmHg en 12 semanas."
+---
+[essay]
+Hazme un esquema para un trabajo de la facultad sobre la salud mental de los adolescentes en América Latina.
+---
+[essay]
+Explícame el ciclo de Krebs para el examen de biología de mañana.
+---
+[essay]
+Necesito 20 tarjetas de estudio sobre los huesos del cráneo, con nombre y función.
+---
+[essay]
+Escribe una exposición de 5 minutos para la secundaria sobre el dengue y cómo prevenirlo.
+---
+[essay]
+Resume la historia del VIH en América Latina desde 1983 para un trabajo de historia.
+---
+[essay]
+Explica qué es un ensayo clínico doble ciego como si tuviera 12 años.
+---
+[essay]
+Redacta la introducción de mi tesina sobre la obesidad infantil en México, donde afecta a más del 35 % de los niños en edad escolar.
+---
+[essay]
+¿Qué diferencia hay entre incidencia y prevalencia? Pon un ejemplo con 300 casos en una población de 60.000 personas.
+---
+[essay]
+Haz un cuadro comparativo entre el sistema de salud de Chile (Fonasa e isapres) y el de Colombia (EPS).
+---
+[essay]
+Explica la Gran Depresión y su efecto en la salud pública para un trabajo de 4.º de la ESO.
+---
+[essay]
+Escribe el texto de un tríptico para una campaña escolar sobre el lavado de manos.
+---
+[essay]
+Resume esto para el boletín del barrio: "Las personas mayores de 65 años deben vacunarse contra la gripe cada otoño."
+---
+[essay]
+Prepárame un plan de clase sobre la diabetes para alumnos de primer año de enfermería.
+---
+[essay]
+Explica cómo funcionan los antidepresivos ISRS para mi clase de farmacología.
+---
+[essay]
+Escribe un ensayo argumentativo: ¿debería ser gratis la insulina en todos los países?
+---
+[essay]
+Caso clínico para mis prácticas: mujer de 58 años con EPOC, saturación del 88 %, fumadora de 30 paquetes-año. ¿Qué diagnósticos de enfermería aplican?
+---
+[essay]
+Paciente: Sra. G, 81 años, ingresa por una caída en casa. Redacta una nota de evolución de ejemplo para la clase.
+---
+[essay]
+Explica la diferencia entre sensibilidad y especificidad con el ejemplo de una prueba de COVID.
+---
+[essay]
+Haz un resumen de la Ley de Salud Mental argentina de 2010 para una exposición oral.
+---
+[essay]
+Escribe un artículo de divulgación sobre la endometriosis para una revista juvenil.
+---
+[essay]
+Explícame la genética de la anemia falciforme con un cuadro de Punnett.
+---
+[essay]
+Redacta las preguntas de una encuesta universitaria sobre el consumo de alcohol en estudiantes (n = 400).
+---
+[someone else]
+Mi compañera de trabajo me contó que tiene cáncer de mama. ¿Qué le puedo decir sin incomodarla?
+---
+[someone else]
+Una amiga tiene depresión y ya no quiere salir de casa. ¿Cómo la ayudo?
+---
+[someone else]
+Mi vecino tiene 80 años, vive solo y se le olvidan las cosas. ¿A quién aviso?
+---
+[someone else]
+Un alumno mío tiene diabetes tipo 1 y usa sensor. ¿Qué hago si le baja el azúcar en clase?
+---
+[someone else]
+Soy enfermera y tengo un paciente con insuficiencia renal que no quiere dializarse. ¿Cómo lo abordo?
+---
+[someone else]
+Trabajo de cuidadora y la señora que cuido tiene alzhéimer. Por las tardes se pone muy nerviosa. ¿Qué hago?
+---
+[someone else]
+Mi perro tiene epilepsia y toma fenobarbital. ¿Es normal que esté tan dormido?
+---
+[someone else]
+Mi gato tiene insuficiencia renal, ¿qué comida le conviene?
+---
+[someone else]
+En mi novela, la protagonista tiene trastorno bipolar. ¿Cómo lo escribo con respeto?
+---
+[someone else]
+Un cantante famoso contó que tiene VIH. ¿Qué significa ser indetectable?
+---
+[someone else]
+El delantero de mi equipo favorito se rompió el ligamento cruzado. ¿Cuánto tarda en volver a jugar?
+---
+[someone else]
+Las personas con celiaquía, ¿pueden comer avena?
+---
+[someone else]
+¿Una persona con epilepsia puede sacarse el carnet de conducir en España?
+---
+[someone else]
+Mi amigo está en rehabilitación por alcoholismo. ¿Lo invito a mi cumpleaños si va a haber bebida?
+---
+[someone else]
+El papá de mi novio tiene párkinson. ¿Cómo lo trato sin hacerlo sentir mal?
+---
+[someone else]
+La mamá de mi amiga tiene cáncer de páncreas y mi amiga está destrozada. ¿Qué puedo hacer?
+---
+[someone else]
+Un compañero de la facultad se autolesiona. Tengo 19 años y no sé a quién decirle.
+---
+[someone else]
+Una amiga me escribió que se quiere morir. ¿Qué hago ahora mismo?
+---
+[someone else]
+Mi roomie toma Adderall sin receta para estudiar. ¿Es peligroso?
+---
+[someone else]
+Los pacientes con demencia se agitan al atardecer. ¿Qué recomiendan las guías?
+---
+[someone else]
+Soy maestra y una alumna tiene alergia al maní. ¿Qué hago en la fiesta del Día del Niño?
+---
+[someone else]
+Mi jefe tiene diabetes y en las juntas siempre hay pan dulce. ¿Pido que traigan otra cosa?
+---
+[someone else]
+Una señora se desmayó en el colectivo y nadie sabía qué hacer. ¿Qué se hace en esos casos?
+---
+[someone else]
+¿Qué le digo a una amiga que tuvo un aborto espontáneo?
+---
+[someone else]
+El hijo de mi vecina tiene autismo y se tapa los oídos cuando hay ruido. ¿Cómo hacemos más tranquilas las reuniones de la comunidad?
+---
+[someone else]
+Como trabajadora social, tengo una usuaria que consume pasta base y tiene 2 hijos. ¿Cuándo debo informar?
+---
+[someone else]
+Un compañero de trabajo usa silla de ruedas y la oficina no tiene rampa. ¿Cómo lo planteo?
+---
+[someone else]
+En la serie que estoy viendo, el médico es adicto a los opioides y sigue operando. ¿Es realista?
+---
+[someone else]
+Mi amiga está embarazada de 30 semanas y tiene los pies muy hinchados. ¿Es normal?
+---
+[someone else]
+El bebé de una compañera nació a las 30 semanas y está en neonatología. ¿Cuánto tiempo suelen quedarse?
+---
+[someone else]
+¿Cómo apoyo a un amigo que acaba de enterarse de que tiene VIH?
+---
+[someone else]
+Mi entrenador tiene asma y se le olvidó el inhalador en el partido. ¿Qué hacemos si le da una crisis?
+---
+[someone else]
+Una persona sorda se apuntó a mi taller de cerámica. ¿Cómo lo hago accesible?
+---
+[someone else]
+Mi compañero de piso no sale de la cama desde hace 5 días. ¿Puede ser depresión?
+---
+[someone else]
+Un jugador del equipo que entreno tiene una cardiopatía. ¿Lo dejo correr en los entrenamientos?
+---
+[own, no who]
+Me diagnosticaron diabetes tipo 2 y la hemoglobina glicosilada me salió en 8,1. ¿Qué desayuno?
+---
+[own, no who]
+Tengo la tensión en 15/9 y tomo enalapril de 10 mg. ¿Puedo tomar café?
+---
+[own, no who]
+Tomo sertralina de 50 mg y el médico me quiere subir a 100. ¿Qué voy a notar al principio?
+---
+[own, no who]
+Mi hijo tiene asma y usa el salbutamol tres veces por semana. ¿Es mucho?
+---
+[own, no who]
+Mi mamá Carmen tiene alzhéimer y me pregunta todo el rato por mi papá, que ya falleció. ¿Qué le digo?
+---
+[own, no who]
+Mi nene tiene 39,5 de fiebre y está jugando como si nada. ¿Espero a mañana?
+---
+[own, no who]
+Estoy embarazada de 24 semanas y la curva de glucosa me dio 150. ¿Es diabetes gestacional?
+---
+[own, no who]
+Tengo VIH y soy indetectable desde hace 5 años. ¿Puedo tener hijos sin riesgo?
+---
+[own, no who]
+Hoy cumplo un año sin tomar alcohol. ¿Cómo lo celebro sin ir a un bar?
+---
+[own, no who]
+Estoy constipado desde el lunes, ¿qué puedo tomar si también tomo enalapril?
+---
+[own, no who]
+Uso silla de ruedas y voy a viajar a Cartagena. ¿Qué tengo que preguntar en el hotel?
+---
+[own, no who]
+Mi papá tiene párkinson y le tiembla tanto la mano que no puede comer sopa. ¿Hay cubiertos especiales?
+---
+[own, no who]
+Me diagnosticaron TDAH a los 35 años. ¿Es normal sentir duelo por todo lo de antes?
+---
+[own, no who]
+Tengo endometriosis y falto 2 días al mes al trabajo por el dolor. ¿Qué le puedo preguntar a mi ginecóloga?
+---
+[own, no who]
+Mi hija tiene diabetes tipo 1 y el sensor marcó 55 a las 3 de la mañana. ¿La despierto?
+---
+[own, no who]
+Tomo levotiroxina de 75 microgramos. ¿Puedo tomarla con el mate o espero media hora?
+---
+[own, no who]
+Tuve un aborto espontáneo de 9 semanas el martes. ¿Cuándo me vuelve a bajar la regla?
+---
+[own, no who]
+Tengo depresión desde los 20 y últimamente no me levanto antes del mediodía. ¿Por dónde empiezo?
+---
+[own, no who]
+Mi esposo tiene apnea del sueño y no quiere usar el CPAP. ¿Cómo lo convenzo sin pelear?
+---
+[own, no who]
+Mi abuela tiene EPOC y usa oxígeno a 2 litros. ¿Puede viajar en avión a Lima?
+---
+[own, no who]
+Tengo la cita a las 4 con el Dr. Ramírez por un nódulo en la tiroides. ¿Qué le pregunto?
+---
+[own, no who]
+Mi mamá está en la habitación 412 después de la operación de cadera y está muy desorientada. ¿Es normal?
+---
+[own, no who]
+Me sobraron 12 pastillas de tramadol de la operación. ¿Dónde las tiro?
+---
+[own, no who]
+Últimamente tengo pensamientos de no querer estar aquí. Llamé a una línea de ayuda la semana pasada y me sirvió un poco. ¿Qué más puedo hacer esta noche?
+---
+[own, no who]
+Tengo colitis ulcerosa y la semana que viene empiezo con un biológico. ¿Qué tengo que saber?
+---
+[own, no who]
+Mi papá tiene insuficiencia renal y el filtrado le salió en 38. ¿Qué comidas debe evitar?
+---
+[own, no who]
+Tomo PrEP desde hace un año. ¿Cada cuánto me tengo que hacer los análisis?
+---
+[own, no who]
+Mi esposa tiene depresión posparto y el bebé tiene 6 semanas. ¿Cómo la ayudo en el día a día?
+---
+[own, no who]
+Soy bipolar y tomo litio. ¿Puedo quedar embarazada?
+---
+[own, no who]
+Mi hijo de 15 años vapea y le encontré cargas de nicotina en la mochila. ¿Cómo hablo con él?
+---
+[own, no who]
+Mi papá Jorge toma metoprolol y tiene el pulso en 50. ¿Es muy bajo?
+---
+[own, no who]
+Me diagnosticaron síndrome de ovario poliquístico y el médico solo me dijo que baje de peso. ¿Por dónde empiezo?
+---
+[own, no who]
+tengo ansiedad y el corazon se me acelera en el trabajo, puedo tomar propranolol antes de las reuniones?
+---
+[own, no who]
+Mi bebé nació de 34 semanas y a los 4 meses sigue pequeñita. ¿Cuándo se ponen al día los prematuros?
+---
+[own, no who]
+Mis valores de esta semana: 138/88, 142/91, 151/94, 129/84. Soy hipertenso y tomo losartán 50 mg. ¿Está funcionando?

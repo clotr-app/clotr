@@ -1,0 +1,583 @@
+# Everyday messages that look like scams, in English: real sign-in texts that say they'll never ask for the code, real
+# bank alerts with no ask, delivery updates, a meeting moved, a surprise party, a grandchild asking for a ride, a tax
+# reminder, a gift card for a birthday, a friend asking for the wifi password, the IT team, a raffle at work. Every one
+# is made up: phone numbers are 555-01xx, links and emails use example.com or example.invalid, and every person, bank
+# and shop is invented (only the gift card and app brands people really name are real).
+# Each message starts with one label line, then the message. Most are [signs: none]. A few honestly have a sign in them
+# (a surprise party says to keep it secret, a coworker asks for something right away, a friend asks to be paid back by
+# a payment app), and the label lists it:
+#   [signs: press_secret]
+# The target (tests/scam-signs.test.js, and the scorecard): no sign the label doesn't list, ever. Every listed sign
+# must be found too, so a label can't hide a sign that went missing.
+# Messages are separated by lines of "---".
+---
+[signs: none]
+Your Example code is 482913. Don't share it with anyone. We'll never call to ask for it.
+---
+[signs: none]
+552019 is your Anytown Bank verification code. Anytown Bank will never ask you for this code. Don't give it to anyone, even if they say they're from the bank.
+---
+[signs: none]
+Use 731904 to sign in to Example Mail. If someone asks you for this code, it's a scam: don't share it.
+---
+[signs: none]
+Example Pay: your one-time passcode is 118274. It expires in 10 minutes. Never share this code with anyone.
+---
+[signs: none]
+Your Example verification code is 660412. We will never call, text or email you to ask for this code.
+---
+[signs: none]
+Anytown Bank: Your security code is 393021. Do not share this code. Bank staff will never ask you for it.
+---
+[signs: none]
+Example Credit Union: 847261 is your login code. If you didn't try to sign in, you can ignore this message.
+---
+[signs: none]
+G-482913 is your Example verification code.
+---
+[signs: none]
+Your code for Example Shop is 5531. Enter it on the website to finish your order. We never ask for codes by phone.
+---
+[signs: none]
+Example Wallet: Your 2FA code is 902114. Nobody from Example Wallet will ask for this code. Don't share it with anyone.
+---
+[signs: none]
+Here is your Example Health sign-in code: 287743. If anyone calls asking for this code, hang up. It's a scam.
+---
+[signs: none]
+Example Phone: we sent you this code because someone signed in on a new device: 441902. If it was you, enter it there. If not, change your password.
+---
+[signs: none]
+Your Anytown Bank one-time PIN is 552019. Never read it out to anyone. Anytown Bank will never call you to ask for it.
+---
+[signs: none]
+Thanks for signing up for Example Rewards! Confirm your email by entering 703318 in the app.
+---
+[signs: none]
+Your Example Ride code: 4192. Share this code with your driver only when you get in the car.
+---
+[signs: none]
+Example: your recovery code was used to sign in on 3 October. If this wasn't you, go to your account settings from the app you already have.
+---
+[signs: none]
+Anytown Bank: A purchase of $82.10 at Example Store was approved on your card ending 4421.
+---
+[signs: none]
+Anytown Bank Fraud Alert: Did you make a $82.10 purchase at Example Store on your card ending 4421? Reply YES or NO. We'll never ask for your PIN, your password or a code.
+---
+[signs: none]
+Example Credit Union: Your direct deposit of $1,842.16 has posted to checking.
+---
+[signs: none]
+Anytown Bank: your balance is below $100. Check your account in the Anytown Bank app.
+---
+[signs: none]
+Reminder from Anytown Bank: we will never call, text or email to ask for your PIN, your password or a code we sent you. If someone does, hang up and call the number on the back of your card.
+---
+[signs: none]
+Example Credit Union: Your new debit card is on its way. It should arrive in 7 to 10 days. Activate it in the app or at any of our ATMs.
+---
+[signs: none]
+Anytown Bank: We noticed you logged in from a new phone. If that was you, there's nothing to do.
+---
+[signs: none]
+Your Anytown Bank statement for September is ready to view in online banking.
+---
+[signs: none]
+Example Credit Union: a payment of $45.00 to Example Power & Light is scheduled for tomorrow.
+---
+[signs: none]
+Anytown Bank tip: our fraud team will never ask you to move money to a safe account. If anyone does, it's a scam.
+---
+[signs: none]
+Example Savings Bank: your CD matures on November 1. Visit any branch to talk about your options.
+---
+[signs: none]
+Anytown Bank: Your card ending 4421 was used at a gas station in your area. Was this you? Reply Y or N.
+---
+[signs: none]
+Hi Mrs. Patel, it's Laura from the Main Street branch. Your new checkbook is ready to pick up any time this week.
+---
+[signs: none]
+Anytown Bank will never ask for the 3 numbers on the back of your card by phone or text.
+---
+[signs: none]
+Example Credit Union: We've updated our privacy policy. You can read it at example.com/privacy.
+---
+[signs: none]
+Your package is out for delivery today. Track it at example.com/track
+---
+[signs: none]
+Example Parcel: Your order 4417 was delivered to your front door at 2:14 PM.
+---
+[signs: none]
+Example Shop: Your order has shipped! It should arrive Thursday. Track it in your account.
+---
+[signs: none]
+We missed you today! Your package will be delivered again tomorrow between 9 AM and 1 PM.
+---
+[signs: none]
+Example Express: your delivery is running late because of the weather. Sorry about that. It should arrive tomorrow.
+---
+[signs: none]
+Your Example Groceries order is on the way. Your driver Sam will arrive in about 15 minutes.
+---
+[signs: none]
+Example Post: a parcel needs a signature. We'll try again Monday, or you can pick it up at the post office on Elm Street with your ID.
+---
+[signs: none]
+Hey, the couch you ordered is being delivered Saturday morning. Someone needs to be home to sign.
+---
+[signs: none]
+Example Shop: your return was received. Your refund of $34.99 will show on your card in 3 to 5 days.
+---
+[signs: none]
+The neighbor took in your package, it's on her porch.
+---
+[signs: none]
+Your Example Pharmacy prescription is ready for pickup.
+---
+[signs: none]
+Example Parcel: your package is at the pickup point on Oak Avenue. It's free to collect until October 12.
+---
+[signs: none]
+Your order from Example Books has been dispatched. Tracking: example.com/t/71KD
+---
+[signs: none]
+Example Grill: your table for 4 is booked for Friday at 7:30 PM. Reply C to cancel.
+---
+[signs: press_rush]
+Urgent: the 3 PM meeting moved to 4 PM, same room.
+---
+[signs: none]
+Heads up, the budget review is now at 10 instead of 11. Sorry for the short notice!
+---
+[signs: press_rush]
+Can you send me the slides asap? The client moved the call up.
+---
+[signs: none]
+Team: the office will close at 2 PM today because of the snow. Drive carefully.
+---
+[signs: press_rush]
+Please call me right away when you land, Dad wants to know you got there.
+---
+[signs: none]
+Change of plans: practice is at the middle school gym tonight, not the park.
+---
+[signs: press_secret]
+Shh, we're throwing Mom a surprise party on Saturday. Keep it a secret!
+---
+[signs: press_secret]
+Don't tell Grandpa, but we're all coming for his birthday next weekend.
+---
+[signs: none]
+Surprise party for Jen is at 6. Park on the side street so she doesn't see the cars.
+---
+[signs: press_secret]
+Keep this between us until it's official, but I got the job!
+---
+[signs: none]
+Hi Grandma, it's Leo. Can you pick me up from practice at 5? Mom is stuck at work.
+---
+[signs: none]
+Grandpa, are you still driving me to the dentist tomorrow? It's at 9.
+---
+[signs: none]
+Hi Nana! Can you come to my school play on Thursday? It starts at 6:30.
+---
+[signs: none]
+Mom, landed. Waiting for my bag, call you in a bit.
+---
+[signs: none]
+Hi Dad, my phone is almost dead so I'm texting from Mia's. I'll be home by 10.
+---
+[signs: none]
+Grandma it's me, can I come over Sunday and do laundry? Love you.
+---
+[signs: none]
+Mom, can you bring my soccer bag? I left it by the door.
+---
+[signs: none]
+Hey Mom, I got a new number, this is it now. The old one stopped working. Save this one!
+---
+[signs: none]
+Hi Grandpa, it's Josh. I passed my driving test!! Thanks for all the practice.
+---
+[signs: none]
+Auntie, can you send me your lasagna recipe? I want to make it for my friends.
+---
+[signs: none]
+Dad, I scraped the car on the garage door. I'm fine, it's just the paint. Sorry!!
+---
+[signs: none]
+Hi Mom, I'm at the hospital with Sam, he twisted his ankle at soccer. He's ok, just waiting for the x-ray.
+---
+[signs: none]
+Grandma, Mom says can you call her when you get this? Nothing wrong, she just wants to plan Thanksgiving.
+---
+[signs: none]
+Reminder from the County Treasurer: property taxes are due October 31. Pay at the county office or online at example.com/tax.
+---
+[signs: none]
+IRS reminder: the extended deadline to file your tax return is October 15. You can find free filing help at your local library.
+---
+[signs: none]
+Your vehicle registration expires next month. Renew at any DMV office or at example.com/renew.
+---
+[signs: none]
+City of Example: street sweeping on your block is Tuesday. Please move your car by 8 AM.
+---
+[signs: none]
+Social Security: your annual cost-of-living letter is now in your online account. We will never call to ask for money or your Social Security number.
+---
+[signs: none]
+Jury duty reminder: you are scheduled to appear on November 3 at 8:30 AM at the county courthouse. Bring this letter.
+---
+[signs: none]
+Medicare open enrollment runs from October 15 to December 7. Compare plans at example.com/plans or call your plan.
+---
+[signs: none]
+County alert: road closures on Main Street tonight from 9 PM for repaving.
+---
+[signs: none]
+Example School District: school is closed tomorrow because of the storm.
+---
+[signs: none]
+The library book you borrowed is due back on Friday. You can renew it online once.
+---
+[signs: none]
+Happy birthday!! I put a $50 Example Books gift card in your card. Treat yourself!
+---
+[signs: none]
+Thanks so much for the Amazon gift card, I already picked out a new book!
+---
+[signs: none]
+I got a $25 gift card for coffee from the office raffle lol
+---
+[signs: none]
+Does anyone know if the Example Mart gift card balance carries over? Mine says $12.40 left.
+---
+[signs: none]
+Merry Christmas! There's a gift card for the movies in your stocking.
+---
+[signs: none]
+I sent you an e-gift card for your graduation, it should be in your email. So proud of you!
+---
+[signs: none]
+Can you pick up a gift card for Ms. Lee's retirement? Everyone's chipping in $10.
+---
+[signs: none]
+Hey, what's the wifi password again?
+---
+[signs: none]
+What's the wifi at your place? My phone forgot it.
+---
+[signs: none]
+Is the guest wifi password still on the fridge?
+---
+[signs: none]
+Can you text me the door code for the cabin? We get there around 4.
+---
+[signs: none]
+Hi, this is Dana from IT. Your laptop update is done, you can restart it whenever you like.
+---
+[signs: none]
+IT notice: we're updating the email servers Saturday night. Email may be slow for an hour.
+---
+[signs: none]
+Thanks for contacting Example Support. Your case number is 18822. We'll email you when there's an update.
+---
+[signs: none]
+Example Software: version 5.2 is ready. Open the app and choose Update to get it.
+---
+[signs: none]
+IT reminder: we will never ask for your password by email or chat. Report anything like that to the help desk.
+---
+[signs: none]
+Your Example antivirus scan finished. No threats found.
+---
+[signs: none]
+Congrats, you won the office raffle! Pick up your prize at the front desk anytime this week.
+---
+[signs: none]
+Congratulations to our bake-off winners! The trophies are on the shelf by the break room.
+---
+[signs: none]
+Did you see we won the trivia night? First place!
+---
+[signs: none]
+Your Example Rewards points are ready: you have enough for a free coffee next time you visit.
+---
+[signs: none]
+Example Mart: Thank you for your purchase. Your receipt total was $46.18.
+---
+[signs: none]
+Example Power & Light: your bill of $84.20 is due on October 20. Thank you for paying on time last month.
+---
+[signs: none]
+Example Phone: your autopay of $55.00 went through today. Thank you!
+---
+[signs: none]
+Example Streaming: your subscription renews on November 3 for $9.99. Manage it in Settings in the app.
+---
+[signs: none]
+Example Water: we'll be doing maintenance on your street Tuesday from 9 to noon. Water may be off for a few hours.
+---
+[signs: none]
+Example Gym: your membership card is ready at the front desk.
+---
+[signs: none]
+Reminder: your dental appointment is tomorrow at 3 PM. Reply C to confirm or R to reschedule.
+---
+[signs: none]
+Example Clinic: your test results are ready. Log in to the patient app you already use to see them.
+---
+[signs: none]
+Hi, this is Dr. Ruiz's office. We need to move your appointment from Monday to Wednesday at 10. Does that work?
+---
+[signs: none]
+Example Vet: Max is due for his shots next month. Call the clinic to book.
+---
+[signs: none]
+Hi, I saw your ad for the bike. Is it still available? I can come by Saturday with cash.
+---
+[signs: none]
+Is the couch still for sale? Could I see it tomorrow after work?
+---
+[signs: none]
+I'll take the lamp for $20. What time can I pick it up?
+---
+[signs: none]
+Thanks for selling me the table! It looks great in the kitchen.
+---
+[signs: pay_hard_to_undo]
+Babe can you Venmo me $20 for the pizza? I covered it.
+---
+[signs: pay_hard_to_undo]
+You owe me $15 for the concert tickets, just Zelle me whenever.
+---
+[signs: none]
+I'll Venmo you for dinner when I get home. Thanks for paying!
+---
+[signs: none]
+Did you see bitcoin went up again? My brother won't stop talking about it.
+---
+[signs: none]
+Should I put a little money in crypto or is that a bad idea? Asking for real.
+---
+[signs: none]
+My love, I miss you. Can't wait to see you tonight after work. I'll bring dinner.
+---
+[signs: none]
+Honey, the car is making that noise again. Can you look at it when you get home?
+---
+[signs: none]
+Happy anniversary, darling. Ten years and I'd marry you again tomorrow.
+---
+[signs: none]
+Hey, it was so nice to meet you at Sara's party! Want to get coffee next week?
+---
+[signs: none]
+New sign-in to your Example account on a Windows computer. If this was you, you don't need to do anything.
+---
+[signs: none]
+Example Mail: your password was changed. If you did this, you can ignore this email.
+---
+[signs: none]
+You turned on two-step verification for your Example account. Nice work, your account is better protected.
+---
+[signs: none]
+Example Photos: your storage is 80% full. You can free up space or buy more in the app.
+---
+[signs: none]
+Example Shop: your account email was updated. If you didn't make this change, contact us from the help page in the app.
+---
+[signs: none]
+Your Example Shop order #11823 is confirmed. We'll send another message when it ships.
+---
+[signs: none]
+Welcome to Example Bank's online banking! You can set up alerts in Settings.
+---
+[signs: none]
+Example Credit Union: we're closed Monday for the holiday. ATMs and the app are open as usual.
+---
+[signs: none]
+Hi! It's Kim from the book club. We're reading the new mystery for November. See you at the library!
+---
+[signs: none]
+Church potluck this Sunday after the 10 o'clock service. Bring a side dish if you can.
+---
+[signs: none]
+Pastor Jim: thank you all for the food drive. We collected over 300 cans!
+---
+[signs: none]
+The tow truck is on the way, about 30 minutes. Stay with the car and keep your flashers on.
+---
+[signs: none]
+Your Example Roadside request is confirmed. A truck will be there in about 45 minutes.
+---
+[signs: none]
+Hi, this is Mike from Example Plumbing confirming your appointment tomorrow between 8 and 10.
+---
+[signs: none]
+Your car is ready at Example Auto. The total is $212.50, pay when you pick it up.
+---
+[signs: none]
+Example Hotel: we look forward to your stay on October 14. Check-in is from 3 PM.
+---
+[signs: none]
+Example Airlines: your flight 212 is delayed by 40 minutes. New departure 6:25 PM.
+---
+[signs: none]
+Example Airlines: check-in for your flight is open. Your seat is 14C.
+---
+[signs: none]
+Hi neighbor, your dog got out again, he's in our yard. No rush, he's playing with ours.
+---
+[signs: none]
+The HOA meeting is moved to Thursday. Agenda is on the board by the mailboxes.
+---
+[signs: none]
+Example Library: your hold on "The Long Road" is ready. Pick it up within 7 days.
+---
+[signs: none]
+Example School: picture day is Friday. Order forms went home in backpacks.
+---
+[signs: none]
+Coach here: great game today! Snacks next week are the Garcias.
+---
+[signs: none]
+Grandma, I'm doing a school fundraiser selling cookie dough. Want any? It's $15 a tub.
+---
+[signs: none]
+Hi, this is the front desk at Example Senior Living. Your mom had a great day, she won bingo!
+---
+[signs: none]
+Example Insurance: your new ID cards are in the mail. You can also see them in the app.
+---
+[signs: none]
+Your Example Pharmacy flu shot appointment is Saturday at 11 AM.
+---
+[signs: none]
+Your Example Shop gift card was used for $18.45. Remaining balance: $31.55.
+---
+[signs: none]
+We got your message and someone from the support team will reply within 2 business days.
+---
+[signs: none]
+Example Bank: For your security, we'll never ask you to install an app so we can see your screen.
+---
+[signs: none]
+Hi, it's Raj from IT. I'll stop by your desk at 2 to set up the new printer.
+---
+[signs: none]
+The verification email should be in your inbox. Click the link in it to finish signing up for the newsletter.
+---
+[signs: none]
+Your free trial of Example Music ends on October 30. After that it's $10.99 a month unless you cancel.
+---
+[signs: none]
+Example Parcel: your package was left at the side door as you asked.
+---
+[signs: asks_details]
+Hi, this is Example Clinic. When you call back, please confirm your date of birth so we can find your file.
+---
+[signs: none]
+Are you coming to the game Saturday? We have an extra ticket.
+---
+[signs: none]
+Mom, can you sign my permission slip tonight? It's due tomorrow.
+---
+[signs: none]
+Example Bank: Your transfer of $200.00 to savings is complete.
+---
+[signs: none]
+Thanks for the ride today, Grandpa! See you next week.
+---
+[signs: none]
+Your Example verification code is 445566. Don't share it with anyone. Example will never call you to ask for it.
+---
+[signs: none]
+Hi Grandma, it's Lucas! Can you send me your cookie recipe? Love you.
+---
+[signs: none]
+Anytown Bank: Your payment of $120.00 to Example Phone was sent.
+---
+[signs: none]
+Reminder: your car insurance renews next week. No action needed.
+---
+[signs: none]
+Hey, can you send me the photos from the trip? The good ones!
+---
+[signs: none]
+Please send the report by Friday. Thanks!
+---
+[signs: none]
+The IRS says refunds take about 21 days. Ours came yesterday.
+---
+[signs: none]
+Example Shop: We'll text you a code when your order is ready for pickup.
+---
+[signs: none]
+Can you read me the recipe? My hands are covered in flour.
+---
+[signs: none]
+I bought two gift cards for the twins' birthday, they loved them.
+---
+[signs: none]
+Did you get the code I texted you for the gym door? It's on the fridge too.
+---
+[signs: none]
+Our new bank app lets you send money with Zelle, it's pretty handy.
+---
+[signs: none]
+Hi Jordan,
+
+Thanks for banking with Example Credit Union. Here's what's new this month:
+
+- Mobile check deposit limits are going up to $5,000 a day.
+- Our branches will close early on November 24.
+- Remember: we will never call, text or email to ask for your password, your PIN or a one-time code. If someone does, hang up and call us at the number on the back of your card.
+
+Questions? Visit example.com/help or stop by any branch.
+
+Example Credit Union
+---
+[signs: none]
+Security alert
+
+A new sign-in to your Example account
+
+We noticed a new sign-in to your Example Account on a Windows device. If this was you, you don't need to do anything. If not, we'll help you secure your account.
+
+Check activity: example.com/security
+
+You received this email to let you know about important changes to your Example Account and services.
+---
+[signs: none]
+Order confirmed! Thanks for your order, Pat.
+
+Order #A-11823
+1 x Garden hose, 50 ft      $29.99
+Shipping                      $0.00
+Total                        $29.99
+
+We'll email you when it ships. Track your order anytime at example.com/orders.
+---
+[signs: none]
+lol did you see the scam text grandma got? something about gift cards. I told her to ignore it
+---
+[signs: none]
+Can you send me the code for the wifi? The router one, not the guest one.
+---
+[signs: none]
+The bank called about fraud on my card, they canceled it and are mailing a new one. Annoying but fine.
+---
+[signs: press_rush]
+Hi team, urgent reminder that timesheets are due today by 5pm.
+---
+[signs: none]
+Your verification code is 112233. Enter it within 10 minutes to sign in.
+---
+[signs: none]
+FYI the plumber only takes cash or check, so bring some cash tomorrow.

@@ -1,0 +1,172 @@
+# Salud, con aviso: mensajes en español, todos inventados, donde se dice un término de salud de una persona Y quién es
+# esa persona (el diseño de detección, 3.4 y 4.1). Cuando salga el tipo de salud (1.5.0, y solo si pasan estos
+# corpus), todos deben avisar como dato de salud, y Ocultarlo debe quitar quién es la persona, no las palabras de salud.
+# Teléfonos 555-01xx, correos en example.com, .org o .net; nombres y números inventados.
+# Cada mensaje empieza con una línea de etiqueta (en inglés, como en health-warn.txt) y luego el mensaje:
+#   [term: <el término tal como está escrito> | who: <lista con comas>]
+# "who" es un nombre presentado en el texto ("me llamo…", "soy…", "Nombre: …", "Paciente: …", "mi hija Ana Ruiz") o un
+# tipo que el detector de hoy encuentra (los mismos de health-warn.txt). Cada término está a seis palabras o menos de
+# su ancla ("tengo", "me diagnosticaron", "mi hijo tiene", "tomo", "Diagnóstico:"). Separados por líneas "---".
+# tests/health-study.test.js comprueba las etiquetas, y que hoy solo avisan los datos de quién es la persona.
+---
+[term: diabetes tipo 2 | who: name, date_of_birth]
+Hola, me llamo Lucía Fernández Ortega, nací el 3 de mayo de 1971 y me diagnosticaron diabetes tipo 2 hace un mes. ¿Qué puedo desayunar sin que me suba el azúcar?
+---
+[term: fibromialgia | who: national_id]
+Mi DNI es 30571264D. Tengo fibromialgia y el tribunal médico me ha citado el día 14. ¿Cómo explico cómo es un día malo sin quedarme en blanco?
+---
+[term: epilepsia | who: name, date_of_birth]
+Mi hija Ana Ruiz, nacida el 2 de abril de 2015, tiene epilepsia y empieza en un colegio nuevo. ¿Me ayudas a escribir una nota para su maestra sobre qué hacer si le da una crisis?
+---
+[term: hipertensión | who: name, national_id]
+Necesito llenar el formato de la clínica. Nombre: María Rodríguez López. CURP: ROLM850314MDFDPR09. Tengo hipertensión desde 2019 y tomo losartán de 50 mg. ¿Qué pongo en "antecedentes"?
+---
+[term: artritis reumatoide | who: name, national_id]
+Soy Juan García Hernández, mi CURP es GAHJ720921HJCRRN01 y tengo artritis reumatoide. ¿Cómo pido cita con el reumatólogo en mi clínica familiar?
+---
+[term: hipotiroidismo | who: name, date_of_birth]
+Hola, soy Martín Acosta, nací el 12/08/1983. Me diagnosticaron hipotiroidismo y la obra social no me cubre la levotiroxina. ¿Cómo armo el reclamo?
+---
+[term: migraña crónica | who: name, email]
+Me llamo Valentina Rojas Muñoz, mi correo es valentina.rojas@example.com. Tengo migraña crónica y la EPS me negó el medicamento que me formuló el neurólogo. ¿Cómo redacto una tutela?
+---
+[term: depresión | who: name, date_of_birth]
+Soy Paola Céspedes, nací el 14 de febrero de 1986. Tengo depresión y necesito pedirle a la isapre que me apruebe la licencia médica. ¿Me ayudas con la carta?
+---
+[term: diabetes | who: name, date_of_birth]
+Mi mamá Rosa María Quispe Huamán, nacida el 7 de julio de 1958, tiene diabetes y en EsSalud le dieron cita para dentro de 3 meses. ¿Cómo pido que la adelanten?
+---
+[term: hernia discal | who: name, national_id]
+Para el parte de baja: Nombre: Ernesto Villalobos Gil. Número de la Seguridad Social: 28 40517726 13. Diagnóstico: hernia discal L5-S1. ¿Está bien escrito?
+---
+[term: VIH | who: name, national_id]
+Soy Julián Echeverría, NIE Y5016283C. Tengo VIH y me mudo a Valencia. ¿Cómo pido cita en la unidad de enfermedades infecciosas?
+---
+[term: insulina | who: name, phone_number]
+Hola, soy Guadalupe Hernández Cruz. Uso insulina dos veces al día y la farmacia no me quiere surtir la receta. ¿Me ayudas a escribirle al doctor? Mi celular es 786-555-0147.
+---
+[term: EPOC | who: name, street_address]
+Necesito pedir oxígeno a domicilio. Mi padre Andrés Molina tiene EPOC y vive en la Calle de los Olivos 14, 3.º B, 28041 Madrid. ¿Cómo lo solicito?
+---
+[term: cáncer de mama | who: name, street_address, phone_number]
+Mi mamá Teresa Salinas tiene cáncer de mama y necesita que la lleven a la quimio. Vive en Calle Rosales 214, Col. Centro, Guadalajara. Mi número es 619-555-0124. ¿Cómo pido el transporte del programa?
+---
+[term: asma | who: name, phone_number]
+Mi hijo Samuel Gómez tiene asma y necesito que la EPS le mande el nebulizador a la casa. Que me llamen antes al 305-555-0117. ¿Cómo lo escribo?
+---
+[term: ansiedad | who: email]
+Tengo ansiedad y me cuesta mucho hablar por teléfono. ¿Puedes escribir un correo para mi psicóloga pidiendo cambiar la cita del jueves? Que me responda a nube.tranquila@example.com.
+---
+[term: hipotiroidismo | who: phone_number]
+tengo hipotiroidismo y se me acabó la levotiroxina, escribeme un mensaje para el consultorio que me llamen al 305-555-0162
+---
+[term: depresión | who: date_of_birth]
+Me diagnosticaron depresión en marzo. Nací el 22/11/1990 y en el formulario del seguro me piden la "fecha de inicio". ¿Qué pongo?
+---
+[term: TDAH | who: name, student_id]
+Soy Carlos Andrés Gómez Pérez, matrícula 2019630123. Tengo TDAH y quiero pedir tiempo extra en los exámenes. ¿Me ayudas con la carta para servicios escolares?
+---
+[term: dislexia | who: name, student_id]
+Me llamo Irene Sáez y tengo dislexia. Mi número de estudiante es 70412893. ¿Cómo pido adaptación en los exámenes de la universidad?
+---
+[term: insuficiencia cardíaca | who: name, medicare_id]
+Mi papá Ramón Ibarra tiene insuficiencia cardíaca. Su número de Medicare es 3HG7-PA2-YT64. ¿Medicare cubre que una enfermera vaya a la casa?
+---
+[term: esquizofrenia | who: name, us_ssn]
+Estoy llenando la solicitud de SSI para mi hermano. Nombre: Óscar Bermúdez. Seguro social: 431-27-9058. Mi hermano tiene esquizofrenia y no puede trabajar. ¿Qué pongo en "limitaciones"?
+---
+[term: autismo | who: name, insurance_id]
+Mi hijo Mateo Cruz tiene autismo y le negaron las terapias. Su Medicaid ID: 4471093826. ¿Cómo apelo?
+---
+[term: celiaquía | who: name, email]
+Me llamo Florencia Benítez, tengo celiaquía y la prepaga no me reconoce los alimentos sin TACC. Mi correo es florencia.benitez@example.com. ¿Cómo hago el reclamo?
+---
+[term: diabetes | who: name, date_of_birth]
+Viajo a España con insulina porque tengo diabetes. Me llamo Ernesto Salas y nací el 3 de noviembre de 1979. ¿Me ayudas con una carta para el aeropuerto?
+---
+[term: apnea del sueño | who: name, national_id]
+Tengo apnea del sueño y me toca renovar el carné de conducir. Me llamo Pilar Navarro y mi DNI es 52937016D. ¿Qué informe me pide el centro de reconocimiento?
+---
+[term: epilepsia | who: name, date_of_birth]
+Me llamo Héctor Aguilar, nací el 23 de septiembre de 1981, tengo epilepsia controlada y quiero renovar mi licencia de manejo. ¿Tengo que avisar en Movilidad?
+---
+[term: neumonía | who: name, national_id, date_of_birth]
+¿Me explicas este informe de alta?
+Paciente: Carmen Iglesias Prado
+DNI: 23608145W
+Fecha de nacimiento: 05/09/1948
+Diagnóstico principal: neumonía adquirida en la comunidad
+Tratamiento: amoxicilina-clavulánico 875 mg cada 8 horas, 7 días
+---
+[term: diabetes | who: name, date_of_birth, street_address, phone_number, email]
+Llena esta forma por mí, por favor:
+Nombre: Rosalba Méndez Treviño
+Fecha de nacimiento: 14/03/1962
+Dirección: 1835 Mesquite Trail Dr, Laredo, TX 78045
+Teléfono: 956-555-0123
+Correo: rosalba.mt@example.com
+Enfermedades: diabetes, colesterol alto
+Medicinas: metformina 850 mg dos veces al día
+---
+[term: VIH | who: name, date_of_birth, phone_number]
+Hola, me llamo Andrés Felipe Cardona, nací el 9 de junio de 1988 y tengo VIH. Me mudé a Miami y necesito una clínica nueva. ¿Me ayudas a escribirles? Mi teléfono es 305-555-0193.
+---
+[term: trastorno bipolar | who: name]
+Soy Daniela Prieto y tengo trastorno bipolar. Quiero pedir en el trabajo un horario fijo para dormir bien. Escribe el correo y fírmalo con mi nombre.
+---
+[term: cáncer de próstata | who: name, date_of_birth, insurance_id]
+Mi esposo tiene cáncer de próstata. Nombre: Raúl Benavides. Fecha de nacimiento: 7 de octubre de 1955. Member ID: HUM55120938. El seguro le negó la radioterapia. ¿Cómo apelo?
+---
+[term: alzhéimer | who: name, date_of_birth, national_id]
+Solicitud para el centro de día de mi madre: Nombre: Amparo Ruiz Cano. Nacida el 11 de enero de 1940. DNI: 19354782Y. Mi madre tiene alzhéimer en fase moderada. ¿Qué más pongo en "necesidades"?
+---
+[term: embarazada | who: name, date_of_birth, phone_number]
+Me llamo Yesenia Morales, nací el 30/06/1997 y estoy embarazada de 10 semanas. En la fábrica me hacen cargar cajas pesadas. ¿Me ayudas a escribirle a mi supervisor? Mi celular es 559-555-0141.
+---
+[term: anorexia | who: name, date_of_birth]
+Mi hija Martina Echeverri, nacida el 4 de agosto de 2010, tiene anorexia y empieza un tratamiento ambulatorio. ¿Cómo le explico al colegio que necesita comer acompañada?
+---
+[term: lupus | who: name, email, phone_number]
+Soy Natalia Vargas, tengo lupus y me salió un brote con dolor en las articulaciones. Escríbele a mi reumatólogo que necesito cita antes. Mi correo es natalia.vargas@example.net y mi teléfono 915-555-0108.
+---
+[term: alcoholismo | who: name, phone_number]
+Me llamo Ricardo Fuentes, estoy en tratamiento por alcoholismo y llevo 6 meses sin beber. Quiero entrar a una casa de medio camino. ¿Me ayudas con la carta? Mi número es 323-555-0176.
+---
+[term: hepatitis C | who: name, us_ssn, date_of_birth]
+Para la solicitud de ayuda con el medicamento: Nombre: Gerardo Lozano. Seguro social: 527-48-1093. Fecha de nacimiento: 12/12/1964. Tengo hepatitis C y nunca me han tratado. ¿Falta algo?
+---
+[term: cardiopatía | who: name, student_id, date_of_birth]
+Ficha médica del colegio: Alumno: Tomás Herrera. Número de alumno: 2047731. Nacido el 19 de febrero de 2013. Mi hijo tiene una cardiopatía congénita y no puede hacer esfuerzos fuertes en educación física.
+---
+[term: VIH | who: email]
+Tengo VIH y quiero participar en un estudio clínico que vi en internet. ¿Me escribes un mensaje corto diciendo que me interesa? Contacto: vivir.positivo@example.org
+---
+[term: ansiedad | who: name, student_id, email]
+Me llamo Sofía Arango, mi número de estudiante es 31820459 y tengo ansiedad generalizada. Quiero pedir que me dejen presentar el examen oral por escrito. Mi correo: sofia.arango@example.org. ¿Me ayudas con la solicitud?
+---
+[term: Parkinson | who: name, date_of_birth, street_address]
+Mi abuelo Eusebio Cárdenas tiene Parkinson y necesitamos una silla de ruedas. Nació el 2 de febrero de 1938 y vive en la Calle Hidalgo 58, en Puebla. ¿Cómo hago la solicitud al DIF?
+---
+[term: esclerosis múltiple | who: name, email]
+Soy Beatriz Olmedo y me diagnosticaron esclerosis múltiple el año pasado. Necesito pedir teletrabajo dos días a la semana. Escribe el correo a recursos humanos y firma con beatriz.olmedo@example.com.
+---
+[term: preeclampsia | who: name]
+Me llamo Karina Duarte. Tuve preeclampsia en mi primer embarazo y ahora estoy embarazada otra vez. ¿Me ayudas a pedir una cita temprana? Que me llamen por la tarde.
+---
+[term: diálisis | who: street_address]
+Estoy en diálisis tres veces por semana y necesito transporte desde la Avenida de los Pinos 1220, en Monterrey. ¿Qué opciones hay?
+---
+[term: TDAH | who: name, date_of_birth, student_id]
+Mi hijo Lucas Peralta tiene TDAH. Nació el 8 de marzo de 2015 y su número de alumno es 5520418. ¿Cómo pido al colegio que le den más tiempo en los exámenes?
+---
+[term: hipertensión | who: medicare_id]
+Tengo hipertensión y tomo tres pastillas. Mi número de Medicare es 4NP8-GD2-TT61. ¿Me cubren el aparato para medir la presión en casa?
+---
+[term: litio | who: name, date_of_birth]
+Tomo litio desde hace 6 años. Me llamo Inés Garrido y nací el 17 de julio de 1985. Voy a empezar en un trabajo con turnos de noche. ¿Cómo mantengo los niveles?
+---
+[term: cáncer de colon | who: name, phone_number, email]
+Me diagnosticaron cáncer de colon. Soy Fernando Aguirre. Escríbele a mi jefa que voy a faltar los lunes por la quimio. Pon mi celular, 786-555-0189, y mi correo, f.aguirre@example.net.
+---
+[term: diabética | who: name, date_of_birth]
+Soy diabética desde los 12 años. Me llamo Gabriela Ochoa, nací el 25/05/1992, y quiero apuntarme a un gimnasio. ¿Qué pongo en el formulario de salud?

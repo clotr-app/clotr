@@ -1,35 +1,37 @@
-// Clotr — detector: runs the patterns from patterns.js
-// (loaded first), decides the response for each hit, and fingerprints values.
-// Classic script (content scripts can't use modules): shares via globalThis.Clotr.
+// Runs the patterns from patterns.js against a page's text, decides how to respond to each hit, and
+// fingerprints the values it finds. This is a classic script, not a module, so it shares its functions through
+// globalThis.Clotr.
 (() => {
   "use strict";
 
-  const { PATTERNS, numberRuns, isPlaceholder, addressCore } = globalThis.Clotr;
+  const { PATTERNS, numberRuns, isPlaceholder, addressCore, vaultKinds, ASK_REASONS } = globalThis.Clotr;
 
   const SEVERITY_RANK = { high: 3, medium: 2, low: 1 };
 
-  // ---------- Text as copied from web pages, documents and chat apps (M8) ----------
-  // Invisible characters, exotic spaces and dashes, full-width and other-script digits must
-  // not hide a leak. The patterns see a cleaned copy; `start`/`end` map each cleaned
-  // character back to the original, so a match is reported as the original text (and
-  // Hide it removes the invisible characters too). Look-alike letters from other
-  // alphabets are left alone: mapping them would mangle real Russian or Greek text (D51).
+  // ---------- Text as copied from web pages, documents and chat apps ----------
+  // Invisible characters, exotic spaces and dashes, and full-width or other-script digits could hide a leak, so
+  // the patterns run against a cleaned copy instead. `start` and `end` map each cleaned character back to the
+  // original text, so a match is reported, and redacted, the way the person actually typed it. I leave
+  // look-alike letters from other alphabets alone, since mapping them would mangle real Russian or Greek text.
   const INVISIBLE =
     // eslint-disable-next-line no-misleading-character-class -- each invisible mark is matched on its own, on purpose
     /[\u00ad\u034f\u061c\u115f\u1160\u17b4\u17b5\u180b-\u180f\u200b-\u200f\u202a-\u202e\u2060-\u206f\u3164\ufe00-\ufe0f\ufeff\uffa0]/;
   const SPACE = /[\u00a0\u1680\u2000-\u200a\u202f\u205f\u3000]/;
   const DASH = /[\u2010-\u2015\u2212\u2e3a\u2e3b\ufe58\ufe63\uff0d]/;
+  // A phone keyboard types curly quotes and apostrophes, so "driver’s license" matches "driver's license" either way.
+  const QUOTE = /[‘’‚‛ʼ]/;
+  const DOUBLE_QUOTE = /[“-‟]/;
   const ASCII = /^[\x20-\x7e]+$/;
   const DIGIT = /\p{Nd}/u;
 
   function digitValue(cp) {
-    let zero = cp; // start of this run of decimal digits (runs are 0–9, 0–9, … in order)
+    let zero = cp; // the start of this run of decimal digits, which count up from 0 to 9 in order
     while (zero > 0 && DIGIT.test(String.fromCodePoint(zero - 1))) zero--;
     return String((cp - zero) % 10);
   }
 
   function cleanText(text) {
-    // Plain ASCII without a URL-encoded "@" (ann%40gmail.com in a pasted link): nothing to do.
+    // Plain ASCII with no URL-encoded "@" (like ann%40gmail.com from a pasted link) needs no cleaning.
     if (!/[^\x00-\x7f]|%40/i.test(text)) return { clean: text, start: null, end: null };
     let clean = "";
     const start = [];
@@ -46,9 +48,11 @@
         if (INVISIBLE.test(ch)) out = "";
         else if (SPACE.test(ch)) out = " ";
         else if (DASH.test(ch)) out = "-";
+        else if (QUOTE.test(ch)) out = "'";
+        else if (DOUBLE_QUOTE.test(ch)) out = '"';
         else if (DIGIT.test(ch)) out = digitValue(cp);
         else {
-          const n = ch.normalize("NFKC"); // full-width letters and symbols (＠, Ａ), ligatures
+          const n = ch.normalize("NFKC"); // turns full-width letters and symbols like Ａ or ＠ into plain ASCII
           if (ASCII.test(n)) out = n;
         }
       }
@@ -62,32 +66,112 @@
     return { clean, start, end };
   }
 
-  // Every pattern hit in the text: [{ ...pattern, matches: [text, …] }], most severe first.
-  // A match lying inside a more severe match (the first 10 digits of an Amex card
-  // read as a phone number) is dropped, so each piece of data is reported once.
-  // Matches are always pieces of the original text (see cleanText).
+  // ---------- A phone keyboard's dot ----------
+  // On a phone, two spaces typed in a row turn into ". ", so a label can end up with a dot it never had, like
+  // "driver’s. license L8426037" or "my date of birth. is 10/07/1980". I read the text a second time with each of
+  // those dots turned back into a space, keeping the same length so nothing shifts position. A dot can also be a
+  // real sentence ending, so this second reading only adds a detail that sits entirely before or after one dot,
+  // never spanning it, and never one that starts with the next sentence's first word: "I changed my password.
+  // Thanks!" shouldn't catch "Thanks" as a password. The one exception is a sentence that ends on "is", "was",
+  // "es" or "era" while asking a question, like "I forgot what my password is. Thanks!", where the dot is real
+  // and stays. Otherwise I treat the capitalized word after one of those as the keyboard's own doing: I read it
+  // back in lowercase ("my password is. Sunshine" becomes "my password is  sunshine") and restore its capital in
+  // whatever gets found.
+  const PHONE_DOT = /(?<=\p{L})\. (?=\S)(\p{Lu}\p{Ll}*(?![\p{L}\p{N}]))?/gu;
+  const AFTER_IS = /(?<![\p{L}])(?:is|was|es|era)$/iu;
+  const ASKS = /(?<![\p{L}])(?:what|whatever|where|who|whose|which|how|why|when)(?![\p{L}])[^.!?\n]*$/iu;
+  function withoutPhoneDots(clean) {
+    if (!clean.includes(". ")) return null;
+    const firstWords = new Set();
+    const lowered = new Set();
+    const text = clean.replace(PHONE_DOT, (dot, word, at) => {
+      const before = clean.slice(Math.max(0, at - 60), at);
+      const afterIs = AFTER_IS.test(before);
+      if (afterIs && ASKS.test(before)) return dot;
+      if (!word) return "  ";
+      const lower = word.toLowerCase();
+      if (afterIs && lower.length === word.length) {
+        lowered.add(lower);
+        return `  ${lower}`;
+      }
+      firstWords.add(word);
+      return `  ${word}`;
+    });
+    return text === clean ? null : { text, firstWords, lowered };
+  }
+  // Returns a match the second reading found that the first reading missed, written the way the page actually
+  // had it, or null if there's nothing new. I skip anything the first reading already caught with its trailing
+  // dot still on ("7 Willow Dr." reads the same as "7 Willow Dr"), anything that starts with the next sentence's
+  // first word (a match with a digit in it can, like "October 3"), and anything that still holds one of the dots
+  // I turned into a space.
+  function addedByReading(m, firstFound, reading) {
+    const lead = /^\p{L}+/u.exec(m)?.[0];
+    const asWritten = lead && reading.lowered.has(lead) ? m[0].toUpperCase() + m.slice(1) : m;
+    if (firstFound.has(asWritten) || firstFound.has(`${asWritten}.`) || / {2}| $/.test(m)) return null;
+    return reading.firstWords.has(lead) && !/\p{N}/u.test(m) ? null : asWritten;
+  }
+
+  // Returns every pattern hit in the text as [{ ...pattern, matches: [text, …] }], most severe first. If a match
+  // sits inside a more severe one, like the first ten digits of an Amex card also looking like a phone number, I
+  // drop the weaker one so each piece of data only gets reported once. Matches are always pieces of the original
+  // text, not the cleaned copy (see cleanText). The built-in kinds come first, then whatever kinds a team added
+  // at run time through the vault (patterns.js' setVault).
+  //
+  // The password kind can also carry `asks`, the kinds of code a scammer asked for, and `reasonOf`, the reason
+  // behind each individual match. Those only exist for matches that are still in the result, and only hold the
+  // words shown on screen, since decide.js's whoAsks turns a reason into that wording. Nothing about a reason is
+  // ever stored.
   function detect(text) {
     const { clean, start, end } = cleanText(text);
     const results = [];
-    for (const pattern of PATTERNS) {
-      const raw = pattern.find ? pattern.find(clean) : clean.match(pattern.regex) || [];
-      const matches = [...new Set(raw)].filter(
+    const kinds = [...PATTERNS, ...vaultKinds()];
+    const why = [new Map(), new Map()]; // one per reading: value → reason
+    const read = (pattern, t, reasons) =>
+      pattern.find
+        ? pattern.id === "password"
+          ? pattern.find(t, reasons)
+          : pattern.find(t)
+        : t.match(pattern.regex) || [];
+    // Every pattern reads the full text first, then the version with phone-keyboard dots removed. I run them in
+    // that order because patterns.js caches the previous text's number runs, so interleaving the two readings
+    // would throw that cache off.
+    const first = kinds.map((pattern) => read(pattern, clean, why[0]));
+    const reading = withoutPhoneDots(clean);
+    // The vault's own words and formats don't read Bandage labels (patterns.js' findVault), and a team's kinds are
+    // just more vault entries.
+    const second = reading
+      ? PATTERNS.map((pattern) => (pattern.find?.fromVault ? [] : read(pattern, reading.text, why[1])))
+      : [];
+    for (const [i, pattern] of kinds.entries()) {
+      const firstFound = new Set(first[i]);
+      const raw = new Set(firstFound);
+      for (const m of second[i] || []) {
+        const added = addedByReading(m, firstFound, reading);
+        if (!added) continue;
+        raw.add(added);
+        if (why[1].has(m)) why[0].set(added, why[1].get(m)); // its reason, as written
+      }
+      const matches = [...raw].filter(
         (m) => (!pattern.validate || pattern.validate(m)) && !(pattern.secret && isPlaceholder(m)),
       );
       if (matches.length) results.push({ ...pattern, matches });
     }
     results.sort((a, b) => SEVERITY_RANK[b.severity] - SEVERITY_RANK[a.severity]);
 
-    // A match inside a more severe one is reported once, as the more severe kind (a phone inside
-    // a card number). Only longer strings can contain a match, so each kind's matches are kept
-    // longest first and the search stops at the first one that isn't longer: a paste with
-    // thousands of details isn't compared pair by pair.
+    // A match inside a more severe one, like a phone number that's really part of a card number, gets reported
+    // once as the more severe kind. Only a longer string can contain a shorter match, so I keep each kind's
+    // matches sorted longest first and stop looking as soon as I hit one that isn't longer. That keeps a paste
+    // full of thousands of details from being compared pair by pair. `overlapChecks` counts how many candidates
+    // I actually looked at, never a value itself, so tests/patterns.test.js can tell linear growth from pairwise
+    // growth by the algorithm's own work instead of the clock, which is too noisy on a busy machine.
     const kept = [];
+    globalThis.Clotr.overlapChecks = 0;
     for (const r of results) {
       const stricter = kept.filter((k) => SEVERITY_RANK[k.severity] > SEVERITY_RANK[r.severity]);
       const inside = (m) =>
         stricter.some((k) => {
           for (const km of k.longestFirst) {
+            globalThis.Clotr.overlapChecks++;
             if (km.length <= m.length) return false;
             if (km.includes(m)) return true;
           }
@@ -96,9 +180,18 @@
       const matches = r.matches.filter((m) => !inside(m));
       if (matches.length) kept.push({ ...r, matches, longestFirst: [...matches].sort((a, b) => b.length - a.length) });
     }
-    for (const k of kept) delete k.longestFirst;
+    for (const k of kept) {
+      delete k.longestFirst;
+      if (k.id !== "password") continue;
+      // `reasonOf` keeps each code's own reason, so a warning still knows them even after some matches got
+      // filtered out.
+      const reasonOf = new Map(k.matches.filter((m) => why[0].has(m)).map((m) => [m, why[0].get(m)]));
+      const reasons = new Set(reasonOf.values());
+      const asks = ASK_REASONS.filter((r) => reasons.has(r));
+      if (asks.length) Object.assign(k, { asks, reasonOf });
+    }
     if (!start) return kept;
-    // Back to the original text: every occurrence of each cleaned match.
+    // Maps each cleaned match back to every place it occurs in the original text.
     const original = (m) => {
       const out = new Set();
       for (let at = clean.indexOf(m); at >= 0 && m; at = clean.indexOf(m, at + 1)) {
@@ -106,12 +199,17 @@
       }
       return out.size ? [...out] : [m];
     };
-    return kept.map((r) => ({ ...r, matches: [...new Set(r.matches.flatMap(original))] }));
+    return kept.map((r) => {
+      const matches = [...new Set(r.matches.flatMap(original))];
+      if (!r.reasonOf) return { ...r, matches };
+      const reasonOf = new Map([...r.reasonOf].flatMap(([m, reason]) => original(m).map((o) => [o, reason])));
+      return { ...r, matches, reasonOf };
+    });
   }
 
-  // ---------- PDF attachments: where the streams are (M8) ----------
-  // Linear and bounded, because the file is attacker-controlled: each "stream" keyword looks
-  // back at most 4 KB for its dictionary, and at most 5,000 keywords are examined.
+  // ---------- PDF attachments: finding the streams ----------
+  // A PDF someone attaches is attacker-controlled, so this stays linear and bounded: each "stream" keyword only
+  // looks back 4 KB for its dictionary, and I never look at more than 5,000 keywords total.
   function findPdfStreams(raw, max = 400) {
     const out = [];
     let at = 0;
@@ -152,9 +250,9 @@
     return out;
   }
 
-  // Text from PDF page streams (already unpacked): text-showing operators (Tj, TJ, ', ")
-  // through the fonts' ToUnicode maps. Every repeat is bounded and blocks are found with
-  // indexOf, so hostile files can't make it crawl.
+  // Reads the text-showing operators (Tj, TJ, ', ") out of already-unpacked PDF page streams, translating each
+  // one through its font's ToUnicode map. Every loop here is bounded and blocks are found with indexOf, so a
+  // hostile file can't make this crawl.
   const hexToString = (hex) => {
     let s = "";
     for (let i = 0; i + 4 <= hex.length; i += 4) s += String.fromCharCode(parseInt(hex.slice(i, i + 4), 16));
@@ -211,8 +309,8 @@
       for (let i = 0; i + 2 <= h.length; i += 2) s += String.fromCharCode(parseInt(h.slice(i, i + 2), 16));
       return s;
     };
-    // A hand-written scanner: when a string or hex block doesn't close, skip the whole window
-    // it looked at, so every character is visited a bounded number of times (hostile files).
+    // This is a hand-written scanner. When a string or hex block never closes, I skip the whole window it
+    // looked at, so a hostile file can't make any character get visited more than a bounded number of times.
     let out = "";
     let inArray = false;
     const n = content.length;
@@ -267,13 +365,13 @@
       .join(" ; ");
   }
 
-  // Office XML (docx/xlsx/pptx/OpenDocument) to text, in one linear pass: attacker-controlled
-  // files can't make it crawl (the first regex version took 54 s on 600 KB of "<a <a <a…").
+  // Turns Office XML (docx, xlsx, pptx, OpenDocument) into plain text in one linear pass. A hostile file can't
+  // make this crawl; an earlier regex-based version took 54 seconds on 600 KB of "<a <a <a…".
   const XML_ENTITIES = { amp: "&", lt: "<", gt: ">", quot: '"', apos: "'" };
   const BREAK_TAG = /^(?:\/(?:w:p|a:p|text:p|si|row|c)|w:br\/?|w:tab\/?)$/;
   function xmlToText(xml) {
-    // Plain text is copied in runs (one slice each) and joined once at the end: appending one
-    // character at a time grew faster than the input on hostile "&aaaa…" text (CI caught it).
+    // Plain text gets copied in one slice per run and joined once at the end. Appending one character at a time
+    // grew faster than the input on hostile "&aaaa…" text, which CI caught.
     const parts = [];
     let run = 0; // start of the plain text not yet copied
     const n = xml.length;
@@ -284,14 +382,14 @@
         if (close < 0) {
           n > run && i > run && parts.push(xml.slice(run, i));
           return parts.join("");
-        } // no more tags: the rest isn't document text
+        } // there are no more tags, so the rest of the file isn't document text
         if (i > run) parts.push(xml.slice(run, i));
         if (close - i < 64 && BREAK_TAG.test(xml.slice(i + 1, close).trim())) parts.push("\n");
         i = run = close + 1;
         continue;
       }
       if (c === "&") {
-        const near = xml.slice(i + 1, i + 12).indexOf(";"); // entities are short: look no further
+        const near = xml.slice(i + 1, i + 12).indexOf(";"); // an entity is short, so I don't need to look further
         const semi = near < 0 ? -1 : i + 1 + near;
         const name = semi > i && semi - i <= 10 ? xml.slice(i + 1, semi) : "";
         if (name) {
@@ -323,18 +421,20 @@
   }
 
   // ---------- What to do about a detection ----------
-  // block: modal dialog, sending waits for an answer · warn: corner notice, doesn't block
-  // log: counted quietly ("Just counted"). There is no "off": every detection is recorded
-  // (DECISIONS D21); a stored "off" from older versions reads as "log".
-  // The user can override any pattern (storage key `responses`: { [patternId]: response }).
+  // A response is one of three things. Block opens a modal dialog and holds the message until the person
+  // answers. Warn shows a corner notice but never holds anything. Log just counts it quietly as "Just counted."
+  // There's no "off" anymore; every detection gets recorded, and an "off" stored by an older version now reads
+  // as "log." The person can override any pattern's response through the `responses` storage key, a map of
+  // pattern ID to response.
   const RESPONSES = ["block", "warn", "log"];
-  // Nothing blocks until the user chooses Block (design decision D1). Severity stays on the
-  // pattern for the dashboard and badge; it no longer changes the default.
+  // Nothing blocks by default; the person has to choose Block themselves. Severity still lives on the pattern
+  // for the dashboard and badge, but it no longer changes the default response. A new kind can start out quiet,
+  // counted but not shown, though nothing starts out blocking.
   const DEFAULT_RESPONSE = { high: "warn", medium: "warn", low: "warn" };
 
   function defaultResponse(patternId) {
     const p = PATTERNS.find((x) => x.id === patternId);
-    return DEFAULT_RESPONSE[p?.severity] || "warn";
+    return p?.start === "log" ? "log" : DEFAULT_RESPONSE[p?.severity] || "warn";
   }
 
   function responseFor(patternId, overrides) {
@@ -342,15 +442,15 @@
     return RESPONSES.includes(r) ? r : defaultResponse(patternId);
   }
 
-  // A team policy is a floor, never a ceiling (D115, changing D62): the stricter of two
-  // responses wins, so a required "warn" can't downgrade someone's own "block". An
-  // unrecognized response is treated as "warn" (the safe middle) rather than rejected.
+  // A team's policy sets a floor, not a ceiling: between two responses, the stricter one wins, so a required
+  // "warn" can never downgrade someone's own "block". I treat an unrecognized response as "warn", the safe
+  // middle ground, rather than rejecting it.
   function stricter(a, b) {
     const rank = (r) => (r === "block" ? 0 : r === "log" ? 2 : 1);
     return rank(a) <= rank(b) ? (RESPONSES.includes(a) ? a : "warn") : RESPONSES.includes(b) ? b : "warn";
   }
 
-  // ---------- Fingerprints (salted, one-way; the value itself is never stored) ----------
+  // ---------- Fingerprints: salted and one-way, so the value itself is never stored ----------
 
   // Misspelled big providers (as in patterns.js), so a typo'd address still matches your own.
   const PROVIDER_TYPOS = {
@@ -372,19 +472,19 @@
     icoud: "icloud",
   };
 
-  // Same value however it's written: "(555) 555-5636" = "five five five…",
-  // "Bob@Gmail.com" = "bob at gmail dot com".
+  // Normalizes a value so the same detail matches no matter how it's written: "(555) 555-5636" and "five five
+  // five…" become the same phone number, and "Bob@Gmail.com" matches "bob at gmail dot com".
   function normalize(patternId, raw) {
     const match = cleanText(raw).clean; // invisible characters and look-alike digits don't change a fingerprint
     if (patternId === "phone_number" || patternId === "us_ssn" || patternId === "credit_card") {
-      // "+44 (0)20…" = "+44 20…": the bracketed trunk 0 is dropped when dialing from abroad.
+      // I drop a bracketed trunk 0, since "+44 (0)20…" and "+44 20…" are the same number dialed from abroad.
       const m = patternId === "phone_number" ? match.replace(/\(\s*0\s*\)/g, "") : match;
       let d = numberRuns(m)
         .flatMap((r) => r.units)
         .map((u) => u.digits)
         .join("");
       if (patternId === "phone_number" && d.length === 11 && d[0] === "1") d = d.slice(1);
-      if (patternId === "phone_number" && /^00[1-9]/.test(d)) d = d.slice(2); // 0044… = +44…
+      if (patternId === "phone_number" && /^00[1-9]/.test(d)) d = d.slice(2); // "0044…" is the same as "+44…"
       return `${patternId}:${d}`;
     }
     if (patternId === "email") {
@@ -397,10 +497,15 @@
       const full = /@[a-z0-9-]+$/.test(e) ? `${e}.com` : e;
       return `email:${full.replace(/@([a-z]+)\.com$/, (m, host) => `@${PROVIDER_TYPOS[host] || host}.com`)}`;
     }
-    // ID formats match either case ("ab-123456" = "AB-123456"), so their fingerprints do too (D23).
+    // ID formats match either case ("ab-123456" = "AB-123456"), so their fingerprints do too.
     if (patternId === "my_id") return `my_id:${match.toLowerCase().trim()}`;
+    // A VIN or a plate is the same in any case, with or without spaces and dashes.
+    if (patternId === "vin" || patternId === "license_plate")
+      return `${patternId}:${match.toUpperCase().replace(/[\s\-·]+/g, "")}`;
+    // A gamer tag is the same in any case ("xXSniperXx" = "xxsniperxx"), with any spacing in a Riot name.
+    if (patternId === "gamer_tag") return `gamer_tag:${match.toLowerCase().replace(/\s+/g, " ").trim()}`;
     // Your words match with or without accents ("José García" = "Jose Garcia"). Entries saved before 0.9.67
-    // kept the accents; "watch_list_accented" reproduces that form so they still match as typed.
+    // kept the accents, and "watch_list_accented" reproduces that form so they still match as typed.
     const words = () => match.toLowerCase().replace(/\s+/g, " ").trim();
     if (patternId === "watch_list") return `watch_list:${words().normalize("NFD").replace(/\p{M}/gu, "")}`;
     if (patternId === "watch_list_accented") return `watch_list:${words()}`;
@@ -408,7 +513,7 @@
     if (patternId === "my_name" || patternId === "family_name" || patternId === "employer") {
       return `${patternId}:${words().normalize("NFD").replace(/\p{M}/gu, "")}`;
     }
-    // Addresses too match with or without accents ("Calle Alcalá 45" = "calle alcala 45"); entries saved before
+    // Addresses too match with or without accents ("Calle Alcalá 45" = "calle alcala 45"). Entries saved before
     // 0.9.68 kept the accents, and "street_address_accented" reproduces that form.
     if (patternId === "street_address" || patternId === "street_address_accented") {
       const core = addressCore(match) || words();
@@ -477,7 +582,7 @@
   // 16 hex chars of SHA-256(salt + normalized value).
   const fingerprint = (salt, patternId, match) => sha256(salt + normalize(patternId, match)).slice(0, 16);
 
-  // Hide it: every found item replaced by a label naming its kind ("[REDACTED PHONE NUMBER]").
+  // The Hide it option replaces every found item with a label naming its kind, like "[REDACTED PHONE NUMBER]".
   function redact(text, results) {
     let out = text;
     for (const r of results) {
@@ -486,9 +591,10 @@
     return out;
   }
 
-  // ---------- Generalize instead of remove (pre-release Batch 3) ----------
-  // A coarser version of a detail that still helps the conversation: a birth date keeps its month and year
-  // ("March 1948"), an address its town ("Springfield"). null when there's nothing safe to keep.
+  // ---------- Generalize instead of remove ----------
+  // Returns a coarser version of a detail that still helps the conversation along: a birth date keeps its
+  // month and year, like "March 1948", and an address keeps just its town, like "Springfield". Returns null
+  // when there's nothing safe to keep.
   const MONTHS = {
     jan: 1,
     feb: 2,
@@ -569,10 +675,11 @@
     return out;
   }
 
-  // ---------- Bandage's labels ([Phone 1], [Me], [born in the 1940s]) in every language Clotr speaks ----------
-  // content.js gives labels in the browser's language. After a reload it reads the ones a conversation already holds,
-  // so a new detail continues the numbering after them (D27): one label never stands for two details. The words are
-  // the _locales messages `bl_*` (English first; the unit tests check they match).
+  // ---------- Bandage's labels, like [Phone 1], [Me] or [born in the 1940s], in every language Clotr speaks ----------
+  // content.js writes labels in the browser's language. After a reload, it reads back whatever labels a
+  // conversation already has, so a new detail continues the numbering instead of restarting it, and one label
+  // never ends up standing for two different details. The words themselves come from the _locales messages
+  // named `bl_*`, listed in English first, and the unit tests check that the two stay in sync.
   const BANDAGE_WORDS = {
     bl_me: ["Me", "Yo"],
     bl_company: ["My company", "Mi empresa"],
@@ -599,7 +706,8 @@
   const BANDAGE_KIND = new Map(
     Object.entries(BANDAGE_WORDS).flatMap(([kind, words]) => words.map((w) => [plainWord(w), kind])),
   );
-  // "[word 2]" (the longest word first: "Dirección IP" before "Dirección"), or a decade label with its year in a group.
+  // Matches "[word 2]", checking the longest word first so "Dirección IP" wins over "Dirección", or a decade
+  // label with its year captured in a group.
   const BANDAGE_WORD_ALTS = Object.values(BANDAGE_WORDS)
     .flat()
     .sort((a, b) => b.length - a.length)
@@ -611,11 +719,44 @@
     "giu",
   );
 
-  // Every Bandage label in `text`: { label (as written), index, kind (the bl_* key), n, id }. `id` is the same for one
-  // label in any language or case ("[Phone 2]", "[teléfono 2]" → "bl_phone 2"). Pure and one pass over the text.
+  // A team's own kinds get covered with their own word, like "[Matter 1]". A word numbers under its own kind,
+  // "team:matter", unless it's actually one of Bandage's words in any language, like "Phone" mapping to
+  // "bl_phone", so one label never ends up standing for two different details.
+  const bandageKindOf = (word) => BANDAGE_KIND.get(plainWord(word)) || `team:${plainWord(word)}`;
+  // Matches "[word 2]" with any word up to 40 characters long, though only the words belonging to kinds set
+  // through the vault actually count. The pattern itself is static, so nothing a team writes can ever change
+  // what it matches.
+  const OWN_LABEL_RE = /\[\s*([^[\]\d\n]{1,40}?)\s+(\d{1,4})\s*\]/gu;
+  let coverKinds = { list: null, words: new Map() }; // the cover words of the kinds set with the vault, read once
+  function teamCovers() {
+    const list = globalThis.Clotr.vaultKinds?.() || [];
+    if (coverKinds.list !== list) {
+      const words = new Map();
+      for (const k of list) {
+        const kind = bandageKindOf(k.cover);
+        if (kind.startsWith("team:")) words.set(plainWord(k.cover), kind);
+      }
+      coverKinds = { list, words };
+    }
+    return coverKinds.words;
+  }
+
+  // Finds every Bandage label in `text` and returns { label (as written), index, kind (the bl_* key), n, id }.
+  // `id` stays the same for one label across any language or case, so "[Phone 2]" and "[teléfono 2]" both
+  // become "bl_phone 2". This makes one pass over the text for the built-in words, plus one more for a team's
+  // own cover words when there are any.
   function readBandageLabels(text) {
     const out = [];
     if (!text || !text.includes("[")) return out;
+    const covers = teamCovers();
+    if (covers.size) {
+      OWN_LABEL_RE.lastIndex = 0;
+      for (let m = OWN_LABEL_RE.exec(text); m; m = OWN_LABEL_RE.exec(text)) {
+        const kind = covers.get(plainWord(m[1].trim()));
+        const n = Number(m[2]);
+        if (kind && n) out.push({ label: m[0], index: m.index, kind, n, id: `${kind} ${n}` });
+      }
+    }
     BANDAGE_LABEL_RE.lastIndex = 0;
     for (let m = BANDAGE_LABEL_RE.exec(text); m; m = BANDAGE_LABEL_RE.exec(text)) {
       const decade = m.slice(3).find(Boolean);
@@ -627,7 +768,7 @@
       const n = m[2] ? Number(m[2]) : BANDAGE_ALONE.has(kind) ? 1 : 0;
       if (kind && n) out.push({ label: m[0], index: m.index, kind, n, id: `${kind} ${n}` });
     }
-    return out;
+    return covers.size ? out.sort((a, b) => a.index - b.index) : out;
   }
 
   globalThis.Clotr = {
@@ -640,6 +781,7 @@
     BANDAGE_WORDS,
     BANDAGE_BORN_IN,
     readBandageLabels,
+    bandageKindOf,
     RESPONSES,
     defaultResponse,
     responseFor,
