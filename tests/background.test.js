@@ -551,3 +551,33 @@ test("After a scam, moving the clock back keeps the stored dates and adds nothin
   assert.equal(bg.local.data.tourniquet, undefined, "turned off, then back on by itself");
   assert.deepEqual(bg.calls.errors, []);
 });
+
+// When the extension reloads, the worker that's going away can still be registering the added sites' script
+// as the new one starts, so the new worker finds nothing registered and then hears the ID is taken.
+test("Added sites: a script another worker registered in the meantime is updated, not registered twice", async () => {
+  const bg = loadBackground("chrome");
+  const registered = new Map([["clotr-user-sites", { id: "clotr-user-sites", matches: ["https://old.example/*"] }]]);
+  let missed = false;
+  const updated = [];
+  bg.chrome.permissions.getAll = async () => ({ origins: ["https://chat.example/*"] });
+  Object.assign(bg.chrome.scripting, {
+    // The first lookup for the added sites misses the registration still in flight from the old worker.
+    getRegisteredContentScripts: async ({ ids }) => {
+      if (ids.includes("clotr-user-sites") && !missed) return ((missed = true), []);
+      return ids.filter((id) => registered.has(id)).map((id) => registered.get(id));
+    },
+    registerContentScripts: async (scripts) => {
+      for (const s of scripts) if (registered.has(s.id)) throw new Error(`Duplicate script ID '${s.id}'`);
+      for (const s of scripts) registered.set(s.id, s);
+    },
+    updateContentScripts: async (scripts) => {
+      for (const s of scripts) updated.push(s.matches);
+      for (const s of scripts) registered.set(s.id, { ...registered.get(s.id), ...s });
+    },
+  });
+  for (const fn of bg.chrome.runtime.onStartup.listeners) fn();
+  await settle();
+  assert.deepEqual(bg.calls.errors, []);
+  assert.deepEqual(plain(updated), [["https://chat.example/*"]]);
+  assert.deepEqual(plain(registered.get("clotr-user-sites").matches), ["https://chat.example/*"]);
+});

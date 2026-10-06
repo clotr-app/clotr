@@ -606,7 +606,16 @@ async function syncUserSites() {
     persistAcrossSessions: true,
   };
   if (existing.length) await chrome.scripting.updateContentScripts([script]);
-  else await chrome.scripting.registerContentScripts([script]);
+  else {
+    try {
+      await chrome.scripting.registerContentScripts([script]);
+    } catch (err) {
+      // While the extension reloads, the worker that's going away can finish registering after this one looked,
+      // so the ID turns out to be taken. Updating that registration gives the same result.
+      if (!/duplicate/i.test(String(err?.message || err))) throw err;
+      await chrome.scripting.updateContentScripts([script]);
+    }
+  }
   console.info(LOG, "user-added AI sites:", matches);
 }
 
