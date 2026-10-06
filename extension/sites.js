@@ -19,6 +19,15 @@
     "warning-ui.js",
     "content.js",
   ];
+  // The release zip leaves out a held-back feature's script and drops it from the manifest, and the browser won't
+  // register a list that names a missing file. So the sites people add and the email and chat apps get the
+  // scripts the manifest really ships, in this order. Firefox hands the manifest's script paths back in a different
+  // form than they're written in, so compare file names only.
+  const fileName = (p) => String(p).split("/").pop();
+  const shipped = globalThis.chrome?.runtime?.getManifest?.()?.content_scripts?.[0]?.js;
+  const SHIPPED_JS = Array.isArray(shipped)
+    ? CONTENT_JS.filter((f) => shipped.some((s) => fileName(s) === f))
+    : CONTENT_JS;
   const USER_SCRIPT_ID = "clotr-user-sites";
 
   // Email and chat apps, where you're writing to a person instead of an AI. None of these run by default:
@@ -945,7 +954,7 @@
     policyKinds,
     policyFingerprint,
     hasPolicy,
-    CONTENT_JS,
+    CONTENT_JS: SHIPPED_JS,
     USER_SCRIPT_ID,
     EVERYDAY_SITES,
     everydaySiteFor,

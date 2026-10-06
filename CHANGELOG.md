@@ -2,6 +2,12 @@
 
 What changed in each version of Clotr. How the version numbers work is in [VERSIONING.md](VERSIONING.md).
 
+## 1.2.1 (2026-10-06)
+
+- In the release zip, sites you add yourself and the email and chat apps you switch on are protected again. 1.2.0's
+  zip left out a file for a feature that's still switched off, and those sites still asked for it.
+- Reading pasted code with escaped quotes in it no longer trips Clotr up.
+
 ## 1.2.0 (2026-10-05)
 
 - A new look and a new icon.

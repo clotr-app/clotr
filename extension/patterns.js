@@ -2353,7 +2353,10 @@
     }
     try {
       const loose = span
-        .replace(/'((?:[^'\\]|\\.)*)'/g, (_, s) => `"${s.replace(/\\'/g, "'").replace(/"/g, '\\"')}"`)
+        .replace(
+          /'((?:[^'\\]|\\.)*)'/g,
+          (_, s) => `"${s.replace(/\\'|\\.|"/g, (m) => (m === "\\'" ? "'" : m === '"' ? '\\"' : m))}"`,
+        )
         .replace(/([{,]\s*)([A-Za-z_$][\w$]*)(\s*:)/g, '$1"$2"$3')
         .replace(/\bNone\b/g, "null")
         .replace(/\bTrue\b/g, "true")

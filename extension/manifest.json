@@ -2,7 +2,7 @@
   "manifest_version": 3,
   "name": "Clotr: clot your data leaks",
   "short_name": "Clotr",
-  "version": "1.2.0",
+  "version": "1.2.1",
   "description": "__MSG_extDescription__",
   "icons": {
     "16": "icons/icon-on-16.png",

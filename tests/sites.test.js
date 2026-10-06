@@ -1044,3 +1044,36 @@ test("weight: a folded record counts as its n, anything else as one", () => {
   assert.equal(weight(null), 1);
   assert.equal(weight(undefined), 1);
 });
+
+// The release zip leaves out a held-back feature's files and drops them from the manifest's content script, but
+// sites.js keeps its own list for the sites people add and the email and chat apps they switch on. The browser
+// refuses to register a script list that names a missing file, so in the zip those sites got no protection at
+// all while the built-in AI sites worked. Load sites.js against the manifest the zip actually ships and check
+// that it only asks for files that are there.
+test("sites people add and the email and chat apps get only the scripts the release zip ships", () => {
+  const vm = require("vm");
+  const { featureManifest } = require("../tools/package.js");
+  const shipped = featureManifest(manifest, { ...manifest.clotr_features });
+  const context = vm.createContext({ chrome: { runtime: { getManifest: () => shipped } }, console });
+  context.globalThis = context;
+  vm.runInContext(fs.readFileSync(path.join(__dirname, "..", "extension", "sites.js"), "utf8"), context);
+  const listed = [...context.ClotrSites.CONTENT_JS];
+  for (const f of listed) assert.ok(shipped.content_scripts[0].js.includes(f), `${f} isn't in the zip's manifest`);
+  assert.deepEqual(listed, shipped.content_scripts[0].js);
+});
+
+// Firefox doesn't hand the manifest's script paths back exactly as they're written, so the list is matched on
+// file names. Paths in another form must still give the full list, in order.
+test("the shipped script list matches on file names, whatever form the browser gives the paths in", () => {
+  const vm = require("vm");
+  const { featureManifest } = require("../tools/package.js");
+  const shipped = featureManifest(manifest, { ...manifest.clotr_features });
+  const asPaths = {
+    ...shipped,
+    content_scripts: [{ ...shipped.content_scripts[0], js: shipped.content_scripts[0].js.map((f) => `/${f}`) }],
+  };
+  const context = vm.createContext({ chrome: { runtime: { getManifest: () => asPaths } }, console });
+  context.globalThis = context;
+  vm.runInContext(fs.readFileSync(path.join(__dirname, "..", "extension", "sites.js"), "utf8"), context);
+  assert.deepEqual([...context.ClotrSites.CONTENT_JS], shipped.content_scripts[0].js);
+});
