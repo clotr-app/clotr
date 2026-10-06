@@ -38,10 +38,12 @@
   display: grid;
   place-items: center;
   font-weight: 700;
-  background: var(--signal);
-  background-image: var(--sheen);
-  color: var(--on-signal);
-  box-shadow: var(--sheen-shadow);
+  background: var(--plum);
+  color: var(--on-plum);
+}
+/* Only the first question so far: the rail has nothing to lead to yet. */
+.helper-steps:not(:has(> li:not(#step-who):not([hidden])))::before {
+  display: none;
 }
 .helper-steps h2 {
   font-size: 17px;
@@ -62,7 +64,7 @@
   margin-top: 6px;
   padding: 14px 16px;
   border-radius: 12px;
-  background: var(--brand-wash);
+  background: var(--wash);
 }
 .helper-done h2 {
   font-size: 17px;
@@ -71,4 +73,420 @@
 .helper-done p {
   margin: 0 0 6px;
   line-height: 1.5;
+}
+.helper-page .linkish {
+  font-size: 14px;
+  color: var(--ink-2);
+}
+.helper-page .linkish:focus-visible,
+.helper-page .btn:focus-visible {
+  outline: 2px solid var(--brand);
+  outline-offset: 2px;
+}
+
+/* ---------- Tourniquet ---------- */
+
+/* Who is it for? Two tiles with a real radio each, then a quiet third way. The chosen tile takes Clotr's chosen look
+   (plum edge, light wash) with a thicker edge and the radio dot, so it never rests on colour alone. */
+.tq-who {
+  margin: 0;
+  padding: 0;
+  min-width: 0;
+  border: none;
+}
+.tq-who legend {
+  padding: 0;
+}
+.tq-tiles {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+  margin-top: 10px;
+}
+.tq-tile {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  align-items: baseline;
+  column-gap: 10px;
+  row-gap: 6px;
+  padding: 14px 16px 15px;
+  border-radius: 12px;
+  background: var(--surface);
+  box-shadow: inset 0 0 0 1px var(--axis);
+  cursor: pointer;
+  transition: box-shadow 0.15s;
+}
+.tq-tile:hover {
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--plum) 45%, var(--axis));
+}
+.tq-tile input,
+.tq-self input {
+  width: 18px;
+  height: 18px;
+  margin: 0;
+  accent-color: var(--brand);
+  align-self: center;
+}
+.tq-tile input:focus-visible,
+.tq-self input:focus-visible {
+  outline: none;
+}
+.tq-tile:has(input:focus-visible),
+.tq-self:has(input:focus-visible) {
+  outline: 2px solid var(--brand);
+  outline-offset: 2px;
+}
+.tq-tile-title {
+  font-size: 16px;
+  font-weight: 700;
+  color: var(--ink);
+}
+.tq-tile-text {
+  grid-column: 2;
+  display: grid;
+  gap: 8px;
+  color: var(--ink-2);
+  line-height: 1.45;
+}
+.tq-tile-name {
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--muted);
+}
+.tq-tile:has(input:checked) {
+  background: var(--chosen-bg);
+  box-shadow: inset 0 0 0 2px var(--plum);
+}
+.tq-tile:has(input:checked) .tq-tile-name {
+  color: var(--brand);
+}
+/* After a scam (Scam Shield): the first two tiles say who, this one says when, so it spans both. Its name carries
+   the feature's tag (.ss-tag, popup.css): the shield and the name, in the chosen look's colours. */
+.tq-tile-wide {
+  grid-column: 1 / -1;
+}
+.tq-tile-wide .tq-tile-name {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 10px;
+}
+.tq-self {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 32px;
+  margin-top: 10px;
+  padding-right: 6px;
+  border-radius: 6px;
+  color: var(--ink-2);
+  cursor: pointer;
+}
+.tq-self:has(input:checked) {
+  color: var(--ink);
+  font-weight: 700;
+}
+
+/* The map: lines drawn beside the real list, in the welcome page's mind-map style. Its rows are a fixed height while
+   the drawing shows (helper.js draws from the same numbers), and the drawing only appears when there's room. */
+.tq-map {
+  --map-h: 220px;
+  display: grid;
+  grid-template-columns: 200px minmax(0, 1fr);
+  margin: 6px 0 12px;
+}
+.tq-map-art {
+  position: relative;
+  height: var(--map-h);
+}
+.tq-map-lines {
+  display: block;
+  width: 200px;
+  overflow: visible;
+}
+.tq-them {
+  position: absolute;
+  left: 6px;
+  width: 60px;
+  height: 60px;
+  margin-top: -30px;
+  display: grid;
+  place-items: center;
+  padding: 4px;
+  border-radius: 50%;
+  font-size: 13px;
+  font-weight: 700;
+  line-height: 1.1;
+  text-align: center;
+  color: var(--on-plum);
+  background: var(--plum);
+}
+.tq-wire {
+  fill: none;
+  stroke: var(--plum);
+  stroke-width: 2.5;
+  stroke-linecap: round;
+}
+.tq-wire.trunk {
+  stroke-width: 3.5;
+}
+.tq-wire.notes {
+  stroke: var(--axis);
+}
+.tq-wire.waiting {
+  stroke-dasharray: 0.5 8.5;
+}
+.tq-node {
+  fill: var(--plum);
+}
+.tq-node.notes {
+  fill: var(--axis);
+}
+.tq-node.waiting {
+  fill: var(--page);
+  stroke: var(--plum);
+  stroke-width: 2.5;
+}
+.tq-map-list h3 {
+  height: 24px;
+  margin: 0;
+  font-size: 13px;
+  line-height: 24px;
+  font-weight: 700;
+  color: var(--brand);
+}
+.tq-group.notes h3 {
+  color: var(--ink-2);
+}
+.tq-map-list ul {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.tq-map-list li {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: 28px;
+  color: var(--ink);
+  white-space: nowrap;
+}
+.tq-map-list li span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.tq-group + .tq-group {
+  margin-top: 14px;
+}
+.tq-bullet {
+  flex: none;
+  width: 22px;
+  height: 22px;
+  margin-left: -4px;
+}
+.tq-p-edge {
+  fill: color-mix(in srgb, var(--plum) 30%, var(--surface));
+}
+.tq-p-strip {
+  fill: var(--plum);
+}
+.tq-p-pad {
+  fill: color-mix(in srgb, var(--plum) 25%, var(--surface));
+}
+.tq-dot {
+  fill: var(--axis);
+}
+/* Words not added yet: the plasters wait, outlined. */
+.tq-group.waiting .tq-p-edge {
+  fill: none;
+  stroke: var(--plum);
+  stroke-width: 1.4;
+}
+.tq-group.waiting .tq-p-strip,
+.tq-group.waiting .tq-p-pad {
+  display: none;
+}
+.tq-group.waiting li {
+  color: var(--ink-2);
+}
+.tq-hint {
+  font-size: 13px;
+}
+/* Turned on: plain bold text with the shield, like the popup's chip; off is a quiet link beside it (two clicks). */
+.tq-action {
+  margin-bottom: 4px;
+}
+.tq-state:empty {
+  display: none;
+}
+.tq-state {
+  color: var(--ink-2);
+}
+.tq-state.on {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  font-weight: 700;
+  color: var(--brand);
+}
+.tq-state .tq-shield {
+  width: 14px;
+  height: 14px;
+}
+.tq-off.confirm {
+  color: var(--high-fg);
+  font-weight: 700;
+}
+/* The 30 days: the track in a quiet card, today (or day N) on the left and the end date on the right. Never wider
+   than a phone's screen, so the marks stay small squares. */
+.tq-days {
+  max-width: 460px;
+  margin: 4px 0 12px;
+  padding: 12px 14px 10px;
+  border-radius: 12px;
+  background: var(--surface);
+  box-shadow: inset 0 0 0 1px var(--ring);
+}
+.helper-steps .tq-days-words {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: 2px 12px;
+  margin: 6px 0 0;
+  color: var(--ink);
+}
+/* What to do now: the light wash with the plum edge and the shield, each question in bold before its answer. */
+.ss-now {
+  margin: 14px 0 8px;
+  padding: 12px 16px 6px;
+  border-radius: 12px;
+  background: var(--wash);
+  box-shadow:
+    inset 3px 0 0 var(--plum),
+    inset 0 0 0 1px var(--ring);
+}
+.ss-now h3 {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0 0 8px;
+  font-size: 15px;
+  color: var(--ink);
+}
+.ss-now h3 .tq-shield {
+  width: 14px;
+  height: 14px;
+}
+.ss-now ul {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.ss-now li {
+  margin: 0 0 10px;
+  line-height: 1.5;
+  color: var(--ink-2);
+}
+.ss-now a {
+  color: var(--brand);
+  font-weight: 700;
+}
+.ss-now a:focus-visible {
+  outline: 2px solid var(--brand);
+  outline-offset: 2px;
+  border-radius: 3px;
+}
+.helper-steps .ss-now-keeps {
+  font-size: 13px;
+  color: var(--muted);
+}
+/* The apps step uses the welcome page's card: bigger rows. */
+#step-apps .ev-app {
+  min-height: 40px;
+  font-size: 14px;
+}
+#step-apps .ev-status {
+  margin-top: 8px;
+}
+.helper-how ul {
+  margin: 6px 0 2px;
+  padding-left: 20px;
+  line-height: 1.5;
+}
+.helper-how li {
+  margin: 0 0 6px;
+}
+.helper-how li::marker {
+  color: var(--brand);
+}
+.helper-after {
+  margin-top: 14px;
+}
+.helper-after p {
+  color: var(--ink-2);
+  line-height: 1.5;
+  margin: 0 0 10px;
+}
+
+/* The map draws itself once a choice is made: the trunks grow out of "Them", then each line, then the plasters land.
+   Everything rests in place, so with reduced motion it's simply there. The fades and landings are vault.css's. */
+@media (prefers-reduced-motion: no-preference) {
+  .tq-wire {
+    stroke-dasharray: 1;
+    animation: tq-draw 520ms cubic-bezier(0.22, 0.9, 0.26, 1) calc(80ms + var(--i, 0) * 60ms) both;
+  }
+  .tq-wire.waiting {
+    stroke-dasharray: 0.5 8.5;
+    animation: hm-drift 1.6s linear infinite;
+  }
+  .tq-map-list li {
+    animation: hm-fade 380ms ease-out calc(260ms + var(--i, 0) * 70ms) both;
+  }
+  .tq-map-list li .tq-bullet {
+    animation: hm-land 480ms cubic-bezier(0.34, 1.56, 0.64, 1) calc(300ms + var(--i, 0) * 70ms) both;
+  }
+  .tq-tile {
+    transition: box-shadow 0.15s;
+  }
+}
+@keyframes tq-draw {
+  from {
+    stroke-dashoffset: 1;
+  }
+  to {
+    stroke-dashoffset: 0;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .tq-tile {
+    transition: none;
+  }
+}
+
+/* Narrow windows (and 200% zoom): the tiles stack, and the map is its list. */
+@media (max-width: 559px) {
+  .tq-tiles {
+    grid-template-columns: 1fr;
+  }
+  .tq-map {
+    grid-template-columns: 1fr;
+  }
+  .tq-map-art {
+    display: none;
+  }
+  .tq-map-list li {
+    height: auto;
+    min-height: 28px;
+    white-space: normal;
+  }
+  .tq-map-list h3 {
+    height: auto;
+  }
+}
+/* A finger, not a mouse: rows at least 44 px. */
+@media (pointer: coarse) {
+  #step-apps .ev-app,
+  .tq-self {
+    min-height: 44px;
+  }
 }

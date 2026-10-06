@@ -118,6 +118,7 @@ body.dash-page {
   padding: 4px 6px;
   border-bottom: 1px solid var(--grid);
   text-align: left;
+  overflow-wrap: anywhere; /* long names break, so the table fits a phone */
 }
 
 .risky {
@@ -134,6 +135,11 @@ body.dash-page {
   border-left: 4px solid var(--critical);
 }
 .moment .what {
+  font-weight: 600;
+}
+/* The rest of a long list sent at once, as one record. */
+.moment .more {
+  color: var(--brand);
   font-weight: 600;
 }
 .moment .when {
@@ -169,11 +175,6 @@ body.dash-page {
 .dash-page {
   --danger-ink: var(--critical);
 }
-@media (prefers-color-scheme: dark) {
-  .dash-page {
-    --danger-ink: #ff8a80;
-  }
-}
 .btn.danger {
   color: var(--danger-ink);
 }
@@ -184,14 +185,37 @@ body.dash-page {
 .empty-note {
   color: var(--ink-2);
 }
+/* Your data: "Your history is full", a warm note in the brand's wash, not an alarm. */
+.history-full {
+  margin: 12px 0 20px;
+  padding: 16px 18px;
+  border-radius: 12px;
+  background: var(--brand-wash);
+}
+.history-full h3 {
+  margin: 0 0 6px;
+  font-size: 20px;
+  line-height: 1.25;
+  color: var(--brand);
+}
+.history-full p {
+  margin: 0 0 10px;
+}
+.history-full .actions-row {
+  align-items: center;
+  margin: 0;
+}
+.history-full .muted {
+  color: var(--ink-2);
+}
 
-/* Mind map (D75) */
+/* Mind map */
 .map {
   width: 100%;
   height: auto;
   max-height: 720px;
 }
-/* Motion (D75): one ease for every move; the lines follow the nodes. */
+/* Motion: one ease for every move; the lines follow the nodes. */
 .map {
   --ease-out: cubic-bezier(0.22, 0.9, 0.26, 1);
 }

@@ -22,6 +22,10 @@
   background: var(--wash);
   word-break: break-all;
 }
+/* Clotr Antibody's tag (.ss-tag, popup.css) under the card's heading: the card is one of its parts. */
+.ss-tag-row {
+  margin: -2px 0 6px;
+}
 .guide {
   margin-top: 26px;
   padding: 22px 24px;
@@ -56,6 +60,24 @@
   background: var(--brand-wash);
   border-radius: 4px 10px 10px 4px;
 }
+/* Tourniquet's paragraph: the orange edge and small shield of its line in a warning. */
+.guide-tq {
+  margin-top: 14px;
+  padding: 2px 12px 8px;
+  border-left: 5px solid var(--signal);
+  border-radius: 4px 10px 10px 4px;
+  background: var(--brand-wash);
+}
+.guide-tq h3 {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 8px;
+}
+.guide-tq .tq-shield {
+  width: 16px;
+  height: 16px;
+}
 .guide-fill {
   display: flex;
   gap: 10px;
@@ -68,7 +90,142 @@
   border-bottom: 2px solid var(--ink-2);
   min-height: 1.4em;
 }
+.card-hint {
+  margin: 4px 0 0;
+  font-size: 13px;
+  color: var(--ink-2);
+}
+/* "Never read these out": the card for next to the phone. On screen, a sheet like the guide; on paper, black on
+   white, large type (a 34px title, 16px rows), one page of US Letter or A4. */
+.card-sheet {
+  margin-top: 26px;
+  padding: 22px 24px;
+  border: 2px solid var(--axis);
+  border-radius: 14px;
+  background: var(--card-bg);
+  box-shadow: var(--lift);
+  font-size: 16px;
+  line-height: 1.45;
+}
+.card-brand {
+  margin: 0;
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--ink-2);
+}
+.card-sheet h2 {
+  margin: 2px 0 8px;
+  font-size: 34px;
+  line-height: 1.15;
+}
+.card-lead {
+  margin: 0 0 16px;
+}
+.card-rows {
+  margin: 0;
+  border-top: 2px solid var(--ink);
+}
+.card-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1.2fr);
+  gap: 4px 28px;
+  padding: 10px 0;
+  border-bottom: 1px solid var(--axis);
+}
+.card-row dt {
+  font-weight: 700;
+}
+.card-row dd {
+  margin: 0;
+}
+.card-box {
+  margin-top: 18px;
+  padding: 14px 18px 16px;
+  border: 2px solid var(--ink);
+  border-radius: 10px;
+}
+.card-box-lead {
+  margin: 0 0 16px;
+  font-size: 17px;
+  font-weight: 700;
+}
+/* Each blank stays beside its label: on a narrow screen the pair wraps as one. */
+.card-fill {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 14px 24px;
+  margin: 0;
+}
+.card-fill .fill {
+  display: flex;
+  flex: 1 1 200px;
+  align-items: flex-end;
+  gap: 10px;
+}
+.card-fill .blank {
+  flex: 1;
+  min-height: 1.4em;
+  border-bottom: 2px solid var(--ink-2);
+}
+.card-from {
+  margin: 14px 0 0;
+  font-size: 13px;
+  color: var(--ink-2);
+}
+/* A phone's width: each row's two halves stack. */
+@media (max-width: 520px) {
+  .card-sheet {
+    padding: 16px;
+  }
+  .card-sheet h2 {
+    font-size: 28px;
+  }
+  .card-row {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
 @media print {
+  /* One sheet at a time: the card when "Print the card" asked for it, otherwise the guide (as before). */
+  body[data-print="card"] .guide,
+  body:not([data-print="card"]) .card-sheet {
+    display: none !important;
+  }
+  .card-sheet {
+    border: none;
+    margin: 0;
+    padding: 0;
+    background: #fff;
+    box-shadow: none;
+    font-size: 12.5pt;
+  }
+  .card-sheet h2 {
+    font-size: 26pt;
+  }
+  .card-lead,
+  .card-box-lead {
+    font-size: 13pt;
+  }
+  .card-brand,
+  .card-from {
+    font-size: 10pt;
+  }
+  .card-row {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1.2fr);
+    break-inside: avoid;
+    border-bottom-color: #888;
+  }
+  .card-rows,
+  .card-box,
+  .card-fill .blank {
+    border-color: #000;
+  }
+  .card-box {
+    break-inside: avoid;
+  }
+  .card-sheet,
+  .card-sheet * {
+    color: #000 !important;
+  }
   .no-print {
     display: none !important;
   }
@@ -93,9 +250,13 @@
   .guide h3 {
     font-size: 17pt;
   }
-  .guide-scam {
+  .guide-scam,
+  .guide-tq {
     background: #fff;
     border-left-color: #000;
+  }
+  .guide-tq .tq-shield {
+    fill: #000;
   }
   /* Paper is white whatever the screen's theme: every word prints black. */
   .guide,

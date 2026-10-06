@@ -1,0 +1,204 @@
+/* The office training walkthrough reuses practice.css's column, chat bubbles and answer buttons, and adds what's
+   new here: step text, the flagged-answer exercise, the quiz and the printable completion page. Text sits at
+   15-16px and every target is at least 40px tall, and motion only plays when prefers-reduced-motion allows it,
+   the same as practice.css. */
+body.training-page {
+  max-width: 760px;
+  font-size: 15px;
+}
+.training-page .top h1 {
+  font-size: 22px;
+  line-height: 1.25;
+  margin-top: 4px;
+}
+.training-page .lead {
+  font-size: 15px;
+  margin: 4px 0 14px;
+}
+.step-of {
+  margin: 0 0 14px;
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--muted);
+}
+.tw-text {
+  font-size: 16px;
+  line-height: 1.55;
+  margin: 0 0 12px;
+}
+.tw-source a {
+  color: var(--brand);
+}
+.tw-explain {
+  margin: 12px 0 6px;
+  padding: 10px 14px;
+  border-radius: 10px;
+  background: var(--brand-wash);
+  line-height: 1.5;
+}
+.nav-inline {
+  margin: 14px 0 0;
+}
+
+/* Step 3: your office's words. */
+.training-page .list {
+  margin: 0 0 4px;
+  padding-left: 20px;
+}
+.training-page .list li {
+  margin: 0 0 4px;
+  line-height: 1.5;
+}
+
+/* Step 5: the AI-tool checklist, three answers per question (not the drills' two). */
+.tw-check-item {
+  margin: 0 0 18px;
+  padding: 12px 14px 14px;
+  border-radius: 12px;
+  background: var(--card-bg);
+  box-shadow:
+    var(--lift),
+    inset 0 0 0 1px var(--ring);
+}
+.tw-check-q {
+  margin: 0 0 6px;
+  font-weight: 700;
+  font-size: 16px;
+}
+.tw-check-answers {
+  display: flex;
+  flex-wrap: wrap;
+  grid-template-columns: none;
+  gap: 8px;
+  margin-top: 10px;
+}
+.tw-check-answers .answer {
+  flex: 1;
+  min-width: 90px;
+}
+
+/* Step 6: check AI's work. Clickable words inside the AI's made-up answer. */
+.tw-ai-answer {
+  margin: 0;
+  font-size: 16px;
+  line-height: 1.6;
+}
+.flag-target {
+  display: inline;
+  padding: 1px 2px;
+  margin: 0;
+  border: none;
+  border-radius: 4px;
+  font: inherit;
+  color: inherit;
+  /* Every clickable part looks the same until it's clicked, right or wrong, so the look never gives the answer
+     away. */
+  background: none;
+  text-decoration: underline dotted;
+  text-underline-offset: 3px;
+  cursor: pointer;
+}
+.flag-target:hover {
+  background: color-mix(in srgb, var(--signal) 14%, transparent);
+}
+.flag-target:focus-visible {
+  outline: 2px solid var(--brand);
+  outline-offset: 1px;
+}
+.flag-target.flagged {
+  background: var(--signal);
+  color: #fff;
+}
+.tw-correct {
+  color: var(--good-ink);
+  font-weight: 700;
+}
+.tw-missed {
+  color: var(--high-fg);
+  font-weight: 700;
+}
+
+/* Step 7: the check. Up to three options, full width so the text can wrap. */
+.tw-quiz-q {
+  font-size: 16px;
+  font-weight: 700;
+  margin: 0 0 10px;
+}
+.tw-quiz-options {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.training-page .tw-quiz-option {
+  min-height: 44px;
+  padding: 10px 14px;
+  text-align: left;
+  white-space: normal;
+  line-height: 1.4;
+}
+.tw-quiz-option.tw-correct {
+  box-shadow:
+    var(--btn-lift),
+    inset 0 0 0 2px var(--good-ink);
+}
+.tw-quiz-option.tw-missed {
+  box-shadow:
+    var(--btn-lift),
+    inset 0 0 0 2px var(--high-fg);
+}
+
+/* Step 8: completion. A quiet card, printable (policy.css's pattern), never "certified". */
+.tw-done-card {
+  margin: 10px 0 0;
+  padding: 18px 20px 20px;
+  border-radius: 14px;
+  background: var(--card-bg);
+  box-shadow:
+    var(--lift),
+    inset 0 0 0 1px var(--ring);
+}
+.tw-done-name {
+  margin: 0 0 2px;
+  font-size: 20px;
+  font-weight: 700;
+}
+.tw-done-card p {
+  margin: 0 0 6px;
+  line-height: 1.5;
+}
+#tw-done-topics {
+  margin: 4px 0 0;
+  padding-left: 20px;
+}
+#tw-done-topics li {
+  margin: 0 0 3px;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  #tw-body > * {
+    animation: tw-fade 220ms ease-out both;
+  }
+}
+@keyframes tw-fade {
+  from {
+    opacity: 0;
+  }
+}
+
+@media print {
+  .no-print {
+    display: none !important;
+  }
+  body.training-page {
+    padding: 0;
+    max-width: none;
+    background: #fff;
+    color: #000;
+  }
+  .training-page,
+  .training-page * {
+    color: #000 !important;
+    background: #fff !important;
+    box-shadow: none !important;
+  }
+}

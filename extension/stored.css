@@ -29,7 +29,7 @@
   padding: 4px;
   border-bottom: 1px solid var(--grid);
   vertical-align: top;
-  overflow-wrap: break-word;
+  overflow-wrap: anywhere; /* long site names break, so the table fits a phone */
 }
 .stored-page .events caption {
   text-align: left;

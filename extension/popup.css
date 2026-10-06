@@ -1,60 +1,46 @@
-/* Clotr's shared styles (popup, report, vault, stored pages). Brand: burnt orange (D76), for buttons,
-   links, focus and headers only. The look (D135, the warm refresh): warm paper, cards lit
-   from the top with a warm shadow, an orange sheen on primary buttons and chosen tabs. Chart colors follow a separate validated categorical palette:
+/* Clotr's shared styles (popup, report, vault, stored pages). Brand: plum on brushed steel, flat finish,
+   no gradients or shadows for mood. Chart colors follow a separate validated categorical palette:
    blue / orange / aqua, all-pairs colorblind-safe in light and dark. Warnings stay red/amber. */
-/* Atkinson Hyperlegible (Braille Institute, SIL OFL: fonts/OFL.txt), made for low-vision readers.
-   Bundled, so nothing is fetched; Clotr's own pages only (the in-page warning uses the system font). */
+/* Recursive (Arrow Type, SIL OFL: fonts/OFL-Recursive.txt), one variable file for every weight and the
+   casual and mono axes below. Bundled, so nothing is fetched; Clotr's own pages only (the in-page warning
+   uses the system font). */
 @font-face {
-  font-family: "Atkinson Hyperlegible";
-  src: url("fonts/atkinson-hyperlegible-400.woff2") format("woff2");
-  font-weight: 400;
-  font-display: swap;
-}
-@font-face {
-  font-family: "Atkinson Hyperlegible";
-  src: url("fonts/atkinson-hyperlegible-700.woff2") format("woff2");
-  font-weight: 700;
+  font-family: "Recursive";
+  src: url("fonts/Recursive-var-normal.woff2") format("woff2-variations");
+  font-weight: 300 1000;
   font-display: swap;
 }
 :root {
   color-scheme: light;
-  --page: #fbf8f5;
-  --surface: #ffffff;
-  --surface-2: #fffaf6;
-  --ink: #0b0b0b;
-  --ink-2: #534e49;
-  --muted: #6b645e; /* 5:1 on page/surface (WCAG AA text) */
-  --brand: #b84a0c; /* orange as text, links and focus rings: 4.95:1 on page */
-  --on-brand: #ffffff;
-  --brand-wash: #fbeee4; /* brand text on it 4.6:1 */
-  /* Signal orange (D80, the Figma brand): buttons and brand lines, never text (2.9:1 on white); ink on it is 7:1 */
-  --signal: #ff6700;
-  --on-signal: #0b0b0b;
-  --btn-primary: var(--signal);
-  --grid: #ebe4dc;
-  --axis: #cdc3b9;
-  --ring: rgba(80, 45, 15, 0.12);
-  --wash: rgba(160, 80, 20, 0.07);
-  /* Cards lit from the top, a warm lift under them; the orange sheen for primary buttons and chosen tabs. */
-  --card-bg: linear-gradient(180deg, var(--surface), var(--surface-2));
-  --lift:
-    inset 0 1px 0 rgba(255, 255, 255, 0.8), 0 1px 2px rgba(60, 30, 10, 0.06), 0 14px 36px -18px rgba(120, 60, 20, 0.16);
-  --sheen: linear-gradient(180deg, #ff8a3d, #ff6700 60%, #f25f00);
-  --sheen-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.45), inset 0 -3px 0 rgba(0, 0, 0, 0.12),
-    0 8px 16px -10px rgba(255, 103, 0, 0.65);
-  --btn-lift: inset 0 1px 0 rgba(255, 255, 255, 0.85), 0 5px 12px -10px rgba(20, 22, 28, 0.4);
-  --chosen-bg: #fff0e6;
-  --glow: rgba(255, 103, 0, 0.07);
+  --page: #ffffff;
+  --surface: #f3f4f5;
+  --ink: #1f2226;
+  /* Dark enough for the chosen-row wash (--chosen-bg), not only the plain page: 4.5:1 holds on both. */
+  --ink-2: #545b64;
+  --muted: #545b64;
+  --faint: #dde0e3; /* hairlines and card rims */
+  --line: #d3d6da; /* rails and stronger dividers */
+  --brand: #5b3a63; /* links and brand text */
+  --focus: #5b3a63;
+  --plum: #5b3a63; /* buttons, pad and accent rails: the same value in both themes */
+  --on-plum: #ffffff; /* white on plum, 9.4:1 */
+  --steel: #c2c7cc; /* the header field: the same value in both themes */
+  --on-steel: #5b3a63; /* plum on steel, 5.5:1: the same value in both themes */
+  --ring: color-mix(in srgb, var(--plum) 8%, var(--faint));
+  --wash: color-mix(in srgb, var(--plum) 6%, var(--surface));
+  --chosen-bg: color-mix(in srgb, var(--plum) 14%, var(--surface));
+  --grid: var(--faint); /* the chart's gridlines ride the hairline token */
+  --axis: var(--line); /* the chart's axis labels ride the rail token */
+  --lemon: #e2c81c; /* the spotted-but-unprotected dot: a separate functional colour, not brand */
 
-  --series-1: #2a78d6; /* redacted */
+  --series-1: #2a78d6; /* redacted: the chart's own validated palette, not the brand's */
   --series-2: #eb6834; /* allowed */
   --series-3: #1baf7a; /* silenced */
 
-  --good: #0ca30c;
+  --good: #1f7a3f;
+  --good-ink: var(--good);
   --serious: #ec835a;
-  --critical: #d03b3b;
-  --good-ink: #006300;
+  --critical: #b3261e;
 
   --high-bg: #fce8e6;
   --high-fg: #b3261e;
@@ -62,34 +48,44 @@
   --medium-fg: #8a4d00;
   --low-bg: #e8f0fe;
   --low-fg: #1a56c4;
+
+  /* Old names, still read by pages not yet rebuilt on the new tokens: the same flat brand underneath,
+     so nothing goes undefined in the meantime. --sheen, --sheen-shadow, --btn-lift and --lift
+     are the dropped glass/glow/lift effects, now plainly none. */
+  --signal: var(--plum);
+  --on-signal: var(--on-plum);
+  --brand-wash: var(--wash);
+  --card-bg: var(--surface);
+  --surface-2: var(--surface);
+  --sheen: none;
+  --sheen-shadow: none;
+  --btn-lift: none;
+  --lift: none;
 }
 @media (prefers-color-scheme: dark) {
   :root {
     color-scheme: dark;
-    --page: #16130f;
-    --surface: #1f1b17;
-    --surface-2: color-mix(in srgb, #ff6700 5%, #1f1b17);
-    --ink: #f6f2ee;
-    --ink-2: #cbc3ba;
-    --muted: #9c948b;
-    --grid: #2f2923;
-    --axis: #453d35;
-    --ring: rgba(255, 230, 205, 0.1);
-    --wash: rgba(255, 170, 110, 0.08);
-    --lift: inset 0 1px 0 rgba(255, 255, 255, 0.04), 0 16px 36px -24px rgba(0, 0, 0, 0.8);
-    --btn-lift: inset 0 1px 0 rgba(255, 255, 255, 0.05), 0 5px 12px -10px rgba(0, 0, 0, 0.7);
-    --chosen-bg: #33200f;
-    --glow: rgba(255, 103, 0, 0.1);
+    --page: #1e1f22;
+    --surface: #24272b;
+    --ink: #ececec;
+    --ink-2: #a9aeb4;
+    --muted: #a9aeb4;
+    --faint: #34373c;
+    --line: #3a3d42;
+    --brand: #c9a6d6;
+    --focus: #c9a6d6;
+    --ring: color-mix(in srgb, var(--plum) 18%, var(--faint));
+    --wash: color-mix(in srgb, var(--plum) 10%, var(--surface));
+    --chosen-bg: color-mix(in srgb, var(--plum) 24%, var(--surface));
+    --lemon: #e8d23a;
 
     --series-1: #3987e5;
     --series-2: #d95926;
     --series-3: #199e70;
 
-    --good-ink: #0ca30c;
-
-    --brand: #f08a3c; /* dark text 7.9:1, as text on page 7.8:1 */
-    --on-brand: #0b0b0b;
-    --brand-wash: #3a2416; /* brand text on it 5.8:1 */
+    --good: #8edcaa;
+    --good-ink: var(--good);
+    --critical: #ffb4ab;
 
     --high-bg: #4a1f1c;
     --high-fg: #ffb4ab;
@@ -103,19 +99,35 @@
 * {
   box-sizing: border-box;
 }
+/* On a phone the browser keeps the text the size it's set here (no enlarging or shrinking it to fit). */
+html {
+  -webkit-text-size-adjust: 100%;
+  text-size-adjust: 100%;
+  /* The tabs bar (.tabs, below) stays stuck to the bottom of the viewport once a panel scrolls, so
+     scrolling a control into view (a click, or Tab-key focus) has to stop short of that overlay or the
+     control lands underneath it and can't be reached once a tall card pushes the Overview panel past
+     the fold: the browser's own scroll-into-view now reserves the bar's height. */
+  scroll-padding-bottom: 48px;
+}
 body {
   margin: 0;
   width: 380px;
   padding: 12px 14px 14px;
+  /* See html's scroll-padding-bottom: whichever of html/body is the document's actual scrolling box needs
+     the reserved space, so both carry it. */
+  scroll-padding-bottom: 48px;
   font:
-    13px/1.45 "Atkinson Hyperlegible",
+    13px/1.45 "Recursive",
     system-ui,
     -apple-system,
     "Segoe UI",
     sans-serif;
-  background:
-    radial-gradient(120% 70% at 50% -12%, var(--glow), transparent 60%) no-repeat,
-    var(--page);
+  font-variation-settings:
+    "MONO" 0,
+    "CASL" 0,
+    "slnt" 0,
+    "CRSV" 0;
+  background: var(--page);
   color: var(--ink);
 }
 [hidden] {
@@ -126,8 +138,27 @@ button {
   color: inherit;
   cursor: pointer;
 }
+/* Headings and the state line: Recursive's casual axis, bold. */
+h1,
+h2,
+h3,
+.wordmark,
+.site .state {
+  font-variation-settings:
+    "MONO" 0,
+    "CASL" 1,
+    "slnt" 0,
+    "CRSV" 0;
+  font-weight: 700;
+}
+/* Numbers typed by the user: Recursive's mono axis. */
 code {
-  font-family: ui-monospace, Consolas, monospace;
+  font-family: "Recursive", ui-monospace, Consolas, monospace;
+  font-variation-settings:
+    "MONO" 1,
+    "CASL" 0,
+    "slnt" 0,
+    "CRSV" 0;
   font-size: 11px;
 }
 
@@ -135,30 +166,40 @@ a {
   color: var(--brand);
 }
 :focus-visible {
-  outline-color: var(--brand);
+  outline-color: var(--focus);
 }
 
-/* Header: the Clotr wordmark on every page, over a thin brand line */
+/* Header: the brushed-steel field every page carries, with the wordmark in plum. */
 .top {
   display: flex;
   align-items: center;
   gap: 8px;
-  margin-bottom: 10px;
-  padding-bottom: 8px;
-  border-bottom: 2px solid var(--signal);
+  margin: -12px -14px 10px;
+  padding: 10px 14px;
+  background: var(--steel);
+  border-radius: 10px;
+}
+/* The popup: the site card follows later in the body (after the occasional notice above it), so the two
+   read as one steel field with nothing visible between them. */
+.top:has(~ .site) {
+  margin-bottom: 0;
+  border-radius: 10px 10px 0 0;
 }
 .top h1 {
   font-size: 15px;
   margin: 0;
   flex: 1;
+  color: var(--on-steel);
 }
 .wordmark {
-  font-size: 16px;
-  font-weight: 700;
-  letter-spacing: -0.01em;
-  color: var(--ink); /* the orange is in the tile beside it, as on the website */
+  display: flex;
+  align-items: center;
+  color: var(--on-steel);
 }
-/* Pages with their own title: "Clotr" and the chip on the first line, the title on its own line below. */
+.wordmark img {
+  display: block;
+}
+/* Pages with their own title: the wordmark and the chip on the first line, the title on its own line below. */
 .top:has(> span.wordmark) {
   flex-wrap: wrap;
 }
@@ -168,27 +209,27 @@ a {
 .top > span.wordmark ~ h1 {
   order: 1;
   flex-basis: 100%;
+  /* Still on the steel field, so the same plum as the wordmark and chip, not --ink (which
+     turns near-white in the dark theme, over steel's own value staying the same). */
+  color: var(--on-steel);
 }
 .chip {
+  border: none;
+  background: none;
+  padding: 0;
   font-size: 11px;
-  padding: 2px 8px;
-  border-radius: 999px;
-  color: var(--ink-2);
-  background: color-mix(in srgb, var(--signal) 8%, var(--surface));
-  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--signal) 22%, var(--ring));
+  color: var(--on-steel);
 }
-
-/* Site status card */
+/* Site status card: the header field continues down through it, so the two read as one steel block. */
 .site {
   display: flex;
   align-items: center;
   gap: 10px;
-  padding: 10px 12px;
-  border-radius: 12px;
-  background: var(--card-bg);
-  box-shadow:
-    var(--lift),
-    inset 0 0 0 1px var(--ring);
+  margin: 0 -14px 10px;
+  padding: 10px 14px;
+  background: var(--steel);
+  border-radius: 0 0 10px 10px;
+  color: var(--on-steel);
 }
 .site .grow {
   flex: 1;
@@ -200,14 +241,15 @@ a {
 }
 .site .state {
   font-size: 12px;
-  color: var(--ink-2);
+  color: var(--on-steel);
   display: flex;
   align-items: center;
   gap: 5px;
 }
 .site .why {
   font-size: 11px;
-  color: var(--muted);
+  /* Full strength: a lighter mix against steel reads under 4.5:1. */
+  color: var(--on-steel);
   margin-top: 2px;
 }
 .list .why {
@@ -225,46 +267,58 @@ a {
   flex: none;
   background: var(--muted);
 }
+.site .dot {
+  background: color-mix(in srgb, var(--on-steel) 70%, var(--steel));
+}
 .dot.on {
   background: var(--good);
 }
 .dot.paused {
   background: var(--muted);
 }
+.site .dot.paused {
+  background: color-mix(in srgb, var(--on-steel) 70%, var(--steel));
+}
 .dot.spot {
-  background: #fab219;
+  background: var(--lemon);
 }
 
 .btn {
   border-radius: 8px;
   padding: 6px 12px;
-  border: none;
+  border: 1px solid var(--line);
   flex: none;
-  background: var(--card-bg);
-  box-shadow:
-    var(--btn-lift),
-    inset 0 0 0 1px var(--axis);
+  background: var(--surface);
   transition:
-    box-shadow 0.15s,
-    filter 0.15s;
+    background-color 0.15s,
+    border-color 0.15s;
 }
 .btn:hover {
-  box-shadow:
-    var(--btn-lift),
-    inset 0 0 0 1px color-mix(in srgb, var(--signal) 40%, var(--axis));
+  border-color: var(--brand);
+}
+.btn:active {
+  background: var(--chosen-bg);
 }
 .btn.primary {
-  background: var(--btn-primary);
-  background-image: var(--sheen);
-  color: var(--on-signal);
+  background: var(--plum);
+  border-color: var(--plum);
+  color: var(--on-plum);
   font-weight: 700;
-  box-shadow: var(--sheen-shadow);
 }
 .btn.primary:hover {
-  filter: brightness(1.05);
-  box-shadow: var(--sheen-shadow);
+  filter: brightness(1.08);
 }
-/* A switch that's on (Settings: email and chat apps): the chosen look, orange edge, orange words. */
+.site .btn {
+  background: var(--page);
+  border-color: color-mix(in srgb, var(--on-steel) 30%, var(--steel));
+  color: var(--on-steel);
+}
+.site .btn.primary {
+  background: var(--plum);
+  border-color: var(--plum);
+  color: var(--on-plum);
+}
+/* A switch that's on (Settings: email and chat apps): the chosen look, a plum edge and plum words. */
 .btn.switch {
   min-width: 48px;
 }
@@ -272,7 +326,7 @@ a {
   background: var(--chosen-bg);
   color: var(--brand);
   font-weight: 700;
-  box-shadow: inset 0 0 0 1px var(--signal);
+  border-color: var(--plum);
 }
 @media (prefers-reduced-motion: reduce) {
   .btn {
@@ -288,7 +342,7 @@ a {
   font-size: 11px;
 }
 
-/* Tabs: at the bottom of the popup, always in view (D135) */
+/* Tabs: at the bottom of the popup, always in view */
 .tabs {
   position: sticky;
   bottom: -14px;
@@ -298,8 +352,7 @@ a {
   margin: 12px -14px -14px;
   padding: 0 14px 6px;
   border-top: 1px solid var(--grid);
-  background: color-mix(in srgb, var(--page) 94%, transparent);
-  backdrop-filter: blur(8px);
+  background: var(--page);
 }
 .tabs button {
   flex: 1;
@@ -313,34 +366,27 @@ a {
 .tabs button[aria-selected="true"] {
   color: var(--ink);
   font-weight: 700;
-  border-top-color: var(--signal);
+  border-top-color: var(--plum);
 }
 
-/* Range filter: one row above everything it scopes */
+/* Range filter: two plain text choices above everything they scope, the chosen one bold and underlined. */
 .range {
   display: inline-flex;
-  padding: 2px;
-  border-radius: 9px;
-  background: var(--card-bg);
-  box-shadow:
-    var(--btn-lift),
-    inset 0 0 0 1px var(--ring);
+  gap: 12px;
   margin-bottom: 10px;
 }
 .range button {
   border: none;
   background: none;
-  padding: 3px 10px;
-  border-radius: 6px;
+  padding: 0;
   color: var(--ink-2);
   font-size: 12px;
 }
 .range button[aria-checked="true"] {
-  background: var(--btn-primary);
-  background-image: var(--sheen);
-  color: var(--on-signal);
+  color: var(--ink);
   font-weight: 700;
-  box-shadow: var(--sheen-shadow);
+  text-decoration: underline;
+  text-underline-offset: 3px;
 }
 
 /* Hero figure (one per view) */
@@ -366,11 +412,9 @@ a {
 
 /* Cards */
 .card {
-  background: var(--card-bg);
+  background: var(--surface);
+  border: 1px solid var(--ring);
   border-radius: 12px;
-  box-shadow:
-    var(--lift),
-    inset 0 0 0 1px var(--ring);
   padding: 10px 12px;
   margin-bottom: 8px;
 }
@@ -386,10 +430,8 @@ a {
   margin-bottom: 8px;
   padding: 14px;
   border-radius: 12px;
-  background: var(--card-bg);
-  box-shadow:
-    var(--lift),
-    inset 0 0 0 1px var(--ring);
+  background: var(--surface);
+  border: 1px solid var(--ring);
   color: var(--ink-2);
 }
 .empty-card b {
@@ -404,11 +446,9 @@ a {
   padding: 8px 10px;
   border-radius: 10px;
   margin-bottom: 8px;
-  background: linear-gradient(90deg, color-mix(in srgb, var(--serious) 12%, var(--surface)), var(--surface) 55%);
-  box-shadow:
-    var(--lift),
-    inset 3px 0 0 var(--serious),
-    inset 0 0 0 1px var(--ring);
+  background: var(--surface);
+  border: 1px solid var(--ring);
+  border-left: 3px solid var(--serious);
   font-size: 12px;
 }
 .alert .icon {
@@ -496,11 +536,9 @@ a {
   min-width: 128px;
   padding: 7px 9px;
   border-radius: 9px;
-  background: var(--card-bg);
+  background: var(--surface);
   color: var(--ink);
-  box-shadow:
-    0 10px 24px -8px rgba(80, 40, 10, 0.3),
-    inset 0 0 0 1px var(--ring);
+  border: 1px solid var(--ring);
   font-size: 11px;
 }
 .tooltip .tt-date {
@@ -596,6 +634,12 @@ a {
   font-size: 11px;
   color: var(--muted);
 }
+/* The rest of a long list sent at once, as one record. */
+.events .more {
+  display: block;
+  font-weight: 700;
+  color: var(--brand);
+}
 .events .repeat {
   font-size: 10px;
   font-weight: 700;
@@ -618,22 +662,16 @@ a {
 .sev {
   font-size: 9px;
   font-weight: 700;
-  text-transform: uppercase;
-  padding: 1px 4px;
-  border-radius: 3px;
+  text-transform: capitalize;
   margin-right: 4px;
-  vertical-align: 1px;
 }
 .sev.high {
-  background: var(--high-bg);
   color: var(--high-fg);
 }
 .sev.medium {
-  background: var(--medium-bg);
   color: var(--medium-fg);
 }
 .sev.low {
-  background: var(--low-bg);
   color: var(--low-fg);
 }
 
@@ -666,8 +704,10 @@ h2:first-child {
   min-width: 0;
   word-break: break-all;
 }
+/* Names and sentences wrap between words; a single word too long for the line still breaks rather than spill. */
 .list .grow.words {
   word-break: normal;
+  overflow-wrap: break-word;
 }
 .resp {
   flex: none;
@@ -675,12 +715,9 @@ h2:first-child {
   font-size: 12px;
   padding: 3px 4px;
   border-radius: 6px;
-  border: none;
+  border: 1px solid var(--axis);
   color: var(--ink);
-  background: var(--card-bg);
-  box-shadow:
-    var(--btn-lift),
-    inset 0 0 0 1px var(--axis);
+  background: var(--surface);
 }
 .resp-group {
   padding: 6px 0;
@@ -699,6 +736,11 @@ h2:first-child {
 .resp-group .head .resp {
   font-weight: 400;
 }
+.resp-group .head .set-by {
+  font-size: 11px;
+  font-weight: 400;
+  color: var(--ink-2);
+}
 .resp-group details {
   margin-top: 2px;
   font-size: 12px;
@@ -714,6 +756,11 @@ h2:first-child {
 .resp.changed {
   box-shadow: inset 0 0 0 2px var(--brand);
 }
+/* Locked (a PIN), or held by a policy or Tourniquet: still readable, plainly not for changing */
+.resp:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
 .mine-form {
   display: flex;
   gap: 6px;
@@ -726,10 +773,9 @@ h2:first-child {
   font-size: 12px;
   padding: 5px 8px;
   border-radius: 7px;
-  border: none;
+  border: 1px solid var(--axis);
   color: var(--ink);
-  background: var(--surface);
-  box-shadow: inset 0 0 0 1px var(--axis);
+  background: var(--page);
 }
 .list.compact li {
   padding: 3px 0;
@@ -776,7 +822,7 @@ h2:first-child {
   gap: 6px;
   font-size: 12px;
   color: var(--ink-2);
-  margin: 12px 0 0;
+  margin: 12px 0 10px;
 }
 .filter-bar select {
   max-width: 220px;
@@ -790,23 +836,156 @@ body[data-tab="settings"] .filter-bar {
   margin: 0 0 6px;
 }
 .whats-new {
-  background: linear-gradient(90deg, color-mix(in srgb, var(--signal) 16%, var(--surface)), var(--surface) 70%);
+  background: var(--chosen-bg);
   border-radius: 12px;
-  box-shadow:
-    var(--lift),
-    inset 3px 0 0 var(--signal),
-    inset 0 0 0 1px var(--ring);
+  border: 1px solid var(--ring);
+  border-left: 3px solid var(--plum);
   padding: 10px 12px;
   margin-bottom: 10px;
   font-size: 12px;
 }
 .whats-new ul {
-  margin: 6px 0 8px;
+  margin: 2px 0 4px;
   padding-left: 18px;
   color: var(--ink-2);
 }
 .whats-new li {
   margin: 3px 0;
+}
+/* The notes stay folded until opened: "See what's new (4)" beside Got it; opened, the list takes the card's
+   width and Got it moves under it. The marker turns and the words change, so the state never rests on the arrow. */
+.whats-new-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 2px 8px;
+  margin-top: 2px;
+}
+.whats-new-row details {
+  flex: 1;
+  min-width: 0;
+}
+.whats-new-row details[open] {
+  flex-basis: 100%;
+}
+.whats-new-row .btn {
+  margin-left: auto;
+}
+.whats-new summary {
+  width: fit-content;
+  min-height: 32px;
+  padding: 7px 4px 7px 0;
+  border-radius: 6px;
+  font-weight: 700;
+  cursor: pointer;
+}
+.whats-new summary::marker {
+  color: var(--brand);
+}
+.whats-new summary:focus-visible {
+  outline: 2px solid var(--brand);
+  outline-offset: 2px;
+}
+
+/* The offer to use Clotr on email and chat apps, on the welcome page and once in the popup: a row per app
+   with a real tick box. Ticked, a row takes the chosen look (a plum edge, plum words); the tick mark stays, so the
+   choice never rests on color alone. An app the browser already granted carries an On tag. */
+.ev-groups {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+  align-items: start;
+}
+.ev-group {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  border: none;
+}
+.ev-group legend {
+  padding: 0;
+  margin-bottom: 2px;
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--ink-2);
+}
+.ev-app {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 32px;
+  padding: 4px 10px;
+  border-radius: 8px;
+  background: var(--surface);
+  border: 1px solid var(--axis);
+  cursor: pointer;
+}
+.ev-app input {
+  flex: none;
+  width: 16px;
+  height: 16px;
+  margin: 0;
+  accent-color: var(--brand);
+}
+.ev-app input:focus-visible {
+  outline: none;
+}
+.ev-app:has(input:focus-visible) {
+  outline: 2px solid var(--brand);
+  outline-offset: 2px;
+}
+.ev-app:has(input:checked) {
+  background: var(--chosen-bg);
+  color: var(--brand);
+  font-weight: 700;
+  border-color: var(--plum);
+  border-left: 3px solid var(--plum);
+}
+.ev-tag {
+  margin-left: auto;
+  padding: 0 7px;
+  border-radius: 6px;
+  font-size: 11px;
+  box-shadow: inset 0 0 0 1px currentColor;
+}
+.everyday-offer h2 {
+  margin-bottom: 2px;
+}
+.ev-intro {
+  margin: 0 0 8px;
+  color: var(--ink-2);
+}
+/* Nothing new ticked: the button stays focusable (it says what to do when pressed) but reads as unavailable. */
+.ev-actions .btn.primary[aria-disabled="true"] {
+  background: var(--grid);
+  border-color: var(--axis);
+  color: var(--ink-2);
+  filter: none;
+  cursor: default;
+}
+.ev-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 10px 0 0;
+}
+.ev-hint {
+  margin: 6px 0 0;
+  font-size: 11px;
+  color: var(--muted);
+}
+.ev-status {
+  margin: 6px 0 0;
+  color: var(--ink-2);
+}
+.ev-status:empty {
+  display: none;
+}
+.ev-status.done {
+  color: var(--good-ink);
+  font-weight: 700;
 }
 
 /* Simple mode (default): advanced controls show only with "Show advanced options". */
@@ -835,10 +1014,8 @@ body:not(.advanced) .advanced-only {
   margin: 0 0 10px;
   padding: 10px 12px;
   border-radius: 12px;
-  background: var(--card-bg);
-  box-shadow:
-    var(--lift),
-    inset 0 0 0 1px var(--ring);
+  background: var(--surface);
+  border: 1px solid var(--ring);
 }
 .digest p {
   margin: 0 0 4px;
@@ -852,7 +1029,7 @@ body:not(.advanced) .advanced-only {
   padding-left: 8px;
 }
 
-/* Small mind map (D75): drawn at its own size (never stretched past it), centered, first on Overview */
+/* Small mind map: drawn at its own size (never stretched past it), centered, first on Overview */
 .mini-map-card {
   margin-top: 10px;
 }
@@ -926,8 +1103,11 @@ body:not(.advanced) .advanced-only {
   color: var(--high-fg);
   font-weight: 600;
 }
+.site .state[data-health="warn"] {
+  color: var(--on-steel);
+}
 
-/* Helping someone: PIN lock (D61) */
+/* Helping someone: PIN lock */
 .pin-row {
   display: flex;
   gap: 8px;
@@ -940,7 +1120,7 @@ body:not(.advanced) .advanced-only {
   padding: 5px 8px;
   border-radius: 6px;
   border: 1px solid var(--axis);
-  background: var(--surface);
+  background: var(--page);
   color: var(--ink);
 }
 .lock-box {
@@ -972,7 +1152,7 @@ body:not(.advanced) .advanced-only {
   font-size: 13px;
 }
 
-/* "Report a problem" (#178): a small control on every Clotr page. */
+/* "Report a problem": a small control on every Clotr page. */
 .app-footer {
   margin-top: 14px;
   padding-top: 8px;
@@ -1021,4 +1201,407 @@ body:not(.advanced) .advanced-only {
   font-size: 11px;
   color: var(--ink-2);
   margin-bottom: 2px;
+}
+/* "Copy my summary": a card before the forms, closed until asked for. */
+.report-summary {
+  align-self: stretch;
+  max-width: 34em;
+  margin: 2px 0 4px;
+  padding: 8px 12px;
+  border-radius: 10px;
+  background: var(--surface);
+  border: 1px solid var(--grid);
+}
+.report .report-summary > summary {
+  color: var(--ink);
+  font-weight: 700;
+}
+.report-summary > summary::before {
+  content: "▸ ";
+  color: var(--brand);
+}
+.report-summary[open] > summary::before {
+  content: "▾ ";
+}
+.report-sum-text {
+  display: block;
+  width: 100%;
+  min-height: 4.5em;
+  margin: 8px 0 6px;
+  resize: vertical;
+  font: inherit;
+  font-size: 12px;
+  line-height: 1.45;
+  padding: 6px 8px;
+  border: 1px solid var(--axis);
+  border-radius: 8px;
+  color: var(--ink);
+  background: var(--page);
+}
+.report-sum-text:focus {
+  outline: 2px solid var(--brand);
+  outline-offset: 1px;
+}
+.report-sum-note {
+  margin: 0 0 8px;
+  font-size: 12px;
+  color: var(--muted);
+}
+.report-sum-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 10px;
+}
+.report-sum-msg {
+  font-size: 12px;
+  color: var(--ink-2);
+}
+.report-then {
+  margin: 2px 0 0;
+  font-size: 12px;
+  color: var(--ink-2);
+}
+
+/* Tourniquet: the chip, the Overview line and the Settings card share the small shield and a plum edge.
+   Brand text on the chosen wash clears 4.5:1 in both themes. */
+.tq-shield {
+  flex: none;
+  width: 12px;
+  height: 12px;
+  fill: var(--brand);
+}
+.top .tq-shield {
+  fill: var(--on-steel);
+}
+/* Always inside the header field, so it keeps .chip's steel colouring. */
+.tq-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-weight: 700;
+}
+.tq-line {
+  display: flex;
+  gap: 8px;
+  align-items: flex-start;
+  margin: 10px 0;
+  padding: 8px 10px;
+  border-radius: 10px;
+  font-size: 12px;
+  background: var(--chosen-bg);
+  border: 1px solid var(--ring);
+  border-left: 3px solid var(--plum);
+}
+.tq-line .tq-shield {
+  margin-top: 2px;
+}
+.tq-line .linkish {
+  font-size: 12px;
+  color: var(--ink);
+}
+.tq-card {
+  margin: 10px 0 12px;
+  padding: 10px 12px;
+  border-radius: 12px;
+  background: var(--chosen-bg);
+  border: 1px solid var(--ring);
+  border-left: 3px solid var(--plum);
+}
+.tq-card h2 {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 0 0 2px;
+}
+.tq-card h2 .tq-shield {
+  width: 14px;
+  height: 14px;
+}
+.tq-card p {
+  margin: 0 0 6px;
+  font-size: 12px;
+}
+.tq-card .tq-yours {
+  font-weight: 700;
+}
+.tq-switch {
+  display: inline-flex;
+  flex-wrap: wrap;
+  padding: 2px;
+  margin-top: 2px;
+  border-radius: 9px;
+  background: var(--surface);
+  border: 1px solid var(--ring);
+}
+.tq-switch button {
+  border: none;
+  background: none;
+  padding: 4px 10px;
+  border-radius: 6px;
+  color: var(--ink-2);
+  font-size: 12px;
+}
+.tq-switch button[aria-pressed="true"] {
+  background: var(--plum);
+  color: var(--on-plum);
+  font-weight: 700;
+}
+.tq-switch button.confirm {
+  color: var(--high-fg);
+  font-weight: 700;
+}
+/* The 30 days after a scam (Scam Shield), here and on the setup page: one mark per day, the days gone filled, today
+   outlined. A picture only (aria-hidden): the words beside it say the day and the end date. */
+.tq-track {
+  display: grid;
+  grid-template-columns: repeat(30, minmax(0, 1fr));
+  gap: 2px;
+  margin: 6px 0 4px;
+}
+.tq-track span {
+  aspect-ratio: 1;
+  border-radius: 2px;
+  background: var(--grid);
+  box-shadow: inset 0 0 0 1px var(--ring);
+}
+.tq-track .gone {
+  background: var(--plum);
+  box-shadow: none;
+}
+.tq-track .today {
+  background: color-mix(in srgb, var(--plum) 22%, transparent);
+  box-shadow: inset 0 0 0 2px var(--plum);
+}
+/* In the Settings card: "Day 4 of 30" and the end date on one line over the track; the clock's word under it. */
+.tq-card .tq-days {
+  margin: 2px 0 8px;
+}
+.tq-card .tq-days-words {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: 0 10px;
+  margin: 0;
+}
+.tq-card .tq-clock {
+  margin: 4px 0 0;
+  color: var(--ink-2);
+}
+/* Tourniquet's 30 days are over: the top slot's card with the shield, two buttons, and the grown-up's Tourniquet as
+   a quieter choice under them. */
+.tq-end h2 {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 0 0 4px;
+  font-size: 14px;
+}
+.tq-end h2 .tq-shield {
+  width: 14px;
+  height: 14px;
+}
+.tq-end p {
+  margin: 0 0 8px;
+  color: var(--ink-2);
+}
+.tq-end-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+.tq-end .linkish {
+  min-height: 24px;
+  font-size: 12px;
+  color: var(--brand);
+}
+.history-mine {
+  margin: 0 0 12px;
+}
+
+/* Clotr Antibody. The Overview row: one slim card under the site card, the shield and the name, then
+   its two pages as links on the right. Quiet: no count, no badge, no motion. */
+.ss-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 0 0 10px;
+  padding: 7px 12px;
+  border-radius: 12px;
+  background: var(--surface);
+  border: 1px solid var(--ring);
+}
+.ss-row b {
+  flex: 1;
+  min-width: 0;
+}
+.ss-row-links {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 4px 12px;
+}
+.ss-row .linkish,
+.ss-tq30 .linkish {
+  font-size: 12px;
+  color: var(--brand);
+}
+
+/* Look back and Extension check: a quiet card, same spirit as the Antibody
+   row above. While history is empty there's nothing else to look at yet, so each door keeps its own tile, side by
+   side; once there's real history popup.js adds .compact, which folds the whole card onto Antibody's one line. */
+.lb-card:not(.compact) {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  column-gap: 10px;
+}
+.lb-card:not(.compact) .card-title {
+  grid-column: 1 / -1;
+}
+.lb-card-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  column-gap: 8px;
+  margin: 4px 0;
+}
+.lb-card:not(.compact) .lb-card-row {
+  flex-direction: column;
+  flex-wrap: nowrap;
+  align-items: flex-start;
+  row-gap: 4px;
+  margin: 0;
+  padding: 8px 10px;
+  border-radius: 10px;
+  background: var(--surface);
+  border: 1px solid var(--ring);
+}
+.lb-card-row b {
+  flex: none;
+}
+.lb-card-sub {
+  flex-basis: 100%;
+  color: var(--ink-2);
+  font-size: 12px;
+}
+.lb-card.compact {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  column-gap: 14px;
+  row-gap: 4px;
+  margin: 0 0 10px;
+  padding: 7px 12px;
+}
+.lb-card.compact .card-title {
+  margin: 0;
+  flex: 1 1 auto;
+  min-width: 0;
+}
+.lb-card.compact .lb-card-row {
+  display: contents;
+}
+.lb-card.compact .lb-card-sub {
+  display: none;
+}
+.lb-card.compact .btn {
+  border: none;
+  background: none;
+  padding: 0;
+  font-size: 12px;
+  font-weight: 400;
+  color: var(--brand);
+}
+.lb-settings-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 8px;
+  margin: 6px 0;
+}
+.lb-settings-row .muted {
+  flex: 1 1 auto;
+  min-width: 0;
+  margin: 0;
+}
+.whats-new-doors {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 8px;
+}
+
+/* Settings' section: the heading carries the shield, like Tourniquet's card; the three pages as buttons that wrap. */
+.ss-settings h2 {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 14px;
+}
+.ss-settings h2 .tq-shield {
+  width: 14px;
+  height: 14px;
+}
+.ss-buttons {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 8px 0;
+}
+.ss-tq30 {
+  margin: 8px 0 0;
+  color: var(--ink-2);
+}
+/* The feature's tag on Clotr's pages (the setup page's third tile, the Share page's card): the shield and the name. */
+.ss-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  color: var(--brand);
+}
+.ss-tag .tq-shield {
+  width: 11px;
+  height: 11px;
+}
+
+/* Phones. Firefox for Android opens the popup as a full screen, so there it spans the screen. Only on a
+   phone-sized screen: a computer's popup sizes itself to the page, and a width that follows the window would
+   shrink it to nothing. */
+@media (hover: none) and (pointer: coarse) and (max-device-width: 600px) {
+  body {
+    width: auto;
+  }
+}
+/* A finger, not a mouse (phones and tablets): every control at least 44 px each way, and text boxes at 16 px so the
+   browser doesn't zoom in when one is tapped. */
+@media (pointer: coarse) {
+  button,
+  select,
+  summary,
+  textarea,
+  input:not([type="checkbox"], [type="radio"], [type="hidden"]),
+  a.btn {
+    min-height: 44px;
+    min-width: 44px;
+  }
+  input,
+  select,
+  textarea {
+    font-size: 16px !important; /* over each box's own smaller size */
+  }
+  summary {
+    padding-block: calc((44px - 1lh) / 2);
+  }
+  .btn {
+    margin-block: 3px; /* buttons that wrap onto a new line don't touch */
+  }
+  label:has(> input[type="checkbox"]) {
+    min-height: 44px; /* the whole row is what a finger taps */
+  }
+  input[type="checkbox"] {
+    width: 20px;
+    height: 20px;
+    flex: none;
+  }
 }
