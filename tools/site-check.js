@@ -1,21 +1,19 @@
-// Dev tool (not shipped): have the built-in AI sites or the everyday email/chat apps changed in a
-// way that affects Clotr? Two modes:
+// A script I run by hand, not part of the extension, to check whether the built-in AI sites or the everyday
+// email and chat apps have changed in a way that affects Clotr. It has two modes.
 //
-//  - Default: opens every site logged out, in a throwaway headless Brave/Chrome profile with Clotr
-//    loaded. For each built-in AI site it records where it ends up (and whether Clotr covers that
-//    address), whether Clotr's self-check sees a chat box, and which kind of editor it uses. For
-//    each everyday email/chat app (D134, EVERYDAY_SITES in sites.js — logged out, these mostly show
-//    a sign-in page) it records where it ends up, whether that host is still the one its own
-//    per-site permission would cover, and whether a sign-in wall was reached. Compares both groups
-//    with the saved baseline and lists what changed: a site that moved (lmarena.ai → arena.ai), a
-//    chat box Clotr can no longer see, a new editor (Kimi's async Lexical) that needs a real-site
-//    check. Nothing is typed or sent; pages are only loaded. Sites behind a bot check show as
-//    "blocked".
+// By default, it opens every site logged out in a throwaway headless Brave or Chrome profile with Clotr
+// loaded. For each built-in AI site, it records where the page ends up, whether Clotr covers that address,
+// whether Clotr's self-check sees a chat box, and what kind of editor it uses. For each everyday app (the
+// EVERYDAY_SITES list in sites.js, mostly reached as a sign-in page while logged out), it records where the
+// page ends up, whether that host is still covered by its own per-site permission, and whether it hit a
+// sign-in wall. It compares both groups against the saved baseline and lists what changed, such as a site
+// that moved (lmarena.ai became arena.ai), a chat box Clotr can no longer see, or a new kind of editor that
+// needs checking on the real site, like Kimi's async Lexical. Nothing is typed or sent, pages are only
+// loaded, and a site behind a bot check just shows as "blocked".
 //
-//  - `--hosts`: a fast pre-release check with no browser: plain HTTPS requests from Node (following
-//    redirects) confirm every built-in host (ai-sites.json) and everyday host (EVERYDAY_SITES)
-//    still answers on its exact host and doesn't redirect to a different one. Lists any moved host
-//    with its new address.
+// `--hosts` is a faster pre-release check with no browser: plain HTTPS requests from Node, following
+// redirects, confirm that every built-in and everyday host still answers on its own address instead of
+// redirecting somewhere else. It lists any host that's moved, with its new address.
 //
 // Usage: npm run site-check                   compare with tools/site-baseline.json
 //        npm run site-check -- --update       save this run as the new baseline
@@ -23,8 +21,9 @@
 //        npm run site-check -- --hosts        the fast host-only check (no browser, no baseline)
 //        npm run site-check -- --hosts --only discord.com
 //        --browser <path>  --headed
-// Report: tools/site-check-report.md (git-ignored, default mode only). Exit code 1 when something
-// needs a look (default mode) or a host has moved or stopped answering (--hosts).
+//
+// It writes its report to tools/site-check-report.md (git-ignored, default mode only), and exits with code 1
+// when something needs a look, or when a host has moved or stopped answering under --hosts.
 "use strict";
 
 const fs = require("fs");
@@ -79,7 +78,7 @@ function onlyFilter() {
     .map((s) => s.trim().toLowerCase());
 }
 
-// One address per built-in site: its first match pattern, without the wildcard.
+// One address per built-in site, its first match pattern with the wildcard stripped off.
 function sitesToCheck() {
   const list = JSON.parse(fs.readFileSync(path.join(EXT, "ai-sites.json"), "utf8"));
   const only = onlyFilter();
@@ -88,8 +87,8 @@ function sitesToCheck() {
     .filter((s) => !only || only.some((o) => s.url.includes(o) || s.name.toLowerCase().includes(o)));
 }
 
-// One address per everyday site (D134, EVERYDAY_SITES in sites.js): its first match to open, and
-// all its own matches, since coverage for an everyday site is its own list, not the built-in one.
+// One address per everyday site to open (from EVERYDAY_SITES in sites.js), plus all of that site's own
+// matches, since an everyday site's coverage comes from its own list rather than the built-in one.
 function everydaySitesToCheck() {
   const only = onlyFilter();
   return Sites.EVERYDAY_SITES.map((s) => ({
@@ -99,7 +98,7 @@ function everydaySitesToCheck() {
   })).filter((s) => !only || only.some((o) => s.url.includes(o) || s.name.toLowerCase().includes(o)));
 }
 
-// Runs in the page: the first visible chat box and what kind of editor it is.
+// Runs inside the page and finds the first visible chat box, reporting what kind of editor it is.
 function editorKind() {
   const kind = (el) => {
     if (el.tagName === "TEXTAREA") return "textarea";
@@ -136,8 +135,8 @@ function editorKind() {
   };
 }
 
-// Whether `url` lands on a sign-in page elsewhere (its own host, or the site's own address, isn't
-// reached). Logged-out email and AI sites both do this; it's not the site moving.
+// Checks whether `url` landed on a sign-in page on a different host, rather than the site's own address.
+// Both email and AI sites do this when you're logged out, and it doesn't mean the site has moved.
 function looksLikeSignIn(url) {
   const u = new URL(url);
   return (
@@ -145,10 +144,10 @@ function looksLikeSignIn(url) {
   );
 }
 
-// Compares one run's results for a group of sites (built-in AI tools or everyday apps) with its
-// saved baseline, and lists what needs a look. Pure, so fixtures can test it without a browser.
-// `signInField` names the row's sign-in-wall flag: reaching one there isn't "not covered" or a
-// move worth flagging on its own. `checkEditor` turns on the AI-only editor checks.
+// Compares one run's results, for either the built-in AI tools or the everyday apps, against the saved
+// baseline, and lists what needs a look. It's a pure function, so fixtures can test it without a browser.
+// `signInField` names the row's sign-in-wall flag, since hitting a sign-in wall there shouldn't count as
+// "not covered" or a move on its own. `checkEditor` turns on the checks that only make sense for AI sites.
 function compareToBaseline(results, baseline, { signInField, checkEditor, notCoveredHint }) {
   const findings = [];
   for (const r of results) {
@@ -170,8 +169,9 @@ function compareToBaseline(results, baseline, { signInField, checkEditor, notCov
   return findings;
 }
 
-// --hosts mode's comparison: does each host still answer as itself? `results`: one row per host
-// checked ({ name, host, finalHost, error }). Pure, so fixtures can test it without a network call.
+// The comparison used by --hosts mode: does each host still answer as itself? `results` holds one row per
+// host checked, with a name, host, finalHost and error. It's pure, so fixtures can test it without a
+// network call.
 function diffHosts(results) {
   return {
     moved: results.filter((r) => !r.error && r.finalHost && r.finalHost !== r.host),
@@ -180,8 +180,9 @@ function diffHosts(results) {
 }
 
 async function main() {
-  // Loaded only here, for the browser run: the comparison helpers and --hosts need no browser, so the unit tests
-  // pass without puppeteer installed (as in the public export's own test run, from a folder with no node_modules).
+  // I only require puppeteer-core here, inside the browser run, since the comparison helpers and --hosts
+  // don't need a browser. That lets the unit tests pass without puppeteer installed, which matters for the
+  // public export's own test run, in a folder with no node_modules.
   const puppeteer = require("puppeteer-core");
   const browserPath = option("--browser") || findBrowser();
   const profile = fs.mkdtempSync(path.join(os.tmpdir(), "clotr-sitecheck-"));
@@ -227,7 +228,7 @@ async function main() {
       const finalUrl = page.url();
       row.finalHost = new URL(finalUrl).hostname;
       row.covered = Sites.urlMatchesAny(finalUrl, BUILT_IN);
-      // Logged out, some sites send you to a sign-in page elsewhere: that's not a move.
+      // Some sites send you to a sign-in page on a different host when you're logged out; that's not a move.
       row.signInRedirect = !row.covered && looksLikeSignIn(finalUrl);
       Object.assign(row, await page.evaluate(editorKind));
       row.clotrSees = await inWorker(async (url) => {
@@ -247,9 +248,9 @@ async function main() {
     );
   }
 
-  // Everyday email/chat apps (D134): not run by background.js's self-check, so no "Clotr sees it"
-  // signal — just where the page lands, whether its own per-site permission would still cover
-  // that host, and whether a sign-in wall was reached (expected, logged out).
+  // Everyday email and chat apps aren't run by background.js's self-check, so there's no "Clotr sees it"
+  // signal here. I just record where the page lands, whether its own per-site permission would still
+  // cover that host, and whether it hit a sign-in wall, which is expected while logged out.
   const everydayResults = [];
   for (const site of everydaySitesToCheck()) {
     const page = await browser.newPage();
@@ -308,7 +309,7 @@ async function main() {
         `| ${r.name} | ${r.finalHost || "—"} | ${r.error ? "—" : r.covered ? "yes" : r.signInRedirect ? "sign-in page" : "**no**"} | ${r.editor || "—"}${r.inShadow ? " (shadow)" : ""} | ${r.clotrSees || "—"} | ${[r.error, r.botCheck && "bot check", r.signInRedirect && "sends you to sign in", r.editor === "none" && r.signIn && !r.signInRedirect && "sign-in page"].filter(Boolean).join("; ")} |`,
     ),
     "",
-    "## Email and chat apps (D134, switched on by the user; mostly reached as a sign-in page here)",
+    "## Email and chat apps (switched on by the user; mostly reached as a sign-in page here)",
     "",
     "| Site | Ends up at | Covered | Sign-in wall reached | Notes |",
     "|---|---|---|---|---|",
@@ -340,8 +341,9 @@ async function main() {
   process.exitCode = allFindings.length ? 1 : 0;
 }
 
-// Plain HTTPS GET, no browser and nothing typed: does `host` still answer as itself? Follows up to
-// 5 redirects; a redirect to a different host is exactly what --hosts is for.
+// A plain HTTPS GET, with no browser and nothing typed, that checks whether `host` still answers as
+// itself. It follows up to 5 redirects, since a redirect to a different host is exactly what --hosts is
+// looking for.
 function fetchHost(host, redirectsLeft = 5) {
   return new Promise((resolve) => {
     const req = https.get(
@@ -373,8 +375,8 @@ async function checkHost(name, host) {
   return result.error ? { name, host, error: result.error } : { name, host, finalHost: result.finalHost };
 }
 
-// Every built-in host (ai-sites.json, all its matches) and every everyday host (EVERYDAY_SITES,
-// all its matches), each host once, keeping the first site name that uses it.
+// Every built-in host from ai-sites.json and every everyday host from EVERYDAY_SITES, using all of each
+// site's matches, with each host listed once under the first site name that uses it.
 function hostsToCheck() {
   const aiSites = JSON.parse(fs.readFileSync(path.join(EXT, "ai-sites.json"), "utf8"));
   const seen = new Map();

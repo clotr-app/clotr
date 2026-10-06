@@ -1,7 +1,6 @@
-// Copies the built-in AI-site list (extension/ai-sites.json, the file people edit)
-// into manifest.json's content_scripts matches and host_permissions. Run after editing the list:
-//   npm run sites
-// `npm test` fails if the two differ (tests/rules.test.js).
+// Copies the built-in AI-site list in extension/ai-sites.json into manifest.json's content_scripts matches and
+// host_permissions. Run `npm run sites` after editing the list by hand, since a test fails if the two files drift
+// apart.
 "use strict";
 
 const fs = require("fs");
@@ -19,7 +18,7 @@ const list = (indent, open) =>
   `${indent}${open}\n${matches.map((m) => `${indent}  ${JSON.stringify(m)}`).join(",\n")}\n${indent}]`;
 let next = text.replace(block, (_, indent, open) => list(indent, open));
 // The same sites as host permissions, so an update can start the new version in open
-// tabs without a reload (D39).
+// tabs without a reload.
 const hostBlock = /( *)("host_permissions": \[)[^\]]*\]/;
 if (!hostBlock.test(next)) throw new Error("host_permissions not found in manifest.json");
 next = next.replace(hostBlock, (_, indent, open) => list(indent, open));

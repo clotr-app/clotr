@@ -1,6 +1,6 @@
-# Dependency updates (release review 2026-09-30, R16): the dev tools (npm) and the pinned GitHub Actions, once a
-# month, one grouped PR each, and only versions that have been out for a week (a hijacked release is usually caught
-# within days). They wait for the maintainer: dependency files are guard rails, so no agent merges them.
+# Updates the npm packages and the pinned GitHub Actions once a month, each as one grouped pull request, and only
+# takes versions that have been out for a week, since a hijacked release is usually caught within days. I review
+# and merge these by hand, since dependency files are guard rails and nothing merges them on its own.
 version: 2
 updates:
   - package-ecosystem: npm

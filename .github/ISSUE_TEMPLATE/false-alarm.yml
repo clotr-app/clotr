@@ -31,3 +31,9 @@ body:
       label: Clotr version
       description: brave://extensions or chrome://extensions → Clotr
       placeholder: "0.9.17-alpha"
+  - type: textarea
+    id: summary
+    attributes:
+      label: Clotr's summary (paste it here if you like)
+      description: "Optional. In Clotr, Report a problem → *Add what Clotr counted* → *Copy it*. It holds kinds and counts only: no details, sites or times. This page is public, so delete any line you'd rather keep to yourself."
+      render: text

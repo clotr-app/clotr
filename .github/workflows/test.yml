@@ -1,19 +1,10 @@
-# Detection and rule tests, then the end-to-end suite in headless Chrome and Firefox against the
-# fake AI pages (no real sites).
-# Batched CI (D71): work is tested on the PC while it's built and pushed in batches, so this repo's
-# limited CI minutes go to one independent check per batch:
-# - a draft PR runs nothing until it's marked ready for review;
-# - a PR into dev runs the fast checks (unit, rules, format, audit: about 2 minutes);
-# - the PR into main runs everything, since that's what ships (with "Full verification");
-# - a merge isn't tested again here: the PR already tested that code. In a public repo, where CI is
-#   free, every push to main and every PR runs everything.
+# Unit, rule and end-to-end tests, in headless Chrome and Firefox against the fake AI pages (no real sites).
 name: Tests
 
 on:
-  pull_request:
-    types: [opened, synchronize, reopened, ready_for_review]
   push:
     branches: [main]
+  pull_request:
   workflow_dispatch:
 
 # A newer push to the same PR replaces its older run; runs on main always finish.
@@ -27,15 +18,8 @@ permissions:
 
 jobs:
   test:
-    if: >-
-      (github.event_name == 'pull_request' && !github.event.pull_request.draft) ||
-      (github.event_name == 'push' && !github.event.repository.private) ||
-      github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     timeout-minutes: 15
-    env:
-      # The browser suites: on PRs into main, when run by hand, and always in a public repo.
-      FULL: ${{ github.base_ref == 'main' || github.event_name != 'pull_request' || !github.event.repository.private }}
     steps:
       # Actions pinned to exact commits (a moved tag can't change what runs); the tag is in the comment.
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -52,18 +36,16 @@ jobs:
       - name: Formatting and lint
         run: npm run lint
       - name: End-to-end (headless Chrome)
-        if: env.FULL == 'true'
         run: npm run test:e2e -- --browser /usr/bin/google-chrome
         env:
           # Ubuntu 24.04 runners block Chrome's user-namespace sandbox.
           PUPPETEER_DANGEROUS_NO_SANDBOX: "true"
-      - name: Firefox smoke test (the Firefox and Android build)
-        if: env.FULL == 'true'
+      - name: Firefox smoke test
         run: |
           FF="$(npx -y @puppeteer/browsers install firefox@stable --path "$RUNNER_TEMP/browsers" --format '{{path}}' | tail -n 1)"
           npm run test:firefox -- --browser "$FF"
       - name: Upload e2e report and screenshots
-        if: always() && env.FULL == 'true'
+        if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: e2e-output

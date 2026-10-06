@@ -1,16 +1,12 @@
-// Dev tool (not shipped): does an AI site send what you type BEFORE you press Send?
-// Run it as an init script (for example with Puppeteer's evaluateOnNewDocument),
-// so it runs before the site's own code. It wraps every way a page can send data (fetch,
-// XMLHttpRequest, sendBeacon, WebSocket) and records any outgoing body containing the probe.
+// A script I run by hand, not part of the extension, to check whether an AI site sends what you've typed
+// before you press Send. Inject it before the page loads so it can wrap fetch, XMLHttpRequest, sendBeacon and
+// WebSocket ahead of the site's own code.
 //
-// How to use (M8, 2026-09-24):
-// 1. Load the site with this script injected; focus the chat box.
-// 2. Type (don't send): "zqxprobe1234 please call me at 555-555-0147 tomorrow".
-// 3. Wait ~10 s, then read `window.__hits` (should be []) and `window.__sends` (requests seen).
-// 4. Positive control: press Enter once; the real send must appear in `window.__hits`,
-//    which proves the monitor sees this site's traffic.
-// Limits: requests from service workers, other frames, or compressed bodies (CompressionStream)
-// are not visible here.
+// How to use: load the site with this injected, focus the chat box, and type (don't send) a sentence
+// containing "zqxprobe1234" and the fake number 555-555-0147. After about 10 seconds, window.__hits should
+// still be empty. Then press Enter once as a control; that real send should show up in window.__hits, which
+// proves the script can see the site's traffic. It can't see requests from service workers, other frames, or
+// bodies compressed with CompressionStream.
 (() => {
   const M = /zqxprobe|555-0147|5550147/i;
   window.__sends = 0;
