@@ -1,11 +1,13 @@
-// Clotr — "What should I protect?" page (the vault).
+// "What should I protect?" page (the vault).
 // Each line becomes a salted fingerprint of its normalized form (or, for account/ID numbers,
 // just its format) before it leaves this page; the background worker stores only that.
 // The typed text is cleared right after saving and is never written anywhere.
 "use strict";
 
-const { detect, fingerprint, addressCore, msg } = globalThis.Clotr;
+const { detect, redact, fingerprint, addressCore, msg, practiceNotice } = globalThis.Clotr;
 const $ = (id) => document.getElementById(id);
+// Which held-back features this build ships (`clotr_features` in manifest.json).
+const FEATURES = chrome.runtime.getManifest().clotr_features || {};
 
 const CATEGORY = {
   my_name: msg("vt_cName", "Your name"),
@@ -50,7 +52,7 @@ function entriesFor(kind, type, line, salt) {
     if (!shape) return msg("vt_errShape", "needs at least 4 letters/digits, like AB-123456");
     const out = [{ kind: "shape", type, shape }];
     // A real example is also kept as a fingerprint, so Clotr can tell your own ID from others
-    // with the same format (D23). Typing only the format (AB-######) keeps just the format.
+    // with the same format. Typing only the format (AB-######) keeps just the format.
     if (!/[#@]/.test(line)) out.push({ kind: "value", type, fp: fingerprint(salt, type, line), mode: "protect" });
     return out;
   }
@@ -166,9 +168,8 @@ chrome.storage.onChanged.addListener((changes, area) => {
 });
 
 // ---------- First install: welcome + practice box (vault.html?welcome=1) ----------
-// The practice box runs the same local detector as the chat pages; nothing is saved or sent.
-
-const mask = (v) => (v.length <= 8 ? "•".repeat(v.length) : `${v.slice(0, 4)}…${v.slice(-2)}`);
+// The practice box runs the same local detector as the chat pages, and shows what it finds masked the same way
+// (decide.js), drawn by the helper the practice page uses too (page-notice.js); nothing is saved or sent.
 
 function tryIt() {
   const text = $("try").value;
@@ -179,27 +180,82 @@ function tryIt() {
     );
     return;
   }
-  const redact = el("button", { className: "btn primary", type: "button", textContent: msg("coverIt", "Hide it") });
-  redact.addEventListener("click", () => {
-    let out = $("try").value;
-    for (const r of found) for (const m of r.matches) out = out.split(m).join(`[REDACTED ${r.name.toUpperCase()}]`);
-    $("try").value = out;
-    tryIt();
-    $("try").focus();
-  });
-  const items = found.flatMap((r) => r.matches.map((m) => `${r.name} (${mask(m)})`));
   $("try-result").replaceChildren(
-    el("div", { className: "try-notice" }, [
-      el("b", { textContent: msg("noticeTitle", "⚠️ Heads up") }),
-      el("p", {
-        textContent:
-          msg("noticeContains", "Your message contains ") +
-          items.join(", ") +
-          msg("noticeShared", ". If you send it, this AI gets it."),
-      }),
-      redact,
-    ]),
+    practiceNotice(found, {
+      onHide: () => {
+        $("try").value = redact($("try").value, found);
+        tryIt();
+        $("try").focus();
+      },
+    }),
   );
+}
+
+// ---------- "Let Clotr check your AI chats" ----------
+// Some browsers (Safari always, Firefox for Android on some versions) don't let Clotr into the AI chats it's built
+// for when it's installed, so it can't warn there. The welcome page asks the browser which ones are missing, and a
+// card asks for exactly those. The card follows the browser live (a yes given anywhere closes it); a browser that
+// can't say keeps it away.
+
+// Asks the browser once for these of Clotr's own AI chats, dropping anything not on the manifest's list.
+// The request has to be the first thing this does, in the tap's own turn, because Firefox refuses it after
+// any await. A no, a closed prompt or a browser that can't ask all answer false.
+function askForAiChats(origins) {
+  const builtIn = new Set(chrome.runtime.getManifest().host_permissions || []);
+  try {
+    return Promise.resolve(chrome.permissions.request({ origins: origins.filter((o) => builtIn.has(o)) })).catch(
+      () => false,
+    );
+  } catch {
+    return Promise.resolve(false);
+  }
+}
+
+function allowCard() {
+  const builtIn = chrome.runtime.getManifest().host_permissions || [];
+  let missing = [];
+  const status = (text, done = false) => {
+    $("allow-status").textContent = text;
+    $("allow-status").classList.toggle("done", done);
+  };
+  const check = async () => {
+    const has = await Promise.all(
+      builtIn.map((origin) => chrome.permissions.contains({ origins: [origin] }).catch(() => true)),
+    );
+    missing = builtIn.filter((_, i) => !has[i]);
+    for (const id of ["allow-lead", "allow-how", "allow-ai"]) $(id).hidden = !missing.length;
+    if (missing.length) {
+      $("allow-lead").textContent =
+        missing.length === builtIn.length
+          ? msg("vt_allowAll", "Your browser hasn't let Clotr into your AI chats yet, so it can't warn you there.")
+          : msg(
+              "vt_allowSome",
+              "Your browser hasn't let Clotr into $1 of the AI chats it knows yet, so it can't warn you there.",
+              missing.length,
+            );
+      $("allow-card").hidden = false;
+    } else if (!$("allow-card").hidden) {
+      status(msg("vt_allowDone", "✓ Done. Clotr can check your AI chats now."), true);
+    }
+  };
+  $("allow-ai").addEventListener("click", () => {
+    if (!missing.length) return;
+    askForAiChats(missing).then(async (yes) => {
+      await check();
+      if (missing.length)
+        status(
+          yes
+            ? ""
+            : msg(
+                "vt_allowNo",
+                "Your browser didn't allow it, so Clotr still can't warn you in those AI chats. Use the button to ask again.",
+              ),
+        );
+    });
+  });
+  chrome.permissions.onAdded?.addListener(check);
+  chrome.permissions.onRemoved?.addListener(check);
+  check();
 }
 
 // From Settings → "Your own words and formats": straight to the field for them.
@@ -214,6 +270,7 @@ if (new URLSearchParams(location.search).has("welcome")) {
   $("page-title").textContent = msg("vt_welcome", "Welcome to Clotr");
   $("welcome").hidden = false;
   $("vault-lead").hidden = true;
+  allowCard();
   let timer = null;
   $("try").addEventListener("input", () => {
     clearTimeout(timer);
@@ -235,26 +292,48 @@ if (new URLSearchParams(location.search).has("welcome")) {
       if (await checkPinned()) clearInterval(poll);
     }, 1500);
   });
+  // Clotr Antibody's two pages, each in a new tab beside this one.
+  for (const [id, page] of [
+    ["ss-welcome-check", "check.html"],
+    ["ss-welcome-practice", "practice.html"],
+  ])
+    $(id).addEventListener("click", () => chrome.tabs.create({ url: chrome.runtime.getURL(page) }));
+  // Held back features get no door here.
+  $("ss-welcome-check").hidden = !FEATURES.scamcheck;
+  $("ss-welcome-practice").hidden = !FEATURES.practice;
+  $("ss-welcome").hidden = !FEATURES.scamcheck && !FEATURES.practice;
   $("skip").addEventListener("click", async () => {
     const tab = await chrome.tabs.getCurrent();
     if (tab?.id) chrome.tabs.remove(tab.id);
+  });
+  // Clotr on email and chat apps too, right after Pin Clotr. Hidden while settings are locked, like the
+  // vault's form below: the popup's own switches are off then too.
+  settingsLocked().then(async (locked) => {
+    if (locked) return;
+    if (FEATURES.tourniquet) $("tq-offer").hidden = false; // Tourniquet's one line, right after the card
+    if (FEATURES.lookback) $("lb-offer").hidden = false; // Look back's one line, after Try it
+    await globalThis.ClotrEverydayOffer.mount($("everyday-offer"));
+    $("everyday-offer").hidden = false;
   });
 }
 
 // Browsers restore form fields on Back/Forward and after a crash. Details typed here but not
 // saved must not end up in that restore data, so the fields are emptied whenever the page is
-// hidden (M8). Saved items are fingerprints already.
+// hidden. Saved items are fingerprints already.
 window.addEventListener("pagehide", () => {
   for (const box of document.querySelectorAll("textarea")) box.value = "";
 });
 
-// Helping someone (D61): with a PIN set and not unlocked in the popup (10 minutes), the vault
-// can't be changed here. The first-run welcome never has a PIN yet.
-(async () => {
+// Helping someone: with a PIN set and not unlocked in the popup (10 minutes), or settings locked by an
+// organization's policy, the vault can't be changed here. The first-run welcome never has a PIN yet.
+async function settingsLocked() {
   const { lock } = await chrome.storage.local.get("lock");
   const { unlockedUntil = 0 } = await chrome.storage.session.get("unlockedUntil").catch(() => ({}));
   const policy = (await chrome.storage.managed?.get(null).catch(() => ({}))) || {};
-  if (policy.lockSettings !== true && (!lock || Date.now() < unlockedUntil)) return;
+  return policy.lockSettings === true || (Boolean(lock) && Date.now() >= unlockedUntil);
+}
+(async () => {
+  if (!(await settingsLocked())) return;
   document.getElementById("vault-locked").hidden = false;
   for (const id of ["vault-lead", "vault-form", "vault-list", "vault-empty"]) {
     const node = document.getElementById(id);

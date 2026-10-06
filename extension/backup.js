@@ -1,4 +1,4 @@
-// Clotr — moving to a new computer (pre-release Batch 5): one file, encrypted with a password the person chooses.
+// Moving to a new computer: one file, encrypted with a password the person chooses.
 // It holds settings, the vault's fingerprints and formats, the salt and the PIN's hash: never history, never a value.
 // Encrypted on this computer with Web Crypto (PBKDF2-SHA-256, 600,000 rounds, then AES-GCM 256); nothing is sent.
 // Classic script: adds globalThis.Clotr.Backup (Clotr's pages, the background, and the unit tests).
@@ -10,7 +10,9 @@
   const VERSION = 1;
   const ITERATIONS = 600000;
   // What moves. Not history (events, mentions, spotted), not bookkeeping, not sites you added yourself: the
-  // browser has to approve those again on the new computer.
+  // browser has to approve those again on the new computer. Tourniquet moves; the email and chat apps it
+  // turned on are sites, so the new computer's browser asks for them again. The end of the 30 days after a scam
+  // (`tourniquetEnded`, `tourniquetSeen`) is this computer's bookkeeping and stays.
   const KEYS = [
     "responses",
     "paused",
@@ -18,12 +20,15 @@
     "guided",
     "advanced",
     "replyCheck",
+    "commandCheck",
     "keepDays",
     "largeText",
     "lock",
     "salt",
     "vault",
     "bandage",
+    "picturesNoted",
+    "tourniquet",
   ];
 
   const toB64 = (bytes) => {
@@ -46,11 +51,26 @@
     );
   }
 
-  // The stored settings to carry, from a chrome.storage.local snapshot.
-  function pick(storage) {
+  // The stored settings to carry, from a chrome.storage.local snapshot. Tourniquet only while it's on: the 30 days
+  // after a scam carry their stored dates, so the new computer counts from the same start; an ended one stays behind.
+  function pick(storage, now = Date.now()) {
     const out = {};
     for (const k of KEYS) if (storage[k] !== undefined) out[k] = storage[k];
+    if (out.tourniquet !== undefined && !tourniquetOn(out.tourniquet, now)) delete out.tourniquet;
     return out;
+  }
+
+  // Tourniquet: exactly one of its two words and a time, or the 30 days after a scam with their end (up to 61 days
+  // after the start) before that end, or nothing. The same rule as cleanTourniquet in sites.js (the tests hold both).
+  const DAY = 86400000;
+  function tourniquetOn(t, now) {
+    const time = (x) => typeof x === "number" && Number.isFinite(x) && x >= 0;
+    if (!t || typeof t !== "object" || Array.isArray(t) || !time(t.since)) return null;
+    const keys = Object.keys(t).sort().join();
+    if ((t.for === "child" || t.for === "adult") && keys === "for,since") return { for: t.for, since: t.since };
+    if (t.for !== "after_scam" || keys !== "for,since,until" || !time(t.until)) return null;
+    if (t.until <= t.since || t.until - t.since > 61 * DAY || !(now < t.until)) return null;
+    return { for: t.for, since: t.since, until: t.until };
   }
 
   // The file's text: nothing in it is readable without the password.
@@ -93,7 +113,7 @@
   }
 
   // Only known keys with sane values. The vault's entries are cleaned again by the background (cleanVaultEntry).
-  function clean(s) {
+  function clean(s, now = Date.now()) {
     const out = {};
     const obj = (v) => Boolean(v) && typeof v === "object" && !Array.isArray(v);
     const kind = (k) => /^[a-z_]{2,40}$/.test(k);
@@ -105,7 +125,13 @@
     if (obj(s.siteModes)) out.siteModes = keep(s.siteModes, (h, v) => host(h) && ["block", "log"].includes(v));
     if (obj(s.bandage)) out.bandage = keep(s.bandage, (h, v) => host(h) && typeof v === "boolean");
     if (obj(s.guided)) out.guided = keep(s.guided, (k, v) => kind(k) && Number.isFinite(v));
-    for (const k of ["advanced", "replyCheck", "largeText"]) if (typeof s[k] === "boolean") out[k] = s[k];
+    // The AI sites the "can't read pictures" note was shown on: names only, at most 200 (the newest).
+    if (obj(s.picturesNoted))
+      out.picturesNoted = Object.fromEntries(
+        Object.entries(keep(s.picturesNoted, (h, v) => host(h) && v === true)).slice(-200),
+      );
+    for (const k of ["advanced", "replyCheck", "commandCheck", "largeText"])
+      if (typeof s[k] === "boolean") out[k] = s[k];
     if ([90, 365, 730].includes(s.keepDays)) out.keepDays = s.keepDays;
     const lock = s.lock;
     if (
@@ -119,6 +145,8 @@
       out.lock = { salt: lock.salt, iterations: lock.iterations, hash: lock.hash };
     if (typeof s.salt === "string" && /^[0-9a-f]{32}$/.test(s.salt)) out.salt = s.salt;
     if (Array.isArray(s.vault)) out.vault = s.vault.slice(0, 5000);
+    const t = tourniquetOn(s.tourniquet, now);
+    if (t) out.tourniquet = t;
     return out;
   }
 

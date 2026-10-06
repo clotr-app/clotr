@@ -1,4 +1,4 @@
-// Clotr: finding the chat box and editing it the way the page's own framework expects.
+// Finding the chat box and editing it the way the page's own framework expects.
 // Classic content script (loaded after ui-styles.js, before warning-ui.js and content.js); shares Clotr.editor.
 (() => {
   "use strict";
@@ -12,7 +12,7 @@
   }
 
   // Sign-in fields on an AI site's own pages (username, a password shown as text, one-time codes,
-  // card forms) go to the site on purpose: Clotr never watches or records them (e2e LG1).
+  // card forms) go to the site on purpose: Clotr never watches or records them.
   const SIGN_IN_AUTOCOMPLETE = /\b(username|current-password|new-password|one-time-code|cc-[a-z-]+)\b/i;
   const SIGN_IN_WORDS = /pass(word|code|phrase)?|pwd|otp|verification|2fa|mfa/i;
   function isSignInField(input) {
@@ -63,7 +63,7 @@
   }
 
   // Spaces and invisible characters don't count: some editors keep a zero-width marker of their own at the end of the
-  // box and put it back after an edit (Microsoft Copilot, CP1), so the text differs only by characters nobody sees.
+  // box and put it back after an edit (Microsoft Copilot does this), so the text differs only by characters nobody sees.
   const plain = (s) =>
     s
       .replace(/[\u200B-\u200D\u2060\uFEFF]/g, "")

@@ -1,4 +1,4 @@
-// Clotr — translates an extension page's fixed text (D65).
+// Translates an extension page's fixed text.
 // Elements carry data-i18n="key"; labels, tooltips and placeholders carry data-i18n-aria-label,
 // data-i18n-title, data-i18n-placeholder. The English written in the HTML stays wherever there's
 // no translation. Load it after the page's markup and before the page's own script.

@@ -1,6 +1,6 @@
-// Clotr — toolbar popup / mini dashboard.
-// Reads settings and event metadata from chrome.storage.local; writes only the
-// user's settings (pause, per-pattern responses, added sites) and clears history on request.
+// The toolbar popup, also used as a mini dashboard.
+// Reads settings and event history from chrome.storage.local. The only things it writes back are the user's
+// own settings, like pausing or per-pattern responses, plus clearing history when asked.
 "use strict";
 
 const { PATTERNS, RESPONSES, defaultResponse, responseFor, msg, Report } = globalThis.Clotr;
@@ -18,13 +18,16 @@ const RESPONSE_LABELS = {
   block: msg("popup_askBeforeSending", "Ask before sending"),
   warn: msg("popup_warn", "Warn"),
   log: msg("popup_justCount", "Just count"),
-}; // plain words (D40)
+}; // plain words
 const GROUPS = [
   { id: "credentials", name: msg("pp_gCredentials", "Passwords, keys & servers") },
   { id: "personal", name: msg("pp_gPersonal", "Personal info") },
   { id: "custom", name: msg("pp_gCustom", "Your watch list") },
 ];
 const Sites = globalThis.ClotrSites;
+// How many details a record stands for: one, or the count of the rest of a long list sent at once.
+const weight = Sites.weight;
+const sum = (list) => list.reduce((n, e) => n + weight(e), 0);
 const PATTERN_NAMES = Object.fromEntries(PATTERNS.map((p) => [p.id, p.name]));
 const BUILT_IN = Sites.builtInMatches();
 
@@ -36,6 +39,12 @@ const SERIES = [
 const OUTCOME = Object.fromEntries(SERIES.map((s) => [s.action, s]));
 const ACTIVITY_LIMIT = 100;
 const SVG_NS = "http://www.w3.org/2000/svg";
+// Safari has no management API, so its build drops extcheck.* from the package entirely, and this hides the
+// doors to it here too.
+const IS_SAFARI = Boolean(chrome.runtime.getManifest().browser_specific_settings?.safari);
+// Which held-back features this build actually ships. An off feature gets no door anywhere on this page; an
+// on one works exactly like any other feature.
+const FEATURES = chrome.runtime.getManifest().clotr_features || {};
 
 let state = {
   events: [],
@@ -51,6 +60,7 @@ let state = {
   bandage: {},
   siteKinds: {},
   siteScopes: {},
+  tourniquet: null,
 };
 let site = { kind: "none" }; // none | protected | spotted | not-ai
 let rangeDays = readPref("rangeDays", 7);
@@ -71,9 +81,17 @@ function renderSiteFilter() {
     ),
   );
   $("filter-bar").hidden = counts.length < 2 && !siteFilter;
-  // With one tool chosen, its per-site mode sits right next to it.
+  // With one tool chosen, its per-site mode sits right next to it. "Quieter here" doesn't apply under
+  // Tourniquet, since the background ignores it there, so it's hidden and a stored value just reads the same
+  // as everywhere else. It's also locked while settings are locked, the same as pausing, since it could
+  // otherwise be used to get around the PIN.
   $("site-mode").hidden = !siteFilter;
-  $("site-mode").value = state.siteModes[siteFilter] || "";
+  $("site-mode").disabled = isLocked();
+  $("site-mode").title = isLocked() ? msg("popup_settingsAreLocked", "Settings are locked") : "";
+  const quieter = $("site-mode").querySelector('option[value="log"]');
+  quieter.hidden = quieter.disabled = Boolean(tourniquetOn());
+  const mode = state.siteModes[siteFilter] || "";
+  $("site-mode").value = tourniquetOn() && mode === "log" ? "" : mode;
   $("site-mode").classList.toggle("changed", Boolean(state.siteModes[siteFilter]));
 }
 
@@ -81,7 +99,7 @@ const $ = (id) => document.getElementById(id);
 $("site-mode").addEventListener("change", async (e) => {
   const site = siteFilter; // read before awaiting: the filter may change meanwhile
   const mode = e.target.value;
-  if (!site) return;
+  if (!site || isLocked()) return renderSiteFilter();
   const { siteModes = {} } = await chrome.storage.local.get("siteModes");
   if (mode) siteModes[site] = mode;
   else delete siteModes[site];
@@ -178,8 +196,9 @@ async function detectSite() {
   }
 }
 
-// An AI tool Clotr spotted but doesn't protect: its name (only) goes on the mind map's blind spots (D75).
-// Clotr learns one only here, when you open this popup on it: it can't see unprotected sites otherwise.
+// Records an AI tool Clotr spotted but doesn't protect, so its name can show up on the mind map's blind
+// spots. This is the only place Clotr learns about one, since it opens the popup there; it has no other way
+// to see an unprotected site.
 const MAX_SPOTTED = 200;
 async function noteSpotted(host) {
   if (!/^[a-z0-9.-]{1,253}$/i.test(host) || state.spotted[host]) return;
@@ -189,11 +208,12 @@ async function noteSpotted(host) {
   await chrome.storage.local.set({ spotted }).catch(() => {});
 }
 
-// `kind`: "ai" for an AI tool, "everyday" for an email or chat app (D134: no cover names, no reply check there).
+// `kind`: "ai" for an AI tool, "everyday" for an email or chat app.
 async function protectSite(url, kind = "ai") {
-  // Record the section and the ask in the click's own turn, nothing waited for before either: the browser's prompt
-  // (for exactly this one host) may close the popup, and background.js finishes the setup from storage either way;
-  // Firefox refuses the prompt after any await. So the popup's own copies are used, not a fresh read.
+  // Both the storage write and the permission ask happen in the same click, before anything is awaited: the
+  // browser's own prompt can close this popup, and Firefox refuses the prompt once anything has been awaited
+  // first. background.js finishes the setup from storage either way, so this uses the popup's own copy of the
+  // state instead of reading it fresh.
   const scope = Sites.protectScope(url);
   const perm = Sites.permissionFor(scope);
   const siteScopes = { ...state.siteScopes };
@@ -224,13 +244,26 @@ async function refreshSites() {
   renderSettings();
 }
 
-// Settings → "Also on your email and chat apps": one switch per app, asking the browser for exactly its sites.
+// Settings' "Also on your email and chat apps": one switch per app, asking the browser for exactly its sites.
+// Switching on asks first, in the same click (sites.js explains why), and doesn't write anything itself: a
+// listed app counts as an email or chat app either way, and the browser remembers the grant on its own.
+// Switching off also clears the note an older version wrote for it.
 async function setEverydaySite(s, on) {
-  const hosts = s.matches.map((p) => new URL(p.replace(/\*$/, "")).hostname);
   if (on) {
-    await setSiteKinds(hosts, "everyday");
-    await chrome.permissions.request({ origins: s.matches });
+    say("everyday-status", "");
+    const yes = await Sites.requestEverydayApps([s.name]);
+    // A closed prompt or a No used to leave this silent; say so instead, the same way the welcome page does.
+    if (!yes)
+      say(
+        "everyday-status",
+        msg(
+          "ev_refused",
+          "Nothing was switched on: the browser's question was closed or answered No. Tick and try again, or switch them on later in Settings.",
+        ),
+      );
   } else {
+    say("everyday-status", "");
+    const hosts = s.matches.map((p) => new URL(p.replace(/\*$/, "")).hostname);
     await chrome.permissions.remove({ origins: s.matches });
     await setSiteKinds(hosts, null);
   }
@@ -271,7 +304,7 @@ function renderSite() {
   const box = $("site");
   const stateLine = (dotCls, text) =>
     el("div", { className: "state" }, [el("i", { className: `dot ${dotCls}` }), text]);
-  // "Report a problem" can offer this AI tool's host, opt-in only (#178); never on a non-AI page.
+  // "Report a problem" can offer this AI tool's host, opt-in only, never on a non-AI page.
   Report?.setHost(site.kind === "protected" || site.kind === "spotted" ? site.host : null);
 
   if (site.kind === "none") {
@@ -378,7 +411,8 @@ function renderSite() {
     return;
   }
 
-  // not-ai: off here until you switch it on (D134): an email or chat app, any other site, or an AI tool it missed.
+  // Not an AI site: stays off here until you switch it on, whether it's an email or chat app, any other site,
+  // or an AI tool Clotr missed.
   const https = Boolean(site.host && site.url?.startsWith("https:"));
   const known = Sites.everydaySiteFor(site.host);
   const turnOn = el("button", {
@@ -437,7 +471,7 @@ function niceCeil(v) {
 
 function countBy(list, keyFn) {
   const out = new Map();
-  for (const item of list) out.set(keyFn(item), (out.get(keyFn(item)) || 0) + 1);
+  for (const item of list) out.set(keyFn(item), (out.get(keyFn(item)) || 0) + weight(item));
   return [...out.entries()].sort((a, b) => b[1] - a[1]);
 }
 
@@ -453,6 +487,7 @@ function renderOverview() {
   renderExposure(); // all history, so it shows even when this range is quiet
   renderMiniMap();
   renderDigest();
+  renderLookBackCard(); // all history too: it's about what's out there, not this range
   const empty = events.length === 0;
   const quiet = empty && viewEvents().length > 0; // history exists, just not in this range
   $("empty-title").textContent = quiet
@@ -464,7 +499,7 @@ function renderOverview() {
   $("overview-body").hidden = empty;
   if (empty) return;
 
-  const n = (action) => events.filter((e) => e.action === action).length;
+  const n = (action) => sum(events.filter((e) => e.action === action));
 
   // Hero
   $("hero-value").textContent = n("redacted").toLocaleString();
@@ -475,7 +510,7 @@ function renderOverview() {
   $("hero-sub").textContent = msg(
     "pp_heroSub",
     "$1 found · $2 sent · $3 just counted",
-    events.length,
+    sum(events),
     n("allowed"),
     n("suppressed"),
   );
@@ -493,7 +528,7 @@ function renderOverview() {
   );
 }
 
-// The small mind map (D75): only branches with something in them; the full one is in the report.
+// The small mind map: only branches with something in them; the full one is in the report.
 function renderMiniMap() {
   const { exposureModel, buildMindMapTree } = globalThis.ClotrInsights;
   const { layoutRadial, renderMindMap } = globalThis.ClotrMindMap;
@@ -516,26 +551,27 @@ function renderMiniMap() {
   );
 }
 
-// Weekly digest: this week against last week, and the one thing to do now (v1.0). Local, no notifications.
+// Weekly digest: this week against last week, and the one thing to do now. Local, no notifications.
 function renderDigest() {
   const DAY = 86400000;
   const now = Date.now();
   const all = viewEvents();
   const week = all.filter((e) => e.t >= now - 7 * DAY);
-  const last = all.filter((e) => e.t >= now - 14 * DAY && e.t < now - 7 * DAY).length;
-  $("digest").hidden = week.length === 0 && last === 0;
+  const found = sum(week);
+  const last = sum(all.filter((e) => e.t >= now - 14 * DAY && e.t < now - 7 * DAY));
+  $("digest").hidden = found === 0 && last === 0;
   if ($("digest").hidden) return;
-  const n = (action) => week.filter((e) => e.action === action).length;
+  const n = (action) => sum(week.filter((e) => e.action === action));
   const trend =
-    week.length < last
+    found < last
       ? msg("pp_fewer", "fewer than last week ($1)", last)
-      : week.length > last
+      : found > last
         ? msg("pp_more", "more than last week ($1)", last)
         : msg("pp_same", "the same as last week");
   $("digest-line").textContent = msg(
     "pp_digest",
     "This week: $1 found, $2 hidden, $3 sent anyway. That's $4.",
-    week.length,
+    found,
     n("redacted"),
     n("allowed"),
     trend,
@@ -572,12 +608,12 @@ function renderExposure() {
 function renderAlerts(events) {
   const alerts = [];
 
-  const riskyAllowed = events.filter((e) => e.action === "allowed" && e.severity === "high");
-  if (riskyAllowed.length) {
+  const riskyAllowed = sum(events.filter((e) => e.action === "allowed" && e.severity === "high"));
+  if (riskyAllowed) {
     alerts.push(
-      riskyAllowed.length === 1
+      riskyAllowed === 1
         ? msg("pp_riskyOne", "You sent 1 high-risk item anyway in this period.")
-        : msg("pp_riskyMany", "You sent $1 high-risk items anyway in this period.", riskyAllowed.length),
+        : msg("pp_riskyMany", "You sent $1 high-risk items anyway in this period.", riskyAllowed),
     );
   }
 
@@ -614,7 +650,7 @@ function renderLegend(events) {
       el("span", {}, [
         el("i", { style: { background: s.color } }),
         s.label,
-        el("b", { textContent: String(events.filter((e) => e.action === s.action).length) }),
+        el("b", { textContent: String(sum(events.filter((e) => e.action === s.action))) }),
       ]),
     ),
   );
@@ -640,7 +676,7 @@ function renderChart(days, events) {
   const index = new Map(days.map((d, i) => [d.getTime(), i]));
   for (const e of events) {
     const i = index.get(startOfDay(e.t).getTime());
-    if (i !== undefined && e.action in buckets[i]) buckets[i][e.action]++;
+    if (i !== undefined && e.action in buckets[i]) buckets[i][e.action] += weight(e);
   }
   const total = (b) => b.redacted + b.allowed + b.suppressed;
   const yMax = niceCeil(Math.max(1, ...buckets.map(total)));
@@ -796,6 +832,19 @@ function renderActivity() {
         el("span", { className: `sev ${e.severity}`, textContent: msg(`sev_${e.severity}`, e.severity) }),
         PATTERN_NAMES[e.type] || e.name || e.type,
       ]);
+      // The rest of a long list sent at once, as one record.
+      if (weight(e) > 1) {
+        what.append(
+          el("span", {
+            className: "more",
+            textContent: msg("pp_moreInOneGo", "$1 more in one go", weight(e).toLocaleString()),
+            title: msg(
+              "pp_moreInOneGoWhy",
+              "One record for the rest of a long list sent at once, so your history keeps its room.",
+            ),
+          }),
+        );
+      }
       if (seen[e.fp] > 1) {
         what.append(
           el("span", {
@@ -825,12 +874,10 @@ function renderActivity() {
 
 // ---------- Settings ----------
 
-// Stores overrides only, so a pattern set back to its default follows future default changes.
+// Routed through the background (clotr:setResponses) so a reply arriving from another AI tab while this
+// saves can't read storage before this write lands and overwrite it on its own save.
 async function setResponse(id, value) {
-  const { responses = {} } = await chrome.storage.local.get("responses");
-  if (value === defaultResponse(id)) delete responses[id];
-  else responses[id] = value;
-  await chrome.storage.local.set({ responses });
+  await chrome.runtime.sendMessage({ type: "clotr:setResponses", ids: [id], value });
 }
 
 // One control for a whole group: "default" clears the group's overrides (helper-core.js).
@@ -870,7 +917,7 @@ async function removeUserSite(pattern) {
   renderSettings();
 }
 
-// ---------- Helping someone: larger warnings, stricter personal details, PIN lock (D61) ----------
+// ---------- Helping someone: larger warnings, stricter personal details, PIN lock ----------
 // Shared with the guided setup page (helper.html) through helper-core.js: the PIN is kept only as a salted
 // PBKDF2 hash, and unlocking lasts 10 minutes across Clotr's pages.
 let unlockedUntil = 0;
@@ -896,8 +943,11 @@ function renderHelper() {
     : msg("popup_managedByYourOrganization", "Managed by your organization.");
   $("unlock").hidden = !locked || managedLock(); // an organization's lock has no PIN
   $("settings-body").hidden = locked;
+  // The history is the person's own: "Clear my history" stays in reach while settings are locked.
+  $("history-mine").hidden = !locked;
   $("large-text").checked = state.largeText;
   $("reply-check").checked = state.replyCheck;
+  $("command-check").checked = state.commandCheck;
   $("strict-personal").checked = Helper.asksBeforePersonal(state.responses);
   $("lock-remove").hidden = !state.lock;
   $("lock-set").textContent = state.lock
@@ -906,10 +956,61 @@ function renderHelper() {
 }
 
 $("managed-see").addEventListener("click", () => chrome.tabs.create({ url: chrome.runtime.getURL("policy.html") }));
+$("managed-training").addEventListener("click", () =>
+  chrome.tabs.create({ url: chrome.runtime.getURL("training.html") }),
+);
+$("managed-training").hidden = !FEATURES.training;
 $("large-text").addEventListener("change", (e) => chrome.storage.local.set({ largeText: e.target.checked }));
 $("reply-check").addEventListener("change", (e) => chrome.storage.local.set({ replyCheck: e.target.checked }));
+$("command-check").addEventListener("change", (e) => chrome.storage.local.set({ commandCheck: e.target.checked }));
+$("command-check-row").hidden = !FEATURES.commandcheck;
+$("command-check-hint").hidden = !FEATURES.commandcheck;
 
-// ---------- Bandage (D93, pre-release Batch 2): per-site on/off, and turning it on for this tab ----------
+// ---------- Clotr Antibody: the Overview row and Settings' section open its pages ----------
+// Each door opens a page in a new tab; none changes a setting, so the Overview row works while settings are locked.
+// The 30-day line opens the setup page with "After a scam" already chosen (helper.js reads ?for=after_scam).
+for (const [id, page] of [
+  ["ss-row-check", "check.html"],
+  ["ss-row-practice", "practice.html"],
+  ["ss-open-card", "share.html#card"],
+  ["ss-tq30-open", "helper.html?for=after_scam#who"],
+])
+  $(id).addEventListener("click", () => chrome.tabs.create({ url: chrome.runtime.getURL(page) }));
+// Held back features get no door here: the Overview row only has "Is this a scam?" and
+// Practice, so it hides when both are off; Settings' section also holds the command check and Tourniquet's
+// 30-day line, so it only hides when nothing in it is on (Tourniquet's own ss-tq30 is gated in renderTourniquet()).
+$("ss-row-check").hidden = !FEATURES.scamcheck;
+$("ss-row-practice").hidden = !FEATURES.practice;
+$("ss-open-card").hidden = !FEATURES.scamcheck;
+$("ss-row").hidden = !FEATURES.scamcheck && !FEATURES.practice;
+$("ss-settings").hidden = !FEATURES.scamcheck && !FEATURES.commandcheck && !FEATURES.tourniquet;
+
+// ---------- Look back and Extension check: the Overview card and Settings' section open them ----------
+// Neither door changes a setting or touches storage, so both work while settings are locked.
+for (const [id, page] of [
+  ["lb-card-open", "lookback.html"],
+  ["lb-card-check", "extcheck.html"],
+  ["lb-settings-open", "lookback.html"],
+  ["lb-settings-check", "extcheck.html"],
+])
+  $(id).addEventListener("click", () => chrome.tabs.create({ url: chrome.runtime.getURL(page) }));
+// Look back and Extension check are both held back, gated independently; Safari also has
+// no management API, so its build hides Extension check's doors even when the feature is on.
+$("lb-card-row").hidden = !FEATURES.lookback;
+$("lb-settings-row").hidden = !FEATURES.lookback;
+$("lb-card-ec-row").hidden = IS_SAFARI || !FEATURES.extcheck;
+$("lb-settings-ec-row").hidden = IS_SAFARI || !FEATURES.extcheck;
+$("lb-card").hidden = !FEATURES.lookback && (IS_SAFARI || !FEATURES.extcheck);
+$("lb-settings").hidden = !FEATURES.lookback && (IS_SAFARI || !FEATURES.extcheck);
+
+// With no history yet there's nothing else on Overview to look at, so the card keeps its full words and
+// invites someone in; once there's real history it folds onto one line (.compact), the same quiet shape as
+// the Antibody row above it: an empty history invites people in, a full one stays out of the way.
+function renderLookBackCard() {
+  $("lb-card").classList.toggle("compact", state.events.length > 0);
+}
+
+// ---------- Bandage: per-site on/off, and turning it on for this tab ----------
 async function setBandageHost(host, on) {
   const { bandage = {} } = await chrome.storage.local.get("bandage");
   bandage[host] = on;
@@ -978,7 +1079,7 @@ $("unlock-pin").addEventListener("keydown", (e) => {
   if (e.key === "Enter") tryUnlock();
 });
 
-// Email and chat apps (D134): a switch per app on the list, then any other site you switched on as "not an AI".
+// Email and chat apps: a switch per app on the list, then any other site you switched on as "not an AI".
 function renderEverydaySites(granted) {
   const listed = new Set(Sites.EVERYDAY_SITES.flatMap((s) => s.matches));
   const rows = Sites.EVERYDAY_SITES.map((s) => {
@@ -1014,6 +1115,7 @@ function renderEverydaySites(granted) {
 
 function renderSettings() {
   renderHelper();
+  renderTourniquet();
   renderBandage();
   const everydayHost = (p) => Sites.isEveryday(new URL(p.replace(/\*$/, "")).hostname, state.siteKinds);
   const userItems = state.userSites
@@ -1054,25 +1156,31 @@ function renderSettings() {
   );
 
   const openGroups = new Set([...document.querySelectorAll(".resp-group details[open]")].map((d) => d.dataset.group));
-  // The effective response per kind (the policy's floor already applied, D115): writes still go
-  // to the raw stored map (setResponse), so nothing is lost when the policy goes away.
-  const effResponses = Sites.applyPolicy({ responses: state.responses }, state.policy).responses;
+  // The effective response per kind: writes still go
+  // to the raw stored map (setResponse), so nothing is lost when the policy or Tourniquet goes away.
+  const kept = Sites.tourniquetPolicy(state.tourniquet)?.requiredResponses || {};
+  const effResponses = Sites.applyPolicy({ responses: state.responses }, combinedPolicy()).responses;
   const patternRow = (p) => {
     const current = responseFor(p.id, effResponses);
     const floored = RESPONSES.includes(state.policy?.requiredResponses?.[p.id]);
+    // Tourniquet's floor for this kind: the choices under it can't be picked while it's on.
+    const floor = !floored && Object.hasOwn(kept, p.id) ? kept[p.id] : null;
     const select = el(
       "select",
       {
         className: "resp",
         title: floored
           ? msg("popup_managedByYourOrganization", "Managed by your organization.")
-          : msg("pp_whatDoes", "What Clotr does when it finds: $1", p.name),
-        disabled: floored,
+          : floor
+            ? msg("pp_tqKeeps", "Tourniquet keeps this")
+            : msg("pp_whatDoes", "What Clotr does when it finds: $1", p.name),
+        disabled: floored || floor === "block",
       },
       RESPONSES.map((r) =>
         el("option", {
           value: r,
           selected: r === current,
+          disabled: Boolean(floor) && RESPONSES.indexOf(r) > RESPONSES.indexOf(floor),
           textContent: RESPONSE_LABELS[r] + (r === defaultResponse(p.id) ? msg("pp_defaultSuffix", " (default)") : ""),
         }),
       ),
@@ -1081,8 +1189,9 @@ function renderSettings() {
     select.classList.toggle("changed", current !== defaultResponse(p.id));
     select.setAttribute("aria-label", msg("pp_responseFor", "Response for $1", p.name));
     select.addEventListener("change", () => setResponse(p.id, select.value));
+    // A kind's name wraps between words ("Número de la Seguridad Social de EE. UU."), never inside one.
     return el("li", {}, [
-      el("span", { className: "grow" }, [
+      el("span", { className: "grow words" }, [
         el("span", { className: `sev ${p.severity}`, textContent: msg(`sev_${p.severity}`, p.severity) }),
         p.name,
       ]),
@@ -1094,8 +1203,15 @@ function renderSettings() {
       const members = PATTERNS.filter((p) => p.group === g.id);
       const ids = members.map((p) => p.id);
       const value = groupValue(ids);
+      // A group with a kind that starts as Just count says so, so its "Default" isn't read as warn for all.
+      const someQuiet = ids.some((id) => defaultResponse(id) === "log");
       const options = [
-        ["default", msg("pp_defaultWarn", "Default (warn)")],
+        [
+          "default",
+          someQuiet
+            ? msg("pp_defaultWarnSomeCount", "Default (warn, a few just count)")
+            : msg("pp_defaultWarn", "Default (warn)"),
+        ],
         ...RESPONSES.map((r) => [r, RESPONSE_LABELS[r]]),
       ];
       if (value === "custom") options.push(["custom", msg("pp_custom", "Custom")]);
@@ -1120,9 +1236,10 @@ function renderSettings() {
         details,
       ]);
     }),
+    ...teamGroup(effResponses),
   );
 
-  // Simple mode by default (M4): per-type settings, per-site modes and the built-in list
+  // Simple mode by default: per-type settings, per-site modes and the built-in list
   // appear only with "Show advanced options"; a note says when hidden ones are in use.
   document.body.classList.toggle("advanced", state.advanced);
   $("advanced").checked = state.advanced;
@@ -1138,24 +1255,218 @@ function renderSettings() {
     : msg("pp_vaultEmpty", "Nothing here yet. Add your details so Clotr knows what's yours to protect.");
 }
 
-// Two clicks to clear, so a stray click can't wipe history.
-const clearBtn = $("clear");
-let clearArmed = null;
-function disarmClear() {
-  clearTimeout(clearArmed);
-  clearArmed = null;
-  clearBtn.textContent = msg("popup_clearHistory", "Clear history");
-  clearBtn.classList.remove("confirm");
+// Shows a team's own kinds, set by its policy, with each row's response locked in and unchangeable. It shows
+// even in simple mode, since this is what the organization chose for this computer, though the rows stay
+// folded away until asked for. With no kinds in the policy, this renders nothing.
+function teamGroup(effResponses) {
+  const kinds = Array.isArray(state.policy?.kinds) ? state.policy.kinds : [];
+  if (!kinds.length) return [];
+  const setBy = msg("pp_setByOrg", "Set by your organization");
+  const row = (k) => {
+    const current = responseFor(k.id, effResponses);
+    const select = el(
+      "select",
+      { className: "resp", title: `${setBy}.`, disabled: true },
+      RESPONSES.map((r) => el("option", { value: r, selected: r === current, textContent: RESPONSE_LABELS[r] })),
+    );
+    select.dataset.pattern = k.id;
+    select.setAttribute("aria-label", msg("pp_responseFor", "Response for $1", k.name));
+    return el("li", {}, [el("span", { className: "grow", textContent: k.name }), select]);
+  };
+  const open = Boolean(document.querySelector('.resp-group[data-group="team"] details[open]'));
+  const group = el("div", { className: "resp-group" }, [
+    el("div", { className: "head" }, [
+      el("span", { className: "grow", textContent: msg("pp_gTeam", "Kinds your organization added") }),
+      el("span", { className: "set-by", textContent: setBy }),
+    ]),
+    el("details", { open }, [
+      el("summary", { textContent: msg("pp_seeEach", "See each ($1)", kinds.length) }),
+      el("ul", { className: "list" }, kinds.map(row)),
+    ]),
+  ]);
+  group.dataset.group = "team";
+  return [group];
 }
-clearBtn.addEventListener("click", async () => {
-  if (!clearArmed) {
-    clearBtn.textContent = msg("pp_clearAgain", "Click again to clear all history");
-    clearBtn.classList.add("confirm");
-    clearArmed = setTimeout(disarmClear, 3000);
+
+// Two clicks to clear, so a stray click can't wipe history: Settings' "Clear history", and "Clear my history" in the
+// locked view (no PIN: the history is the person's own).
+function twoClickClear(btn, idleText) {
+  let armed = null;
+  const disarm = () => {
+    clearTimeout(armed);
+    armed = null;
+    btn.textContent = idleText();
+    btn.classList.remove("confirm");
+  };
+  btn.addEventListener("click", async () => {
+    if (!armed) {
+      btn.textContent = msg("pp_clearAgain", "Click again to clear all history");
+      btn.classList.add("confirm");
+      armed = setTimeout(disarm, 3000);
+      return;
+    }
+    disarm();
+    await chrome.runtime.sendMessage({ type: "clotr:clearHistory" });
+  });
+}
+twoClickClear($("clear"), () => msg("popup_clearHistory", "Clear history"));
+twoClickClear($("clear-mine"), () => msg("pp_tqClearMine", "Clear my history"));
+
+// ---------- Tourniquet: the chip, the Overview line, the Settings card ----------
+// The person it protects always sees that it's on and what it does, in words that never name the preset.
+// Once settings are open, the switch here can change the preset or turn it off, with two clicks; turning it
+// on in the first place is the guided setup's job, not this page's.
+
+const tourniquetOn = () => Sites.cleanTourniquet(state.tourniquet);
+// What Clotr applies now: the organization's policy with Tourniquet on top.
+const combinedPolicy = () => Sites.combinePolicies(state.policy, Sites.tourniquetPolicy(state.tourniquet));
+
+function renderTourniquet() {
+  const t = tourniquetOn();
+  // Clotr Antibody's 30-day line offers Tourniquet to someone on their own: not while it's on, settings are
+  // locked, or Tourniquet is held back in this build.
+  $("ss-tq30").hidden = Boolean(t) || isLocked() || !FEATURES.tourniquet;
+  for (const id of ["tq-chip", "tq-line", "tq-card", "tq-keeps-note"]) $(id).hidden = !t;
+  if (!t) return disarmTourniquetOff();
+  const child = t.for === "child";
+  const scam = t.for === "after_scam"; // the grown-up's rules, for 30 days (Scam Shield)
+  $("tq-line-text").textContent = child
+    ? msg(
+        "pp_tqLineChild",
+        "Tourniquet is on: Clotr asks before personal details, passwords and sign-in codes go out. Clotr sends nothing anywhere.",
+      )
+    : scam
+      ? msg(
+          "pp_tqLineAfterScam",
+          "Tourniquet is on for 30 days after a scam: Clotr asks before bank, card and ID numbers, gift card numbers, passwords and sign-in codes go out. Clotr sends nothing anywhere.",
+        )
+      : msg(
+          "pp_tqLineAdult",
+          "Tourniquet is on: Clotr asks before bank, card and ID numbers, passwords and sign-in codes go out. Clotr sends nothing anywhere.",
+        );
+  $("tq-title-text").textContent = scam
+    ? msg("pp_tqTitleAfterScam", "Tourniquet: 30 days after a scam")
+    : msg("pp_tqTitle", "Tourniquet is on");
+  $("tq-since").hidden = scam;
+  $("tq-days").hidden = !scam;
+  if (scam) renderTourniquetDays(t);
+  let since;
+  try {
+    since = new Date(t.since).toLocaleDateString(chrome.i18n.getUILanguage(), { dateStyle: "long" });
+  } catch {
+    since = new Date(t.since).toDateString();
+  }
+  $("tq-since").textContent = msg("pp_tqSince", "On since $1.", since);
+  $("tq-asks").textContent = child
+    ? msg(
+        "pp_tqAsksChild",
+        "Clotr asks before these go out: names, addresses, phone numbers, email addresses, birthdays, card and ID numbers, passwords and sign-in codes, and the words added to watch for.",
+      )
+    : scam
+      ? msg(
+          "pp_tqAsksAfterScam",
+          "Clotr asks before these go out: bank, card and ID numbers, gift card numbers, Medicare and insurance numbers, birthdays, passwords and sign-in codes.",
+        )
+      : msg(
+          "pp_tqAsksAdult",
+          "Clotr asks before these go out: bank, card and ID numbers, Medicare and insurance numbers, birthdays, passwords and sign-in codes.",
+        );
+  $("tq-notes").hidden = child;
+  $("tq-notes").textContent = child
+    ? ""
+    : msg(
+        "pp_tqNotesAdult",
+        "Warnings are larger. Names, addresses, phone numbers and email addresses always get a note in the corner.",
+      );
+  const granted = state.userSites;
+  const apps = Sites.EVERYDAY_SITES.filter((s) => s.matches.some((p) => granted.includes(p))).map((s) => s.name);
+  $("tq-apps").hidden = !apps.length;
+  $("tq-apps").textContent = apps.length
+    ? msg("pp_tqApps", "Also on your email and chat apps: $1.", apps.join(", "))
+    : "";
+  $("tq-switch").hidden = isLocked();
+  for (const b of $("tq-switch").querySelectorAll("button"))
+    b.setAttribute("aria-pressed", String(b.dataset.for === t.for));
+}
+
+// "2 October", the browser's own way: the 30 days' dates.
+function shortDay(t) {
+  try {
+    return new Date(t).toLocaleDateString(chrome.i18n.getUILanguage(), { day: "numeric", month: "long" });
+  } catch {
+    return new Date(t).toDateString();
+  }
+}
+
+// Fills in the day count and end date for the 30 days after a scam, worked out from the stored dates on this
+// computer's clock. The track underneath is just a picture; the words already say the same thing. If the
+// clock gets turned back, a note explains that the stored dates don't move with it.
+function renderTourniquetDays(t) {
+  const now = Date.now();
+  const { day, of } = Sites.tourniquetDay(t, now);
+  $("tq-day").textContent = msg("pp_tqDay", "Day $1 of $2", day, of);
+  $("tq-ends").textContent = msg("pp_tqStepsDown", "Steps down on $1", shortDay(t.until));
+  $("tq-days")
+    .querySelector(".tq-track")
+    .replaceChildren(
+      ...Array.from({ length: of }, (_, i) =>
+        el("span", { className: i + 1 < day ? "gone" : i + 1 === day ? "today" : "" }),
+      ),
+    );
+  const back = Sites.tourniquetClockBack(state.tourniquetSeen, now);
+  $("tq-clock").hidden = !back;
+  $("tq-clock").textContent = back
+    ? msg(
+        "pp_tqClockBack",
+        "This computer's clock was turned back. Clotr keeps its own dates, so the 30 days end when this clock reaches $1.",
+        shortDay(t.until),
+      )
+    : "";
+}
+
+// The chip and "What it changes" open Settings at the card and move the focus to its heading.
+function showTourniquetCard() {
+  selectTab("settings");
+  $("tq-title").focus();
+}
+$("tq-chip").addEventListener("click", showTourniquetCard);
+$("tq-line-open").addEventListener("click", showTourniquetCard);
+
+let tourniquetOffArmed = null;
+function disarmTourniquetOff() {
+  clearTimeout(tourniquetOffArmed);
+  tourniquetOffArmed = null;
+  const off = $("tq-switch").querySelector('[data-for="off"]');
+  off.textContent = msg("pp_tqOff", "Off");
+  off.classList.remove("confirm");
+  $("tq-off-msg").textContent = "";
+}
+$("tq-switch").addEventListener("click", async (e) => {
+  const b = e.target.closest("button");
+  const t = tourniquetOn();
+  if (!b || !t || isLocked()) return;
+  if (b.dataset.for !== "off") {
+    disarmTourniquetOff();
+    // A new choice is a new start: `since` is when it was chosen (after a scam: 30 days from now).
+    if (b.dataset.for !== t.for)
+      await chrome.storage.local.set({
+        tourniquet:
+          b.dataset.for === "after_scam" ? Sites.afterScam(Date.now()) : { for: b.dataset.for, since: Date.now() },
+      });
     return;
   }
-  disarmClear();
-  await chrome.storage.local.set({ events: [], mentions: [], spotted: {} });
+  if (!tourniquetOffArmed) {
+    b.textContent = msg("pp_tqOffAgain", "Click again");
+    b.classList.add("confirm");
+    $("tq-off-msg").textContent = msg(
+      "pp_tqOffWhy",
+      "Click again to turn Tourniquet off. The email and chat apps stay on until you switch them off below.",
+    );
+    tourniquetOffArmed = setTimeout(disarmTourniquetOff, 4000);
+    return;
+  }
+  disarmTourniquetOff();
+  await chrome.storage.local.remove("tourniquet");
 });
 
 // ---------- Tabs & range ----------
@@ -1189,17 +1500,38 @@ function renderAll() {
   renderSettings();
 }
 
-// "Updated to vX: what's new", once per update (background sets lastUpdate on update).
+// Shows "Updated to vX" once per update, since the background sets lastUpdate when one happens. The release's
+// own notes stay folded under "See what's new" until opened, so the popup stays short. Opening the list isn't
+// the same as dismissing it; only clicking Got it marks it seen.
+function whatsNewSummary() {
+  const more = $("whats-new-more");
+  more.querySelector("summary").textContent = more.open
+    ? msg("pp_hideList", "Hide the list")
+    : msg("pp_seeWhatsNew", "See what's new ($1)", more.dataset.count);
+}
+$("whats-new-more").addEventListener("toggle", whatsNewSummary);
+
+// Which pages a release's "What's new" card opens, keyed by "v" plus the release's minor version. The "v" is
+// there because a bare "1.3" would be read as a number, and "1.10" would silently collide with "1.1" the
+// moment either one lost its trailing zero. changelog.json only holds the notes themselves; this map is
+// popup.js's own, and it only gets filled in once a release actually ships the pages its notes mention.
+const RELEASE_DOORS = {
+  "v1.3": [
+    { page: "lookback.html", key: "lb_name", fallback: "Look back", feature: "lookback" },
+    { page: "extcheck.html", key: "ec_name", fallback: "Extension check", feature: "extcheck" },
+  ],
+};
+
 async function renderWhatsNew() {
   const { lastUpdate } = await chrome.storage.local.get("lastUpdate");
   if (!lastUpdate || lastUpdate.seen) {
     $("whats-new").hidden = true;
     return;
   }
+  const minor = lastUpdate.to.split(".").slice(0, 2).join(".");
   let notes = [];
   try {
     const log = await (await fetch(chrome.runtime.getURL("changelog.json"))).json();
-    const minor = lastUpdate.to.split(".").slice(0, 2).join(".");
     const lang = chrome.i18n.getUILanguage().split("-")[0];
     notes = log.translations?.[lang]?.[minor] || log[minor] || [];
   } catch {
@@ -1209,8 +1541,106 @@ async function renderWhatsNew() {
     ? msg("pp_updatedFrom", "Updated to v$1 (from v$2)", lastUpdate.to, lastUpdate.from)
     : msg("pp_updated", "Updated to v$1", lastUpdate.to);
   $("whats-new-list").replaceChildren(...notes.map((n) => el("li", { textContent: n })));
+  $("whats-new-more").dataset.count = String(notes.length);
+  $("whats-new-more").hidden = !notes.length;
+  whatsNewSummary();
+  const doors = (RELEASE_DOORS[`v${minor}`] || []).filter(
+    (d) => (!d.feature || FEATURES[d.feature]) && (!IS_SAFARI || d.page !== "extcheck.html"),
+  );
+  $("whats-new-doors").replaceChildren(
+    ...doors.map((d) => {
+      const b = el("button", { className: "btn", type: "button", textContent: msg(d.key, d.fallback) });
+      b.addEventListener("click", () => chrome.tabs.create({ url: chrome.runtime.getURL(d.page) }));
+      return b;
+    }),
+  );
+  $("whats-new-doors").hidden = doors.length === 0;
   $("whats-new").hidden = false;
 }
+// Only one card shows in the top slot at a time. The end of Tourniquet's 30 days after a scam comes first,
+// since it's about this person's own protection, then the one-time offer to use Clotr on email and chat
+// apps. What's new only shows once both of those have been answered.
+async function renderTopCard() {
+  if (showTourniquetEnd()) return;
+  if (await showEverydayOffer()) return;
+  await renderWhatsNew();
+}
+
+// Whether the 30 days after a scam have ended. The background keeps that end in `tourniquetEnded` until the
+// person answers here, and a record that's already past its end but the background hasn't noticed yet counts
+// the same way.
+function tourniquetEndedNow() {
+  const ended = Sites.tourniquetEnded(state.tourniquetEnded);
+  if (ended) return ended;
+  const r = Sites.tourniquetRecord(state.tourniquet);
+  return r?.until !== undefined && !Sites.cleanTourniquet(r) ? { since: r.since, at: r.until } : null;
+}
+function showTourniquetEnd() {
+  const show = Boolean(tourniquetEndedNow());
+  $("tq-end").hidden = !show;
+  if (show) $("everyday-offer").hidden = $("whats-new").hidden = true;
+  return show;
+}
+// Each answer closes the card for good, whether it's 30 more days, switching to the grown-up's Tourniquet
+// with no end, or just Got it. None of them need the PIN, since they only ever add protection or change
+// nothing at all.
+async function answerTourniquetEnd(next) {
+  const hadFocus = $("tq-end").contains(document.activeElement);
+  const r = Sites.tourniquetRecord(state.tourniquet);
+  const stale = r?.until !== undefined && !Sites.cleanTourniquet(r);
+  if (next) await chrome.storage.local.set({ tourniquet: next });
+  await chrome.storage.local.remove(next || !stale ? ["tourniquetEnded"] : ["tourniquetEnded", "tourniquet"]);
+  state.tourniquetEnded = null;
+  if (next || stale) state.tourniquet = next;
+  $("tq-end").hidden = true;
+  renderAll();
+  await renderTopCard();
+  if (hadFocus)
+    (
+      [
+        $("everyday-offer").querySelector("button"),
+        $("whats-new-more").querySelector("summary"),
+        $("whats-new-ok"),
+      ].find((n) => n?.checkVisibility()) || $("tab-overview")
+    ).focus();
+}
+$("tq-end-more").addEventListener("click", () => answerTourniquetEnd(Sites.afterScam(Date.now())));
+$("tq-end-adult").addEventListener("click", () => answerTourniquetEnd({ for: "adult", since: Date.now() }));
+$("tq-end-ok").addEventListener("click", () => answerTourniquetEnd(null));
+
+let offerMounted = false;
+async function showEverydayOffer() {
+  const { everydayOffer } = await chrome.storage.local.get("everydayOffer");
+  if (everydayOffer !== "popup" || isLocked()) return false;
+  const { origins = [] } = await chrome.permissions.getAll();
+  if (Sites.grantedEverydayApps(origins).length) {
+    // One was switched on another way in the meantime: the offer has done its job.
+    await chrome.storage.local.set({ everydayOffer: "done" });
+    return false;
+  }
+  if (!offerMounted) {
+    offerMounted = true;
+    await globalThis.ClotrEverydayOffer.mount($("everyday-offer"), { onAnswer: closeEverydayOffer });
+  }
+  $("whats-new").hidden = true;
+  $("everyday-offer").hidden = false;
+  return true;
+}
+
+// Answered (the browser said yes or no, or No thanks): the card goes for good, and "what's new" takes its place.
+async function closeEverydayOffer(yes) {
+  const hadFocus = $("everyday-offer").contains(document.activeElement);
+  $("everyday-offer").hidden = true;
+  if (yes) refreshSites();
+  await renderWhatsNew();
+  if (hadFocus)
+    [$("whats-new-more").querySelector("summary"), $("whats-new-ok")].find((n) => n.checkVisibility())?.focus();
+}
+$("ev-no").addEventListener("click", () => {
+  chrome.storage.local.set({ everydayOffer: "done" }).catch(() => {});
+  closeEverydayOffer(false);
+});
+
 $("whats-new-ok").addEventListener("click", async () => {
   const { lastUpdate } = await chrome.storage.local.get("lastUpdate");
   await chrome.storage.local.set({ lastUpdate: { ...lastUpdate, seen: true } });
@@ -1237,11 +1667,15 @@ async function init() {
     "lock",
     "largeText",
     "replyCheck",
+    "commandCheck",
     "mentions",
     "spotted",
     "bandage",
     "siteKinds",
     "siteScopes",
+    "tourniquet",
+    "tourniquetEnded",
+    "tourniquetSeen",
   ]);
   unlockedUntil = await Helper.unlockedUntil();
   const policy = Sites.mergePolicy((await chrome.storage.managed?.get(null).catch(() => ({}))) || {});
@@ -1256,6 +1690,7 @@ async function init() {
     policy,
     largeText: stored.largeText === true,
     replyCheck: stored.replyCheck !== false,
+    commandCheck: stored.commandCheck !== false,
     mentions: stored.mentions || [],
     spotted: stored.spotted || {},
     bandage: stored.bandage || {},
@@ -1263,16 +1698,19 @@ async function init() {
     builtInTools: await loadBuiltInTools(),
     siteKinds: stored.siteKinds || {},
     siteScopes: stored.siteScopes || {},
+    tourniquet: stored.tourniquet || null,
+    tourniquetEnded: stored.tourniquetEnded || null,
+    tourniquetSeen: stored.tourniquetSeen ?? null,
   };
   await detectSite();
   renderAll();
-  renderWhatsNew();
+  renderTopCard();
 }
 
 chrome.storage.onChanged.addListener((changes, area) => {
   if (area === "managed") {
     chrome.storage.managed
-      .get(null)
+      ?.get(null)
       .then((policy) => {
         state.policy = Sites.mergePolicy(policy || {});
         renderAll();
@@ -1288,15 +1726,21 @@ chrome.storage.onChanged.addListener((changes, area) => {
   if (changes.lock) state.lock = changes.lock.newValue || null;
   if (changes.largeText) state.largeText = changes.largeText.newValue === true;
   if (changes.replyCheck) state.replyCheck = changes.replyCheck.newValue !== false;
+  if (changes.commandCheck) state.commandCheck = changes.commandCheck.newValue !== false;
   if (changes.mentions) state.mentions = changes.mentions.newValue || [];
   if (changes.spotted) state.spotted = changes.spotted.newValue || {};
   if (changes.bandage) state.bandage = changes.bandage.newValue || {};
+  if (changes.tourniquet) state.tourniquet = changes.tourniquet.newValue || null;
+  if (changes.tourniquetEnded) state.tourniquetEnded = changes.tourniquetEnded.newValue || null;
+  if (changes.tourniquetSeen) state.tourniquetSeen = changes.tourniquetSeen.newValue ?? null;
   renderAll();
+  // The 30 days ended (or were answered) while the popup is open: the top card follows, no reload needed.
+  if (changes.tourniquetEnded) renderTopCard();
 });
 
 $("advanced").addEventListener("change", (e) => chrome.storage.local.set({ advanced: e.target.checked }));
 $("tips-again").addEventListener("click", async () => {
-  await chrome.storage.local.remove("guided");
+  await chrome.storage.local.remove(["guided", "picturesNoted"]); // the "can't read pictures" note too
   $("tips-again").textContent = msg("pp_tipsAgain", "Tips will show again");
 });
 

@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Clotr: organization policy applied here</title>
+  <title data-i18n="pa_title">Organization policy applied here</title>
   <link rel="stylesheet" href="popup.css">
   <link rel="stylesheet" href="vault.css">
   <link rel="stylesheet" href="policy.css">
@@ -39,6 +39,15 @@
       <label data-i18n="pa_whatsSet">What's set</label>
       <ul id="pa-counts" class="list"></ul>
     </div>
+    <div id="pa-kinds" class="field" hidden>
+      <label data-i18n="pa_kindsTitle">Kinds your organization added</label>
+      <p class="hint" data-i18n="pa_kindsLead">Clotr names these in its warnings and uses them for Bandage's cover names. Their words aren't shown here: Clotr turns them into scrambled codes on each computer and never stores them.</p>
+      <table class="events" id="pa-kinds-table">
+        <thead><tr><th scope="col" data-i18n="pa_kindsKind">Kind</th><th scope="col" data-i18n="pa_kindsResponse">Response</th><th scope="col" data-i18n="pa_kindsWords">Words</th><th scope="col" data-i18n="pa_kindsFormats">Formats</th></tr></thead>
+        <tbody></tbody>
+      </table>
+      <p id="pa-kinds-covers" class="hint"></p>
+    </div>
     <div class="field">
       <label><input id="pa-show-words" type="checkbox"> <span data-i18n="pa_showWords">Show the watch words on screen</span></label>
       <p id="pa-words" class="mono" hidden></p>
@@ -50,6 +59,8 @@
   </section>
 
   <p class="no-print"><button id="pa-print" class="btn primary" type="button" data-i18n="pa_print">Print this page</button></p>
+
+  <p class="no-print"><a href="training.html" data-i18n="pa_officeTraining">Run the office training walkthrough</a></p>
 
   <footer class="app-footer no-print">
     <div id="report-root"></div>

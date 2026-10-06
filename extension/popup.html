@@ -2,20 +2,57 @@
 <html lang="en">
 <head>
   <meta charset="utf-8">
-  <title>Clotr</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title data-i18n="popup_pageTitle">Clotr</title>
   <link rel="stylesheet" href="popup.css">
 </head>
 <body>
   <header class="top">
-    <img src="icons/icon-on-32.png" alt="" width="20" height="20">
-    <h1 class="wordmark" data-i18n-skip>Clotr</h1>
+    <h1 class="wordmark" data-i18n-skip><img src="icons/wordmark.svg" alt="Clotr" width="68" height="24"></h1>
+ <!-- Tourniquet: the person it protects always sees that it's on, on every tab -->
+    <button id="tq-chip" class="chip tq-chip" type="button" hidden aria-label="Tourniquet on: see what it changes" data-i18n-aria-label="pp_tqChipLabel"><svg class="tq-shield" viewBox="0 0 16 16" aria-hidden="true"><path d="M8 1 14 3.4V8c0 3.4-2.5 6.1-6 7-3.5-.9-6-3.6-6-7V3.4Z"/></svg><span data-i18n="pp_tqChip">Tourniquet on</span></button>
     <span class="chip" title="Detection and history never leave this browser" data-i18n-title="popup_detectionAndHistoryNeverLeave" data-i18n="popup_localOnly">Local only</span>
   </header>
 
+  <!-- Tourniquet's 30 days after a scam are over (Scam Shield): said once, in the top slot, before anything else. Each
+       choice adds protection or only closes the card, so none needs the PIN. -->
+  <section id="tq-end" class="whats-new tq-end" aria-labelledby="tq-end-title" hidden>
+    <h2 id="tq-end-title"><svg class="tq-shield" viewBox="0 0 16 16" aria-hidden="true"><path d="M8 1 14 3.4V8c0 3.4-2.5 6.1-6 7-3.5-.9-6-3.6-6-7V3.4Z"/></svg><span data-i18n="pp_tqEndTitle">Tourniquet's 30 days are over</span></h2>
+    <p data-i18n="pp_tqEndText">Clotr is back to how it was before. If the scammers are still in touch, keep it on longer.</p>
+    <div class="tq-end-actions">
+      <button id="tq-end-more" class="btn primary" type="button" data-i18n="pp_tqEndMore">Keep it 30 more days</button>
+      <button id="tq-end-ok" class="btn" type="button" data-i18n="popup_gotIt">Got it</button>
+    </div>
+    <button id="tq-end-adult" class="linkish" type="button" data-i18n="pp_tqForAdultInstead">Keep Tourniquet for a grown-up instead</button>
+  </section>
+
+ <!-- Once after an update, for someone who had Clotr before: Clotr on email and chat apps too. It comes before
+       "what's new", one card at a time. -->
+  <section id="everyday-offer" class="whats-new everyday-offer" aria-labelledby="ev-title" hidden>
+    <h2 id="ev-title" data-i18n="ev_title">Use Clotr on your email and chat apps too?</h2>
+    <p class="ev-intro" data-i18n="ev_popupIntro">New: tick the ones you use and your browser asks once, for just those sites.</p>
+    <div id="ev-groups" class="ev-groups"></div>
+    <div class="ev-actions">
+      <button class="btn primary" type="button" id="ev-go" aria-describedby="ev-hint">Switch on</button>
+      <button class="btn" type="button" id="ev-no" data-i18n="ev_noThanks">No thanks</button>
+    </div>
+    <p class="ev-hint" id="ev-hint" data-i18n="ev_popupHint">Settings has the same list any time.</p>
+    <p class="ev-status" id="ev-status" role="status"></p>
+  </section>
+
+ <!-- After an update: the title, and the release's notes folded away until opened. -->
   <section id="whats-new" class="whats-new" hidden>
     <b id="whats-new-title"></b>
-    <ul id="whats-new-list"></ul>
-    <button id="whats-new-ok" class="btn" type="button" data-i18n="popup_gotIt">Got it</button>
+    <div class="whats-new-row">
+      <details id="whats-new-more">
+        <summary></summary>
+        <ul id="whats-new-list"></ul>
+      </details>
+      <button id="whats-new-ok" class="btn" type="button" data-i18n="popup_gotIt">Got it</button>
+    </div>
+ <!-- A release's own doors: popup.js's RELEASE_DOORS maps a minor version to the pages
+         its notes mention, so e.g. "Look back" and "Extension check" open straight from here. -->
+    <div id="whats-new-doors" class="whats-new-doors" hidden></div>
   </section>
 
   <section id="site" class="site" aria-live="polite"></section>
@@ -33,6 +70,33 @@
 
   <!-- Overview: the glanceable dashboard -->
   <main id="panel-overview" role="tabpanel" aria-labelledby="tab-overview">
+ <!-- Clotr Antibody: one quiet row, always there, under the site card. It opens two pages and counts,
+         flashes and badges nothing. -->
+    <div id="ss-row" class="ss-row" role="group" aria-labelledby="ss-row-name">
+      <svg class="tq-shield" viewBox="0 0 16 16" aria-hidden="true" focusable="false"><path d="M8 1 14 3.4V8c0 3.4-2.5 6.1-6 7-3.5-.9-6-3.6-6-7V3.4Z"/></svg><b id="ss-row-name" data-i18n="ss_name">Scam check</b>
+      <span class="ss-row-links"><button id="ss-row-check" class="linkish" type="button" data-i18n="ss_check">Is this a scam?</button>
+        <button id="ss-row-practice" class="linkish" type="button" data-i18n="ss_practice">Practice</button></span>
+    </div>
+    <p id="tq-line" class="tq-line" hidden><svg class="tq-shield" viewBox="0 0 16 16" aria-hidden="true"><path d="M8 1 14 3.4V8c0 3.4-2.5 6.1-6 7-3.5-.9-6-3.6-6-7V3.4Z"/></svg><span><span id="tq-line-text"></span> <button id="tq-line-open" class="linkish" type="button" data-i18n="pp_tqWhatItChanges">What it changes</button></span></p>
+
+ <!-- Look back and Extension check: a quiet card leading to both scans, shown even on an
+         empty history. No badge, no notification: nothing here is news until someone opens it. Fuller words
+         while history is empty (there's nothing else to look at yet); one line once there's real history
+         (popup.js toggles the "compact" class on #lb-card). -->
+    <div id="lb-card" class="card lb-card" role="group" aria-labelledby="lb-card-title">
+      <div class="card-title" id="lb-card-title" data-i18n="pp_scans">What's already out there</div>
+      <p class="lb-card-row" id="lb-card-row">
+        <b data-i18n="lb_name">Look back</b>
+        <span class="lb-card-sub" data-i18n="pp_lookBackSub">What you've already told ChatGPT, Claude or Gemini</span>
+        <button id="lb-card-open" class="btn" type="button" data-i18n="pp_open">Open</button>
+      </p>
+      <p class="lb-card-row" id="lb-card-ec-row">
+        <b data-i18n="ec_name">Extension check</b>
+        <span class="lb-card-sub" data-i18n="pp_extCheckSub">Which of your extensions can read your AI chats</span>
+        <button id="lb-card-check" class="btn" type="button" data-i18n="pp_check">Check</button>
+      </p>
+    </div>
+
     <!-- First: where your details went (all history, independent of the 7/30-day range) -->
     <div class="card mini-map-card" id="mini-map-card" hidden>
       <div class="card-title" data-i18n="popup_whereYourDetailsWent">Where your details went</div>
@@ -109,7 +173,29 @@
 
   <!-- Settings -->
   <main id="panel-settings" role="tabpanel" aria-labelledby="tab-settings" hidden>
-    <p id="managed-note" class="managed" hidden><b id="managed-note-title" data-i18n="popup_managedByYourOrganization">Managed by your organization.</b> <span data-i18n="popup_managedDetail">Clotr's settings on this computer are set by your IT team. It still only checks AI chats, on this computer, and reports nothing to anyone.</span> <button id="managed-see" class="btn" type="button" data-i18n="popup_seeWhatsApplied">See what's applied</button></p>
+ <!-- Tourniquet: what it does, shown locked or not; the switch only once settings are open -->
+    <section id="tq-card" class="tq-card" hidden aria-labelledby="tq-title">
+      <h2 id="tq-title" tabindex="-1"><svg class="tq-shield" viewBox="0 0 16 16" aria-hidden="true"><path d="M8 1 14 3.4V8c0 3.4-2.5 6.1-6 7-3.5-.9-6-3.6-6-7V3.4Z"/></svg><span id="tq-title-text" data-i18n="pp_tqTitle">Tourniquet is on</span></h2>
+      <p id="tq-since" class="muted"></p>
+      <!-- The 30 days after a scam: day N and the end date, the track (a picture only), and a word if the clock went back -->
+      <div id="tq-days" class="tq-days" hidden>
+        <p class="tq-days-words"><b id="tq-day"></b> <span id="tq-ends" class="muted"></span></p>
+        <div class="tq-track" aria-hidden="true"></div>
+        <p id="tq-clock" class="tq-clock" hidden></p>
+      </div>
+      <p id="tq-asks"></p>
+      <p id="tq-notes"></p>
+      <p id="tq-apps"></p>
+      <p class="tq-yours" data-i18n="pp_tqNothingSent">Clotr sends nothing anywhere, and every message is still yours to send.</p>
+      <div id="tq-switch" class="tq-switch" role="group" aria-label="Tourniquet" hidden>
+        <button type="button" data-for="child" aria-pressed="false" data-i18n="pp_tqForChild">For a child</button>
+        <button type="button" data-for="adult" aria-pressed="false" data-i18n="pp_tqForAdult">For a grown-up</button>
+        <button type="button" data-for="after_scam" aria-pressed="false" data-i18n="pp_tqForAfterScam">After a scam</button>
+        <button type="button" data-for="off" aria-pressed="false" data-i18n="pp_tqOff">Off</button>
+      </div>
+      <p id="tq-off-msg" class="msg" role="status"></p>
+    </section>
+    <p id="managed-note" class="managed" hidden><b id="managed-note-title" data-i18n="popup_managedByYourOrganization">Managed by your organization.</b> <span data-i18n="popup_managedDetail">Clotr's settings on this computer are set by your IT team. It still only checks AI chats, on this computer, and reports nothing to anyone.</span> <button id="managed-see" class="btn" type="button" data-i18n="popup_seeWhatsApplied">See what's applied</button> <button id="managed-training" class="btn" type="button" data-i18n="popup_officeTraining">Office training</button></p>
     <section id="unlock" class="unlock" hidden>
       <h2 data-i18n="popup_settingsAreLocked">Settings are locked</h2>
       <p class="muted" data-i18n="popup_someoneWhoSetClotrUp">Someone who set Clotr up for you added a PIN, so settings aren't changed by accident. Clotr keeps protecting you either way.</p>
@@ -120,6 +206,12 @@
       </div>
       <p id="unlock-msg" class="msg" role="status"></p>
     </section>
+ <!-- The person's history is theirs: clearing it never needs the PIN -->
+    <section id="history-mine" class="history-mine" hidden>
+      <h2 data-i18n="pp_tqHistoryTitle">Your history is yours</h2>
+      <p class="muted" data-i18n="pp_tqHistoryWhy">It lists kinds of detail, sites and times, never what you typed. It stays on this computer, and you can clear it even while settings are locked.</p>
+      <button id="clear-mine" class="danger-link" type="button" data-i18n="pp_tqClearMine">Clear my history</button>
+    </section>
 
     <div id="settings-body">
     <h2 data-i18n="popup_aiToolsYouAdded">AI chats you added</h2>
@@ -129,6 +221,7 @@
     <h2 data-i18n="popup_everydaySites">Also on your email and chat apps</h2>
     <p class="muted" data-i18n="popup_everydaySitesWhy">Off until you switch one on. Your browser asks you first, for that one site. There, Clotr warns and hides like on an AI chat, and never reads anyone's replies.</p>
     <ul id="everyday-sites" class="list everyday"></ul>
+    <p class="ev-status" id="everyday-status" role="status"></p>
 
     <details class="builtin advanced-only">
       <summary><span data-i18n="popup_builtInTools">Built-in AI chats</span> (<span id="builtin-count">0</span>)</summary>
@@ -136,6 +229,7 @@
     </details>
 
     <h2 data-i18n="popup_howClotrResponds">How Clotr responds</h2>
+    <p id="tq-keeps-note" class="muted" hidden data-i18n="pp_tqKeepsNote">Tourniquet keeps some kinds stricter. While it's on, the choices below what it keeps can't be picked.</p>
     <p class="muted"><b data-i18n="popup_warn">Warn</b>: <span data-i18n="popup_warnMeans">a note in the corner, sending isn't stopped</span> · <b data-i18n="popup_askBeforeSending">Ask before sending</b>: <span data-i18n="popup_askMeans">you choose before it goes out</span> · <b data-i18n="popup_justCount">Just count</b>: <span data-i18n="popup_countMeans">no interruption, still shown in your history.</span></p>
     <div id="responses"></div>
 
@@ -154,6 +248,19 @@
     <p id="bandage-sites-empty" class="empty" data-i18n="pp_bandageNoneYet">Nothing here yet. An AI site shows up once you answer Clotr's cover-name offer on it.</p>
     <ul id="bandage-sites" class="list"></ul>
 
+ <!-- Clotr Antibody: no master switch. Its one setting is the command check; its pages open when wanted.
+         The 30-day line is for someone setting Clotr up for themselves after a scam: hidden while settings are locked
+         or Tourniquet is on. -->
+    <section id="ss-settings" class="ss-settings" aria-labelledby="ss-settings-title">
+      <h2 id="ss-settings-title"><svg class="tq-shield" viewBox="0 0 16 16" aria-hidden="true" focusable="false"><path d="M8 1 14 3.4V8c0 3.4-2.5 6.1-6 7-3.5-.9-6-3.6-6-7V3.4Z"/></svg><span data-i18n="ss_name">Scam check</span></h2>
+      <p class="muted ss-lead" data-i18n="ss_settingsLead">When someone asks for something, Clotr helps. Its warnings say who really asks for codes, card numbers and gift cards.</p>
+      <label class="toggle" id="command-check-row"><input type="checkbox" id="command-check"> <span data-i18n="pp_commandCheck">Check commands I copy on AI chats</span></label>
+      <p class="muted" id="command-check-hint" data-i18n="pp_commandCheckMeans">If a command you copy looks like a "verify you're human" trick, Clotr points it out. It looks only at what you copy, and keeps nothing.</p>
+      <p class="ss-buttons"><button id="ss-open-card" class="btn" type="button" data-i18n="ss_printCard">Print Safety Guide</button></p>
+      <p id="ss-tq30" class="ss-tq30" hidden><span data-i18n="ss_tq30Ask">Just had a scam, or a near miss?</span>
+        <button id="ss-tq30-open" class="linkish" type="button" data-i18n="ss_tq30Open">Tourniquet can ask first for 30 days.</button></p>
+    </section>
+
     <h2 data-i18n="popup_moreOptions">More options</h2>
     <label class="toggle"><input type="checkbox" id="advanced"> <span data-i18n="popup_showAdvancedOptions">Show advanced options</span></label>
     <p class="muted" data-i18n="popup_settingsForEachKindOf">Settings for each kind of data, stricter or quieter on one chat, and the built-in list of AI chats.</p>
@@ -162,7 +269,7 @@
 
     <h2 data-i18n="popup_helpingSomeoneSetThisUp">Helping someone set this up?</h2>
     <p class="muted" data-i18n="popup_forAParentAChild">For a parent, a child, or anyone who'd rather skip the technical choices: bigger warnings, a stricter setting for personal details, and a PIN so nothing gets changed by accident.</p>
-    <p><button id="open-helper" class="btn primary" type="button" data-i18n="popup_setItUpStepByStep">Set it up step by step</button>
+    <p class="ss-buttons"><button id="open-helper" class="btn primary" type="button" data-i18n="popup_setItUpStepByStep">Set it up step by step</button>
       <button id="open-share" class="btn" type="button" data-i18n="sh_shareClotr">Share Clotr with someone</button>
       <button id="open-welcome" class="btn" type="button" data-i18n="popup_showWelcome">Show the welcome page</button></p>
     <label class="toggle"><input type="checkbox" id="large-text"> <span data-i18n="popup_largerWarnings">Larger warnings</span></label>
@@ -177,6 +284,22 @@
       <p id="lock-msg" class="msg" role="status"></p>
       <p class="muted" data-i18n="popup_thePinStopsAccidentalChanges">The PIN stops accidental changes. It isn't a real lock, since anyone who can remove Clotr from the browser can reset it.</p>
     </div>
+
+ <!-- Look back and Extension check: the same two doors as the Overview card, for whoever
+         goes straight to Settings. One line each, no state to toggle here. -->
+    <section id="lb-settings" class="lb-settings" aria-labelledby="lb-settings-title">
+      <h2 id="lb-settings-title" data-i18n="pp_scans">What's already out there</h2>
+      <p class="lb-settings-row" id="lb-settings-row">
+        <b data-i18n="lb_name">Look back</b>
+        <span class="muted" data-i18n="pp_lookBackSub">What you've already told ChatGPT, Claude or Gemini</span>
+        <button id="lb-settings-open" class="btn" type="button" data-i18n="pp_open">Open</button>
+      </p>
+      <p class="lb-settings-row" id="lb-settings-ec-row">
+        <b data-i18n="ec_name">Extension check</b>
+        <span class="muted" data-i18n="pp_extCheckSub">Which of your extensions can read your AI chats</span>
+        <button id="lb-settings-check" class="btn" type="button" data-i18n="pp_check">Check</button>
+      </p>
+    </section>
 
     <h2 data-i18n="popup_history">History</h2>
     <p class="muted" data-i18n="popup_clotrRemembersTheKindOf">Clotr remembers what kind of data it was, the site, the time and what you chose, never the data itself. It stays on this computer for a year unless you change that in the full report.</p>
@@ -203,6 +326,7 @@
   <script src="detector.js"></script>
   <script src="helper-core.js"></script>
   <script src="sites.js"></script>
+  <script src="everyday-offer.js"></script>
   <script src="insights.js"></script>
   <script src="mindmap.js"></script>
   <script src="popup.js"></script>

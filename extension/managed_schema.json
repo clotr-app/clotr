@@ -3,9 +3,14 @@
   "properties": {
     "preset": {
       "title": "Preset",
-      "description": "A ready-made policy: keys_never (every credential kind must ask before sending), client_names (client and matter details must ask), or clinic (patient and staff identifiers must ask). Your other settings are added on top; an explicit requiredResponses entry beats the preset's.",
+      "description": "A ready-made policy: keys_never (every credential kind must ask before sending), client_names (client and matter details must ask), clinic (patient and staff identifiers must ask), or tax_office (Social Security, tax ID, bank and birth-date details and client names must ask). Your other settings are added on top; an explicit requiredResponses entry beats the preset's.",
       "type": "string",
-      "enum": ["keys_never", "client_names", "clinic"]
+      "enum": [
+        "keys_never",
+        "client_names",
+        "clinic",
+        "tax_office"
+      ]
     },
     "orgName": {
       "title": "Organization name",
@@ -16,13 +21,22 @@
       "title": "Required responses",
       "description": "Kinds of data (as in patterns.js, e.g. aws_access_key) and how Clotr must respond: block (ask before sending), warn or log. A floor, never a ceiling: a person may still choose a stricter response than this for themselves.",
       "type": "object",
-      "additionalProperties": { "type": "string", "enum": ["block", "warn", "log"] }
+      "additionalProperties": {
+        "type": "string",
+        "enum": [
+          "block",
+          "warn",
+          "log"
+        ]
+      }
     },
     "watchWords": {
       "title": "Watch words",
-      "description": "Words or phrases (up to 4 words each, 200 at most) to warn about, e.g. project code names. A format with # for a digit and @ for a letter (at least 4 marks, no digits, for example EMP-#####) is watched as a format instead. Turned into one-way fingerprints on each computer; formats travel as typed (they aren't secret).",
+      "description": "Words or phrases (up to 4 words each) to warn about, e.g. project code names. A format with # for a digit and @ for a letter (at least 4 marks, no digits, for example EMP-#####) is watched as a format instead. Together with the words and formats in kinds: 500 words and 50 formats in all. Words are turned into one-way fingerprints on each computer; formats travel as typed (they aren't secret).",
       "type": "array",
-      "items": { "type": "string" }
+      "items": {
+        "type": "string"
+      }
     },
     "lockSettings": {
       "title": "Lock settings",
@@ -38,6 +52,60 @@
       "title": "Larger warnings",
       "description": "Larger warnings for everyone.",
       "type": "boolean"
+    },
+    "kinds": {
+      "title": "Your own kinds",
+      "description": "Up to 20 kinds of detail your organization names itself, for example a matter number or a client name. Clotr warns about each one by its name and, with Bandage on, swaps it for its cover word, like [Matter 1]. Words and formats are shared with watchWords: 500 words and 50 formats in all. Nothing about them leaves the computer.",
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "title": "Name",
+            "description": "Shown in warnings, up to 40 characters, e.g. Matter number.",
+            "type": "string"
+          },
+          "words": {
+            "title": "Words",
+            "description": "Words or phrases of this kind (up to 4 words each), e.g. client names. Turned into one-way fingerprints on each computer.",
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "formats": {
+            "title": "Formats",
+            "description": "Formats of this kind: # for a digit, @ for a letter, at least 4 marks, no digits, up to 40 characters, e.g. MAT-######.",
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "near": {
+            "title": "Nearby words",
+            "description": "Optional, up to 10: a format counts only when one of these words is within 40 characters before it, e.g. matter or file.",
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "response": {
+            "title": "Response",
+            "description": "How Clotr must respond: block (ask before sending), warn or log. A floor, never a ceiling. Warn if not set.",
+            "type": "string",
+            "enum": [
+              "block",
+              "warn",
+              "log"
+            ]
+          },
+          "cover": {
+            "title": "Cover word",
+            "description": "Bandage's word for it, up to 20 characters, no digits or brackets: Matter gives [Matter 1]. The name if not set.",
+            "type": "string"
+          }
+        }
+      }
     }
   }
 }

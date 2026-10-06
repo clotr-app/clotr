@@ -1,6 +1,6 @@
-// Clotr — "Organization policy applied here" (team-pack item 4): a self-attestation page for an admin or an
+// "Organization policy applied here": a self-attestation page for an admin or an
 // insurer's checklist. Reads the managed policy, this extension's version and the browser; writes and sends
-// nothing, ever (design section 3.6). Never says "prevents", "certified" or "compliant" (section 5).
+// nothing, ever. Never says "prevents", "certified" or "compliant".
 "use strict";
 
 const { msg, PATTERNS } = globalThis.Clotr;
@@ -11,6 +11,7 @@ const PRESET_NAMES = {
   keys_never: msg("pa_presetKeysNever", "Keys never"),
   client_names: msg("pa_presetClientNames", "Client names"),
   clinic: msg("pa_presetClinic", "Clinic"),
+  tax_office: msg("pa_presetTaxOffice", "Tax office"),
 };
 
 // navigator.userAgentData when a browser offers it (skipping the generic "Not.A;Brand" and
@@ -49,7 +50,7 @@ async function render() {
   $("pa-org").textContent = policy.orgName || "";
   const manifest = chrome.runtime.getManifest();
   const dateStr = new Date().toLocaleDateString(undefined, { year: "numeric", month: "long", day: "numeric" });
-  $("pa-version").textContent = `Clotr ${manifest.version_name || manifest.version} — ${dateStr} — ${browserInfo()}`;
+  $("pa-version").textContent = `Clotr ${manifest.version} — ${dateStr} — ${browserInfo()}`;
 
   let presetLabel = msg("pa_custom", "Custom");
   if (policy.preset && PRESET_NAMES[policy.preset]) {
@@ -62,9 +63,12 @@ async function render() {
   $("pa-preset").textContent = presetLabel;
   $("pa-fingerprint").textContent = fpGroups(Sites.policyFingerprint(policy));
 
+  // A team's own kinds have their own table below, so they aren't listed twice.
+  const kinds = Array.isArray(policy.kinds) ? policy.kinds : [];
+  const own = new Set(kinds.map((k) => k.id));
   const byResponse = { block: [], warn: [], log: [] };
   for (const [id, value] of Object.entries(policy.requiredResponses || {})) {
-    if (byResponse[value]) byResponse[value].push(patternName(id));
+    if (byResponse[value] && !own.has(id)) byResponse[value].push(patternName(id));
   }
   const words = Sites.policyWords(policy);
   const shapes = Sites.policyShapes(policy);
@@ -86,6 +90,16 @@ async function render() {
       msg("pa_largerWarnings", "Larger warnings"),
       [policy.largeText === true ? msg("pa_yes", "Yes") : msg("pa_no", "No")],
     ],
+    // Worked out from the kinds set to Ask before sending: no field of its own, so the fingerprint
+    // above doesn't change with it.
+    ...(Sites.teamHoldOf(policy)
+      ? [
+          [
+            msg("pa_files", "Attached files"),
+            [msg("pa_filesHeld", "held until the person answers, when they hold a kind set to Ask before sending")],
+          ],
+        ]
+      : []),
   ];
   $("pa-counts").replaceChildren(
     ...items.map(([label, list]) => {
@@ -97,9 +111,44 @@ async function render() {
     }),
   );
 
+  renderKinds(kinds);
+
   $("pa-show-words").checked = false;
   $("pa-words").hidden = true;
   $("pa-words").textContent = [...words, ...shapes].join(", ");
+}
+
+// "Kinds your organization added": each kind's name, its response, and how many words and formats it
+// has, never the words or formats themselves; then the cover names Bandage gives them.
+function renderKinds(kinds) {
+  $("pa-kinds").hidden = !kinds.length;
+  const responses = {
+    block: msg("pa_countBlock", "Ask before sending"),
+    warn: msg("pa_countWarn", "Warn"),
+    log: msg("pa_countLog", "Just count"),
+  };
+  const cell = (text) => {
+    const td = document.createElement("td");
+    td.textContent = text;
+    return td;
+  };
+  $("pa-kinds-table").tBodies[0].replaceChildren(
+    ...kinds.map((k) => {
+      const tr = document.createElement("tr");
+      const formats = String(k.formats.length);
+      tr.append(
+        cell(k.name),
+        cell(responses[k.response] || responses.warn),
+        cell(String(k.words.length)),
+        cell(k.formats.length && k.near.length ? msg("pa_kindsWithNear", "$1, with nearby words", formats) : formats),
+      );
+      return tr;
+    }),
+  );
+  const covers = [...new Set(kinds.map((k) => `[${k.cover} 1]`))].join(", ");
+  $("pa-kinds-covers").textContent = kinds.length
+    ? msg("pa_kindsCovers", "Cover names for these kinds: $1.", covers)
+    : "";
 }
 
 $("pa-show-words").addEventListener("change", (e) => {

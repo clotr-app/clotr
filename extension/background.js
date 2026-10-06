@@ -1,28 +1,38 @@
-// Clotr — background service worker.
-//
-// - The single writer of the event log and the fingerprint salt, so writes from
-//   several AI tabs at once can't overwrite each other. Stores metadata only:
-//   content scripts send fingerprints, never detected values.
-// - Toolbar icon/badge/tooltip: burnt-orange shield + today's count on protected tabs,
-//   amber dot on pages that look like an unprotected AI chat.
-// - Registers Clotr on AI sites the user added (per-site optional permission).
+// The background service worker. It's the only place that writes the event log and the fingerprint salt, so
+// two AI tabs writing at once can't clobber each other, and it only ever stores metadata, never a detected
+// value. It also owns the toolbar icon and badge, and registers Clotr on AI sites the user adds themselves.
 "use strict";
 
-// Chrome: a service worker loads sites.js here. Firefox runs background scripts, listing
-// sites.js before this file in the manifest (tools/package.js --firefox).
+// Chrome loads these with importScripts; Firefox and Safari list them before this file in the manifest instead
+// (tools/package.js --firefox, --safari).
 if (typeof importScripts === "function" && !globalThis.ClotrSites) importScripts("sites.js");
-// The detection pair, for fingerprinting an admin's watch words (team policy, D62).
 if (typeof importScripts === "function" && !globalThis.Clotr?.fingerprint) importScripts("patterns.js", "detector.js");
-// Moving to a new computer: the backup file's format and cleaning (pre-release Batch 5).
+if (typeof importScripts === "function" && !globalThis.Clotr?.cleanVaultEntry) importScripts("decide.js");
+if (typeof importScripts === "function" && !globalThis.Clotr?.Helper) importScripts("helper-core.js");
 if (typeof importScripts === "function" && !globalThis.Clotr?.Backup) importScripts("backup.js");
 
 const LOG = "[Clotr]";
-const MAX_EVENTS = 10000; // ~1.5 MB of the 10 MB storage quota (D54)
-// "mentioned" = an AI reply brought up one of your vault details (D63); kept apart in `mentions` so it
-// never counts as something found in your own messages.
-const ACTIONS = new Set(["redacted", "allowed", "suppressed", "mentioned"]);
-const MAX_MENTIONS = 2000;
-const SEVERITIES = new Set(["high", "medium", "low"]);
+
+// Session storage holds which tabs Clotr runs in; it clears when the browser closes. Safari only added it in
+// 16.4, so older browsers fall back to an in-memory copy that lasts as long as the worker does.
+const sessionArea = chrome.storage.session || memoryStorage();
+function memoryStorage() {
+  const data = new Map();
+  const copy = (v) => JSON.parse(JSON.stringify(v)); // stored values are JSON, as in real storage
+  return {
+    get: async (key) => (data.has(key) ? { [key]: copy(data.get(key)) } : {}),
+    set: async (items) => {
+      for (const [k, v] of Object.entries(items)) data.set(k, copy(v));
+    },
+    remove: async (keys) => {
+      for (const k of [].concat(keys)) data.delete(k);
+    },
+  };
+}
+
+const MAX_EVENTS = 10000; // ~1.5 MB of the 10 MB storage quota
+const MAX_MENTIONS = 2000; // replies that mention your details live in `mentions`, separate from what you sent
+const { VAULT_MODES, vaultKey, dedupeVault, cleanVaultEntry, cleanEvent } = globalThis.Clotr;
 const {
   CONTENT_JS,
   USER_SCRIPT_ID,
@@ -33,12 +43,24 @@ const {
   policyWords,
   policyShapes,
   mergePolicy,
+  hasPolicy,
   floorOf,
+  teamHoldOf,
   isEveryday,
+  tourniquetRecord,
+  cleanTourniquet,
+  tourniquetStep,
+  tourniquetPolicy,
+  combinePolicies,
+  firmKinds,
+  grantedEverydayApps,
+  offerAfterInstall,
+  collapseBatch,
+  weight,
 } = globalThis.ClotrSites;
 
 const ICON = (variant) => ({ 16: `icons/icon-${variant}-16.png`, 32: `icons/icon-${variant}-32.png` });
-const BADGE_BRAND = "#b84a0c"; // burnt orange (D76), white text 5.2:1
+const BADGE_BRAND = "#5b3a63"; // plum, white text 9.4:1
 const BADGE_RED = "#d03b3b";
 
 // Run storage read-modify-writes one at a time.
@@ -49,10 +71,10 @@ function enqueue(task) {
   return run;
 }
 
-// ---------- Storage lock (S20) ----------
-// Only Clotr's own pages (popup, report, vault) and this worker may read or write storage. The part
-// running inside AI pages asks for what it needs by message: a compromised page can't read your
-// history, the full settings of other sites, or write anything unchecked. (Firefox: not available.)
+// ---------- Storage lock ----------
+// Only Clotr's own pages and this worker can read or write storage directly. The content script running
+// inside an AI page has to ask for things by message instead, so a compromised page can't read your history
+// or write anything unchecked. Firefox and Safari don't support this lock.
 chrome.storage.local
   .setAccessLevel?.({ accessLevel: "TRUSTED_CONTEXTS" })
   .catch((err) => console.warn(LOG, "could not lock storage", err));
@@ -66,8 +88,12 @@ const SETTINGS_KEYS = [
   "guided",
   "largeText",
   "replyCheck",
+  "commandCheck",
   "bandage",
   "siteKinds",
+  "picturesNoted",
+  "tourniquet",
+  "lock", // only whether there is a PIN reaches a page, never the PIN's hash
 ];
 
 // The admin's policy (managed storage), or {} when there is none.
@@ -79,8 +105,119 @@ async function readPolicy() {
   }
 }
 
-// What one frame needs: its own site's pause and mode, not the whole map, with the team policy
-// applied (its required responses win; its watch words arrive as fingerprints, never as words).
+// Opens the office training walkthrough once, the first time a team policy shows up on this computer.
+// Settings keeps its own link to it afterwards, next to the policy's own banner.
+async function offerTeamTraining() {
+  if (!chrome.runtime.getManifest().clotr_features?.training) return; // held back in this build
+  if (!hasPolicy(await readPolicy())) return;
+  const { trainingOffered } = await chrome.storage.local.get("trainingOffered");
+  if (trainingOffered) return;
+  await chrome.storage.local.set({ trainingOffered: true });
+  await chrome.tabs.create({ url: chrome.runtime.getURL("training.html") }).catch(() => {});
+}
+const offerTeamTrainingSafely = () =>
+  enqueue(offerTeamTraining).catch((err) => console.error(LOG, "office training offer failed", err));
+
+// Builds the team's managed vault entries: its watch words and its kinds' words as fingerprints, never as
+// plain words, with its formats kept exactly as typed. There can be up to 500 words, so these are only
+// rebuilt once per policy and salt, then kept for as long as the worker runs.
+let managedCache = { key: null, entries: [] };
+async function managedEntries(policy) {
+  const words = policyWords(policy);
+  const shapes = policyShapes(policy);
+  const kinds = Array.isArray(policy.kinds) ? policy.kinds : [];
+  if (!words.length && !shapes.length && !kinds.length) return [];
+  const salt = words.length || kinds.some((k) => k.words.length) ? await ensureSalt() : "";
+  const key = JSON.stringify([salt, words, shapes, kinds]);
+  if (managedCache.key === key) return managedCache.entries;
+  const fp = (phrase) => globalThis.Clotr.fingerprint(salt, "watch_list", phrase);
+  const word = (type, phrase) => ({
+    kind: "word",
+    type,
+    fp: fp(phrase),
+    words: phrase.split(" ").length,
+    managed: true,
+  });
+  const shape = (type, s, near) => ({
+    kind: "shape",
+    type,
+    shape: s,
+    ...(near?.length ? { near } : {}),
+    managed: true,
+  });
+  const entries = [
+    ...words.map((phrase) => word("watch_list", phrase)),
+    ...shapes.map((s) => shape("watch_list", s)),
+    ...kinds.flatMap((k) => [
+      ...k.words.map((phrase) => word(k.id, phrase)),
+      ...k.formats.map((s) => shape(k.id, s, k.near)),
+    ]),
+  ];
+  managedCache = { key, entries };
+  return entries;
+}
+
+// Reads the stored Tourniquet record, treating a malformed value as off and logging it once. The 30 days
+// can read as over before the end alarm actually fires; that's fine, not a bug.
+let tourniquetIgnoredSaid = false;
+function readTourniquet(raw) {
+  const t = cleanTourniquet(raw);
+  if (raw !== undefined && !tourniquetRecord(raw) && !tourniquetIgnoredSaid) {
+    tourniquetIgnoredSaid = true;
+    console.info(LOG, "Tourniquet setting ignored");
+  }
+  return t;
+}
+
+// Walks the 30 days after a scam forward: sets the end alarm, records the end, and catches the clock being
+// turned back. sites.js's tourniquetStep decides what to do; this just applies it. Runs at startup, on the
+// alarm, and on every settings change, so if it ever fails, Tourniquet just stays on rather than lapsing.
+const TOURNIQUET_END = "tourniquet-end";
+async function stepTourniquet() {
+  const s = await chrome.storage.local.get(["tourniquet", "tourniquetEnded", "tourniquetSeen"]);
+  const { set, remove, alarm } = tourniquetStep(s, Date.now());
+  if (Object.keys(set).length) await chrome.storage.local.set(set);
+  if (remove.length) await chrome.storage.local.remove(remove);
+  if (alarm === null) await chrome.alarms.clear?.(TOURNIQUET_END);
+  else chrome.alarms.create(TOURNIQUET_END, { when: alarm });
+  if (set.tourniquetEnded) console.info(LOG, "Tourniquet's 30 days are over on this computer's clock: off");
+  if (set.tourniquet) console.info(LOG, "this computer's clock went back before Tourniquet's end: on again");
+}
+const stepTourniquetSafely = () =>
+  enqueue(stepTourniquet).catch((err) => console.error(LOG, "Tourniquet's end check failed", err));
+
+// Whether `value` is at least as strict as the floor `floor` (block, then warn, then log).
+const notUnder = (value, floor) => globalThis.Clotr.stricter(value, floor) === value;
+
+// A second wall behind the warning's own options, so a request from inside a chat page can't go lower than
+// the organization's policy, Tourniquet, or, while a PIN locks settings, the kind's current response. Without
+// this a chat page could use the PIN's own settings to get around it. Going stricter is always fine.
+async function chatGuard() {
+  const [r, managed] = await Promise.all([chrome.storage.local.get(["tourniquet", "lock", "responses"]), readPolicy()]);
+  const policy = combinePolicies(managed, tourniquetPolicy(readTourniquet(r.tourniquet)));
+  const firm = new Set(firmKinds(policy));
+  const floors = new Map(Object.entries(policy.requiredResponses || {}).filter(([id]) => firm.has(id)));
+  const locked = Boolean(r.lock) || managed.lockSettings === true;
+  const now = applyPolicy({ responses: r.responses }, policy).responses;
+  const floorOfKind = (id) => (locked ? globalThis.Clotr.responseFor(id, now) : floors.get(id));
+  return {
+    // Whether choosing `value` for kind `id` would go under what holds it.
+    under: (id, value) => Boolean(floorOfKind(id)) && !notUnder(value, floorOfKind(id)),
+    // Whether anything holds kind `id` here (no "OK to share", no offer to just count).
+    holds: (id) => locked || floors.has(id),
+  };
+}
+
+// Reads Bandage's own on/off state straight from storage: true if it's on, false if the person said no, and
+// undefined if nobody's asked yet. Both settingsFor's full answer and the faster connect-port reply below
+// share this, so they can never disagree about what "on" actually means for a given site.
+function bandageFor(everyday, host, r) {
+  return everyday ? false : host && typeof r.bandage?.[host] === "boolean" ? r.bandage[host] : undefined;
+}
+
+// Builds what one frame actually needs rather than the whole stored map: its own site's pause state and
+// mode, with the team's policy and Tourniquet already applied so their required responses win. Watch words
+// go out as fingerprints, never as plain text.
 async function settingsFor(url) {
   let host = "";
   try {
@@ -88,38 +225,25 @@ async function settingsFor(url) {
   } catch {
     /* no url: nothing site-specific */
   }
-  const [r, policy] = await Promise.all([chrome.storage.local.get(SETTINGS_KEYS), readPolicy()]);
+  const [r, managed] = await Promise.all([chrome.storage.local.get(SETTINGS_KEYS), readPolicy()]);
+  const tourniquet = readTourniquet(r.tourniquet);
+  const policy = combinePolicies(managed, tourniquetPolicy(tourniquet));
   const eff = applyPolicy(
     { responses: r.responses, paused: Boolean(host && r.paused?.[host]), largeText: r.largeText === true },
     policy,
   );
   let vault = Array.isArray(r.vault) ? r.vault : [];
-  // A required block is a floor: an "OK to share" vault entry can't quietly weaken it (team-pack
-  // item 3, loophole 1). The entry stays in storage; it just doesn't apply while the policy holds.
-  vault = vault.filter((e) => !(e.mode === "allow" && floorOf(policy, e.type) === "block"));
-  const words = policyWords(policy);
-  if (words.length) {
-    const salt = await ensureSalt();
-    vault = vault.concat(
-      words.map((phrase) => ({
-        kind: "word",
-        type: "watch_list",
-        fp: globalThis.Clotr.fingerprint(salt, "watch_list", phrase),
-        words: phrase.split(" ").length,
-        managed: true,
-      })),
-    );
-  }
-  const shapes = policyShapes(policy);
-  if (shapes.length) {
-    vault = vault.concat(shapes.map((shape) => ({ kind: "shape", type: "watch_list", shape, managed: true })));
-  }
-  // A per-site "Just count" can't quietly weaken a required response either (loophole 2): under
-  // any team policy, a "log" site mode is dropped, so the content script falls back to each
-  // kind's own (floored) response instead of counting everything on that site.
+  // A required block is a floor, so an "OK to share" vault entry can't quietly weaken it. It stays in
+  // storage either way, just stops applying while the team's policy holds it; Tourniquet doesn't affect it.
+  vault = vault.filter((e) => !(e.mode === "allow" && floorOf(managed, e.type) === "block"));
+  vault = vault.concat(await managedEntries(policy));
+  const kinds = (Array.isArray(policy.kinds) ? policy.kinds : []).map(({ id, name, cover }) => ({ id, name, cover }));
+  // Same idea for a per-site "Just count": drop it under any team policy or Tourniquet, so the content
+  // script falls back to each kind's own floored response instead of letting everything through silently.
   const rawSiteMode = (host && r.siteModes?.[host]) || null;
-  const hasPolicy = Boolean(policy?.requiredResponses && Object.keys(policy.requiredResponses).length);
-  // Email and chat apps (D134): you write to people there, so no cover names and no reading of replies.
+  const hasPolicy =
+    Boolean(managed?.requiredResponses && Object.keys(managed.requiredResponses).length) || Boolean(tourniquet);
+  // Email and chat apps: you write to people there, so no cover names and no reading of replies.
   const everyday = isEveryday(host, r.siteKinds || {});
   return {
     responses: eff.responses,
@@ -128,14 +252,43 @@ async function settingsFor(url) {
     vault,
     guided: r.guided || {},
     largeText: eff.largeText,
-    replyCheck: r.replyCheck !== false && !everyday, // D63: on unless switched off in Settings
-    // Bandage (D93): true = cover names on this site, false = the user said no, undefined = not asked yet.
-    bandage: everyday ? false : host && typeof r.bandage?.[host] === "boolean" ? r.bandage[host] : undefined,
+    replyCheck: r.replyCheck !== false && !everyday, // on unless switched off in Settings
+    commandCheck: r.commandCheck !== false && !everyday, // off on everyday sites regardless
+    bandage: bandageFor(everyday, host, r), // true = cover names here, false = declined, undefined = not asked
     everyday,
+    kinds,
+    pictureNoted: Boolean(host && r.picturesNoted?.[host] === true),
+    tourniquet: tourniquet ? tourniquet.for : null,
+    firm: firmKinds(policy), // kinds held by policy or Tourniquet; the warning won't offer anything looser
+    locked: eff.locked || Boolean(r.lock),
+    teamHold: teamHoldOf(managed), // whether the policy wants a pause before sending any of these kinds
+    // Sent with the settings, not fetched separately, so a send between the two requests can't slip a
+    // team word past the fingerprint check.
+    salt: await ensureSalt(),
   };
 }
 
-// Bandage on or off for the site of the tab that asked (its first-time offer, D93).
+// Records that the "can't read pictures" note was shown on this site. Keeps only 200 site names, dropping
+// the oldest, so a site that falls off the list might just see the note again.
+const MAX_PICTURE_NOTES = 200;
+async function notePicture(url) {
+  let host;
+  try {
+    host = new URL(url).hostname;
+  } catch {
+    return { error: "bad request" };
+  }
+  if (!host) return { error: "bad request" };
+  const { picturesNoted = {} } = await chrome.storage.local.get("picturesNoted");
+  if (picturesNoted[host] === true) return { ok: true };
+  const sites = [...Object.keys(picturesNoted).filter((h) => picturesNoted[h] === true), host];
+  await chrome.storage.local.set({
+    picturesNoted: Object.fromEntries(sites.slice(-MAX_PICTURE_NOTES).map((h) => [h, true])),
+  });
+  return { ok: true };
+}
+
+// Bandage on or off for the site of the tab that asked.
 async function setBandage(url, on) {
   let host;
   try {
@@ -150,21 +303,33 @@ async function setBandage(url, on) {
   return { ok: true };
 }
 
-async function setResponses(ids, value) {
-  if (!RESPONSE_VALUES.has(value) || !Array.isArray(ids)) return { error: "bad request" };
-  const clean = ids.filter((id) => typeof id === "string" && /^[a-z0-9_]{1,64}$/.test(id));
+// Only stores overrides, so a pattern set back to default keeps following future default changes.
+// `fromChat` marks a request from inside a chat page, which chatGuard won't let go under what holds it.
+async function setResponses(ids, value, fromChat = false) {
+  if ((value !== "default" && !RESPONSE_VALUES.has(value)) || !Array.isArray(ids)) return { error: "bad request" };
+  let clean = ids.filter((id) => typeof id === "string" && /^[a-z0-9_]{1,64}$/.test(id));
   if (!clean.length) return { error: "bad request" };
+  const guard = fromChat ? await chatGuard() : null;
+  const chosen = (id) => (value === "default" ? globalThis.Clotr.defaultResponse(id) : value);
+  if (guard) clean = clean.filter((id) => !guard.under(id, chosen(id)));
+  if (!clean.length) return { error: "refused" };
   const { responses = {} } = await chrome.storage.local.get("responses");
-  for (const id of clean) responses[id] = value;
+  for (const id of clean) {
+    if (value === "default" || value === globalThis.Clotr.defaultResponse(id)) delete responses[id];
+    else responses[id] = value;
+  }
   await chrome.storage.local.set({ responses });
   return { ok: true };
 }
 
 // A setting changed (popup, vault, another tab): tell open Clotr tabs to fetch theirs again.
 chrome.storage.onChanged.addListener((changes, area) => {
+  // Tourniquet chosen, switched or turned off, or its end answered: the end alarm follows (stepTourniquet).
+  if (area === "local" && (changes.tourniquet || changes.tourniquetEnded)) stepTourniquetSafely();
+  if (area === "managed") offerTeamTrainingSafely();
   if (area !== "managed" && (area !== "local" || !SETTINGS_KEYS.some((k) => changes[k]))) return;
-  // Every tab, not just the registered ones: a tab still starting up would otherwise miss the
-  // change (EG1 caught it). Tabs without Clotr just don't answer.
+  // This messages every tab, not just the registered ones, since a tab still starting up would otherwise
+  // miss the change; tabs without Clotr running just don't answer.
   chrome.tabs.query({}).then((tabs) => {
     for (const tab of tabs) {
       chrome.tabs.sendMessage(tab.id, { type: "clotr:settingsChanged" }).catch(() => {
@@ -185,32 +350,13 @@ async function ensureSalt() {
   return fresh;
 }
 
-// Keep only known fields with sane values; drop anything else a page might inject.
-function sanitize(e) {
-  if (!e || typeof e !== "object") return null;
-  if (!ACTIONS.has(e.action) || !SEVERITIES.has(e.severity)) return null;
-  const str = (v, max) => (typeof v === "string" ? v.slice(0, max) : "");
-  const out = {
-    t: Number.isFinite(e.t) ? e.t : Date.now(),
-    site: str(e.site, 253),
-    type: str(e.type, 64),
-    name: str(e.name, 64),
-    severity: e.severity,
-    action: e.action,
-    fp: /^[0-9a-f]{16}$/.test(e.fp) ? e.fp : "",
-  };
-  // How a "redacted" event happened: Bandage swapped it for a label while typing, apart from
-  // hand-hidden ("Hide it" in the dialog/notice), so the report can tell them apart (D93).
-  if (e.via === "bandage") out.via = "bandage";
-  return out;
-}
-
-// "Keep history for" (dashboard): 90, 365 (default) or 730 days (D54).
+// "Keep history for" (dashboard): 90, 365 (default) or 730 days.
 const KEEP_DAYS = new Set([90, 365, 730]);
 const keepCutoff = (keepDays) => Date.now() - (KEEP_DAYS.has(keepDays) ? keepDays : 365) * 86400000;
 
 async function appendEvents(incoming) {
-  const clean = (Array.isArray(incoming) ? incoming : []).map(sanitize).filter(Boolean);
+  // cleanEvent keeps only the known fields with sane values, so a page can't inject anything else.
+  const clean = (Array.isArray(incoming) ? incoming : []).map(cleanEvent).filter(Boolean);
   if (!clean.length) return 0;
   const { events = [], mentions = [], keepDays } = await chrome.storage.local.get(["events", "mentions", "keepDays"]);
   const cutoff = keepCutoff(keepDays);
@@ -219,13 +365,41 @@ async function appendEvents(incoming) {
       .concat(items)
       .filter((e) => e.t >= cutoff)
       .slice(-max);
-  const found = clean.filter((e) => e.action !== "mentioned");
+  // A long list sent at once keeps 10 records per kind and outcome, plus one with the count of the rest.
+  const found = collapseBatch(clean.filter((e) => e.action !== "mentioned"));
   const said = clean.filter((e) => e.action === "mentioned");
   const next = {};
-  if (found.length) next.events = add(events, found, MAX_EVENTS);
+  if (found.length) {
+    const kept = events.concat(found).filter((e) => e.t >= cutoff);
+    next.events = kept.slice(-MAX_EVENTS);
+    // The cap just removed records the keep period would otherwise still have kept, and the full report
+    // says so, noting only when it happened and the time of the oldest record still kept.
+    if (kept.length > MAX_EVENTS) next.historyFull = { t: Date.now(), before: next.events[0].t };
+  }
   if (said.length) next.mentions = add(mentions, said, MAX_MENTIONS);
   await chrome.storage.local.set(next);
   return clean.length;
+}
+
+// Clears the "history full" note once there's room again, under 9,000 records, from any kind of clearing or
+// just the keep period removing old ones, or once the keep period would have removed those records anyway.
+const HISTORY_ROOM = 9000;
+async function settleHistoryFull(count) {
+  const { historyFull, keepDays } = await chrome.storage.local.get(["historyFull", "keepDays"]);
+  if (!historyFull) return;
+  if (count < HISTORY_ROOM || !(historyFull.before >= keepCutoff(keepDays)))
+    await chrome.storage.local.remove("historyFull");
+}
+chrome.storage.onChanged.addListener((changes, area) => {
+  if (area !== "local" || !changes.events) return;
+  const count = Array.isArray(changes.events.newValue) ? changes.events.newValue.length : 0;
+  enqueue(() => settleHistoryFull(count)).catch(() => {}); // a failed check leaves the note; the next write tries again
+});
+
+// Every "clear" or "delete" button goes through here, so a report arriving mid-clear from another tab
+// can't win the race and bring old history back.
+async function clearHistory() {
+  await chrome.storage.local.set({ events: [], mentions: [], spotted: {} });
 }
 
 // Drop records older than the chosen period; writes only when something is removed.
@@ -247,9 +421,10 @@ chrome.storage.onChanged.addListener((changes, area) => {
 function todaySummary(events) {
   const start = new Date().setHours(0, 0, 0, 0);
   const today = events.filter((e) => e.t >= start);
-  const count = (a) => today.filter((e) => e.action === a).length;
+  const sum = (list) => list.reduce((n, e) => n + weight(e), 0); // a record for a long list counts as its n
+  const count = (a) => sum(today.filter((e) => e.action === a));
   return {
-    total: today.length,
+    total: sum(today),
     redacted: count("redacted"),
     allowed: count("allowed"),
     silenced: count("suppressed"),
@@ -259,7 +434,7 @@ function todaySummary(events) {
 
 // Protected tabs are tracked in session storage because the worker can be shut down at any time.
 async function getProtectedTabs() {
-  const { protectedTabs = {} } = await chrome.storage.session.get("protectedTabs");
+  const { protectedTabs = {} } = await sessionArea.get("protectedTabs");
   return protectedTabs;
 }
 
@@ -279,11 +454,16 @@ async function refreshToolbar() {
     const text = failed ? "!" : !state.paused && s.total ? String(s.total) : "";
     try {
       await chrome.action.setBadgeText({ tabId, text });
-      if (text)
-        await chrome.action.setBadgeBackgroundColor({
-          tabId,
-          color: failed || s.riskyAllowed ? BADGE_RED : BADGE_BRAND,
-        });
+      if (text) {
+        try {
+          await chrome.action.setBadgeBackgroundColor({
+            tabId,
+            color: failed || s.riskyAllowed ? BADGE_RED : BADGE_BRAND,
+          });
+        } catch {
+          /* Safari: badges have no colour there (it refuses this one); the count still shows */
+        }
+      }
       await chrome.action.setTitle({
         tabId,
         title: !failed ? title : state.uiRemoved ? UI_REMOVED_TITLE : EDIT_FAILED_TITLE,
@@ -292,19 +472,18 @@ async function refreshToolbar() {
       delete tabs[id]; // tab is gone
     }
   }
-  await chrome.storage.session.set({ protectedTabs: tabs });
+  await sessionArea.set({ protectedTabs: tabs });
 }
 
 const UI_REMOVED_TITLE = "This page removed Clotr's warnings, so Clotr can't warn you here.";
 const EDIT_FAILED_TITLE =
   "Clotr couldn't edit the chat box on this page. Delete flagged details by hand before sending.";
 
-// A content script (top frame) reports that Clotr is running in its tab. The self-check fields
-// (editor seen, last edit failed) come from any frame via clotr:health and are kept.
+// Records that a content script's top frame reported Clotr running in its tab.
 async function markTab(tabId, paused) {
   const tabs = await getProtectedTabs();
   tabs[tabId] = { editor: false, editFailed: false, ...tabs[tabId], paused: Boolean(paused) };
-  await chrome.storage.session.set({ protectedTabs: tabs });
+  await sessionArea.set({ protectedTabs: tabs });
   // A tab-specific icon outranks the declarative "spotted" icon, so protected pages never show the amber dot.
   await chrome.action.setIcon({ tabId, path: ICON(paused ? "off" : "on") });
   await refreshToolbar();
@@ -315,7 +494,7 @@ function forgetTab(tabId) {
     const tabs = await getProtectedTabs();
     if (tabs[tabId]) {
       delete tabs[tabId];
-      await chrome.storage.session.set({ protectedTabs: tabs });
+      await sessionArea.set({ protectedTabs: tabs });
     }
   });
 }
@@ -328,20 +507,19 @@ async function noteHealth(tabId, msg) {
   if (typeof msg.editFailed === "boolean") t.editFailed = msg.editFailed;
   if (msg.uiRemoved === true) t.uiRemoved = true;
   tabs[tabId] = t;
-  await chrome.storage.session.set({ protectedTabs: tabs });
+  await sessionArea.set({ protectedTabs: tabs });
   await refreshToolbar();
 }
 
-// A new page load in the tab: forget it until its content script (if any) reports in again,
-// so a later non-AI page in the same tab never gets our badge.
+// Forgets the tab on a new page load, until its content script, if it has one, reports in again. That way a
+// later non-AI page loaded in the same tab never keeps Clotr's badge.
 chrome.tabs.onUpdated.addListener((tabId, changeInfo) => {
   if (changeInfo.status === "loading") forgetTab(tabId);
   if (changeInfo.status === "complete") recheckTab(tabId);
 });
 
-// Single-page apps (a new ChatGPT chat, grok.com after loading) report "loading" for an in-page
-// URL change although the page, and Clotr in it, stay. Ask the tab's Clotr; if it answers,
-// restore its state (HC4). A tab without Clotr simply doesn't answer.
+// A single-page app like ChatGPT reports "loading" for an in-page URL change even though nothing really
+// reloaded. This pings the tab's Clotr directly and restores its state if it answers.
 function recheckTab(tabId) {
   enqueue(async () => {
     if ((await getProtectedTabs())[tabId]) return;
@@ -362,9 +540,11 @@ function recheckTab(tabId) {
 }
 
 chrome.alarms.onAlarm.addListener((alarm) => {
+  if (alarm.name === TOURNIQUET_END) return void stepTourniquetSafely();
   if (alarm.name !== "refresh-toolbar") return;
   enqueue(refreshToolbar); // rolls "today" over after midnight
   enqueue(pruneEvents);
+  stepTourniquetSafely(); // keeps watch on the clock, and sets the end alarm again if the browser lost it
 });
 
 // ---------- Spotting new AI tools ----------
@@ -403,9 +583,9 @@ async function installSpotRules() {
 
 // ---------- User-added AI sites ----------
 
-// Keep one dynamic content script whose matches = the sites the user granted.
-// Registered under the old product name (ChainSec) before v0.9.2; removed so user-added
-// sites don't end up with two registrations.
+// Keeps one dynamic content script whose matches are the sites the user granted. ChainSec, Clotr's old
+// product name, registered its own copy before v0.9.2, so that one gets removed here, to keep a user-added
+// site from ending up with two registrations.
 const LEGACY_USER_SCRIPT_IDS = ["chainsec-user-sites"];
 
 async function syncUserSites() {
@@ -421,7 +601,7 @@ async function syncUserSites() {
     id: USER_SCRIPT_ID,
     matches,
     js: CONTENT_JS,
-    runAt: "document_start", // before page scripts, so Clotr sees Enter first (M8)
+    runAt: "document_start", // before page scripts, so Clotr sees Enter first
     allFrames: true,
     persistAcrossSessions: true,
   };
@@ -430,8 +610,8 @@ async function syncUserSites() {
   console.info(LOG, "user-added AI sites:", matches);
 }
 
-// Start protecting already-open tabs of a newly added site without a reload: only tabs
-// inside the sections the user chose, not every page of the host.
+// Starts protecting a newly added site's already-open tabs without needing a reload, but only the tabs
+// inside the sections the user actually chose, not every page on the host.
 async function injectIntoOpenTabs(origins) {
   const hosts = new Set(origins.map((o) => new URL(o.replace(/\*$/, "")).hostname));
   const patterns = (await userSitePatterns()).filter((p) => hosts.has(new URL(p.replace(/\*$/, "")).hostname));
@@ -446,10 +626,8 @@ async function injectIntoOpenTabs(origins) {
   }
 }
 
-// Seamless updates (D39): start the new version in every open AI tab right after an
-// install or update, so nobody has to reload a page. Needs host access to the built-in
-// sites (manifest host_permissions = the content-script matches) plus the user's sites.
-// An orphaned older copy in the tab steps aside when the new one starts (content.js).
+// Starts the new version in every open AI tab right after an install or update, so nobody has to reload a
+// page by hand. An older copy still running in a tab steps aside once the new one starts (content.js).
 async function startInOpenTabs() {
   const patterns = [...chrome.runtime.getManifest().content_scripts[0].matches, ...(await userSitePatterns())];
   const tabs = await chrome.tabs.query({ url: patterns });
@@ -478,8 +656,8 @@ chrome.permissions.onRemoved.addListener(() => {
   enqueue(syncUserSites).catch((err) => console.error(LOG, "removing site failed", err));
 });
 
-// Sections changed without a permission change (another section on an already-granted host,
-// or one removed): update where Clotr runs.
+// Updates where Clotr runs when the chosen sections change without a permission change, such as adding
+// another section on an already-granted host, or removing one.
 chrome.storage.onChanged.addListener((changes, area) => {
   if (area === "local" && changes.siteScopes) {
     enqueue(syncUserSites).catch((err) => console.error(LOG, "site sync failed", err));
@@ -488,7 +666,8 @@ chrome.storage.onChanged.addListener((changes, area) => {
 
 // ---------- Settings migration ----------
 
-// v0.5: "Don't warn me again" (suppressed.global[id]) became the "log" response.
+// An older version stored "Don't warn me again" as suppressed.global[id]; this turns that into the "log"
+// response.
 async function migrateSuppressed() {
   const { suppressed, responses = {} } = await chrome.storage.local.get(["suppressed", "responses"]);
   if (!suppressed) return;
@@ -499,8 +678,8 @@ async function migrateSuppressed() {
   console.info(LOG, "moved silenced patterns to responses", next);
 }
 
-// Every settings migration, oldest first; each is a no-op once done (e2e MIG1 runs this
-// on the settings each earlier version saved). One failing doesn't stop the others.
+// Runs every settings migration, oldest first. Each one is a no-op once it's already run, and one failing
+// doesn't stop the rest.
 async function runMigrations() {
   for (const step of [migrateSuppressed, migrateToVault, migrateOffToLog]) {
     try {
@@ -511,7 +690,7 @@ async function runMigrations() {
   }
 }
 
-// v0.9: there is no "off" any more; everything is recorded (DECISIONS D21). Old "off" → "log".
+// Older versions had an "off" response; this version always records, so old "off" becomes "log".
 async function migrateOffToLog() {
   const { responses } = await chrome.storage.local.get("responses");
   if (!responses || !Object.values(responses).includes("off")) return;
@@ -520,8 +699,8 @@ async function migrateOffToLog() {
   console.info(LOG, "turned old Off settings into Log only");
 }
 
-// v0.8: "It's me" (mine) and the watch list (watch) became the vault. It's-me entries keep
-// their meaning as "OK to share" items.
+// An older version kept "It's me" and watch-list entries separately. This folds both into the
+// vault, and an "It's me" entry keeps its old meaning: it's still something the user is fine sharing.
 async function migrateToVault() {
   const { mine, watch, vault = [] } = await chrome.storage.local.get(["mine", "watch", "vault"]);
   if (!mine && !watch) return;
@@ -534,37 +713,15 @@ async function migrateToVault() {
 }
 
 // ---------- Vault (only this worker writes it; entries hold fingerprints or formats, never values) ----------
+// Every entry passes through cleanVaultEntry first, so nothing malformed, and nothing raw, ever gets stored.
+// dedupeVault then keeps one entry per fingerprint or format.
 
-const VAULT_KINDS = new Set(["value", "word", "shape"]);
-const VAULT_MODES = new Set(["protect", "allow"]);
-const vaultKey = (e) =>
-  e.kind === "shape" ? `shape:${e.type}:${String(e.shape).toLowerCase()}` : `${e.kind}:${e.type}:${e.fp}`;
-
-function dedupeVault(entries) {
-  const seen = new Set();
-  return entries.filter((e) => !seen.has(vaultKey(e)) && seen.add(vaultKey(e)));
-}
-
-// Accept only well-formed entries, so nothing else (least of all a raw value) is ever stored.
-function cleanVaultEntry(e) {
-  if (!e || !VAULT_KINDS.has(e.kind) || typeof e.type !== "string" || !/^[a-z_]{2,40}$/.test(e.type)) return null;
-  const out = { kind: e.kind, type: e.type, added: Number.isFinite(e.added) ? e.added : Date.now() };
-  if (e.kind === "shape") {
-    if (typeof e.shape !== "string" || !/[#@].*[#@]/.test(e.shape) || /\d/.test(e.shape) || e.shape.length > 40)
-      return null;
-    out.shape = e.shape;
-  } else {
-    if (!/^[0-9a-f]{16}$/.test(e.fp)) return null;
-    out.fp = e.fp;
-    if (e.kind === "word") out.words = Math.min(4, Math.max(1, Number(e.words) || 1));
-    if (e.kind === "value") out.mode = VAULT_MODES.has(e.mode) ? e.mode : "protect";
-  }
-  if (e.learned) out.learned = true;
-  return out;
-}
-
-async function vaultAdd(entries) {
-  const clean = (Array.isArray(entries) ? entries : []).map(cleanVaultEntry).filter(Boolean);
+// fromChat is true when the call came from inside a chat page itself, where chatGuard won't let someone
+// mark a kind "OK to share" if the team's policy holds it.
+async function vaultAdd(entries, fromChat = false) {
+  let clean = (Array.isArray(entries) ? entries : []).map(cleanVaultEntry).filter(Boolean);
+  const guard = fromChat ? await chatGuard() : null;
+  if (guard) clean = clean.filter((e) => !(e.mode === "allow" && guard.holds(e.type)));
   const { vault = [] } = await chrome.storage.local.get("vault");
   const before = new Set(vault.map(vaultKey));
   const next = dedupeVault(vault.concat(clean));
@@ -575,10 +732,8 @@ async function vaultAdd(entries) {
   };
 }
 
-// Moving to a new computer (pre-release Batch 5): a backup's settings, vault and salt replace this browser's.
-// Everything is cleaned again here (Backup.clean, cleanVaultEntry), so a changed file can store nothing else.
-// A setting the file doesn't have goes back to its default; this browser's salt stays if the file has none.
-// History isn't touched.
+// Restoring a backup replaces this browser's settings, vault and salt with the ones in the file. I clean
+// everything again here so a hand-edited file can't smuggle anything else in. History is left alone.
 async function importBackup(settings) {
   const clean = globalThis.Clotr.Backup.clean(settings);
   const vault = dedupeVault((clean.vault || []).map(cleanVaultEntry).filter(Boolean));
@@ -607,17 +762,22 @@ const DAY = 86400000;
 const IGNORES_TO_OFFER = 3;
 const validType = (t) => typeof t === "string" && /^[a-z_]{2,40}$/.test(t);
 
-// The user kept a warning of these types. Returns a type to offer relaxing, if one is due:
-// kept 3 times within 14 days, and not declined within the last 30 days.
+// Records that the user kept a warning instead of acting on it, and checks whether it's time to offer
+// relaxing that kind: kept 3 times in 14 days, not declined in the last 30, not held by a team policy.
 async function noteIgnored(types) {
   const now = Date.now();
+  const guard = await chatGuard();
   const { ignores = {}, relaxDeclined = {} } = await chrome.storage.local.get(["ignores", "relaxDeclined"]);
   for (const t of (Array.isArray(types) ? types : []).filter(validType)) {
     ignores[t] = (ignores[t] || []).filter((x) => now - x < 14 * DAY).concat(now);
   }
   await chrome.storage.local.set({ ignores });
   const offer = Object.keys(ignores).find(
-    (t) => types.includes(t) && ignores[t].length >= IGNORES_TO_OFFER && !(now - (relaxDeclined[t] || 0) < 30 * DAY),
+    (t) =>
+      types.includes(t) &&
+      !guard.holds(t) &&
+      ignores[t].length >= IGNORES_TO_OFFER &&
+      !(now - (relaxDeclined[t] || 0) < 30 * DAY),
   );
   return { offer: offer || null, count: offer ? ignores[offer].length : 0 };
 }
@@ -631,20 +791,23 @@ async function relaxAnswer(id, accepted) {
   return { ok: true };
 }
 
-// ---------- Updates (no network: DECISIONS D25) ----------
-// Store installs are updated by the Chrome Web Store. An unpacked install (developer, or
-// someone running from a git clone that a script keeps pulled) re-reads its own manifest
-// from disk every minute and reloads itself when the version changed.
+// ---------- Updates ----------
+// The Chrome Web Store updates a store install on its own. An unpacked install has no store to do that, so
+// it rereads its own manifest from disk every minute and reloads once the version there has changed.
 
-const IS_UNPACKED = !("update_url" in chrome.runtime.getManifest());
+// Safari installs come from an app (the App Store, TestFlight or Xcode), never from a folder: nothing to check there.
+const IS_UNPACKED =
+  !("update_url" in chrome.runtime.getManifest()) &&
+  !chrome.runtime.getManifest().browser_specific_settings?.safari &&
+  !chrome.runtime.getURL("").startsWith("safari-web-extension:");
 
 async function localVersionOnDisk() {
   const res = await fetch(chrome.runtime.getURL("manifest.json"), { cache: "no-store" });
   return (await res.json()).version;
 }
 
-// A reload restarts Clotr in open tabs (D39), which closes any dialog or warning they show,
-// so it waits while one is open: at most MAX_UPDATE_WAIT, then updates anyway (D38).
+// A reload restarts Clotr in open tabs, which closes any dialog or warning they show,
+// so it waits while one is open: at most MAX_UPDATE_WAIT, then updates anyway.
 const MAX_UPDATE_WAIT = 2 * 60 * 60000;
 
 async function tabBusy(tabId) {
@@ -655,8 +818,9 @@ async function tabBusy(tabId) {
   }
 }
 
-// A developer copy can follow a "live" line of commits: a local updater writes local-update.txt (git-ignored,
-// never packaged) after each update, so new files reload Clotr without a version bump. "" when there's none.
+// A developer copy can track a running line of commits instead of a version number. A local updater
+// writes local-update.txt after each one, and its contents changing is enough to trigger a reload even
+// though the manifest version didn't move. Returns "" when the file isn't there.
 async function localStampOnDisk() {
   try {
     const res = await fetch(chrome.runtime.getURL("local-update.txt"), { cache: "no-store" });
@@ -671,17 +835,17 @@ async function checkForLocalUpdate() {
   const onDisk = await localVersionOnDisk();
   const running = chrome.runtime.getManifest().version;
   const stamp = await localStampOnDisk();
-  const { localStamp } = await chrome.storage.session.get("localStamp");
-  if (localStamp === undefined) await chrome.storage.session.set({ localStamp: stamp }); // this run's starting point
+  const { localStamp } = await sessionArea.get("localStamp");
+  if (localStamp === undefined) await sessionArea.set({ localStamp: stamp }); // this run's starting point
   const restamped = localStamp !== undefined && stamp !== localStamp;
   if (onDisk === running && !restamped) return false;
   const tabIds = Object.keys(await getProtectedTabs()).map(Number);
   const busy = (await Promise.all(tabIds.map(tabBusy))).some(Boolean);
   if (busy) {
-    let { updateWaitingSince } = await chrome.storage.session.get("updateWaitingSince");
+    let { updateWaitingSince } = await sessionArea.get("updateWaitingSince");
     if (!updateWaitingSince) {
       updateWaitingSince = Date.now();
-      await chrome.storage.session.set({ updateWaitingSince });
+      await sessionArea.set({ updateWaitingSince });
     }
     if (Date.now() - updateWaitingSince < MAX_UPDATE_WAIT) {
       console.info(LOG, `files updated on disk (${running} → ${onDisk}); waiting: a Clotr dialog or warning is open`);
@@ -689,8 +853,8 @@ async function checkForLocalUpdate() {
     }
   }
   console.info(LOG, `files updated on disk (${running} → ${onDisk}${restamped ? ", new local build" : ""}); reloading`);
-  await chrome.storage.session.remove("updateWaitingSince");
-  await chrome.storage.session.set({ localStamp: stamp }); // never reload twice for the same files
+  await sessionArea.remove("updateWaitingSince");
+  await sessionArea.set({ localStamp: stamp }); // never reload twice for the same files
   chrome.runtime.reload();
   return true;
 }
@@ -704,6 +868,17 @@ chrome.alarms.onAlarm.addListener((alarm) => {
 });
 
 // ---------- Lifecycle ----------
+
+// The one-time offer to use Clotr on email and chat apps is one word in storage: "welcome" for a fresh
+// install, "popup" for someone who already had Clotr, "done" once offered. Which apps are actually on
+// lives in the browser's own permission grants, not here.
+async function noteEverydayOffer(reason) {
+  const { origins = [] } = await chrome.permissions.getAll();
+  const { everydayOffer } = await chrome.storage.local.get("everydayOffer");
+  const next = offerAfterInstall(reason, everydayOffer, grantedEverydayApps(origins).length > 0);
+  if (next && next !== everydayOffer) await chrome.storage.local.set({ everydayOffer: next });
+  return next;
+}
 
 chrome.runtime.onInstalled.addListener((details) => {
   // After an update, the popup shows "Updated to vX: what's new" once (from changelog.json).
@@ -722,7 +897,11 @@ chrome.runtime.onInstalled.addListener((details) => {
   if (details?.reason === "install")
     chrome.tabs.create({ url: chrome.runtime.getURL("vault.html?welcome=1") }).catch(() => {});
   enqueue(runMigrations).catch((err) => console.error(LOG, "settings migration failed", err));
+  enqueue(() => followPersonalSwitch(details?.reason)).catch((err) =>
+    console.error(LOG, "personal-details switch failed", err),
+  );
   enqueue(ensureSalt).catch((err) => console.error(LOG, "salt setup failed", err));
+  enqueue(() => noteEverydayOffer(details?.reason)).catch((err) => console.error(LOG, "offer bookkeeping failed", err));
   enqueue(syncUserSites).catch((err) => console.error(LOG, "site sync failed", err));
   if (details?.reason === "install" || details?.reason === "update") {
     startInOpenTabs().catch((err) => console.warn(LOG, "could not start in open tabs", err));
@@ -730,15 +909,38 @@ chrome.runtime.onInstalled.addListener((details) => {
   installSpotRules().catch((err) => console.error(LOG, "spotting rules failed", err));
   chrome.alarms.create("refresh-toolbar", { periodInMinutes: 30 });
   enqueue(refreshToolbar).catch(() => {});
+  stepTourniquetSafely(); // alarms don't survive every update
+  offerTeamTrainingSafely();
 });
 
 chrome.runtime.onStartup.addListener(() => {
   scheduleUpdateCheck();
   enqueue(syncUserSites).catch((err) => console.error(LOG, "site sync failed", err));
   enqueue(refreshToolbar).catch(() => {});
+  offerTeamTrainingSafely();
+  stepTourniquetSafely(); // the end alarm again, or the end itself if it came while the browser was closed
 });
 
-// ---------- First-time tips (D43): which kinds of data the user was already guided about ----------
+// "Ask before sending personal details" stays on across an update, and any personal kind the update adds
+// starts out asking too, instead of quietly falling back to just a warning. Clotr remembers which kind ids
+// it already knew about so it can tell what's new.
+async function followPersonalSwitch(reason) {
+  if (reason !== "install" && reason !== "update") return;
+  const { Helper, PATTERNS } = globalThis.Clotr;
+  const ids = PATTERNS.map((p) => p.id);
+  const { responses = {}, knownKinds } = await chrome.storage.local.get(["responses", "knownKinds"]);
+  if (reason === "update") {
+    const brought = Helper.newPersonalToAsk(responses, knownKinds);
+    if (brought.length) {
+      for (const id of brought) responses[id] = "block";
+      await chrome.storage.local.set({ responses });
+      console.info(LOG, "Ask before sending personal details now covers new kinds:", brought);
+    }
+  }
+  if (JSON.stringify(knownKinds) !== JSON.stringify(ids)) await chrome.storage.local.set({ knownKinds: ids });
+}
+
+// ---------- First-time tips: which kinds of data the user was already guided about ----------
 
 async function markGuided(id) {
   if (!validType(id)) return { ok: false };
@@ -750,19 +952,37 @@ async function markGuided(id) {
   return { ok: true };
 }
 
-// ---------- Keyboard: Alt+Shift+C jumps to Clotr's warning (M4 accessibility) ----------
+// ---------- Keyboard: Alt+Shift+C jumps to Clotr's warning ----------
 
-function handleCommand(command, tab) {
-  if (command === "focus-notice" && tab?.id)
-    chrome.tabs.sendMessage(tab.id, { type: "clotr:focusNotice" }).catch(() => {});
+async function handleCommand(command, tab) {
+  if (command !== "focus-notice") return;
+  // Safari before 18 doesn't say which tab: the one in front.
+  const id = tab?.id ?? (await chrome.tabs.query({ active: true, lastFocusedWindow: true }).catch(() => []))[0]?.id;
+  if (id) chrome.tabs.sendMessage(id, { type: "clotr:focusNotice" }).catch(() => {});
 }
 chrome.commands?.onCommand.addListener(handleCommand); // none on Firefox for Android
 
 // ---------- Messages from content scripts / popup ----------
 
-// Clotr's own pages (vault, settings, move), as opposed to its scripts inside AI sites, which share their page with
-// the site's code and so never get to remove or loosen a protected detail (release review 2026-09-30).
+// True for Clotr's own pages, like the vault or settings, never for a content script inside an AI site,
+// which shares that page with the site's own code.
 const fromClotrPage = (sender) => (sender.url || "").startsWith(chrome.runtime.getURL(""));
+
+// Opens the "Is this a scam?" page from a warning, right next to the chat's own tab when the browser
+// can tell us where that is, or at the end of the window otherwise.
+async function openCheckPage(tab) {
+  const url = chrome.runtime.getURL("check.html");
+  const beside = Number.isInteger(tab?.index) && Number.isInteger(tab?.windowId);
+  try {
+    await chrome.tabs.create(beside ? { url, windowId: tab.windowId, index: tab.index + 1 } : { url });
+  } catch {
+    try {
+      if (beside) await chrome.tabs.create({ url });
+    } catch {
+      // nowhere to open it: the warning stays as it is
+    }
+  }
+}
 
 chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   if (sender.id !== chrome.runtime.id) return false;
@@ -783,8 +1003,16 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
         await refreshToolbar();
         return { ok: true, count };
       });
+    case "clotr:clearHistory":
+      // Only Clotr's own pages offer this; a site's own tab never gets to clear your history.
+      if (!fromClotrPage(sender)) return false;
+      return reply(async () => {
+        await clearHistory();
+        await refreshToolbar();
+        return { ok: true };
+      });
     case "clotr:vaultAdd":
-      return reply(() => vaultAdd(msg.entries));
+      return reply(() => vaultAdd(msg.entries, !fromClotrPage(sender)));
     case "clotr:vaultUpdate":
       // Only the vault page removes an entry or switches it to "allow".
       if (!fromClotrPage(sender)) return false;
@@ -803,8 +1031,15 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
       return reply(() => settingsFor(sender.url || sender.tab?.url || ""));
     case "clotr:setBandage":
       return reply(() => setBandage(sender.url || sender.tab?.url || "", msg.on));
+    case "clotr:pictureNoted":
+      return reply(() => notePicture(sender.url || sender.tab?.url || ""));
     case "clotr:setResponses":
-      return reply(() => setResponses(msg.ids, msg.value));
+      return reply(() => setResponses(msg.ids, msg.value, !fromClotrPage(sender)));
+    case "clotr:openCheck":
+      // A warning's "Get a second opinion": opens Clotr's own Is this a scam? page in a new tab beside the
+      // chat. The page is always this fixed one; nothing from the message goes with it.
+      openCheckPage(sender.tab);
+      return false;
     case "clotr:health":
       if (!sender.tab?.id) return false;
       return reply(async () => {
@@ -820,4 +1055,27 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     default:
       return false;
   }
+});
+
+// A content script opens one of these the moment it starts, before it asks for real settings, so it gets
+// just the Bandage flag right away instead of waiting on settingsFor's slower lookup. Firefox can suspend
+// this worker between tabs and take a few seconds to wake it; keeping the port open while a tab is open
+// avoids that delay too.
+chrome.runtime.onConnect.addListener((port) => {
+  if (port.sender?.id !== chrome.runtime.id || port.name !== "clotr:tab") return;
+  (async () => {
+    let host = "";
+    try {
+      host = new URL(port.sender.url || port.sender.tab?.url || "").hostname;
+    } catch {
+      /* no url: nothing site-specific to answer */
+    }
+    const r = await chrome.storage.local.get(["bandage", "siteKinds"]);
+    const everyday = isEveryday(host, r.siteKinds || {});
+    try {
+      port.postMessage({ type: "clotr:bandage", on: bandageFor(everyday, host, r) });
+    } catch {
+      /* the tab closed before this resolved */
+    }
+  })();
 });
