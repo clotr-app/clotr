@@ -1,9 +1,9 @@
 <!doctype html>
-<!-- Stand-in for a Kimi-style page: a Lexical-like editor that takes over every edit
-     (puts the old text back at once) and applies it a moment later, at the selection it
-     last learned from the async selectionchange event. Clotr's check right after the
-     edit sees the old text; the edit then lands at the old caret (seen on kimi.com, M2).
-     window.__rejectEdits = true makes it ignore edits entirely (a box Clotr can't edit). -->
+<!-- Stand-in for a Kimi-style page: a Lexical-like editor that takes over every edit. It puts the old text back
+     right away, then applies the edit a moment later at the selection it last learned from the async
+     selectionchange event. So Clotr's check right after the edit still sees the old text, and the edit lands at
+     the old caret, which is what actually happens on kimi.com. Setting window.__rejectEdits = true makes the editor
+     ignore edits entirely, standing in for a box Clotr can't edit. -->
 <html lang="en">
 <head><meta charset="utf-8"><title>Kimi (Clotr test page)</title></head>
 <body>

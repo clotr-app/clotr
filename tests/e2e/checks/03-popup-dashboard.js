@@ -9,8 +9,10 @@ module.exports = async function (env) {
     expect,
     openPopup,
     resetState,
+    restoreBackgroundReads,
     seedEvents,
     shot,
+    slowBackgroundReads,
     sleep,
     store,
     typeText,
@@ -98,7 +100,7 @@ module.exports = async function (env) {
     await pick("claude.ai");
     await sleep(200);
     const hero = await popup.$eval("#hero-value", (n) => n.textContent);
-    // Compare whole site names (not substrings of the text): only the chosen tool is left in "By AI tool".
+    // I compare whole site names here, not substrings, since only the chosen tool should be left in "By AI tool".
     const bySite = await popup.$eval("#by-site", (n) => [...n.querySelectorAll(".label")].map((s) => s.textContent));
     await shot(popup, "popup-site-filter.png");
     await popup.click("#tab-activity");
@@ -195,6 +197,40 @@ module.exports = async function (env) {
     await sleep(200);
     expect(await popup.$eval("#empty-overview", (n) => !n.hidden), "empty state not shown");
     await popup.close();
+  });
+
+  await check("C12", "Clear history during a slow report from another AI tab still ends up empty", async () => {
+    await store.set(ctx, { events: seedEvents() });
+    const popup = await openPopup(ctx);
+    await popup.click("#tab-settings");
+    await slowBackgroundReads(ctx, 300, "events");
+    try {
+      // This report gets queued first, and it reads storage slowly, so it's still mid-write when the clear happens.
+      const reported = ctx.worker.evaluate(() =>
+        enqueue(() =>
+          appendEvents([
+            {
+              t: Date.now(),
+              site: "chatgpt.com",
+              type: "email",
+              name: "Email",
+              severity: "low",
+              action: "redacted",
+              fp: "a000000000000009",
+            },
+          ]),
+        ),
+      );
+      await sleep(50);
+      await popup.click("#clear");
+      await popup.click("#clear");
+      await reported;
+      await sleep(100);
+    } finally {
+      await restoreBackgroundReads(ctx);
+      await popup.close();
+    }
+    expect((await store.events(ctx)).length === 0, "the slow report's write brought the old history back");
   });
 
   await check(

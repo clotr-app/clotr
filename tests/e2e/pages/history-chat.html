@@ -1,8 +1,9 @@
 <!doctype html>
-<!-- Stand-in for a chat site that shows the conversation and brings it back after a reload, as every real AI chat
-     does from its server: your messages and the AI's replies stay on the page (kept in this tab's sessionStorage, one
-     list per conversation address) and come back a moment after the page loads. Bandage after a reload (BN18, BN19).
-     Its sidebar opens another conversation without a reload, the old one's messages staying a moment (BN20). -->
+<!-- Stand-in for a chat site that shows the conversation and brings it back after a reload, the way every real AI
+     chat does from its server. Messages and replies live in this tab's sessionStorage, one list per conversation
+     address, and reappear a moment after the page loads, so Bandage has to cover them again after a reload. The
+     sidebar can also open another conversation without a reload, and the old messages linger on screen for a moment
+     when it does. -->
 <html lang="en">
 <head><meta charset="utf-8"><title>Gemini (Clotr test page)</title></head>
 <body>
@@ -30,7 +31,7 @@
     window.__reply = (text) => add("ai", text);
     // The conversation so far comes back from the "server" a moment after the page loads.
     // With "fadeIn" set, the messages come back invisible and fade in a moment later, as ChatGPT's do after a reload:
-    // only their style changes, nothing is added to the page (R96).
+    // only their style changes, nothing is added to the page.
     setTimeout(() => {
       const fade = sessionStorage.getItem("fadeIn") === "1";
       const before = chat.childElementCount;

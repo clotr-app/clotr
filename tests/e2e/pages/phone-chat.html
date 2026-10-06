@@ -1,0 +1,62 @@
+<!doctype html>
+<!-- Stand-in for an AI chat used on a phone: a rich editor (or a textarea, with ?box=textarea) and a send button.
+     Like real phone chats, it sends three ways. A tap on the send button becomes a click, Enter arrives as a key,
+     and some phone keyboards send no Enter key at all and just type a new line (keyCode 229). For that last case the
+     page watches for the new line landing in the box and treats it as Enter, the way ProseMirror does on Android. -->
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Arena (Clotr test page)</title>
+  <style>
+    * { box-sizing: border-box; }
+    body { margin: 0; font: 16px/1.5 system-ui, sans-serif; display: flex; flex-direction: column; height: 100vh; }
+    main { flex: 1; }
+    footer { display: flex; gap: 8px; padding: 12px; border-top: 1px solid #ccc; }
+    #msg { flex: 1; min-height: 48px; border: 1px solid #999; border-radius: 12px; padding: 10px; font: inherit; }
+    #send { min-width: 48px; min-height: 48px; border: 0; border-radius: 12px; background: #222; color: #fff; }
+  </style>
+</head>
+<body>
+  <main></main>
+  <footer>
+    <div id="msg" contenteditable="true" role="textbox" aria-label="Ask anything"></div>
+    <button id="send" aria-label="Send message">Send</button>
+  </footer>
+  <script>
+    window.__sent = [];
+    window.__seen = []; // the touch and key events the page got, so a check can tell a real tap and a phone's Enter
+    if (location.search.includes("box=textarea")) {
+      const t = document.createElement("textarea");
+      t.id = "msg";
+      t.setAttribute("aria-label", "Ask anything");
+      document.getElementById("msg").replaceWith(t);
+    }
+    const box = document.getElementById("msg");
+    const read = () => (box.tagName === "TEXTAREA" ? box.value : box.innerText);
+    const clear = () => (box.tagName === "TEXTAREA" ? (box.value = "") : (box.textContent = ""));
+    function send() {
+      const text = read().trim();
+      if (!text) return;
+      window.__sent.push(text);
+      clear();
+    }
+    const sendButton = document.getElementById("send");
+    sendButton.addEventListener("click", send);
+    for (const t of ["touchstart", "touchend"]) sendButton.addEventListener(t, () => window.__seen.push(t));
+    let enterKey = false; // the last key down was Enter (a computer's keyboard, or a phone keyboard that sends it)
+    box.addEventListener("keydown", (e) => {
+      window.__seen.push(`keydown ${e.key}`);
+      enterKey = e.key === "Enter";
+      if (enterKey && !e.shiftKey && !e.isComposing) {
+        e.preventDefault();
+        send();
+      }
+    });
+    box.addEventListener("keyup", () => (enterKey = false));
+    box.addEventListener("input", (e) => {
+      if (!enterKey && (e.inputType === "insertParagraph" || e.inputType === "insertLineBreak")) send();
+    });
+  </script>
+</body>
+</html>

@@ -8,25 +8,31 @@ module.exports = async function (env) {
     OUT,
     TYPED_VALUES,
     activeBadge,
+    auditShadow,
     check,
     chooseResponse,
     clearEditor,
     clickDialogButton,
+    clickSend,
     ctx,
     editorText,
     evalInClotr,
     expect,
     expectNoUI,
     fs,
+    openExtPage,
     openPopup,
     path,
     pressEnter,
     readDialog,
     readNotice,
     resetState,
+    restoreBackgroundReads,
     seedEvents,
     sentMessages,
     shot,
+    shotAt,
+    slowBackgroundReads,
     sleep,
     store,
     typeText,
@@ -48,7 +54,7 @@ module.exports = async function (env) {
       await pressEnter(page);
       await sleep(300);
       expect((await sentMessages(page)).length === 1, "message not sent");
-      // A send before the warning could be read is recorded once it's confirmed (~1.2 s, D52).
+      // Even a send that beats the warning to the screen still gets recorded, once Clotr confirms it.
       const events =
         (await waitFor(async () => ((await store.events(ctx)).length ? store.events(ctx) : null), 3000)) || [];
       expect(events.length === 1 && events[0].action === "allowed", `events: ${JSON.stringify(events)}`);
@@ -63,7 +69,7 @@ module.exports = async function (env) {
       await clickDialogButton(page, "More choices", readNotice);
       await clickDialogButton(page, "Leave it in, and stop warning me about: Phone Number", readNotice);
       expect(!(await readNotice(page)), "notice still open");
-      // Storage writes are asynchronous: wait for them instead of reading once, as A5 does.
+      // Storage writes happen asynchronously, so I wait for the write to land instead of just reading once.
       const responses = await waitFor(
         async () => ((await store.get(ctx, "responses")).responses?.phone_number === "log" ? true : null),
         2000,
@@ -75,7 +81,6 @@ module.exports = async function (env) {
     }),
   );
 
-  // Pre-release Batch 3: "generalize instead of remove".
   await check(
     "GEN1",
     'Notice → More choices → Keep it general: the birth date becomes "March 1948", the address its town, and nothing exact is left',
@@ -86,9 +91,8 @@ module.exports = async function (env) {
         expect(await waitForNotice(page), "no notice");
         await clickDialogButton(page, "More choices", readNotice);
         await clickDialogButton(page, 'Keep it general: "Springfield", "March 1948"', readNotice);
-        // Under load, the generalized text and its "redacted" event can land after the click
-        // handler's fixed wait (seen once on a busy PC, #177): wait for the actual outcome
-        // instead of a fixed delay or the first recorded action.
+        // On a busy computer the generalized text and its "redacted" event can arrive later than
+        // the click handler's own wait, so I poll for the real outcome instead of trusting a fixed delay.
         const text = await waitFor(
           async () => ((await editorText(page)) === "I was born on March 1948 and live at Springfield" ? true : null),
           4000,
@@ -102,8 +106,8 @@ module.exports = async function (env) {
       }),
   );
 
-  // The notice's own Hide it once handed its click to the hide step as "keep it general", so a birth date became
-  // "March 1948" and an address its town instead of being hidden.
+  // Hide it used to be wired to the same code path as "keep it general", so it would generalize a birth date
+  // or address instead of actually hiding it. This check makes sure that bug stays fixed.
   await check("GEN1b", "Notice → Hide it hides a birth date and an address (it doesn't keep them general)", () =>
     withSite(ctx, "chatgpt", async (page) => {
       await resetState(ctx, {});
@@ -153,7 +157,7 @@ module.exports = async function (env) {
         await page.screenshot({ path: path.join(OUT, "notice-more-open.png") });
         await clickDialogButton(page, "Leave it in, and don't warn me about this one again", readNotice);
         expect(!(await readNotice(page)), "notice still open");
-        // The vault write goes through the background's queue: wait for it.
+        // The vault write goes through the background's queue, so I wait for it to land.
         let vault = await waitFor(async () => {
           const v = (await store.get(ctx, "vault")).vault;
           return v?.length ? v : null;
@@ -271,9 +275,8 @@ module.exports = async function (env) {
       }),
   );
 
-  // The retry for such editors selects the whole message again; once the edit lands, that selection must not stay:
-  // the next keystroke would replace or wrap the message (Microsoft Copilot, 2026-09-30: "my cursor doesn't respond
-  // accurately to my inputs").
+  // The retry for these editors selects the whole message again before editing it. Once the edit lands, that
+  // selection has to go away, or the next keystroke would replace the message instead of adding to it.
   await check(
     "KM3",
     "After Hide it in an editor that applies edits a moment later, nothing stays selected and typing goes on at the end",
@@ -295,7 +298,7 @@ module.exports = async function (env) {
       }),
   );
 
-  // Makes execCommand("insertText") do nothing in Clotr's world only (a browser that dropped it).
+  // Stands in for a browser that dropped execCommand("insertText"), but only inside Clotr's own world.
   const DROP_INSERT_TEXT = `(() => { const real = document.execCommand.bind(document);
     document.execCommand = (cmd, ...rest) => cmd === "insertText" ? false : real(cmd, ...rest); return true; })()`;
 
@@ -343,8 +346,8 @@ module.exports = async function (env) {
           await sleep(300);
           const sent = await sentMessages(page);
           expect(sent.length === 1 && !sent[0].includes(KEY), `${key}: sent ${JSON.stringify(sent)}`);
-          // The "redacted" event is sent once the fallback edit is confirmed, which on a busy PC can land after the
-          // send (up to ~0.5 s here): wait for it, as GEN1 does (#177), rather than reading once.
+          // The "redacted" event only fires once the fallback edit is confirmed, and on a busy computer that can
+          // land after the send, so I poll for it instead of reading once.
           const counted = await waitFor(
             async () => ((await store.events(ctx)).some((e) => e.action === "redacted") ? true : null),
             4000,
@@ -370,7 +373,8 @@ module.exports = async function (env) {
           return n && /couldn't hide/i.test(n.text) ? n : null;
         }, 3000);
         expect(told, `notice: ${JSON.stringify(await readNotice(page))}`);
-        // Writing the DOM behind a rich editor's back would show the text hidden while its model still sends it.
+        // If Clotr wrote the DOM directly here, the text would look hidden while the editor's own model still
+        // held and sent the real value.
         expect((await editorText(page)).includes(KEY), `the page's text was changed behind the editor's back`);
         expect(!(await store.events(ctx)).some((e) => e.action === "redacted"), "counted as hidden");
         ctx.problems = ctx.problems.filter((p) => !p.includes("[Clotr] couldn't edit this chat box"));
@@ -401,14 +405,16 @@ module.exports = async function (env) {
           !(await store.events(ctx)).some((e) => e.action === "redacted"),
           "recorded as hidden although the key is still there",
         );
-        // This check causes Clotr's "couldn't edit" warning on purpose; Z2 still catches any other.
+        // This check triggers Clotr's "couldn't edit" warning on purpose, so I filter just that one out here.
+        // The overall console check elsewhere still catches any other warning.
         ctx.problems = ctx.problems.filter(
           (p) => !p.startsWith("asynced page warn: [Clotr] couldn't edit this chat box"),
         );
       }),
   );
 
-  // The self-check state the background keeps for the active tab (what the popup's site card reads).
+  // The background keeps a self-check state for the active tab, and this reads it. The popup's site card reads
+  // the same thing.
   const tabHealth = () =>
     ctx.worker.evaluate(async () => {
       const [tab] = await chrome.tabs.query({ active: true, lastFocusedWindow: true });
@@ -444,8 +450,8 @@ module.exports = async function (env) {
       }),
   );
 
-  // "Test Clotr here" (popup): what the button asks this tab's Clotr (the popup's site card itself needs a
-  // real click, so it's a manual check: TESTING B31).
+  // What the popup's "Test Clotr here" button asks this tab's Clotr. The button itself needs a real click to
+  // open, so that part is checked by hand instead.
   const showChatBox = () =>
     ctx.worker.evaluate(async () => {
       const [tab] = await chrome.tabs.query({ active: true, lastFocusedWindow: true });
@@ -510,7 +516,7 @@ module.exports = async function (env) {
 
   await check("SET1", "A setting changed while a chat tab is still starting up reaches that tab", () =>
     withSite(ctx, "chatgpt", async (page) => {
-      // Straight after the page opens, before its Clotr has registered with the background.
+      // This happens right after the page opens, before its Clotr has registered with the background.
       await ctx.worker.evaluate(() =>
         enqueue(() => chrome.storage.local.set({ responses: { aws_access_key: "block" }, guided: {} })),
       );
@@ -522,7 +528,7 @@ module.exports = async function (env) {
     }),
   );
 
-  await check("HP1", "Hostile page removes Clotr's dialog: the user is never stuck (Enter still sends, D30)", () =>
+  await check("HP1", "Hostile page removes Clotr's dialog: the user is never stuck (Enter still sends)", () =>
     withSite(ctx, "hostile", async (page) => {
       await resetState(ctx); // Ask before sending for keys
       await page.evaluate(() => window.__removeClotr());
@@ -569,20 +575,20 @@ module.exports = async function (env) {
 
   await check(
     "SEC2",
-    "A page can't probe what Clotr knows: guesses it puts in its own chat box by script get no reaction (S24)",
+    "A page can't probe what Clotr knows: guesses it puts in its own chat box by script get no reaction",
     () =>
       withSite(ctx, "hostile", async (page) => {
         await resetState(ctx, {});
         const reacted = await page.evaluate((k) => window.__probe(`is it Emma? Liam? key ${k}`), KEY);
         expect(!reacted, "Clotr reacted to text the page typed by script");
-        // Real typing still warns (the page's text is checked once the user types).
+        // Real typing still warns, since Clotr checks the text once the user actually types it.
         await typeText(page, " qx-sec2");
         const n = await waitFor(() => readNotice(page), 3000);
         expect(n && /AWS Access Key/.test(n.text), "no warning after real typing");
       }),
   );
 
-  await check("SEC3", "A page can't trigger Ask before sending with a scripted Enter (S24)", () =>
+  await check("SEC3", "A page can't trigger Ask before sending with a scripted Enter", () =>
     withSite(ctx, "hostile", async (page) => {
       await resetState(ctx, { responses: { aws_access_key: "block" } });
       const reacted = await page.evaluate((k) => window.__probe(`key ${k}`, { enter: true }), KEY);
@@ -639,7 +645,7 @@ module.exports = async function (env) {
         ctx.problems = ctx.problems.filter(
           (p) => !p.startsWith("asynced page warn: [Clotr] couldn't edit this chat box"),
         );
-        // The user fixes it; next time Hide it works again.
+        // The user fixes the problem, and Hide it works again the next time.
         await page.evaluate(() => {
           window.__rejectEdits = false;
         });
@@ -730,6 +736,40 @@ module.exports = async function (env) {
     },
   );
 
+  await check(
+    "R4b",
+    "A chat tab's 'stop warning me' and a settings change made while it's still saving don't erase each other",
+    async () => {
+      await resetState(ctx);
+      const popup = await openPopup(ctx);
+      await popup.click("#tab-settings");
+      await slowBackgroundReads(ctx, 300, "responses");
+      try {
+        // The chat tab's save is queued first and reads storage slowly, so the settings change below has to
+        // queue behind it instead of racing it. That way both overrides survive.
+        const saved = ctx.worker.evaluate(() => enqueue(() => setResponses(["email"], "log")));
+        await sleep(50);
+        await popup.evaluate(() => {
+          const sel = document.querySelector('select[data-pattern="phone_number"]');
+          sel.value = "block";
+          sel.dispatchEvent(new Event("change"));
+        });
+        await saved;
+        // The settings change hits that same slowed read, so it needs its own share of the delay too.
+        await sleep(400);
+      } finally {
+        await restoreBackgroundReads(ctx);
+        await popup.close();
+      }
+      const { responses } = await store.get(ctx, "responses");
+      expect(
+        responses?.email === "log" && responses?.phone_number === "block",
+        `one of the two changes was lost: ${JSON.stringify(responses)}`,
+      );
+      await store.set(ctx, { responses: {} });
+    },
+  );
+
   await check("R5", "Settings list every data type with its response", async () => {
     await store.set(ctx, { responses: { email: "off" } }); // a setting saved by an older version
     const popup = await openPopup(ctx);
@@ -749,8 +789,102 @@ module.exports = async function (env) {
       byId.email?.v === "log" && byId.email.changed,
       `old "off" should read as Log only: ${JSON.stringify(byId.email)}`,
     );
-    expect(offOptions === 0, `${offOptions} "Off" options left (everything is logged, D21)`);
+    expect(offOptions === 0, `${offOptions} "Off" options left (everything is logged)`);
   });
+
+  // A pattern can start as Just count by setting `start: "log"` on it. License plates and gamer tags will one day,
+  // but none do yet, so this check makes the phone number quiet just for itself.
+  await check(
+    "QK1",
+    "A kind that starts as Just count: no warning but counted; Settings shows it at Just count, by default",
+    async () => {
+      await resetState(ctx, {});
+      const quiet = () => (globalThis.Clotr.PATTERNS.find((p) => p.id === "phone_number").start = "log");
+      await withSite(ctx, "chatgpt", async (page) => {
+        await evalInClotr(page, `(${quiet})()`);
+        await typeText(page, PHONE);
+        await expectNoUI(page, "a phone number that starts as Just count");
+        await pressEnter(page);
+        await sleep(300);
+        expect((await sentMessages(page)).length === 1, "message not sent");
+      });
+      const types = (await store.events(ctx)).map((e) => `${e.type}:${e.action}`).join(",");
+      expect(types === "phone_number:suppressed", `events: ${types}`);
+
+      await store.set(ctx, { advanced: true });
+      const popup = await openPopup(ctx);
+      await popup.click("#tab-settings");
+      await popup.evaluate(quiet);
+      await popup.evaluate(() => {
+        renderSettings(); // eslint-disable-line no-undef -- popup.js's own function, in the popup page
+        document.querySelector('details[data-group="personal"]').open = true;
+        document.querySelector('select[data-pattern="phone_number"]').scrollIntoView({ block: "center" });
+      });
+      const read = () =>
+        popup.evaluate(() => {
+          const row = document.querySelector('select[data-pattern="phone_number"]');
+          const group = (id) => document.querySelector(`select[data-group="${id}"]`);
+          return {
+            value: row.value,
+            changed: row.classList.contains("changed"),
+            label: row.selectedOptions[0].textContent,
+            personal: [group("personal").value, group("personal").options[0].textContent],
+            credentials: group("credentials").options[0].textContent,
+          };
+        });
+      const shown = await read();
+      // This is the popup at its real size, scrolled so the group row and the quiet kind both show.
+      await popup.setViewport({ width: 380, height: 600 });
+      await popup.evaluate(() => document.querySelector('select[data-group="personal"]').scrollIntoView());
+      for (const theme of ["dark", "light"]) {
+        await popup.emulateMediaFeatures([{ name: "prefers-color-scheme", value: theme }]);
+        await sleep(200);
+        await popup.screenshot({ path: path.join(OUT, `popup-quiet-kind-${theme}.png`) });
+      }
+      // Whatever the person picks gets saved. Picking Just count again saves nothing, since that's the default.
+      const choose = (v) =>
+        popup.evaluate((value) => {
+          const s = document.querySelector('select[data-pattern="phone_number"]');
+          s.value = value;
+          s.dispatchEvent(new Event("change"));
+        }, v);
+      // The background is what actually saves the choice, so it needs the same quiet-pattern patch the popup got
+      // while this runs. I put its own copy back afterwards, since it outlives this check.
+      const before = await ctx.worker.evaluate(
+        () => globalThis.Clotr.PATTERNS.find((p) => p.id === "phone_number").start,
+      );
+      await ctx.worker.evaluate(quiet);
+      let chosen, back;
+      try {
+        await choose("warn");
+        await sleep(300);
+        chosen = (await store.get(ctx, "responses")).responses || {};
+        await choose("log");
+        await sleep(300);
+        back = (await store.get(ctx, "responses")).responses || {};
+      } finally {
+        await ctx.worker.evaluate((start) => {
+          const p = globalThis.Clotr.PATTERNS.find((x) => x.id === "phone_number");
+          if (start === undefined) delete p.start;
+          else p.start = start;
+        }, before);
+      }
+      await popup.close();
+      await store.set(ctx, { advanced: false });
+
+      expect(
+        shown.value === "log" && !shown.changed && shown.label === "Just count (default)",
+        `the quiet kind's row: ${JSON.stringify(shown)}`,
+      );
+      expect(
+        shown.personal[0] === "default" && shown.personal[1] === "Default (warn, a few just count)",
+        `the group with a quiet kind: ${JSON.stringify(shown.personal)}`,
+      );
+      expect(shown.credentials === "Default (warn)", `a group without one: ${shown.credentials}`);
+      expect(chosen.phone_number === "warn", `Warn chosen: ${JSON.stringify(chosen)}`);
+      expect(!("phone_number" in back), `Just count chosen again: ${JSON.stringify(back)}`);
+    },
+  );
 
   await check(
     "G1",
@@ -790,9 +924,9 @@ module.exports = async function (env) {
     "S2",
     "A site added on huggingface.co runs Clotr only in the chosen section, not the whole site",
     async () => {
-      // Regression (2026-09-24): protecting one Hugging Face page covered all of huggingface.co.
-      // The permission prompt can't be clicked in a test, so the grant is simulated in the worker;
-      // what's checked is the registration that decides where Clotr runs.
+      // Protecting one Hugging Face page must not cover all of huggingface.co. A test can't click the real
+      // permission prompt, so I simulate the grant in the worker and check the registration that actually
+      // decides where Clotr runs.
       const matches = await ctx.worker.evaluate(async () => {
         const realGetAll = chrome.permissions.getAll;
         chrome.permissions.getAll = async () => ({ origins: ["https://huggingface.co/*"] });
@@ -820,7 +954,7 @@ module.exports = async function (env) {
       items: [...document.querySelectorAll("#builtin-sites li")].map((li) => li.textContent),
     }));
     await popup.close();
-    expect(got.count === "18" && got.items.length === 18, `count ${got.count}, ${got.items.length} items`);
+    expect(got.count === "19" && got.items.length === 19, `count ${got.count}, ${got.items.length} items`);
     expect(got.items.includes("ChatGPT — chatgpt.com, chat.openai.com"), `items: ${got.items.slice(0, 3).join(" | ")}`);
   });
 
@@ -965,7 +1099,7 @@ module.exports = async function (env) {
     }),
   );
 
-  // Office documents are zip files of XML. A minimal zip writer for test fixtures (stored or deflated).
+  // Office documents are really zip files full of XML, so this is a minimal zip writer for test fixtures.
   function makeZip(file, entries) {
     const zlib = require("zlib");
     const parts = [];
@@ -1201,8 +1335,8 @@ module.exports = async function (env) {
         lag < 500 && Date.now() - t0 < 8000,
         `page stalled: event loop ${Math.round(lag)} ms, total ${Date.now() - t0} ms`,
       );
-      // Deleted without waiting: on Windows the browser keeps the uploaded file open, and a
-      // synchronous delete then blocks this test for seconds (that was R8s's "stall", not the page).
+      // I don't wait for this delete, because on Windows the browser keeps the uploaded file open for a while,
+      // and a synchronous delete would just block the test instead of catching a real stall in the page.
       fs.rm(file, { force: true, maxRetries: 10, retryDelay: 500 }, () => {});
       await typeText(page, "call me at 555-555-0123");
       expect(await waitForNotice(page), "Clotr stopped working after the hostile PDF");
@@ -1228,5 +1362,900 @@ module.exports = async function (env) {
       }),
   );
 
-  Object.assign(env, { docxXml, makeZip }); // used by later sections
+  // ---------- Ask before sending, for an attached file: the send waits for an answer ----------
+  // A made-up medical record number in a made-up file. Neither one may ever end up in storage.
+  const MRN = "447182093";
+  const MRN_FILE = "lab-results.txt";
+  TYPED_VALUES.add(MRN);
+  TYPED_VALUES.add(MRN_FILE);
+  // Each check writes its files into its own folder. I remove that folder without waiting afterwards, since on
+  // Windows the browser keeps an uploaded file open for a while.
+  const holdDir = (name) => {
+    const dir = path.join(OUT, `file-hold-${name}`);
+    fs.mkdirSync(dir, { recursive: true });
+    return dir;
+  };
+  const dropDir = (dir) => fs.rm(dir, { recursive: true, force: true, maxRetries: 10, retryDelay: 500 }, () => {});
+  async function attachText(page, dir, name, text) {
+    const file = path.join(dir, name);
+    fs.writeFileSync(file, text);
+    await (await page.$("#attach")).uploadFile(file);
+  }
+  const attachMrn = (page, dir) => attachText(page, dir, MRN_FILE, `Patient notes\nMRN: ${MRN}\n`);
+  // Shoots the dialog or corner note the way people actually see it, at a phone size and a desktop size, in
+  // both themes.
+  async function holdShots(page, name) {
+    for (const [width, height] of [
+      [380, 700],
+      [1280, 800],
+    ])
+      for (const theme of ["light", "dark"])
+        await shotAt(page, `${name}-${width}-${theme}.png`, { width, height, theme });
+    await page.emulateMediaFeatures([{ name: "prefers-color-scheme", value: "light" }]);
+    await page.setViewport({ width: 1000, height: 700 });
+  }
+  const buttonsOf = (ui) => (ui?.buttons || []).map((b) => b.text).join("/");
+  // Stands in for Clotr's own file reader so a check can force it to be slow, to hang forever, or to throw.
+  // Each read is counted too, so a check can wait until Clotr has actually started reading the file.
+  const READS = {
+    slow: (ms) => `new Promise((r) => setTimeout(r, ${ms})).then(() => real(f))`,
+    never: () => "new Promise(() => {})",
+    broken: () => 'Promise.reject(new Error("test: the reader broke"))',
+  };
+  const stubReader = (page, kind, ms = 0) =>
+    evalInClotr(
+      page,
+      `(() => { const real = globalThis.Clotr.readAttachment; globalThis.__clotrReads = 0; globalThis.Clotr.readAttachment = (f) => { globalThis.__clotrReads++; return ${READS[kind](ms)}; }; return true; })()`,
+    );
+  const readStarted = async (page) =>
+    expect(
+      await waitFor(() => evalInClotr(page, "globalThis.__clotrReads > 0"), 3000),
+      "Clotr never started reading the file",
+    );
+
+  await check(
+    "R9",
+    "Ask before sending, in an attached file: Enter holds the message; the dialog names the file, masks what's in it and says the site may already have a copy; Enter goes back",
+    () =>
+      withSite(ctx, "chatgpt", async (page) => {
+        await resetState(ctx, { medical_record: "block" });
+        const dir = holdDir("r9");
+        try {
+          await attachMrn(page, dir);
+          await sleep(800);
+          expect(!(await readDialog(page)), "the dialog opened before anything was sent");
+          await typeText(page, "what do these numbers mean?");
+          await pressEnter(page);
+          const dialog = await waitForDialog(page);
+          expect(
+            /This file looks private/.test(dialog?.text || "") && dialog.text.includes(MRN_FILE),
+            `dialog: ${dialog?.text} LOGS: ${page.logs.slice(-4).join(" || ")}`,
+          );
+          expect(
+            /Medical Record Number/.test(dialog.text) && !dialog.text.includes(MRN),
+            `not listed, or not masked: ${dialog.text}`,
+          );
+          expect(/may already have a copy/.test(dialog.text), `no word about the upload: ${dialog.text}`);
+          expect(buttonsOf(dialog) === "Send with the file/Go back to remove it", `buttons: ${buttonsOf(dialog)}`);
+          expect((await sentMessages(page)).length === 0, "sent while the file was held");
+          await page.keyboard.press("Enter"); // a habit press right after the dialog appeared does nothing
+          await sleep(100);
+          expect(await readDialog(page), "an Enter right after the dialog appeared chose for the user");
+          await holdShots(page, "file-hold");
+          await page.keyboard.press("Enter");
+          await sleep(300);
+          expect(!(await readDialog(page)), "Enter didn't go back to the message");
+          expect((await sentMessages(page)).length === 0, "Enter sent the file");
+          const focused = await page.evaluate(() => document.activeElement?.id);
+          expect(focused === "prompt-textarea", `focus after going back: ${focused}`);
+        } finally {
+          dropDir(dir);
+        }
+      }),
+  );
+
+  await check(
+    "R9b",
+    "The next send asks 'Is the file off?' (Esc goes back); It's off, send sends it and counts it as taken out; nothing about the file is stored",
+    () =>
+      withSite(ctx, "chatgpt", async (page) => {
+        await resetState(ctx, { medical_record: "block" });
+        const dir = holdDir("r9b");
+        try {
+          await attachMrn(page, dir);
+          await typeText(page, "what do these numbers mean?");
+          await sleep(800);
+          await pressEnter(page);
+          expect(await waitForDialog(page), "no dialog for the file");
+          await clickDialogButton(page, "Go back to remove it");
+          expect(!(await readDialog(page)), "Go back didn't close the dialog");
+          await pressEnter(page);
+          const off = await waitForDialog(page);
+          expect(
+            /Is the file off\?/.test(off?.text || "") &&
+              off.text.includes(MRN_FILE) &&
+              /takes your word/.test(off.text),
+            `second ask: ${off?.text}`,
+          );
+          expect(
+            buttonsOf(off) === "Send with the file/It's off, send/Go back to my message (Esc)",
+            `buttons: ${buttonsOf(off)}`,
+          );
+          await holdShots(page, "file-off");
+          await sleep(700);
+          await page.keyboard.press("Escape");
+          await sleep(200);
+          expect(!(await readDialog(page)), "Esc didn't go back");
+          expect((await sentMessages(page)).length === 0, "Esc sent the message");
+          await pressEnter(page);
+          expect(/Is the file off\?/.test((await waitForDialog(page))?.text || ""), "the next send didn't ask again");
+          await sleep(700);
+          await page.keyboard.press("Enter"); // Enter: It's off, send
+          const sent = await waitFor(async () => ((await sentMessages(page)).length === 1 ? true : null), 2000);
+          expect(sent, `It's off, send didn't send: ${JSON.stringify(await sentMessages(page))}`);
+          const events = await waitFor(async () => {
+            const ev = await store.events(ctx);
+            return ev.length ? ev : null;
+          }, 3000);
+          expect(
+            events?.length === 1 &&
+              events[0].type === "medical_record" &&
+              events[0].action === "redacted" &&
+              /^[0-9a-f]{16}$/.test(events[0].fp),
+            `events: ${JSON.stringify(events)}`,
+          );
+          const all = JSON.stringify([
+            await store.get(ctx, null),
+            await ctx.worker.evaluate(() => chrome.storage.session.get(null)),
+          ]);
+          expect(!all.includes(MRN) && !all.includes("lab-results"), "the number or the file's name was stored");
+        } finally {
+          dropDir(dir);
+        }
+      }),
+  );
+
+  await check("R9c", "Send with the file sends the message the way it was sent and counts the file as allowed", () =>
+    withSite(ctx, "chatgpt", async (page) => {
+      await resetState(ctx, { medical_record: "block" });
+      const dir = holdDir("r9c");
+      try {
+        await attachMrn(page, dir);
+        await typeText(page, "what do these numbers mean?");
+        await sleep(800);
+        await pressEnter(page);
+        expect(await waitForDialog(page), "no dialog for the file");
+        await clickDialogButton(page, "Send with the file");
+        const sent = await waitFor(async () => ((await sentMessages(page)).length === 1 ? true : null), 2000);
+        expect(sent, `Send with the file didn't send: ${JSON.stringify(await sentMessages(page))}`);
+        expect(!(await readDialog(page)), "the dialog stayed open");
+        const events = await waitFor(async () => {
+          const ev = await store.events(ctx);
+          return ev.length ? ev : null;
+        }, 3000);
+        expect(
+          events?.length === 1 && events[0].type === "medical_record" && events[0].action === "allowed",
+          `events: ${JSON.stringify(events)}`,
+        );
+      } finally {
+        dropDir(dir);
+      }
+    }),
+  );
+
+  await check(
+    "R9d",
+    "A file still being read when you send: 'Checking your file', then the dialog; a read that never ends lets the message go within 3 seconds",
+    () =>
+      withSite(ctx, "chatgpt", async (page) => {
+        await resetState(ctx, { medical_record: "block" });
+        const dir = holdDir("r9d");
+        try {
+          await stubReader(page, "slow", 2500); // a big PDF takes this long
+          await typeText(page, "what do these numbers mean?");
+          await sleep(600);
+          await attachMrn(page, dir);
+          await readStarted(page);
+          await pressEnter(page);
+          const note = await waitFor(async () => {
+            const n = await readNotice(page);
+            return n && /Checking your file/.test(n.text) ? n : null;
+          }, 2000);
+          expect(note?.text.includes(MRN_FILE), `checking note: ${note?.text}`);
+          expect((await sentMessages(page)).length === 0, "sent before the file was checked");
+          await holdShots(page, "file-checking");
+          const dialog = await waitFor(() => readDialog(page), 3000);
+          expect(/This file looks private/.test(dialog?.text || ""), `after the check: ${dialog?.text}`);
+          expect(!/Checking your file/.test((await readNotice(page))?.text || ""), "the checking note stayed");
+          expect((await sentMessages(page)).length === 0, "sent with the file held");
+        } finally {
+          dropDir(dir);
+        }
+      }).then(() =>
+        withSite(ctx, "chatgpt", async (page) => {
+          await resetState(ctx, { medical_record: "block" });
+          const dir = holdDir("r9d2");
+          try {
+            await stubReader(page, "never");
+            await typeText(page, "what do these numbers mean?");
+            await sleep(600);
+            await attachMrn(page, dir);
+            await readStarted(page);
+            const t0 = Date.now();
+            await pressEnter(page);
+            const sent = await waitFor(async () => ((await sentMessages(page)).length === 1 ? true : null), 4500);
+            const ms = Date.now() - t0;
+            expect(sent && ms >= 2500, `sent: ${Boolean(sent)}, after ${ms} ms`);
+            expect(!(await readDialog(page)), "a dialog opened for a file that was never read");
+          } finally {
+            dropDir(dir);
+          }
+        }),
+      ),
+  );
+
+  await check(
+    "R9e",
+    "A file sent with nothing typed, by the send button, is held too; Go back puts you in the chat box",
+    () =>
+      withSite(ctx, "chatgpt", async (page) => {
+        await resetState(ctx, { medical_record: "block" });
+        const dir = holdDir("r9e");
+        try {
+          await attachMrn(page, dir);
+          await sleep(800);
+          await clickSend(page);
+          const dialog = await waitForDialog(page);
+          expect(/This file looks private/.test(dialog?.text || ""), `dialog: ${dialog?.text}`);
+          expect((await sentMessages(page)).length === 0, "the file went without a question");
+          await clickDialogButton(page, "Go back to remove it");
+          const focused = await page.evaluate(() => document.activeElement?.id);
+          expect(focused === "prompt-textarea", `focus after going back: ${focused}`);
+          await clickSend(page);
+          expect(/Is the file off\?/.test((await waitForDialog(page))?.text || ""), "the next send didn't ask again");
+          await clickDialogButton(page, "Send with the file");
+          const sent = await waitFor(async () => {
+            const s = await sentMessages(page);
+            return s.length ? s : null;
+          }, 2000);
+          expect(sent?.length === 1 && sent[0] === `[${MRN_FILE}]`, `sent: ${JSON.stringify(sent)}`);
+        } finally {
+          dropDir(dir);
+        }
+      }),
+  );
+
+  await check(
+    "R9f",
+    "Nothing set to Ask before sending: an attached file still only gets the corner note, and Enter sends",
+    () =>
+      withSite(ctx, "chatgpt", async (page) => {
+        await resetState(ctx, {});
+        const dir = holdDir("r9f");
+        try {
+          await attachMrn(page, dir);
+          const notice = await waitForNotice(page);
+          expect(
+            notice?.text.includes(MRN_FILE) && /Medical Record Number/.test(notice.text),
+            `notice: ${notice?.text}`,
+          );
+          expect(!(await readDialog(page)), "a dialog opened");
+          await typeText(page, "what do these numbers mean?");
+          await pressEnter(page);
+          await sleep(400);
+          expect(!(await readDialog(page)), "the send was held");
+          expect((await sentMessages(page)).length === 1, "Enter didn't send");
+        } finally {
+          dropDir(dir);
+        }
+      }),
+  );
+
+  // ---------- Pictures: Clotr can't read the words in a picture, and says so once per AI site ----------
+  // A real 1×1 PNG. Each picture gets its own name, and none of those names may ever end up in storage.
+  const PNG = Buffer.from(
+    "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==",
+    "base64",
+  );
+  const pictures = [];
+  const picture = (name) => {
+    const file = path.join(OUT, name);
+    fs.writeFileSync(file, PNG);
+    TYPED_VALUES.add(name);
+    pictures.push(file);
+    return file;
+  };
+  const attach = async (page, file) => (await page.$("#attach")).uploadFile(file);
+  // Drops a picture onto the page, the way a drag from the desktop would, for pages that have no file input.
+  const dropPicture = (page, name) => {
+    TYPED_VALUES.add(name);
+    return page.evaluate(
+      (b64, n) => {
+        const bytes = Uint8Array.from(atob(b64), (c) => c.charCodeAt(0));
+        const dt = new DataTransfer();
+        dt.items.add(new File([bytes], n, { type: "image/png" }));
+        document.body.dispatchEvent(new DragEvent("drop", { dataTransfer: dt, bubbles: true, cancelable: true }));
+      },
+      PNG.toString("base64"),
+      name,
+    );
+  };
+  const pictureNote = async (page) => {
+    const n = await readNotice(page);
+    return n && /can't read pictures/.test(n.text) ? n : null;
+  };
+  const waitForPictureNote = (page) => waitFor(() => pictureNote(page), 3000);
+  const noted = async () => (await store.get(ctx, "picturesNoted")).picturesNoted || {};
+  const forgetNotes = () => ctx.worker.evaluate(() => enqueue(() => chrome.storage.local.remove("picturesNoted")));
+  const NOTE_TEXT =
+    "ℹ️ Clotr can't read pictures | Clotr checks the words you type and the text in files you attach. It can't read " +
+    "the words in a picture or a screenshot, so look this one over for your details before you send it. | OK, I'll look";
+
+  await check(
+    "PIC1",
+    "The first picture on an AI site with nothing found in it: a note that Clotr can't read pictures, once per site",
+    async () => {
+      await resetState(ctx, {});
+      await forgetNotes();
+      try {
+        await withSite(ctx, "chatgpt", async (page) => {
+          await attach(page, picture("Screenshot PIC1 holiday plans.png"));
+          const note = await waitForPictureNote(page);
+          expect(note?.text.startsWith(`${NOTE_TEXT} | `), `note: ${note?.text}`);
+          expect(note.buttons.length === 1, `buttons: ${note.buttons.map((b) => b.text)}`);
+          expect(
+            await waitFor(async () => (JSON.stringify(await noted()) === '{"chatgpt.com":true}' ? true : null), 3000),
+            `stored: ${JSON.stringify(await noted())}`,
+          );
+          // Run axe and take screenshots at a phone width and a desktop width, in both themes.
+          const problems = [];
+          for (const theme of ["dark", "light"]) {
+            await page.emulateMediaFeatures([{ name: "prefers-color-scheme", value: theme }]);
+            await sleep(150);
+            problems.push(...((await auditShadow(page, "CLOTR-NOTICE")) || []).map((p) => `${theme}: ${p}`));
+            for (const width of [380, 1040]) {
+              await page.setViewport({ width, height: 640 });
+              await sleep(200);
+              await page.screenshot({ path: path.join(OUT, `picture-note-${theme}-${width}.png`) });
+            }
+          }
+          expect(!problems.length, problems.slice(0, 3).join(" | "));
+          await clickDialogButton(page, "OK, I'll look", readNotice);
+          expect(!(await readNotice(page)), "the note stayed after OK");
+          await attach(page, picture("Screenshot PIC1 second.png"));
+          await expectNoUI(page, "a second picture on the same site");
+        });
+        await withSite(ctx, "chatgpt", async (page) => {
+          await attach(page, picture("Screenshot PIC1 third.png"));
+          await expectNoUI(page, "the same site in a new tab");
+        });
+        await withSite(ctx, "claude", async (page) => {
+          await dropPicture(page, "Screenshot PIC1 dropped.png");
+          expect(await waitForPictureNote(page), "no note on another AI site");
+        });
+        const sites = await waitFor(async () => {
+          const list = Object.keys(await noted())
+            .sort()
+            .join();
+          return list === "chatgpt.com,claude.ai" ? list : null;
+        }, 3000);
+        expect(sites, `stored: ${JSON.stringify(await noted())}`);
+      } finally {
+        await forgetNotes();
+      }
+    },
+  );
+
+  await check(
+    "PIC2",
+    "The picture note waits while a warning or the dialog is open; never on an email or chat app, or while paused",
+    async () => {
+      await forgetNotes();
+      try {
+        // A warning is already open here. It stays on screen, and the picture note only shows up once it's closed.
+        await resetState(ctx, {});
+        await withSite(ctx, "chatgpt", async (page) => {
+          await typeText(page, "call me at 555-555-0123");
+          expect((await waitForNotice(page))?.text.includes("Phone Number"), "no warning");
+          await attach(page, picture("PIC2 while warned.png"));
+          await sleep(1200);
+          expect((await readNotice(page))?.text.includes("Phone Number"), "the note replaced the warning");
+          expect(!Object.keys(await noted()).length, "marked as shown while it waited");
+          await clickDialogButton(page, "Leave it in", readNotice);
+          await attach(page, picture("PIC2 after the warning.png"));
+          expect(await waitForPictureNote(page), "no note once the warning was closed");
+        });
+        await forgetNotes();
+        // Here the blocking dialog is open instead, because Ask before sending held the send.
+        await resetState(ctx);
+        await withSite(ctx, "chatgpt", async (page) => {
+          await typeText(page, `key ${KEY}`);
+          await pressEnter(page);
+          expect(await waitForDialog(page), "no dialog");
+          await attach(page, picture("PIC2 while asked.png"));
+          await sleep(1200);
+          expect(!(await pictureNote(page)), "the note showed under the dialog");
+          expect(!Object.keys(await noted()).length, "marked as shown while the dialog was open");
+        });
+        // And it never shows at all on an email or chat app, or on a site the person paused.
+        await resetState(ctx, {});
+        await store.set(ctx, { siteKinds: { "chatgpt.com": "everyday" } });
+        await withSite(ctx, "chatgpt", async (page) => {
+          await attach(page, picture("PIC2 to people.png"));
+          await expectNoUI(page, "a picture on an email or chat app");
+        });
+        await store.set(ctx, { siteKinds: {}, paused: { "chatgpt.com": true } });
+        await withSite(ctx, "chatgpt", async (page) => {
+          await attach(page, picture("PIC2 paused.png"));
+          await expectNoUI(page, "a picture on a paused site");
+        });
+        expect(!Object.keys(await noted()).length, `stored: ${JSON.stringify(await noted())}`);
+      } finally {
+        await store.set(ctx, { siteKinds: {}, paused: {} });
+        await forgetNotes();
+      }
+    },
+  );
+
+  await check(
+    "PIC3",
+    "Show first-time tips again brings the picture note back; What Clotr stores lists its sites, names only",
+    async () => {
+      await resetState(ctx, {});
+      await store.set(ctx, { picturesNoted: { "chatgpt.com": true, "claude.ai": true } });
+      try {
+        const stored = await openExtPage(ctx, "stored.html");
+        try {
+          const other = await waitFor(
+            () => stored.$eval("#other", (n) => (/picture note/.test(n.innerText) ? n.innerText : null)),
+            3000,
+          );
+          expect(/The picture note was shown on\s+chatgpt\.com, claude\.ai/.test(other || ""), `stores: ${other}`);
+        } finally {
+          await stored.close();
+        }
+        await withSite(ctx, "chatgpt", async (page) => {
+          await attach(page, picture("PIC3 before.png"));
+          await expectNoUI(page, "a site that already had the note");
+          const popup = await openPopup(ctx);
+          try {
+            await popup.$eval("#tips-again", (b) => b.click());
+            expect(
+              await waitFor(async () => (Object.keys(await noted()).length ? null : true), 3000),
+              "Show first-time tips again left the picture note's sites",
+            );
+          } finally {
+            await popup.close();
+          }
+          await page.bringToFront();
+          // The tab has to hear about the change and re-read its settings before a new picture gets a note, and
+          // that can be slow on a busy computer, so I retry with a new picture a few times.
+          let note = null;
+          for (let i = 1; i <= 3 && !note; i++) {
+            await sleep(600);
+            await attach(page, picture(`PIC3 after ${i}.png`));
+            note = await waitForPictureNote(page);
+          }
+          expect(note, "no note after Show first-time tips again");
+        });
+      } finally {
+        await forgetNotes();
+      }
+    },
+  );
+
+  await check("PIC4", "An SVG picture is text inside: an email in it gets the file warning, not the picture note", () =>
+    withSite(ctx, "chatgpt", async (page) => {
+      await resetState(ctx, {});
+      await forgetNotes();
+      const email = "svg.pic4.rivera@gmail.com";
+      TYPED_VALUES.add(email);
+      const file = path.join(OUT, "PIC4 contact card.svg");
+      fs.writeFileSync(
+        file,
+        `<svg xmlns="http://www.w3.org/2000/svg" width="300" height="60"><path d="M 555 555 0123 Z"/>` +
+          `<text x="8" y="30">Write to ${email}</text></svg>`,
+      );
+      pictures.push(file);
+      await attach(page, file);
+      const notice = await waitForNotice(page);
+      expect(
+        /PIC4 contact card\.svg/.test(notice?.text || "") && /Email Address/.test(notice.text),
+        `notice: ${notice?.text}`,
+      );
+      expect(!/Phone Number|can't read pictures/.test(notice.text), `notice: ${notice.text}`);
+      expect(!Object.keys(await noted()).length, "an SVG counted as a picture");
+      for (const f of pictures) fs.rmSync(f, { force: true });
+    }),
+  );
+
+  // ---------- A photo's hidden location: the place a camera saved inside the file ----------
+  // tools/make-picture-fixtures.js builds these pictures byte by byte, using public landmarks rather than a real
+  // photo. None of the file names or place values may ever end up in storage.
+  const fx = require("../../../tools/make-picture-fixtures.js");
+  const placeForms = (p) => [
+    `${p.lat.toFixed(3)},${p.lon.toFixed(3)}`,
+    String(p.lat),
+    String(p.lon),
+    p.lat.toFixed(4),
+    p.lon.toFixed(4),
+  ];
+  for (const p of Object.values(fx.PLACES)) placeForms(p).forEach((v) => TYPED_VALUES.add(v));
+  const madePictures = [];
+  const pictureFile = (name, bytes) => {
+    const file = path.join(OUT, name);
+    fs.writeFileSync(file, bytes);
+    TYPED_VALUES.add(name);
+    madePictures.push(file);
+    return file;
+  };
+  // I don't wait for this delete, since on Windows the browser keeps an uploaded file open for a while.
+  const dropMadePictures = () => {
+    for (const f of madePictures.splice(0)) fs.rm(f, { force: true, maxRetries: 10, retryDelay: 500 }, () => {});
+  };
+  const PLACE_LEAD = (name) =>
+    `The photo “${name}” has the place it was taken saved inside it. | If you send it, that place can go with it.`;
+  const PLACE_HINT =
+    "To keep the place private, take the photo off before you send. A screenshot of the photo doesn't carry the place.";
+  const HONEST = "Clotr can't read the words in a picture, so look it over yourself.";
+  const markNoted = async () => {
+    await ctx.worker.evaluate(() =>
+      enqueue(() => chrome.storage.local.set({ picturesNoted: { "chatgpt.com": true } })),
+    );
+    await sleep(300);
+  };
+
+  await check(
+    "PIC5",
+    "A photo with the place it was taken inside: the Photo Location warning names the kind, never the place; OK records it",
+    () =>
+      withSite(ctx, "chatgpt", async (page) => {
+        await resetState(ctx, {});
+        await forgetNotes();
+        try {
+          await attach(page, pictureFile("IMG_PIC5.jpg", fx.jpegWithGps(fx.PLACES.liberty)));
+          const n = await waitForNotice(page);
+          expect(
+            n?.text.startsWith(`⚠️ Heads up | ${PLACE_LEAD("IMG_PIC5.jpg")} | ${PLACE_HINT} | ${HONEST} | OK`),
+            `notice: ${n?.text}`,
+          );
+          // The only digits anywhere in the notice should be the ones in the file's own name.
+          expect(!/\d/.test(n.text.replaceAll("IMG_PIC5.jpg", "")), `notice: ${n.text}`);
+          expect(/Photo Location/.test(n.text) && !/lines?\b/.test(n.text), `notice: ${n.text}`);
+          // Run axe and take screenshots in dark then light, at a phone width and a desktop width.
+          const problems = [];
+          for (const theme of ["dark", "light"]) {
+            await page.emulateMediaFeatures([{ name: "prefers-color-scheme", value: theme }]);
+            await sleep(150);
+            problems.push(...((await auditShadow(page, "CLOTR-NOTICE")) || []).map((p) => `${theme}: ${p}`));
+            for (const width of [380, 1040]) {
+              await page.setViewport({ width, height: 640 });
+              await sleep(200);
+              await page.screenshot({ path: path.join(OUT, `picture-location-${theme}-${width}.png`) });
+            }
+          }
+          expect(!problems.length, problems.slice(0, 3).join(" | "));
+          await clickDialogButton(page, "OK", readNotice);
+          const events = await waitFor(async () => {
+            const e = await store.events(ctx);
+            return e.length ? e : null;
+          }, 3000);
+          expect(
+            events?.length === 1 &&
+              events[0].type === "photo_location" &&
+              events[0].action === "allowed" &&
+              events[0].name === "Photo Location" &&
+              /^[0-9a-f]{16,}$/.test(events[0].fp),
+            `events: ${JSON.stringify(events)}`,
+          );
+          await sleep(300);
+          expect(!(await readNotice(page)), "a note or warning came back after OK");
+          expect(!Object.keys(await noted()).length, "the picture note was marked shown for a picture that warned");
+        } finally {
+          dropMadePictures();
+        }
+      }),
+  );
+
+  await check(
+    "PIC6",
+    "HEIC, PNG, WebP, AVIF and TIFF with a place: the warning; a JPEG at 0,0, one without a place, or a screenshot: nothing",
+    async () => {
+      await resetState(ctx, {});
+      await markNoted(); // the first-picture note was shown here already
+      // Five kept pictures in a row would normally make Clotr offer to warn less (a separate check covers that
+      // offer), but this check is about the file formats, so I turn the offer down ahead of time.
+      await store.set(ctx, { relaxDeclined: { photo_location: Date.now() } });
+      try {
+        await withSite(ctx, "chatgpt", async (page) => {
+          const { liberty, opera, eiffel, bigBen, tokyo } = fx.PLACES;
+          for (const [name, bytes] of [
+            ["IMG_PIC6.HEIC", fx.heifWithGps({ tiff: fx.tiffGps(opera) })],
+            ["PIC6 photo.png", fx.pngWithGps(liberty)],
+            ["PIC6 photo.webp", fx.webpWithGps(eiffel)],
+            ["PIC6 photo.avif", fx.heifWithGps({ brand: "avif", ilocVersion: 1, tiff: fx.tiffGps(bigBen) })],
+            ["PIC6 scan.tiff", fx.tiffGps(tokyo)],
+          ]) {
+            await attach(page, pictureFile(name, bytes));
+            const n = await waitFor(async () => {
+              const w = await readNotice(page);
+              return w?.text.includes(PLACE_LEAD(name)) ? w : null;
+            }, 5000);
+            expect(n, `${name}: ${(await readNotice(page))?.text}`);
+            await clickDialogButton(page, "OK", readNotice);
+          }
+          for (const [name, bytes] of [
+            ["PIC6 zero.jpg", fx.jpegWithGps({ lat: 0, lon: 0 })],
+            ["PIC6 no place.jpg", fx.BASE.jpeg],
+            ["Screenshot PIC6.png", fx.BASE.png],
+            // This is the same place as a photo already kept in this message, so it shouldn't warn twice.
+            ["PIC6 same place.jpg", fx.jpegWithGps({ lat: opera.lat + 0.0001, lon: opera.lon })],
+          ]) {
+            await attach(page, pictureFile(name, bytes));
+            await expectNoUI(page, name);
+          }
+          // Each OK is recorded through the background's queue, which can lag on a busy computer, so I wait for it.
+          const want = Array(5).fill("photo_location:allowed").join();
+          const kinds = async () => (await store.events(ctx)).map((e) => `${e.type}:${e.action}`).join();
+          expect(
+            await waitFor(async () => ((await kinds()) === want ? true : null), 5000),
+            `events: ${await kinds()} LOGS: ${page.logs.slice(-12).join(" || ")}`,
+          );
+        });
+      } finally {
+        dropMadePictures();
+        await forgetNotes();
+      }
+    },
+  );
+
+  // The background answers with a "warn less?" offer after a kept warning, and that answer can arrive late on a
+  // busy computer. If a new picture's own warning is already showing when it arrives, the offer must wait behind
+  // it rather than replace it. I delay the background's answer here so that late case happens every time.
+  await check(
+    "PIC6b",
+    "A late 'Warn less?' offer never replaces the next picture's own warning; it comes after that warning is answered",
+    async () => {
+      await resetState(ctx, {});
+      await markNoted();
+      // The warning has already been kept twice recently, so keeping it one more time makes the offer due.
+      await store.set(ctx, { ignores: { photo_location: [Date.now() - 60000, Date.now() - 30000] } });
+      await ctx.worker.evaluate(() => {
+        globalThis.__noteIgnored = globalThis.noteIgnored;
+        globalThis.noteIgnored = async (types) => {
+          await new Promise((r) => setTimeout(r, 1500));
+          return globalThis.__noteIgnored(types);
+        };
+      });
+      const warningFor = (page, name) =>
+        waitFor(async () => {
+          const n = await readNotice(page);
+          return n?.text.includes(PLACE_LEAD(name)) ? n : null;
+        }, 5000);
+      try {
+        await withSite(ctx, "chatgpt", async (page) => {
+          const { liberty, tokyo } = fx.PLACES;
+          await attach(page, pictureFile("PIC6b first.jpg", fx.jpegWithGps(liberty)));
+          expect(await warningFor(page, "PIC6b first.jpg"), "no warning for the first picture");
+          await clickDialogButton(page, "OK", readNotice); // kept a third time: the offer is on its way
+          await attach(page, pictureFile("PIC6b second.jpg", fx.jpegWithGps(tokyo)));
+          expect(await warningFor(page, "PIC6b second.jpg"), "no warning for the second picture");
+          await sleep(2500); // the late offer has arrived by now
+          const n = await readNotice(page);
+          expect(n?.text.includes(PLACE_LEAD("PIC6b second.jpg")), `the warning was replaced: ${n?.text}`);
+          await clickDialogButton(page, "OK", readNotice);
+          // Now that the warning's been answered, the offer can finally show up.
+          const offer = await waitFor(async () => {
+            const o = await readNotice(page);
+            return o?.text.includes("Warn less about Photo Location?") ? o : null;
+          }, 5000);
+          expect(offer, `no offer after the warning: ${(await readNotice(page))?.text}`);
+          await clickDialogButton(page, "Keep warning", readNotice);
+        });
+      } finally {
+        await ctx.worker.evaluate(() => {
+          if (globalThis.__noteIgnored) globalThis.noteIgnored = globalThis.__noteIgnored;
+          delete globalThis.__noteIgnored;
+        });
+        dropMadePictures();
+        await forgetNotes();
+      }
+    },
+  );
+
+  await check(
+    "PIC7",
+    "On an email or chat app the place warning talks about people; Just count for photo locations: counted, no warning",
+    async () => {
+      await resetState(ctx, {});
+      await forgetNotes();
+      try {
+        await store.set(ctx, { siteKinds: { "chatgpt.com": "everyday" } });
+        await sleep(300);
+        await withSite(ctx, "chatgpt", async (page) => {
+          await attach(page, pictureFile("IMG_PIC7.jpg", fx.jpegWithGps(fx.PLACES.opera)));
+          const n = await waitForNotice(page);
+          expect(
+            n?.text.includes(
+              "The photo “IMG_PIC7.jpg” has the place it was taken saved inside it. | If you send it, the people who read it here can get that place too.",
+            ),
+            `notice: ${n?.text}`,
+          );
+          for (const theme of ["dark", "light"]) {
+            await page.emulateMediaFeatures([{ name: "prefers-color-scheme", value: theme }]);
+            await page.setViewport({ width: 380, height: 640 });
+            await sleep(200);
+            await page.screenshot({ path: path.join(OUT, `picture-location-people-${theme}-380.png`) });
+          }
+        });
+        await store.set(ctx, { siteKinds: {} });
+        await chooseResponse(ctx, "photo_location", "log");
+        await markNoted();
+        await withSite(ctx, "chatgpt", async (page) => {
+          await attach(page, pictureFile("IMG_PIC7b.jpg", fx.jpegWithGps(fx.PLACES.liberty)));
+          await expectNoUI(page, "a photo location set to Just count");
+          const counted = await waitFor(async () => {
+            const e = (await store.events(ctx)).filter((x) => x.action === "suppressed");
+            return e.length ? e : null;
+          }, 3000);
+          expect(
+            counted?.length === 1 && counted[0].type === "photo_location" && counted[0].fp,
+            `events: ${JSON.stringify(await store.events(ctx))}`,
+          );
+        });
+      } finally {
+        await store.set(ctx, { siteKinds: {}, responses: {} });
+        await forgetNotes();
+        dropMadePictures();
+      }
+    },
+  );
+
+  // ---------- File names that say "passport" ----------
+  await check(
+    "PIC8",
+    "passport-scan.jpg: ID or Document Picture; IMG_2041.jpg: nothing; a scanned w2-2025.pdf (no text): the warning",
+    async () => {
+      await resetState(ctx, {});
+      await markNoted();
+      try {
+        await withSite(ctx, "chatgpt", async (page) => {
+          await attach(page, pictureFile("passport-scan.jpg", fx.BASE.jpeg));
+          const n = await waitForNotice(page);
+          expect(
+            n?.text.startsWith(
+              "⚠️ Heads up | The picture “passport-scan.jpg” looks like a photo of an ID or document, going by its name. | " +
+                "If you send it, this AI gets it. | To keep it private, take the picture off before you send. | " +
+                `${HONEST} | OK`,
+            ),
+            `notice: ${n?.text}`,
+          );
+          expect(/ID or Document Picture/.test(n.text), `notice: ${n.text}`);
+          for (const theme of ["dark", "light"]) {
+            await page.emulateMediaFeatures([{ name: "prefers-color-scheme", value: theme }]);
+            for (const width of [380, 1040]) {
+              await page.setViewport({ width, height: 640 });
+              await sleep(200);
+              await page.screenshot({ path: path.join(OUT, `picture-id-${theme}-${width}.png`) });
+            }
+          }
+          await clickDialogButton(page, "OK", readNotice);
+          // This photo is named like a passport and has a place saved inside it, so one warning should mention both.
+          await attach(page, pictureFile("Passport photo page.jpg", fx.jpegWithGps(fx.PLACES.eiffel)));
+          const both = await waitForNotice(page);
+          expect(
+            both?.text.includes(
+              "The picture “Passport photo page.jpg” looks like a photo of an ID or document, going by its name, and has " +
+                "the place it was taken saved inside it.",
+            ) &&
+              /ID or Document Picture, Photo Location/.test(both.text) &&
+              !/\d/.test(both.text),
+            `notice: ${both?.text}`,
+          );
+          await clickDialogButton(page, "OK", readNotice);
+          await attach(page, pictureFile("IMG_2041.jpg", fx.BASE.jpeg));
+          await expectNoUI(page, "an ordinary photo name");
+          await attach(page, pictureFile("w2 notes.pdf", fx.pdf({ scanned: false })));
+          await expectNoUI(page, "a PDF with text in it is read, not judged by its name");
+          await attach(page, pictureFile("w2-2025.pdf", fx.pdf()));
+          const scan = await waitForNotice(page);
+          expect(
+            scan?.text.startsWith(
+              "⚠️ Heads up | The file “w2-2025.pdf” looks like a scan of an ID or document, going by its name. | " +
+                "If you send it, this AI gets it. | To keep it private, take the file off before you send. | " +
+                "Clotr can't read the words in a scan, so look it over yourself. | OK",
+            ),
+            `notice: ${scan?.text}`,
+          );
+          await clickDialogButton(page, "OK", readNotice);
+          const want = [
+            "id_picture:allowed:true",
+            "id_picture:allowed:true",
+            "photo_location:allowed:true",
+            "id_picture:allowed:true",
+          ].join();
+          const events = async () =>
+            (await store.events(ctx)).map((e) => `${e.type}:${e.action}:${Boolean(e.fp)}`).join();
+          expect(
+            await waitFor(async () => ((await events()) === want ? true : null), 5000),
+            `events: ${await events()}`,
+          );
+        });
+      } finally {
+        dropMadePictures();
+        await forgetNotes();
+      }
+    },
+  );
+
+  await check(
+    "PIC13",
+    "Hostile pictures (a 60,000 × 60,000 PNG, corrupt and truncated files, box loops, 25 MB): no hang, the chat keeps working",
+    async () => {
+      await resetState(ctx, {});
+      await markNoted();
+      try {
+        return await withSite(ctx, "chatgpt", async (page) => {
+          // Clotr's content script runs on the page's own main thread, so I watch for long tasks from here on.
+          await page.evaluate(() => {
+            window.__longTasks = [];
+            new PerformanceObserver((list) => {
+              for (const e of list.getEntries()) window.__longTasks.push(Math.round(e.duration));
+            }).observe({ type: "longtask", buffered: false });
+          });
+          const files = Object.entries(fx.hostile()).map(([name, bytes]) => pictureFile(`PIC13 ${name}`, bytes));
+          const input = await page.$("#attach");
+          const t0 = Date.now();
+          await input.uploadFile(...files); // all at once
+          await sleep(1500);
+          await expectNoUI(page, "hostile pictures");
+          // This 25 MB photo has its place saved in the first few bytes, so Clotr only needs to read the start
+          // of the file and should warn right away.
+          const big = pictureFile("IMG_PIC13 big.jpg", fx.bigJpeg(25));
+          const t1 = Date.now();
+          await input.uploadFile(big);
+          const n = await waitForNotice(page);
+          const warnedIn = Date.now() - t1;
+          expect(n?.text.includes(PLACE_LEAD("IMG_PIC13 big.jpg")), `notice: ${n?.text}`);
+          const lag = await page.evaluate(() => {
+            const s = performance.now();
+            return new Promise((r) => setTimeout(() => r(performance.now() - s), 0));
+          });
+          const long = await page.evaluate(() => window.__longTasks.filter((d) => d > 200));
+          expect(
+            lag < 200 && !long.length && warnedIn < 3000 && Date.now() - t0 < 10000,
+            `event loop ${Math.round(lag)} ms, long tasks ${long.join()}, warned in ${warnedIn} ms`,
+          );
+          // The chat should carry on working normally: a message sends right away, and Clotr still checks new text.
+          await clickDialogButton(page, "OK", readNotice);
+          await typeText(page, "what's the best way to back up photos?");
+          await pressEnter(page);
+          expect(
+            await waitFor(async () => ((await sentMessages(page)).length === 1 ? true : null), 2000),
+            "the message didn't send",
+          );
+          await typeText(page, "call me at 555-555-0123");
+          expect((await waitForNotice(page))?.text.includes("Phone Number"), "Clotr stopped checking what's typed");
+          return `warned about the 25 MB photo in ${warnedIn} ms; event loop ${Math.round(lag)} ms`;
+        });
+      } finally {
+        dropMadePictures();
+        await forgetNotes();
+      }
+    },
+  );
+
+  Object.assign(env, {
+    docxXml,
+    makeZip,
+    MRN,
+    MRN_FILE,
+    holdDir,
+    dropDir,
+    attachText,
+    attachMrn,
+    holdShots,
+    stubReader,
+    readStarted,
+  }); // used by later sections
 };

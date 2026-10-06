@@ -13,12 +13,16 @@
     // The AI "answers": a reply appears in the page, as on a real chat site (reply checks RP1-RP4).
     window.__reply = (text) => { const d = document.createElement("div"); d.className = "reply"; d.textContent = text; document.body.append(d); };
     const box = document.getElementById("prompt-textarea");
+    const attach = document.getElementById("attach");
+    // A message can be just an attached file (sites send it with an empty box): it's recorded by the files' names.
     function send() {
-      if (!box.value) return;
-      // Some sites ignore an Enter pressed too soon (Gemini did, M8). Tests set this to model it.
+      const files = [...attach.files].map((f) => f.name);
+      if (!box.value && !files.length) return;
+      // Some sites ignore an Enter pressed too soon (Gemini did). Tests set this to model it.
       if (window.__ignoreNextSend) { window.__ignoreNextSend = false; return; }
-      window.__sent.push(box.value);
+      window.__sent.push(box.value || `[${files.join(", ")}]`);
       box.value = "";
+      attach.value = "";
     }
     document.getElementById("composer").addEventListener("submit", (e) => { e.preventDefault(); send(); });
     box.addEventListener("keydown", (e) => {

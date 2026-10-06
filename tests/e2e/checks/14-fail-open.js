@@ -1,4 +1,4 @@
-// E2E checks: Fail open (D30): a broken Clotr never holds or loses a message. Run in order by ../run.js with one shared env (helpers from ../lib.js).
+// E2E checks: Fail open: a broken Clotr never holds or loses a message. Run in order by ../run.js with one shared env (helpers from ../lib.js).
 "use strict";
 
 module.exports = async function (env) {
@@ -29,14 +29,21 @@ module.exports = async function (env) {
     waitForDialog,
     waitForNotice,
     withSite,
+    MRN_FILE,
+    holdDir,
+    dropDir,
+    attachMrn,
+    stubReader,
+    readStarted,
   } = env;
   await check("FO1", "If detection itself breaks, Enter and the send button still send", () =>
     withSite(ctx, "chatgpt", async (page) => {
       await resetState(ctx); // the user chose Block for keys
       const before = ctx.problems.length;
-      // Break a built-in that every scan uses, in Clotr's world only. (Pushing a failing pattern into
-      // Clotr.PATTERNS raced the fresh install: the background starts Clotr again in tabs already open, and the
-      // second copy of patterns.js publishes a new array that the running detector never reads.)
+      // This breaks a built-in that every scan uses, but only inside Clotr's own content-script world. I can't do
+      // this by pushing a failing pattern into Clotr.PATTERNS instead, because that races the fresh install: the
+      // background restarts Clotr in tabs that are already open, and the second copy of patterns.js publishes a new
+      // array the running detector never reads.
       await evalInClotr(
         page,
         `String.prototype.match = function () { throw new Error("test: detection broke"); }, true`,
@@ -72,7 +79,7 @@ module.exports = async function (env) {
         await clickDialogButton(page, "More choices"); // "stop warning me" needs storage, which is gone
         await clickDialogButton(page, "Leave it in, and stop warning me about: AWS Access Key");
         expect(!(await readDialog(page)), "the dialog couldn't be closed");
-        // Keys are now Log only (the tick above, kept in memory); a new key would stay quiet.
+        // The tick above set keys to Log only, kept in memory, so a new key should stay quiet here too.
         await typeText(page, " call me at 555-555-0123");
         await sleep(DIALOG_WAIT);
         expect(!(await readDialog(page)), "an orphaned Clotr opened a dialog (it must only warn)");
@@ -115,7 +122,7 @@ module.exports = async function (env) {
 
   await check(
     "FO5",
-    "Orphaned and not replaced: a greyed-out prompt asks to reload; Later/Esc goes back, Enter reloads (D37)",
+    "Orphaned and not replaced: a greyed-out prompt asks to reload; Later/Esc goes back, Enter reloads",
     () =>
       withSite(ctx, "chatgpt", async (page) => {
         await resetState(ctx, {});
@@ -201,5 +208,61 @@ module.exports = async function (env) {
       expect(!(await readDialog(page)), "the orphaned dialog stayed open");
       ctx.problems.length = before;
     }),
+  );
+
+  // An attached file Clotr can't read, or a copy left behind by an update: the message always goes.
+  await check(
+    "FO6",
+    "A file read that throws never holds the message (a note says the file wasn't checked); an orphaned copy shows the file's note with the reload hint and never holds",
+    () =>
+      withSite(ctx, "chatgpt", async (page) => {
+        await resetState(ctx, { medical_record: "block" });
+        const before = ctx.problems.length;
+        const dir = holdDir("fo6");
+        try {
+          await stubReader(page, "broken");
+          await typeText(page, "what do these numbers mean?");
+          await sleep(600);
+          await attachMrn(page, dir);
+          await readStarted(page);
+          await pressEnter(page);
+          await sleep(400);
+          expect(!(await readDialog(page)), "a file Clotr couldn't read opened the dialog");
+          expect((await sentMessages(page)).length === 1, "a file Clotr couldn't read held the message");
+          const notice = await readNotice(page);
+          expect(
+            /couldn't check/.test(notice?.text || "") && notice.text.includes(MRN_FILE),
+            `notice: ${notice?.text}`,
+          );
+        } finally {
+          dropDir(dir);
+          ctx.problems.length = before; // broken on purpose
+        }
+      }).then(() =>
+        withSite(ctx, "chatgpt", async (page) => {
+          await resetState(ctx, { medical_record: "block" });
+          const before = ctx.problems.length;
+          const dir = holdDir("fo6b");
+          try {
+            await evalInClotr(page, ORPHAN_CLOTR);
+            await attachMrn(page, dir);
+            const notice = await waitForNotice(page);
+            expect(
+              notice?.text.includes(MRN_FILE) &&
+                /Medical Record Number/.test(notice.text) &&
+                notice.text.includes("Reload this page"),
+              `notice: ${notice?.text}`,
+            );
+            expect(!(await readDialog(page)), "an orphaned Clotr opened a dialog for a file");
+            await typeText(page, "what do these numbers mean?");
+            await pressEnter(page);
+            await sleep(400);
+            expect((await sentMessages(page)).length === 1, "an orphaned Clotr held the file");
+          } finally {
+            dropDir(dir);
+            ctx.problems.length = before;
+          }
+        }),
+      ),
   );
 };
