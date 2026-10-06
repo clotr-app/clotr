@@ -1,92 +1,68 @@
-# Privacy Policy for Clotr
+# Privacy policy
 
-Last updated: 2026-09-30 (Report a problem)
+Last updated 2026-10-05, for Clotr 1.2.0.
 
-Clotr is a browser extension that warns you before you send sensitive information (passwords, keys and personal
-details) in AI chat websites, and in email or chat websites you switch it on for. This policy explains exactly what it
-handles. In short: **everything stays on your
-computer, nothing is sent anywhere, and what you type is never stored.**
+Clotr checks what you type into AI chats, on your computer, and warns you before a private detail goes out. Nothing it
+reads leaves your computer, and it never stores what you type.
 
-## What Clotr reads
-While you use a supported AI chat website, or a website you switched Clotr on for yourself (an AI tool it doesn't
-know yet, or your webmail or a chat app such as Discord or Slack, one site at a time), Clotr reads, **on your
-computer**:
-- the text you type or paste into its message box, to look for sensitive information;
-- files you attach there (text, PDF, Word, Excel and PowerPoint), to look for the same;
-- if you added details to your vault: for 90 seconds after you send a message, the new text of the AI's reply on
-  that page, only to notice whether it mentions one of your own details that you didn't type there (then Clotr shows
-  you a note). The text of the reply is never stored: only that a reply on that website mentioned a kind of detail
-  of yours (for example "Phone Number"), with the same one-way fingerprint as your vault entry. You can switch this
-  off (toolbar button → Settings → *Check the AI's replies for my details*).
-- if you turn on **Bandage** (cover names) for a site: the same 90-second window after you send, but only to find its
-  own labels (like `[Phone 1]`) in the AI's reply and lay small "hotspots" over them so you can point at one to see
-  the real detail. The label-to-detail map lives only in that tab's memory while the page is open; it is never
-  stored, and the real detail is never written into the AI's page. While Bandage is on, Clotr also reads the
-  conversation shown on that page, only to find the labels it gave before (after a reload, for example), so a new
-  detail never gets a label already used in what the page has loaded (some sites load older messages only when you
-  scroll up); nothing from it is kept.
+## What it reads
 
-On email and chat websites you switched on, Clotr reads only what you type or attach there. It never reads other
-people's messages on those sites, and Bandage and the reply check are always off there.
+On the AI chat sites it's built for, and on any site you switch it on for yourself, Clotr reads these on your
+computer:
 
-It does not read other websites. If your organization's IT set a policy for Clotr through the browser, Clotr reads
-that policy (required settings and watch words); nothing goes back to them. Settings has a page showing what that
-policy sets ("See what's applied"), for your own records or an insurer's checklist; the page reads and shows the
-policy on your screen and, if you choose, prints it — it never sends or stores anything.
+- what you type or paste into the message box;
+- the text in files you attach (text, PDF, Word, Excel and PowerPoint);
+- for a picture, only whether a photo still has the place it was taken saved inside, and whether its name looks like
+  an ID or a document, like passport-scan.jpg. It can't read the words in a picture;
+- the AI's reply on that page for 90 seconds after you send, if you've added details to your list, so it can tell you
+  when the reply mentions one of them. You can turn this off in Settings;
+- with Bandage on for a site, the reply and the conversation on that page, only to find its own labels like
+  `[Phone 1]` and show you the real detail when you point at one. The labels and details stay in that tab's memory.
 
-## What Clotr stores (on your computer only)
-Clotr stores the following in your browser's extension storage, on this computer:
-- **Your settings**: how Clotr should respond to each kind of data (warn, ask before sending, or just count),
-  sites where you paused it, sites you added (and whether each is an AI tool or an email or chat site), display
-  preferences (such as larger warnings), and whether **Bandage** (cover names) is on or off for each AI site.
-- **Your vault** (only what you choose to add): one-way fingerprints of your details (for example your phone
-  number), or just the *format* of an ID number (like `AB-######`). The details themselves are not stored.
-- **A history of detections**, kept for 1 year by default (you can choose 3 months or 2 years), up to 10,000 records: the time, the website, the kind of data found (for example
-  "Phone Number"), what you chose (hidden, sent, or just counted, marked `via: "bandage"` when it was covered with a
-  label instead), and a salted one-way fingerprint so the dashboard can tell "the same item again". **The detected
-  text itself is never stored.**
-- **Replies that mentioned your details** (if the reply check is on): the time, the AI website, the kind of detail
-  and its fingerprint; never the reply's text. Kept and deleted together with the history.
-- **Names of AI websites you opened Clotr's toolbar button on** that looked like an AI chat but that Clotr doesn't
-  protect (for example `chat.example.ai`): the website's name only, no pages or times, at most 200, deleted with the
-  history. They appear as "blind spots" in the full report.
-- **A random secret number** created on your computer, used to make the fingerprints.
-- Small bookkeeping: how often you kept a warning recently, which first-time tips you've seen, and the last update.
+On email and chat sites you switched on, it reads only what you type or attach. It leaves other people's messages
+alone, and the reply check and Bandage stay off there. If your organization set a browser policy for Clotr, it reads
+that policy. It doesn't read anything on other sites.
 
-You can see every stored record in the extension: toolbar button → Settings → History → *See exactly what's stored*.
+## What it stores
 
-## What Clotr sends
-**Nothing.** Clotr makes no network requests: it has no servers, no analytics, no telemetry, no advertising and
-no third-party services. It does not send your text, its findings or your settings to its developer or to anyone
-else, including the AI websites (it only warns you *before* you send something yourself).
+Everything is in your browser's storage on this computer:
 
-**Report a problem** (on every Clotr page) and *Wrong? Report a false alarm* (in a warning) only open a page on
-GitHub, in a new tab, where you can write a public report if you choose. The page's address carries only the kind of
-report, Clotr's version, your browser's name, the kind of detail for a false alarm (for example "Phone Number"), and
-the AI website's name if you tick *Include this site*: never what you typed, a stored detail or a fingerprint. Clotr
-itself sends nothing; whatever you write there, GitHub publishes, so never paste the real detail.
+- your settings, including the sites you added and where you paused it;
+- your list of details, as one-way fingerprints or only the format of an ID like `AB-######`, and not the details
+  themselves;
+- a history of what it found: the time, the site, the kind of detail (like "Phone Number"), what you did, and a salted
+  one-way fingerprint so it can tell when the same thing comes up again. Never the text, the picture or the place. It
+  keeps a year by default, or 3 months or 2 years if you choose, at most 10,000 records, and a long list sent at once
+  becomes one record with a count after the first 10 of a kind;
+- replies that mentioned your details, with the same time, site, kind and fingerprint, but not the reply itself;
+- the names of AI-looking sites you opened Clotr on that it doesn't protect yet, names only, at most 200;
+- a random secret for the fingerprints, a hash of the PIN if someone set one, and some bookkeeping like which tips
+  you've seen and when it last updated.
 
-## Sharing and sale
-Clotr does not share, sell or transfer any data, because it doesn't collect any off your computer.
+You can see every record under Settings, History, *See exactly what's stored*, and clear the history any time, even
+while settings are locked. Removing Clotr deletes all of it.
 
-## Retention and your controls
-- If someone sets a PIN (Settings → *Helping someone set this up?*), only a salted one-way hash of it is stored, never the PIN.
-- History is kept for 1 year by default (3 months or 2 years in the full report), up to 10,000 records, and can be cleared any time (Settings → History → *Clear history*, or the full report → *Delete my history*).
-- Vault items can be removed one by one on the vault page.
-- **Moving to a new computer** (What Clotr stores → *Move to a new computer*): only when you ask, Clotr makes one file
-  with your settings, your vault's fingerprints, its secret number and the PIN's hash (never your history, never what
-  you typed), encrypted on your computer with a password you choose (AES-256). Your browser saves it where you say;
-  Clotr sends it nowhere. Loading it on another computer replaces Clotr's settings and vault there.
-- Removing the extension deletes all of its stored data from your browser.
+## What it sends
+
+Nothing. Clotr has no servers, analytics or third-party services, and it makes no network requests.
+
+*Report a problem* and the false-alarm link in a warning only open a GitHub page in a new tab. Its address carries the
+kind of report, Clotr's version, your browser and, for a false alarm, the kind of detail and the site if you tick it,
+never what you typed. If you choose to add what Clotr counted to a report, you see the counts first, kinds and numbers
+only, and you copy them in yourself.
+
+*Move to a new computer* makes one file with your settings, your list's fingerprints and the secret, encrypted with
+AES-256 and a password you choose. Your browser saves it where you say, and Clotr sends it nowhere.
+
+Since nothing leaves your computer, there's nothing for Clotr to share or sell.
 
 ## Known limits
-Someone with full access to your computer's browser profile could read Clotr's storage. It contains no typed
-text, but fingerprints of short details (like phone numbers) could be matched by trying every possibility.
 
-## Changes
-If this policy changes, the new version will be published here with a new date, and the extension's
-"what's new" note will mention it.
+Someone with full access to your browser profile could read Clotr's storage. There's no typed text in it, but the
+fingerprint of a short detail, like a phone number or the place a photo was taken, could be matched by trying every
+possibility.
 
-## Contact
-Questions: write to the contact email on Clotr's Chrome Web Store page, or open an issue at
-https://github.com/clotr-app/clotr/issues.
+## Changes and questions
+
+A new version of this policy gets a new date here, and Clotr's "what's new" note mentions it. Questions go to the
+contact email on Clotr's store page, or to https://github.com/clotr-app/clotr/issues.

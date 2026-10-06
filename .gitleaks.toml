@@ -20,6 +20,8 @@ regexes = [
   '''^AKIAABCDEFGHIJKLMNOP$''',
   '''^AKIAZ7Q3M9WX2KD5HB8R$''',
   '''^FgT7s9kX2mQ4vL8pR1nZ6wB3yH5jD0cA$''',
+  '''^N4XQ2ZK7PLM3RTY5$''',
+  '''^QK3V7WXN2HDR6TZM$''',
   '''^Zq8Lm2Xv9Rt4Kp7Wn1Bc$''',
   '''^Zq8Lm2Xv9Rt4Kp7Wn1Bc6Hy3Jd5Gf0QsAb12Cd34$''',
   '''^eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9\.eyJzdWIiOiI0MjQyIiwibmFtZSI6IkphbmUifQ\.Xk3v9Qm2Lr7Tz5Wn8Bc1Hy4Jg6Df0SaPq$''',

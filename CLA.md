@@ -10,7 +10,7 @@ to use it.
 You agree once, through the CLA check on your first pull request. It then covers all your contributions.
 
 ## 1. Definitions
-- **"You"**: the person agreeing to this, or the organization they contribute for (if they say so).
+- "You": the person agreeing to this, or the organization they contribute for (if they say so).
 - **"Maintainer"**: the owner of the Clotr project, today the GitHub user **BilliamBaSH**, and anyone they transfer
   the project to.
 - **"Contribution"**: anything you submit for inclusion in Clotr (code, tests, documentation, images, translations),
