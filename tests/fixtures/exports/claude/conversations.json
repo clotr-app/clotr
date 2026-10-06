@@ -1,0 +1,160 @@
+[
+  {
+    "uuid": "3f2e1d0c-9b8a-4766-a554-433221100fed",
+    "name": "Budget spreadsheet help",
+    "created_at": "2025-04-02T09:15:00.123456Z",
+    "updated_at": "2025-04-02T09:21:40.654321Z",
+    "account": {
+      "uuid": "7e6d5c4b-3a29-4180-9f7e-6d5c4b3a2918"
+    },
+    "chat_messages": [
+      {
+        "uuid": "5a4b3c2d-1e0f-4a9b-8c7d-6e5f4a3b2c1d",
+        "text": "Here's my card for the subscription: 5555 5555 5555 4444",
+        "content": [
+          {
+            "start_timestamp": "2025-04-02T09:15:00.123456Z",
+            "stop_timestamp": "2025-04-02T09:15:00.123456Z",
+            "type": "text",
+            "text": "Here's my card for the subscription: 5555 5555 5555 4444",
+            "citations": []
+          }
+        ],
+        "sender": "human",
+        "created_at": "2025-04-02T09:15:00.123456Z",
+        "updated_at": "2025-04-02T09:15:00.123456Z",
+        "attachments": [],
+        "files": []
+      },
+      {
+        "uuid": "6b5c4d3e-2f10-4b8a-9d6e-7f5a4b3c2d1e",
+        "text": "Please don't share card numbers. A sample card for testing is 4111 1111 1111 1111.",
+        "content": [
+          {
+            "start_timestamp": "2025-04-02T09:15:05.000000Z",
+            "stop_timestamp": "2025-04-02T09:15:10.000000Z",
+            "type": "thinking",
+            "thinking": "The password hunter2 is weak; I should say so if it comes up.",
+            "summaries": [],
+            "cut_off": false
+          },
+          {
+            "start_timestamp": "2025-04-02T09:15:20.000000Z",
+            "stop_timestamp": "2025-04-02T09:15:20.000000Z",
+            "type": "text",
+            "text": "Please don't share card numbers. A sample card for testing is 4111 1111 1111 1111.",
+            "citations": []
+          }
+        ],
+        "sender": "assistant",
+        "created_at": "2025-04-02T09:15:20.000000Z",
+        "updated_at": "2025-04-02T09:15:20.000000Z",
+        "attachments": [],
+        "files": []
+      },
+      {
+        "uuid": "7c6d5e4f-3a21-4c9b-8e7f-8a6b5c4d3e2f",
+        "text": "Can you check this list?",
+        "content": [
+          {
+            "start_timestamp": "2025-04-02T09:20:00.000000Z",
+            "stop_timestamp": "2025-04-02T09:20:00.000000Z",
+            "type": "text",
+            "text": "Can you check this list?",
+            "citations": []
+          }
+        ],
+        "sender": "human",
+        "created_at": "2025-04-02T09:20:00.000000Z",
+        "updated_at": "2025-04-02T09:20:00.000000Z",
+        "attachments": [
+          {
+            "file_name": "logins.txt",
+            "file_size": 61,
+            "file_type": "text/plain",
+            "extracted_content": "bank login: jamie.rivera@example.com password: Sunflower!2024\n"
+          }
+        ],
+        "files": [
+          {
+            "file_name": "logins.txt"
+          }
+        ]
+      },
+      {
+        "uuid": "8d7e6f5a-4b32-4dac-9f8a-9b7c6d5e4f3a",
+        "text": "You can reach the office at sam.lee@example.org. Change that password soon.",
+        "content": [
+          {
+            "start_timestamp": "2025-04-02T09:21:40.654321Z",
+            "stop_timestamp": "2025-04-02T09:21:40.654321Z",
+            "type": "text",
+            "text": "You can reach the office at sam.lee@example.org. Change that password soon.",
+            "citations": []
+          }
+        ],
+        "sender": "assistant",
+        "created_at": "2025-04-02T09:21:40.654321Z",
+        "updated_at": "2025-04-02T09:21:40.654321Z",
+        "attachments": [],
+        "files": []
+      }
+    ]
+  },
+  {
+    "uuid": "9e8f7a6b-5c43-4ebd-8a9b-0c8d7e6f5a4b",
+    "name": "Doctor visit notes",
+    "created_at": "2025-06-11T16:40:00.000000Z",
+    "updated_at": "2025-06-11T16:44:00.000000Z",
+    "account": {
+      "uuid": "7e6d5c4b-3a29-4180-9f7e-6d5c4b3a2918"
+    },
+    "chat_messages": [
+      {
+        "uuid": "0f9a8b7c-6d54-4fce-9b0a-1d9e8f7a6b5c",
+        "text": "My patient ID: MRN 00423187 from the clinic",
+        "sender": "human",
+        "created_at": "2025-06-11T16:40:00.000000Z",
+        "updated_at": "2025-06-11T16:40:00.000000Z",
+        "attachments": [],
+        "files": []
+      },
+      {
+        "uuid": "1a0b9c8d-7e65-4adf-8c1b-2e0f9a8b7c6d",
+        "text": "",
+        "content": [
+          {
+            "start_timestamp": "2025-06-11T16:42:00.000000Z",
+            "stop_timestamp": "2025-06-11T16:42:09.000000Z",
+            "type": "voice_note",
+            "title": "Voice note",
+            "text": "My date of birth is March 3, 1961"
+          }
+        ],
+        "sender": "human",
+        "created_at": "2025-06-11T16:42:00.000000Z",
+        "updated_at": "2025-06-11T16:42:00.000000Z",
+        "attachments": [],
+        "files": []
+      },
+      {
+        "uuid": "2b1c0d9e-8f76-4be0-9d2c-3f1a0b9c8d7e",
+        "text": "Thanks. Medicare covers hospital stays. Call 555-555-0188 for help.",
+        "content": [
+          {
+            "start_timestamp": "2025-06-11T16:44:00.000000Z",
+            "stop_timestamp": "2025-06-11T16:44:00.000000Z",
+            "type": "text",
+            "text": "Thanks. Medicare covers hospital stays. Call 555-555-0188 for help.",
+            "citations": []
+          }
+        ],
+        "sender": "assistant",
+        "created_at": "2025-06-11T16:44:00.000000Z",
+        "updated_at": "2025-06-11T16:44:00.000000Z",
+        "attachments": [],
+        "files": []
+      }
+    ]
+  }
+]

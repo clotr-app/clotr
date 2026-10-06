@@ -1,0 +1,185 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title data-i18n="lb_title">See what you've already told AI</title>
+  <link rel="stylesheet" href="popup.css">
+  <link rel="stylesheet" href="vault.css">
+  <link rel="stylesheet" href="lookback.css">
+</head>
+<!-- Look back: you pick the export ChatGPT, Claude or Gemini sent you, a worker reads it on this computer, and
+     this page shows which chats hold a password, a key, a card or ID number, an address or a photo's place.
+     Nothing is uploaded, and nothing is kept once this page closes, since it never writes to storage. Only what
+     you wrote or sent is ever read. Every byte of that reading happens in lookback-worker.js, and this page loads
+     lookback-core.js only for its plain string checks chatLink() and chatLinkOk(), so "Open the chat" trusts only
+     the company's own checked address; detector.js, decide.js and zip.js stay worker-only. letter.js is the other
+     page-side script, and its letterFor() turns the result already on screen into the deletion letter, text in
+     and text out, without reading the export again. -->
+<body class="vault-page lookback-page">
+  <header class="lookback-top">
+    <img src="icons/icon-on-32.png" alt="" width="24" height="24">
+    <span class="lb-chip" data-i18n="lb_name">Look back</span>
+  </header>
+
+  <main>
+    <h1 data-i18n="lb_title">See what you've already told AI</h1>
+    <p class="lead" data-i18n="lb_lead">Your ChatGPT, Claude or Gemini history, read on this computer from your own export. Clotr shows which chats hold a password, a key, a card or ID number, an address or a photo's place, so you can delete them.</p>
+    <ul id="promises" class="lb-promises"></ul>
+
+    <section id="start" class="lb-card">
+      <h2 data-i18n="lb_step1">1. Ask for your export</h2>
+      <div id="tool-tabs" class="lb-tabs" role="tablist" aria-label="Which AI tool">
+        <button type="button" role="tab" class="lb-tab" data-tool="chatgpt">ChatGPT</button>
+        <button type="button" role="tab" class="lb-tab" data-tool="claude">Claude</button>
+        <button type="button" role="tab" class="lb-tab" data-tool="gemini">Gemini</button>
+      </div>
+      <div id="tool-panel" role="tabpanel">
+        <ol id="tool-steps" class="lb-tool-steps"></ol>
+        <p id="menu-note" class="note muted" data-i18n="lb_menuNames"></p>
+        <p class="actions">
+          <a id="open-tool" class="btn" target="_blank" rel="noopener noreferrer"></a>
+          <a id="open-help" class="as-link" target="_blank" rel="noopener noreferrer"></a>
+        </p>
+        <p class="note muted" data-i18n="lb_cantAsk">Clotr can't ask for it for you. Come back here when the email comes.</p>
+      </div>
+
+      <h2 data-i18n="lb_step2">2. Open it here</h2>
+      <p class="note muted" id="kinds-note" data-i18n="lb_kinds">The .zip file as it came, the folder you unzipped, or the conversations.json or MyActivity.json file inside it.</p>
+      <div id="dropzone" class="lb-drop" tabindex="0" role="button" aria-label="Drop your export here, or press Enter to choose a file" data-i18n-aria-label="lb_drop">
+        <span data-i18n="lb_drop">Drop your export here</span>
+      </div>
+      <div class="actions">
+        <button id="choose-file" class="btn primary" type="button" data-i18n="lb_choose">Choose my export</button>
+        <button id="choose-folder" class="btn" type="button" data-i18n="lb_folder">It's a folder</button>
+      </div>
+      <input id="file-input" type="file" accept=".zip,.json,.jsonl,application/zip,application/json" multiple hidden>
+      <input id="folder-input" type="file" webkitdirectory multiple hidden>
+      <p class="note muted" data-i18n="lb_local">Clotr reads it here, on this computer. It never uploads it, and it forgets it when you close this page. It works with the internet off.</p>
+      <p class="note muted" data-i18n="lb_parts">Choosing several files at once (such as conversations-000.zip and conversations-001.zip) reads them all as one export.</p>
+
+      <p id="unsupported" class="note" role="alert" hidden></p>
+      <button id="try-again" class="as-link" type="button" hidden>Try again</button>
+    </section>
+
+    <section id="manifest-result" class="lb-card" hidden aria-labelledby="manifest-heading">
+      <h2 id="manifest-heading" tabindex="-1" data-i18n="lb_manifestTitle">This is a list of links, not your export</h2>
+      <p data-i18n="lb_manifestLead">Claude emailed you this file first. It only holds links to download your data; your chats aren't in it. Download the conversations file below (or files, if there's more than one), then open it here.</p>
+      <p id="manifest-expiry" class="note muted"></p>
+      <ul id="manifest-links" class="lb-manifest-links"></ul>
+      <button id="manifest-choose" class="btn primary" type="button" data-i18n="lb_manifestChoose">Choose the file</button>
+    </section>
+
+    <section id="reading" class="lb-card" hidden aria-labelledby="reading-heading">
+      <h2 id="reading-heading"></h2>
+      <div class="lb-progress" role="progressbar" id="progress-bar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0">
+        <div id="progress-fill" class="lb-progress-fill"></div>
+      </div>
+      <p class="lb-progress-text"><span id="bytes-text"></span> <span id="time-left" class="muted"></span></p>
+      <div class="lb-stats">
+        <p id="stat-chats-line"></p>
+        <p id="stat-found-line"></p>
+      </div>
+      <ol id="steps-list" class="lb-steps"></ol>
+      <button id="stop" class="btn" type="button" data-i18n="lb_stop">Stop</button>
+      <p class="note muted" data-i18n="lb_stopNote">Stopping keeps nothing.</p>
+      <p class="note muted" data-i18n="lb_onlyYou">Only what you wrote or sent is read: your messages, the files you attached and your photos. Never the AI's answers.</p>
+      <h3 data-i18n="lb_soFar">Found so far</h3>
+      <div id="live-feed" class="lb-feed"></div>
+    </section>
+
+    <section id="results" class="lb-results" hidden aria-labelledby="results-heading">
+      <h2 id="results-heading" tabindex="-1"></h2>
+      <p id="res-note" class="note muted"></p>
+
+      <section id="shared-section">
+        <h3 data-i18n="lb_shared">What you shared</h3>
+        <div id="shared-rows" class="lb-shared-rows"></div>
+        <p id="shared-different-note" class="note muted" data-i18n="lb_differentNote" hidden>Different means Clotr compared them on this page only, then forgot them.</p>
+      </section>
+
+      <section id="instructions-card" class="lb-card-item" hidden>
+        <h3 id="instructions-title" data-i18n="lb_instructions">Your custom instructions</h3>
+        <p id="instructions-why" class="note muted" data-i18n="lb_instructionsWhy"></p>
+        <div id="instructions-kinds" class="lb-tags"></div>
+      </section>
+
+      <section>
+        <h3 id="chats-heading" data-i18n="lb_chats">Chats that hold private details</h3>
+        <p class="note muted" data-i18n="lb_newest">Newest first</p>
+        <div id="chat-cards" class="lb-cards"></div>
+        <p id="more-chats" class="note" hidden></p>
+      </section>
+
+      <section id="not-read-section" class="lb-notread">
+        <h3 data-i18n="lb_notRead">What Clotr couldn't read</h3>
+        <ul id="not-read-list"></ul>
+      </section>
+
+      <p class="lb-habit" data-i18n="lb_habit">From now on, Clotr checks what you type into AI chats before it goes.</p>
+      <button id="forget" class="btn" type="button" data-i18n="lb_forget">Forget these results</button>
+    </section>
+
+    <section id="letter-panel" class="lb-card" hidden aria-labelledby="letter-heading">
+      <h2 id="letter-heading" tabindex="-1"></h2>
+      <p class="note muted" data-i18n="lb_quicker">Quicker first: open each chat and delete it yourself. Then send the letter for the copies you can't reach.</p>
+      <p data-i18n="lb_letterLead">A letter you send yourself, built from what Look back found: the kinds of detail, the dates and the chats' links, never the details. Clotr doesn't send it.</p>
+
+      <fieldset class="lb-which">
+        <legend data-i18n="lb_whichChats">Which chats</legend>
+        <div id="letter-chat-picks" class="lb-chat-picks"></div>
+      </fieldset>
+
+      <fieldset class="lb-places">
+        <legend data-i18n="lb_wherePlace">Where do you live?</legend>
+        <div class="lb-place-options">
+          <label><input type="radio" name="letter-place" value="eu"> <span data-i18n="lb_placeEu">In the EU</span></label>
+          <label><input type="radio" name="letter-place" value="uk"> <span data-i18n="lb_placeUk">In the UK</span></label>
+          <label><input type="radio" name="letter-place" value="california"> <span data-i18n="lb_placeCalifornia">In California</span></label>
+          <label><input type="radio" name="letter-place" value="other"> <span data-i18n="lb_placeOther">Somewhere else</span></label>
+        </div>
+        <p class="note muted" data-i18n="lb_placeNote">It decides which law the letter names. This isn't legal advice.</p>
+      </fieldset>
+
+      <label for="letter-box" class="lb-letter-label" data-i18n="lb_yourLetter">Your letter</label>
+      <textarea id="letter-box" class="lb-letter-box" rows="14" spellcheck="false" autocomplete="off"></textarea>
+      <p id="letter-blanks" class="note muted" role="status"></p>
+
+      <div class="lb-letter-actions">
+        <button id="letter-copy" class="btn primary" type="button" data-i18n="lb_copyLetter">Copy the letter</button>
+        <span id="letter-copy-status" class="lb-copy-status" role="status"></span>
+      </div>
+      <p id="letter-requests" class="actions" hidden><a id="letter-requests-link" class="as-link" target="_blank" rel="noopener noreferrer"></a></p>
+      <p id="letter-email" class="note muted" hidden></p>
+
+      <section class="lb-next">
+        <h3 id="letter-next-title"></h3>
+        <p data-i18n="lb_nextText">The law lets companies keep some data, for example for safety or legal reasons, and what was already used to train a model may stay in it. They may ask you to prove who you are. Clotr doesn't send anything and won't know their answer.</p>
+      </section>
+
+      <button id="letter-back" class="as-link" type="button" data-i18n="pd_back">Back</button>
+    </section>
+
+    <section id="unknown-result" class="lb-card" hidden aria-labelledby="unknown-heading">
+      <h2 id="unknown-heading" tabindex="-1"></h2>
+      <p id="unknown-text"></p>
+      <button id="unknown-again" class="btn" type="button">Try again</button>
+    </section>
+  </main>
+
+  <div id="live-region" aria-live="polite" class="sr-only"></div>
+
+  <footer class="app-footer">
+    <div id="report-root"></div>
+  </footer>
+
+  <script src="page-i18n.js"></script>
+  <script src="patterns.js"></script>
+  <script src="lookback-core.js"></script>
+  <script src="letter.js"></script>
+  <script src="insights.js"></script>
+  <script src="scan-words.js"></script>
+  <script src="report.js"></script>
+  <script src="lookback.js"></script>
+</body>
+</html>

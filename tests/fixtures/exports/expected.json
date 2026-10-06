@@ -1,0 +1,156 @@
+{
+  "about": "What Look back must find in each made-up export (make-exports.js): kinds and counts per chat, only in what the person wrote or sent. 'notTheirs' are values that sit in the AI's answers, a tool's output or the account files: a reader that reports one of them is reading the wrong part. 'ignored' are files a reader must not open for findings.",
+  "chatgpt": {
+    "format": "chatgpt",
+    "tool": "ChatGPT",
+    "company": "OpenAI",
+    "chats": 3,
+    "found": [
+      {
+        "id": "6a1e0c2f-5b7d-4e1a-9c3f-0d2b8e4f7a10",
+        "title": "Fixing my server config",
+        "date": "2025-01-14",
+        "link": "https://chatgpt.com/c/6a1e0c2f-5b7d-4e1a-9c3f-0d2b8e4f7a10",
+        "kinds": { "aws_access_key": 1, "email": 1, "password": 1 },
+        "why": "the key in the first message; the email and password in a message the person later edited (still in the export, on another branch)"
+      },
+      {
+        "id": "0c9d8e7f-6a5b-4c3d-8e2f-1a0b9c8d7e6f",
+        "title": "Tax question",
+        "date": "2025-02-03",
+        "link": "https://chatgpt.com/c/0c9d8e7f-6a5b-4c3d-8e2f-1a0b9c8d7e6f",
+        "kinds": { "us_ssn": 1, "id_picture": 1 },
+        "why": "the SSN beside an uploaded picture; the picture's name, passport-scan.jpg (an older chat with id but no conversation_id)"
+      },
+      {
+        "id": "f1e2d3c4-b5a6-4978-8a6b-5c4d3e2f1a0b",
+        "title": "Weekend plans",
+        "date": "2025-03-22",
+        "link": "https://chatgpt.com/c/f1e2d3c4-b5a6-4978-8a6b-5c4d3e2f1a0b",
+        "kinds": { "phone_number": 1, "photo_location": 1 },
+        "why": "the phone number said out loud (a voice transcript, direction in); the place inside beach.jpg, matched to the chat by its file id"
+      }
+    ],
+    "customInstructions": { "kinds": { "street_address": 1 }, "chats": 2, "why": "the same 'About you' text in the older (system) and newer (user_editable_context) shapes: counted once" },
+    "pictures": { "read": 2, "withPlace": 1 },
+    "notTheirs": ["4111 1111 1111 1111", "hunter2", "(555) 555-0177", "sam.lee@example.org", "+15555550142"],
+    "ignored": ["user.json", "chat.html", "message_feedback.json", "shared_conversations.json"]
+  },
+  "chatgpt-split": {
+    "sameAs": "chatgpt",
+    "format": "chatgpt",
+    "chats": 3,
+    "files": ["conversations-000.json", "conversations-001.json"],
+    "pictures": { "read": 0, "withPlace": 0 },
+    "note": "no pictures in this one: Weekend plans finds only the phone number, and Tax question only the SSN and the picture's name (from the message's attachment list)"
+  },
+  "claude": {
+    "format": "claude",
+    "tool": "Claude",
+    "company": "Anthropic",
+    "chats": 2,
+    "found": [
+      {
+        "id": "3f2e1d0c-9b8a-4766-a554-433221100fed",
+        "title": "Budget spreadsheet help",
+        "date": "2025-04-02",
+        "link": "https://claude.ai/chat/3f2e1d0c-9b8a-4766-a554-433221100fed",
+        "kinds": { "credit_card": 1, "email": 1, "password": 1 },
+        "why": "the card typed in a message (text and content carry the same words: counted once); the login in an attached file's text (extracted_content)"
+      },
+      {
+        "id": "9e8f7a6b-5c43-4ebd-8a9b-0c8d7e6f5a4b",
+        "title": "Doctor visit notes",
+        "date": "2025-06-11",
+        "link": "https://claude.ai/chat/9e8f7a6b-5c43-4ebd-8a9b-0c8d7e6f5a4b",
+        "kinds": { "medical_record": 1, "date_of_birth": 1 },
+        "why": "the record number in an older message (text, no content blocks); the birth date in a voice note"
+      }
+    ],
+    "notTheirs": ["4111 1111 1111 1111", "hunter2", "sam.lee@example.org", "555-555-0188", "+15555550142"],
+    "ignored": ["users.json"]
+  },
+  "claude-manifest": {
+    "format": null,
+    "isManifest": true,
+    "createdAt": "2026-10-04T13:11:24.000000Z",
+    "expiresAt": "2026-10-05T13:11:24.000Z",
+    "manifestFiles": ["conversations-000.zip", "conversations-001.zip"],
+    "note": "Claude's October 2026 export emails this first: a list of download links, not the export. Recognized by its shape (version, created_at, data_files), never by its arbitrary file name. No chats to find; the page shows the links instead of reading on."
+  },
+  "claude-conversations-000": {
+    "sameAs": "claude",
+    "format": "claude",
+    "chats": 1,
+    "found": [
+      {
+        "id": "3f2e1d0c-9b8a-4766-a554-433221100fed",
+        "title": "Budget spreadsheet help",
+        "date": "2025-04-02",
+        "link": "https://claude.ai/chat/3f2e1d0c-9b8a-4766-a554-433221100fed",
+        "kinds": { "credit_card": 1, "email": 1, "password": 1 }
+      }
+    ],
+    "note": "one part of the new split export: a .jsonl file (one conversation per line), named 'data.jsonl' on purpose so a reader must find it by shape, not name. Holds the first of Claude's two made-up chats."
+  },
+  "claude-conversations-001": {
+    "sameAs": "claude",
+    "format": "claude",
+    "chats": 1,
+    "found": [
+      {
+        "id": "9e8f7a6b-5c43-4ebd-8a9b-0c8d7e6f5a4b",
+        "title": "Doctor visit notes",
+        "date": "2025-06-11",
+        "link": "https://claude.ai/chat/9e8f7a6b-5c43-4ebd-8a9b-0c8d7e6f5a4b",
+        "kinds": { "medical_record": 1, "date_of_birth": 1 }
+      }
+    ],
+    "note": "the other part: the second chat only. Choosing claude-conversations-000.zip and claude-conversations-001.zip together must read both as one export, equal to expected.claude in full."
+  },
+  "gemini": {
+    "format": "gemini",
+    "tool": "Gemini",
+    "company": "Google",
+    "records": 4,
+    "prompts": 3,
+    "chats": 2,
+    "grouping": "by day (My Activity has no chat id)",
+    "found": [
+      {
+        "id": "2025-05-10",
+        "title": "My medicare number is 1EG4-TE5-MK73, what does it cover?",
+        "shownTitle": "My medicare number is 1EG4…73, what does it cover?",
+        "date": "2025-05-10",
+        "link": "https://myactivity.google.com/product/gemini",
+        "kinds": { "medicare_id": 1, "email": 1 },
+        "why": "two prompts on the same day; the title is the day's first prompt, without the word Prompted, and shown with mask() over every detail in it (shownTitle): a title is never shown with a value in full"
+      },
+      {
+        "id": "2025-08-30",
+        "title": "is passport number X12345678 still valid?",
+        "shownTitle": "is passport number X123…78 still valid?",
+        "date": "2025-08-30",
+        "link": "https://myactivity.google.com/product/gemini",
+        "kinds": { "passport": 1 },
+        "why": "one prompt; the 'Used Gemini Apps' record that day holds nothing the person wrote"
+      }
+    ],
+    "notTheirs": ["555-555-0188", "sam.lee@example.org"],
+    "ignored": ["Takeout/archive_browser.html"]
+  },
+  "gemini-localized": {
+    "sameAs": "gemini",
+    "format": "gemini",
+    "note": "found by its shape: the folder and file names are in another language"
+  },
+  "gemini-html": {
+    "format": "gemini-html",
+    "read": false,
+    "note": "recognized as Takeout's HTML kind: until the HTML reader exists, the page asks for the JSON kind (the steps say how). Once it reads it, the same finds as gemini, and nothing from the text after the date."
+  },
+  "unknown": {
+    "format": null,
+    "note": "not an AI chat export: 'Clotr can't read this export yet', and nothing found or counted"
+  }
+}

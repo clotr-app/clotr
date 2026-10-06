@@ -1,0 +1,99 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title data-i18n="sc_title">Is this a scam?</title>
+  <link rel="stylesheet" href="popup.css">
+  <link rel="stylesheet" href="vault.css">
+  <link rel="stylesheet" href="check.css">
+</head>
+<!-- "Is this a scam?": the person pastes a message they got, and Clotr marks the warning
+     signs it knows, each with what it means and where that advice comes from. It reads only what's pasted here, keeps
+     nothing, and never says a message is fine. -->
+<body class="vault-page check-page">
+  <header class="check-top">
+    <img src="icons/icon-on-32.png" alt="" width="24" height="24">
+    <span class="ss-chip"><svg class="tq-shield" viewBox="0 0 16 16" aria-hidden="true" focusable="false"><path d="M8 1 14 3.4V8c0 3.4-2.5 6.1-6 7-3.5-.9-6-3.6-6-7V3.4Z"/></svg><span data-i18n="ss_name">Scam check</span></span>
+  </header>
+
+  <main>
+    <h1 data-i18n="sc_title">Is this a scam?</h1>
+    <p class="lead" data-i18n="sc_lead">Paste a message you got, a text, an email or a chat, and Clotr points out the warning signs it knows. It all stays on this computer, and nothing is kept.</p>
+
+    <div id="ask" class="ask">
+      <label for="message" class="box-label" data-i18n="sc_box">The message you got</label>
+      <textarea id="message" rows="7" autocomplete="off" spellcheck="false" data-i18n-placeholder="sc_hint" placeholder="Paste it here"></textarea>
+      <p id="empty-note" class="note" role="status" hidden data-i18n="sc_empty">Paste a message first.</p>
+      <div class="actions">
+        <button id="check-it" class="btn primary" type="button" data-i18n="sc_check">Check it</button>
+        <button id="try-made-up" class="as-link" type="button" data-i18n="sc_try">Try a made-up message</button>
+      </div>
+    </div>
+
+    <section id="result" class="result" hidden aria-label="Is this a scam?" data-i18n-aria-label="sc_title">
+      <div id="found" class="found" hidden>
+        <h2 id="found-title" tabindex="-1"></h2>
+        <p class="sub" data-i18n="sc_foundSub">Each one is marked in the message.</p>
+      </div>
+      <div class="message-card">
+        <p class="card-label" data-i18n="sc_box">The message you got</p>
+        <p id="marked" class="marked"></p>
+      </div>
+      <div id="none" class="none" hidden>
+        <span class="info" aria-hidden="true">i</span>
+        <div>
+          <h2 id="none-title" tabindex="-1" data-i18n="sc_none">Clotr didn't find any of the signs it knows</h2>
+          <p data-i18n="sc_noneWhy">That doesn't tell you the message is real: scams change, and no list knows them all.</p>
+        </div>
+      </div>
+      <div id="signs"></div>
+
+      <section id="before" class="before" aria-labelledby="before-title">
+        <h2 id="before-title"><svg class="tq-shield" viewBox="0 0 16 16" aria-hidden="true" focusable="false"><path d="M8 1 14 3.4V8c0 3.4-2.5 6.1-6 7-3.5-.9-6-3.6-6-7V3.4Z"/></svg><span data-i18n="sc_beforeTitle">Before you answer</span></h2>
+        <ul>
+          <li data-i18n="sc_beforeCall">Don't use the phone number or link in the message. Call the company or person on a number you already know, like the one on your card or statement.</li>
+          <li data-i18n="sc_beforeTalk">Talk to someone you trust first.</li>
+          <li id="has-phone" class="strong" hidden data-i18n="sc_hasPhone">It has a phone number: don't call it to check.</li>
+          <li id="has-link" class="strong" hidden data-i18n="sc_hasLink">It has a link: don't use it to check.</li>
+        </ul>
+        <p id="before-sources" class="source"></p>
+      </section>
+
+      <!-- What to do now: the setup page's words for the days after a scam (ss_now…), shown here folded. The two
+           addresses open only when clicked. -->
+      <details id="answered" class="answered">
+        <summary data-i18n="sc_answered">Already answered, paid or let someone in?</summary>
+        <section class="ss-now" aria-labelledby="ss-now-title">
+          <h3 id="ss-now-title"><svg class="tq-shield" viewBox="0 0 16 16" aria-hidden="true" focusable="false"><path d="M8 1 14 3.4V8c0 3.4-2.5 6.1-6 7-3.5-.9-6-3.6-6-7V3.4Z"/></svg><span data-i18n="ss_nowTitle">What to do now</span></h3>
+          <ul>
+            <li><span data-i18n="ss_nowGiftQ">Paid with a gift card?</span> <span data-i18n="ss_nowGift">Call the gift card company on the number on the back of the card. Say a scammer got the number and PIN, and ask for your money back.</span></li>
+            <li><span data-i18n="ss_nowComputerQ">Let someone into your computer?</span> <span data-i18n="ss_nowComputer">Update your security software and run a scan. Then change your passwords and turn on two-step sign-in.</span></li>
+            <li><span data-i18n="ss_nowPasswordQ">Gave a password or a sign-in code?</span> <span data-i18n="ss_nowPassword">Change that password, and turn on two-step sign-in.</span></li>
+            <li><span data-i18n="ss_nowRecoveryQ">Someone offers to get your money back for a fee?</span> <span data-i18n="ss_nowRecovery">That's a scam too.</span></li>
+            <li><span data-i18n="ss_nowUsQ">In the US,</span> <span data-i18n="ss_nowUsReport">report it at</span> <a href="https://reportfraud.ftc.gov/" target="_blank" rel="noopener noreferrer">ReportFraud.ftc.gov</a>. <span data-i18n="ss_nowUsSsn">Gave your Social Security number?</span> <a href="https://www.identitytheft.gov/" target="_blank" rel="noopener noreferrer">IdentityTheft.gov</a> <span data-i18n="ss_nowUsPlan">gives you a recovery plan.</span></li>
+          </ul>
+          <p id="now-sources" class="source"></p>
+        </section>
+        <p class="tq-offer"><a href="helper.html?for=after_scam" data-i18n="sc_tourniquet">Tourniquet can ask first for 30 days</a></p>
+      </details>
+
+      <button id="check-another" class="btn" type="button" data-i18n="sc_again">Check another message</button>
+    </section>
+
+    <p id="failed" class="note" role="alert" hidden data-i18n="sc_failed">Clotr couldn't check this. Nothing was kept.</p>
+    <p class="footnote" data-i18n="sc_never">Clotr reads only what you paste here, on this computer, and forgets it when you close the page. It never says a message is fine: no list knows every scam.</p>
+  </main>
+
+  <footer class="app-footer">
+    <div id="report-root"></div>
+  </footer>
+
+  <script src="page-i18n.js"></script>
+  <script src="patterns.js"></script>
+  <script src="detector.js"></script>
+  <script src="scam-signs.js"></script>
+  <script src="report.js"></script>
+  <script src="check.js"></script>
+</body>
+</html>

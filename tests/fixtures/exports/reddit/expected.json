@@ -1,0 +1,57 @@
+{
+  "about": "What a reader of Reddit's data-request export must find in this made-up export: kinds and counts per post or comment, only in posts.csv's title/body and comments.csv's body. 'ignored' are files a reader must never open for findings even though they name the person's own posts (votes hold no words the person wrote). 'later' is read by no piece in this first set: it holds both sides of a private conversation, and only the account's own side may ever count, the same rule Claude's human-only messages already follow. No real Reddit export was read to make this; every value here is made up (the SSN, card, key, email and phone numbers Clotr's other fixtures already use).",
+  "account": "clotr_fixture",
+  "format": "reddit",
+  "tool": "Reddit",
+  "company": "Reddit, Inc.",
+  "posts": 2,
+  "comments": 3,
+  "found": [
+    {
+      "id": "t3_abc123",
+      "kind": "post",
+      "title": "Help with my taxes",
+      "date": "2025-02-11",
+      "link": "https://www.reddit.com/r/personalfinance/comments/abc123/help_with_my_taxes/",
+      "kinds": { "email": 1, "us_ssn": 1 },
+      "why": "the accountant's email and the SSN are both in the post's own body"
+    },
+    {
+      "id": "t3_def456",
+      "kind": "post",
+      "title": "My new server setup",
+      "date": "2025-05-03",
+      "link": "https://www.reddit.com/r/homeautomation/comments/def456/my_new_server_setup/",
+      "kinds": { "aws_access_key": 1 },
+      "why": "the AWS key is in the post's body; the post's own url column is never read (it only ever points elsewhere, not to the person's words)"
+    },
+    {
+      "id": "t1_ghi789",
+      "kind": "comment",
+      "title": "Help with my taxes",
+      "date": "2025-02-11",
+      "link": "https://www.reddit.com/r/personalfinance/comments/abc123/help_with_my_taxes/ghi789/",
+      "kinds": { "phone_number": 1 },
+      "why": "a phone number offered in a reply to the person's own earlier post"
+    },
+    {
+      "id": "t1_jkl012",
+      "kind": "comment",
+      "title": "landlord_wont_return_deposit",
+      "date": "2025-07-19",
+      "link": "https://www.reddit.com/r/legaladvice/comments/xyz999/landlord_wont_return_deposit/jkl012/",
+      "kinds": { "credit_card": 1 },
+      "why": "a card number offered to pay a stranger's filing fee, a classic scam set-up Scam Shield's drills also use"
+    }
+  ],
+  "nothingFound": {
+    "id": "t1_mno345",
+    "why": "a comment with no card, key, ID number, address or password in it: 'Thanks, that worked for me too.' counts toward the chats-read total and nothing else"
+  },
+  "notTheirs": [],
+  "ignored": ["post_votes.csv"],
+  "later": {
+    "file": "messages_archive.csv",
+    "why": "holds both sides of a private conversation (from/to); msg1 is from someone_else and must never be read even once a later piece reads this file, msg2 is from the account's own name (clotr_fixture) and is the only row a later reader may ever count. Neither counts in this pass: the file is wholly unread until that piece ships."
+  }
+}
