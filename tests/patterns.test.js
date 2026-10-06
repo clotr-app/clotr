@@ -202,6 +202,26 @@ test("private keys written as JWKs: JS object literals and Python dicts pasted a
   expectOnly("key = {'kty': 'oct', 'k': 'GawgguFyGrWKav7AX4VKUg'}", "private_key");
 });
 
+test("private keys written as JWKs: escapes inside a single-quoted value read correctly", () => {
+  // A value with an escaped double quote used to break the loose reader entirely: it re-escaped the quote a
+  // second time on top of the backslash already there, which left the converted text invalid JSON and the key
+  // unflagged.
+  expectOnly("const key = {kty: 'oct', k: 'AQID\\\"BAUG'};", "private_key", "{kty: 'oct', k: 'AQID\\\"BAUG'}");
+  // An escaped single quote (an apostrophe inside the value) stays a literal quote.
+  expectOnly(
+    "key = {'kty': 'oct', 'k': 'it\\'s a secret 12345'}",
+    "private_key",
+    "{'kty': 'oct', 'k': 'it\\'s a secret 12345'}",
+  );
+  // A bare double quote, with no backslash in front of it, still gets escaped for JSON.
+  expectOnly("key = {'kty': 'oct', 'k': 'say \"hi\" 12345'}", "private_key", "{'kty': 'oct', 'k': 'say \"hi\" 12345'}");
+  // A value ending in an escaped backslash, right before the closing quote, doesn't get mistaken for an
+  // escaped quote.
+  expectOnly("key = {'kty': 'oct', 'k': 'abc\\\\'}", "private_key", "{'kty': 'oct', 'k': 'abc\\\\'}");
+  // A \n escape sequence passes through untouched.
+  expectOnly("key = {'kty': 'oct', 'k': 'line1\\nline2'}", "private_key", "{'kty': 'oct', 'k': 'line1\\nline2'}");
+});
+
 test("private keys written as JWKs: stay fast on huge or hostile JSON", () => {
   const detectOnly = (text) => globalThis.Clotr.detect(text);
   // This is the worst case for a scan that tries every "{" as a span's start: a huge object with no closing brace
