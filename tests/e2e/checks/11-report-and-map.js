@@ -2682,7 +2682,12 @@ module.exports = async function (env) {
         const section = await page.$("section[aria-labelledby='h-data']");
         for (const theme of ["dark", "light"]) {
           await page.emulateMediaFeatures([{ name: "prefers-color-scheme", value: theme }]);
-          await sleep(150);
+          // The buttons fade to the new theme's colours, and on a slow machine the contrast check can land halfway
+          // through, so wait until every transition has finished.
+          await page
+            .waitForFunction(() => document.getAnimations().every((a) => a.playState !== "running"), { timeout: 3000 })
+            .catch(() => {});
+          await sleep(50);
           if (!(await page.evaluate(() => typeof axe === "object"))) await page.evaluate(AXE);
           const found = await page.evaluate(async () =>
             (await axe.run(document, { resultTypes: ["violations"] })).violations

@@ -229,7 +229,8 @@ module.exports = async function (env) {
 
   // Opens the "Copy my summary" panel, which shows kinds and counts only, waits for the counts to appear, copies
   // them with the clipboard answered by hand, and returns both what was in the box and what was copied.
-  const SUMMARY_FIRST = /^Clotr \S+ on \w+, last 30 days\. Counts only: no details, sites or times\./;
+  // The browser's name is left out when Clotr can't tell which one it is (headless Chrome on Linux, for one).
+  const SUMMARY_FIRST = /^Clotr \S+( on \w+)?, last 30 days\. Counts only: no details, sites or times\./;
   const openSummary = async (page) => {
     await page.evaluate(() => {
       window.__copied = null;
