@@ -1,6 +1,6 @@
 # Privacy policy
 
-Last updated 2026-10-05, for Clotr 1.2.0.
+Last updated 2026-10-08, for Clotr 1.2.1. Nothing it describes changed between 1.2.0 and 1.2.1.
 
 Clotr checks what you type into AI chats, on your computer, and warns you before a private detail goes out. Nothing it
 reads leaves your computer, and it never stores what you type.
