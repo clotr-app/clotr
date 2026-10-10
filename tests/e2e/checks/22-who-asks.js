@@ -159,12 +159,13 @@ module.exports = async function (env) {
   // themselves, the same approach EV3 and TQ2 use.
   async function withGrantedCopy(fn) {
     const copy = fs.mkdtempSync(path.join(os.tmpdir(), "clotr-ext-"));
-    fs.cpSync(EXT, copy, { recursive: true });
-    const m = JSON.parse(fs.readFileSync(path.join(copy, "manifest.json"), "utf8"));
-    m.host_permissions = [...m.host_permissions, "https://mail.google.com/*"];
-    fs.writeFileSync(path.join(copy, "manifest.json"), JSON.stringify(m, null, 2));
-    const other = await launch(copy);
+    let other;
     try {
+      fs.cpSync(EXT, copy, { recursive: true });
+      const m = JSON.parse(fs.readFileSync(path.join(copy, "manifest.json"), "utf8"));
+      m.host_permissions = [...m.host_permissions, "https://mail.google.com/*"];
+      fs.writeFileSync(path.join(copy, "manifest.json"), JSON.stringify(m, null, 2));
+      other = await launch(copy);
       await waitFor(
         () =>
           other.worker.evaluate(async () => {
@@ -177,8 +178,10 @@ module.exports = async function (env) {
       await resetState(other, {});
       return await fn(other);
     } finally {
-      await other.browser.close();
-      fs.rmSync(other.profile, { recursive: true, force: true });
+      if (other) {
+        await other.browser.close();
+        fs.rmSync(other.profile, { recursive: true, force: true });
+      }
       fs.rmSync(copy, { recursive: true, force: true });
     }
   }
@@ -294,8 +297,8 @@ module.exports = async function (env) {
       }),
   );
 
-  // Opens "Why am I seeing this?" and returns the notice's words once its fold is really open.
-  async function openWhy(page, label = "Why am I seeing this?") {
+  // "Why?", opened: the notice's words, once its fold is really open.
+  async function openWhy(page, label = "Why?") {
     const n = await readNotice(page);
     const why = n.buttons.find((b) => b.text === label);
     expect(why, `no Why button: ${n.text}`);
@@ -304,7 +307,7 @@ module.exports = async function (env) {
     const open = await inClotrUI(page, "CLOTR-NOTICE", function () {
       return !this.querySelector(".why").hidden;
     });
-    expect(open, "Why am I seeing this? didn't open");
+    expect(open, "Why? didn't open");
     return readNotice(page);
   }
 
@@ -407,14 +410,7 @@ module.exports = async function (env) {
             try {
               await expectLine(page, s, s.es);
               const line = await lineIn(page, "CLOTR-NOTICE");
-              // A known flaw in this release: the kind's name is set in the system's monospace font, which is wider
-              // on Linux and the Mac than Consolas on Windows, and it can't wrap yet, so the long Spanish name for a
-              // card's security code runs past the note at 380 px there. The next release lets the name wrap.
-              const known = s.id === "card_code" && size === "380" && process.platform !== "win32";
-              expect(
-                !line.overflows || known,
-                `${s.id} at ${size}: the Spanish runs past the warning's edge (${line.over})`,
-              );
+              expect(!line.overflows, `${s.id} at ${size}: the Spanish runs past the warning's edge (${line.over})`);
               await shots(page, `who-asks-${s.id}-${size}-es`);
             } finally {
               await page.close();
@@ -424,7 +420,7 @@ module.exports = async function (env) {
         const page = await openSite(es, "chatgpt");
         try {
           await expectLine(page, sample("card_code"), sample("card_code").es);
-          const why = await openWhy(page, "¿Por qué veo esto?");
+          const why = await openWhy(page, "¿Por qué?");
           expect(why.text.includes("Qué hacer"), `no Qué hacer: ${why.text}`);
           expect(
             why.text.includes(

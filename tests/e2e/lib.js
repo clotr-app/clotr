@@ -28,10 +28,33 @@ const argValue = (name) => {
   return i >= 0 ? argv[i + 1] : undefined;
 };
 const EXT = path.resolve(argValue("--ext") || path.join(ROOT, "extension"));
-// --all-on means every held-back feature is switched on (npm run test:e2e:all-on builds extension/ that way first,
-// into dist/e2e-all-on). sections.js only runs a feature's own checks in this mode, since the default build hides
-// the doors to them.
-const ALL_ON = argv.includes("--all-on");
+// The flags the build under test actually shipped, read from its own manifest rather than assumed. A packaged
+// build drops a held-back feature's files when its flag is off (tools/package.js's FEATURE_FILES), while the
+// source tree under extension/ always keeps them, flag or no.
+const FEATURES = (() => {
+  try {
+    return JSON.parse(fs.readFileSync(path.join(EXT, "manifest.json"), "utf8")).clotr_features || {};
+  } catch {
+    return {};
+  }
+})();
+// Each held-back page's own flag, matching tools/package.js's FEATURE_FILES.
+const PAGE_FEATURE = {
+  "check.html": "scamcheck",
+  "extcheck.html": "extcheck",
+  "practice.html": "practice",
+  "training.html": "training",
+  "lookback.html": "lookback",
+};
+// Whether a held-back page actually belongs to the build under test, so a check that isn't itself about one
+// feature can leave that page out of its own list instead of failing on a page the build never shipped. A flag
+// that's on is trusted outright, so a build that turns a feature on but forgets to ship its file still fails
+// loudly rather than skipping past the bug; a flag that's off falls back to whether the file is actually there,
+// since the source tree keeps it either way and a packaged build doesn't.
+const hasPage = (file) => {
+  const feature = PAGE_FEATURE[file];
+  return !feature || FEATURES[feature] === true || fs.existsSync(path.join(EXT, file));
+};
 const HEADED = argv.includes("--headed");
 // Quiet mode prints only failures, skips, and the summary, though the report file still lists every check. It's the
 // default whenever the output isn't a real terminal, so a script or CI run stays short; --verbose turns it back on.
@@ -46,7 +69,10 @@ const BROWSER = argValue("--browser") || process.env.CLOTR_BROWSER || findBrowse
 // so these aren't it.
 const KEY = "AKIA4HPQ7XZ2R6TWLJ3N";
 const KEY2 = "AKIAZ7Q3M9WX2KD5HB8R";
-const DIALOG_WAIT = 2500; // Clotr's scan runs about 0.4 s after you stop typing, so this gives it plenty of room.
+// Clotr's scan runs about 0.4 s after you stop typing, and while a new page's settings are still on the way it waits
+// for them up to 3 s more (content.js, READY_WAIT_MS), so a warning can take about 3.4 s on a slow start. A wait
+// ends as soon as the warning shows, so passing runs don't get slower.
+const DIALOG_WAIT = 4000;
 const QUIET_WAIT = 1200; // How long a check waits before it's confident no dialog is coming.
 
 // Each fake site uses a real AI chat's address, so Clotr treats it as the real thing, but the page itself comes from
@@ -215,6 +241,85 @@ const SITES = {
     page: "demo-group-chat.html",
     editor: `document.querySelector("#box")`,
   },
+  // Search engines, where what you type becomes a search instead of a message. Like email and chat apps,
+  // Clotr only runs here once the person switches the site on.
+  googleSearch: {
+    url: "https://www.google.com/search",
+    page: "search-google.html",
+    editor: `document.querySelector("#q")`,
+    send: `document.querySelector("#search-btn")`,
+  },
+  bingSearch: {
+    url: "https://www.bing.com/search",
+    page: "search-bing.html",
+    editor: `document.querySelector("#sb_form_q")`,
+    send: `document.querySelector("#sb_form_go")`,
+  },
+  duckduckgoSearch: {
+    url: "https://duckduckgo.com/",
+    page: "search-ddg.html",
+    editor: `document.querySelector("#searchbox_input")`,
+    send: `document.querySelector("#search_button_homepage")`,
+  },
+  braveSearch: {
+    url: "https://search.brave.com/search",
+    page: "search-brave.html",
+    editor: `document.querySelector("#q")`,
+    send: `document.querySelector("#submit-button")`,
+  },
+  startpageSearch: {
+    url: "https://www.startpage.com/sp/search",
+    page: "search-startpage.html",
+    editor: `document.querySelector("#q")`,
+    send: `document.querySelector("#search-button")`,
+  },
+  ecosiaSearch: {
+    url: "https://www.ecosia.org/search",
+    page: "search-ecosia.html",
+    editor: `document.querySelector("#search-input")`,
+    send: `document.querySelector("#search-submit")`,
+  },
+  yahooSearch: {
+    url: "https://search.yahoo.com/search",
+    page: "search-yahoo.html",
+    editor: `document.querySelector("#yschsp")`,
+    send: `document.querySelector("#search-submit")`,
+  },
+  // Support-chat widgets a company embeds on its own site. The top page is any ordinary company site; the
+  // widget's own conversation box loads in an iframe at the widget maker's address, which is the one host
+  // Clotr is ever granted. These keys open the company page; the *Frame keys below are never opened directly,
+  // they only teach openSite's request interceptor to answer that iframe's own request.
+  supportIntercom: { url: "https://example-shop.test/support/intercom", page: "support-widget-host.html" },
+  supportDrift: { url: "https://example-shop.test/support/drift", page: "support-widget-host.html" },
+  supportFreshchat: { url: "https://example-shop.test/support/freshchat", page: "support-widget-host.html" },
+  supportCrisp: { url: "https://example-shop.test/support/crisp", page: "support-widget-host.html" },
+  supportLiveChat: { url: "https://example-shop.test/support/livechat", page: "support-widget-host.html" },
+  supportTawkto: { url: "https://example-shop.test/support/tawkto", page: "support-widget-host.html" },
+  supportTidio: { url: "https://example-shop.test/support/tidio", page: "support-widget-host.html" },
+  intercomFrame: { url: "https://widget.intercom.io/frame", page: "support-widget-frame.html" },
+  driftFrame: { url: "https://widget.drift.com/frame", page: "support-widget-frame.html" },
+  freshchatFrame: { url: "https://wchat.freshchat.com/frame", page: "support-widget-frame.html" },
+  crispFrame: { url: "https://client.crisp.chat/frame", page: "support-widget-frame.html" },
+  livechatFrame: { url: "https://secure.livechatinc.com/frame", page: "support-widget-frame.html" },
+  tawktoFrame: { url: "https://embed.tawk.to/frame", page: "support-widget-frame.html" },
+  tidioFrame: { url: "https://widget-v4.tidiochat.com/frame", page: "support-widget-frame.html" },
+  // Made-up sites with no dedicated setup of their own: Clotr only ever reaches these through "Everywhere I
+  // type". Two different hosts, not one site's two pages, since the request interceptor above only matches by
+  // origin and would otherwise serve the wrong page for whichever of the two it finds first.
+  everywhereChat: {
+    url: "https://unknown-forum.test/thread",
+    page: "everywhere-chat.html",
+    editor: `document.querySelector("#msg")`,
+    send: `document.querySelector("#send")`,
+  },
+  everywhereCheckout: {
+    url: "https://unknown-shop.test/checkout",
+    page: "everywhere-checkout.html",
+    editor: `document.querySelector("#notes")`,
+    send: `document.querySelector("#send")`,
+  },
+  everywhereWidgetHost: { url: "https://acme-hardware.test/help", page: "everywhere-widget-host.html" },
+  everywhereWidgetFrame: { url: "https://widget.unknownchat.test/frame", page: "support-widget-frame.html" },
 };
 
 // Nothing blocks out of the box. Most checks want to see the blocking dialog though, so they reset state as if the
@@ -330,65 +435,96 @@ async function describeConsole(msg) {
 
 async function launch(ext = EXT, extraArgs = [], extraEnv = null) {
   const profile = fs.mkdtempSync(path.join(os.tmpdir(), "clotr-e2e-"));
-  // Turn on Developer mode, the way anyone who used "Load unpacked" would have it. Chrome and Brave 153+ won't
-  // reload an unpacked extension without it, and U2 tests exactly that reload.
-  fs.mkdirSync(path.join(profile, "Default"), { recursive: true });
-  fs.writeFileSync(
-    path.join(profile, "Default", "Preferences"),
-    JSON.stringify({ extensions: { ui: { developer_mode: true } } }),
-  );
-  const browser = await puppeteer.launch({
-    executablePath: BROWSER,
-    headless: !HEADED,
-    pipe: true,
-    enableExtensions: Array.isArray(ext) ? ext : [ext], // An array here lets Extension check load fake extensions beside Clotr.
-    userDataDir: profile,
-    ...(extraEnv ? { env: { ...process.env, ...extraEnv } } : {}), // Linux Chrome reads its UI language from LANGUAGE.
-    defaultViewport: { width: 1000, height: 700 },
-    args: [
-      "--no-first-run",
-      "--no-default-browser-check",
-      "--enable-unsafe-extension-debugging", // Older Chromium builds need this to load an extension over CDP.
-      ...extraArgs,
-      ...(process.getuid?.() === 0 ? ["--no-sandbox"] : []), // A container runs as root, so it needs this flag.
-    ],
-  });
-  const swTarget = await browser.waitForTarget(
-    (t) => t.type() === "service_worker" && t.url().endsWith("/background.js"),
-    { timeout: 15000 },
-  );
-  const swSession = await swTarget.createCDPSession();
-  // Runs fn(...args) in the service worker. I use raw CDP here instead of puppeteer's own WebWorker wrapper, because
-  // that wrapper's evaluate() hangs on some Chromium builds.
-  const worker = {
-    async evaluate(fn, ...args) {
-      const expression = `(${fn})(...${JSON.stringify(args)})`;
-      const r = await swSession.send("Runtime.evaluate", { expression, awaitPromise: true, returnByValue: true });
-      if (r.exceptionDetails)
-        throw new Error(`service worker: ${r.exceptionDetails.exception?.description || r.exceptionDetails.text}`);
-      return r.result.value;
-    },
-  };
-  // The CDP session can attach before the extension's own APIs are bound, which once showed up as "chrome is not
-  // defined" in CI on U2. Waiting here confirms the worker is really running before anything else uses it.
-  const ready = await waitFor(
-    () => worker.evaluate(() => typeof chrome === "object" && Boolean(chrome.runtime?.id)).catch(() => false),
-    10000,
-  );
-  if (!ready) throw new Error("the extension's service worker never became ready");
-  const ctx = { browser, profile, swTarget, worker, problems: [], version: await browser.version() };
+  let browser;
+  try {
+    // Turn on Developer mode, the way anyone who used "Load unpacked" would have it. Chrome and Brave 153+ won't
+    // reload an unpacked extension without it, and U2 tests exactly that reload.
+    fs.mkdirSync(path.join(profile, "Default"), { recursive: true });
+    fs.writeFileSync(
+      path.join(profile, "Default", "Preferences"),
+      JSON.stringify({ extensions: { ui: { developer_mode: true } } }),
+    );
+    browser = await puppeteer.launch({
+      executablePath: BROWSER,
+      headless: !HEADED,
+      pipe: true,
+      enableExtensions: Array.isArray(ext) ? ext : [ext], // An array here lets Extension check load fake extensions beside Clotr.
+      userDataDir: profile,
+      ...(extraEnv ? { env: { ...process.env, ...extraEnv } } : {}), // Linux Chrome reads its UI language from LANGUAGE.
+      defaultViewport: { width: 1000, height: 700 },
+      // Puppeteer's own default (180000) is a flat number, and a flat number can always be outlasted by enough
+      // sharing: a run that otherwise grew only 1.4x (a loaded machine, 380s to 532s) still had one
+      // `Runtime.callFunctionOn` round trip cross 180000ms alone, and later a fixed 360000 was crossed too, in a run
+      // whose total time (840s against an ordinary ~450s) said the machine was that busy, not that anything had
+      // hung. Scaling this the same way every wait below already does keeps the margin tied to how busy the
+      // computer measurably is right now, instead of a second guess at a number that the next busier day beats.
+      protocolTimeout: 180000 * patience(),
+      args: [
+        "--no-first-run",
+        "--no-default-browser-check",
+        "--enable-unsafe-extension-debugging", // Older Chromium builds need this to load an extension over CDP.
+        ...extraArgs,
+        ...(process.getuid?.() === 0 ? ["--no-sandbox"] : []), // A container runs as root, so it needs this flag.
+      ],
+    });
+    const swTarget = await browser.waitForTarget(
+      (t) => t.type() === "service_worker" && t.url().endsWith("/background.js"),
+      { timeout: 15000 * patience() },
+    );
+    const swSession = await swTarget.createCDPSession();
+    // Runs fn(...args) in the service worker. I use raw CDP here instead of puppeteer's own WebWorker wrapper, because
+    // that wrapper's evaluate() hangs on some Chromium builds.
+    const worker = {
+      async evaluate(fn, ...args) {
+        const expression = `(${fn})(...${JSON.stringify(args)})`;
+        const r = await swSession.send("Runtime.evaluate", { expression, awaitPromise: true, returnByValue: true });
+        if (r.exceptionDetails)
+          throw new Error(`service worker: ${r.exceptionDetails.exception?.description || r.exceptionDetails.text}`);
+        return r.result.value;
+      },
+    };
+    // The CDP session can attach before the extension's own APIs are bound, which once showed up as "chrome is not
+    // defined" in CI on U2. Waiting here confirms the worker is really running before anything else uses it.
+    const ready = await waitFor(
+      () => worker.evaluate(() => typeof chrome === "object" && Boolean(chrome.runtime?.id)).catch(() => false),
+      10000,
+    );
+    if (!ready) throw new Error("the extension's service worker never became ready");
+    // The checks fake a team's policy by swapping managed storage's get. The background keeps the policy it read
+    // until the browser says the admin changed it, so a swap here forgets that copy, the way a real change does.
+    await worker.evaluate(() => {
+      const area = chrome.storage.managed;
+      if (!area) return;
+      let get = area.get.bind(area);
+      Object.defineProperty(area, "get", {
+        configurable: true,
+        get: () => get,
+        set: (fn) => {
+          get = fn;
+          policyRead = null;
+        },
+      });
+    });
+    const ctx = { browser, profile, swTarget, worker, problems: [], version: await browser.version() };
 
-  // Any error or warning the background logs to its console counts as a problem.
-  await swSession.send("Runtime.enable");
-  swSession.on("Runtime.consoleAPICalled", (e) => {
-    if (e.type === "error" || e.type === "warning") {
-      ctx.problems.push(`service worker ${e.type}: ${e.args.map((a) => a.value ?? a.description).join(" ")}`);
-    }
-  });
-  swSession.on("Runtime.exceptionThrown", (e) =>
-    ctx.problems.push(`service worker exception: ${e.exceptionDetails.text}`),
-  );
-  return ctx;
+    // Any error or warning the background logs to its console counts as a problem.
+    await swSession.send("Runtime.enable");
+    swSession.on("Runtime.consoleAPICalled", (e) => {
+      if (e.type === "error" || e.type === "warning") {
+        ctx.problems.push(`service worker ${e.type}: ${e.args.map((a) => a.value ?? a.description).join(" ")}`);
+      }
+    });
+    swSession.on("Runtime.exceptionThrown", (e) =>
+      ctx.problems.push(`service worker exception: ${e.exceptionDetails.text}`),
+    );
+    return ctx;
+  } catch (err) {
+    // Nothing reaches run.js's own cleanup if launch itself fails partway through, so this profile has to clean
+    // up after itself here instead of leaking a folder every time a browser or extension fails to come up.
+    await browser?.close().catch(() => {});
+    fs.rmSync(profile, { recursive: true, force: true });
+    throw err;
+  }
 }
 
 // A write goes through the background's own write queue, but only after I give the previous check's last events
@@ -717,6 +853,34 @@ async function expectNoUI(page, why) {
   expect(!notice, `${why}, but the warn notice appeared: ${notice?.text}`);
 }
 
+// A choice in a warning that makes Clotr warn less on every site opens Clotr's own page beside the chat to ask
+// again (confirm.html). This answers there the way a person would: once Yes has woken up, moving the mouse onto
+// it before clicking, then goes back to the chat page. Returns the question Clotr's page showed.
+async function answerOnClotrPage(ctx, chat, yes = true) {
+  const target = await ctx.browser.waitForTarget((t) => t.url().includes("/confirm.html#"), {
+    timeout: 5000 * patience(),
+  });
+  const page = await target.page();
+  page.on("pageerror", (err) => ctx.problems.push(`confirm.html error: ${err.message}`));
+  await page.bringToFront();
+  const button = yes ? "#cf-yes" : "#cf-no";
+  await page.waitForFunction(() => document.getElementById("cf-what").textContent, { timeout: 5000 * patience() });
+  await page.waitForSelector(`${button}:not([disabled])`, { timeout: 5000 * patience() });
+  const question = await page.$eval("#cf-what", (p) => p.textContent);
+  const box = await (await page.$(button)).boundingBox();
+  const x = box.x + box.width / 2;
+  const y = box.y + box.height / 2;
+  const closed = new Promise((resolve) => page.once("close", resolve));
+  await page.mouse.move(x - 40, y + 30);
+  await page.mouse.move(x, y, { steps: 4 });
+  await page.mouse.click(x, y).catch(() => {}); // the page closes itself once it has its answer
+  await Promise.race([closed, sleep(3000 * patience())]);
+  if (!page.isClosed()) await page.close();
+  await chat.bringToFront();
+  await settle(300); // the change reaches the chat tab by message
+  return question;
+}
+
 // Sets a pattern's response the way the user does: the popup's Settings dropdown.
 async function chooseResponse(ctx, patternId, value) {
   const popup = await openPopup(ctx);
@@ -880,12 +1044,119 @@ function writeReport(ctx) {
   process.exitCode = failed.length ? 1 : 0;
 }
 
+// ---------- Attached files: fixtures and helpers several sections share ----------
+// Here rather than in the section that first used them, so a CI shard that runs a later section on its own still has them.
+// Office documents are really zip files full of XML, so this is a minimal zip writer for test fixtures.
+function makeZip(file, entries) {
+  const zlib = require("zlib");
+  const parts = [];
+  const central = [];
+  let offset = 0;
+  for (const [name, content, deflate = true] of entries) {
+    const data = Buffer.from(content);
+    const body = deflate ? zlib.deflateRawSync(data) : data;
+    const nameBuf = Buffer.from(name);
+    const crc = zlib.crc32(data);
+    const local = Buffer.alloc(30);
+    local.writeUInt32LE(0x04034b50, 0);
+    local.writeUInt16LE(20, 4);
+    local.writeUInt16LE(deflate ? 8 : 0, 8);
+    local.writeUInt32LE(crc, 14);
+    local.writeUInt32LE(body.length, 18);
+    local.writeUInt32LE(data.length, 22);
+    local.writeUInt16LE(nameBuf.length, 26);
+    const cd = Buffer.alloc(46);
+    cd.writeUInt32LE(0x02014b50, 0);
+    cd.writeUInt16LE(20, 4);
+    cd.writeUInt16LE(20, 6);
+    cd.writeUInt16LE(deflate ? 8 : 0, 10);
+    cd.writeUInt32LE(crc, 16);
+    cd.writeUInt32LE(body.length, 20);
+    cd.writeUInt32LE(data.length, 24);
+    cd.writeUInt16LE(nameBuf.length, 28);
+    cd.writeUInt32LE(offset, 42);
+    parts.push(local, nameBuf, body);
+    central.push(cd, nameBuf);
+    offset += 30 + nameBuf.length + body.length;
+  }
+  const cdBuf = Buffer.concat(central);
+  const end = Buffer.alloc(22);
+  end.writeUInt32LE(0x06054b50, 0);
+  end.writeUInt16LE(entries.length, 8);
+  end.writeUInt16LE(entries.length, 10);
+  end.writeUInt32LE(cdBuf.length, 12);
+  end.writeUInt32LE(offset, 16);
+  fs.writeFileSync(file, Buffer.concat([...parts, cdBuf, end]));
+}
+const docxXml = (paras) =>
+  `<?xml version="1.0"?><w:document xmlns:w="w"><w:body>${paras.map((p) => `<w:p><w:r><w:t>${p}</w:t></w:r></w:p>`).join("")}</w:body></w:document>`;
+
+// A made-up medical record number in a made-up file. Neither one may ever end up in storage.
+const MRN = "447182093";
+const MRN_FILE = "lab-results.txt";
+TYPED_VALUES.add(MRN);
+TYPED_VALUES.add(MRN_FILE);
+// Each check writes its files into its own folder. I remove that folder without waiting afterwards, since on
+// Windows the browser keeps an uploaded file open for a while.
+const holdDir = (name) => {
+  const dir = path.join(OUT, `file-hold-${name}`);
+  fs.mkdirSync(dir, { recursive: true });
+  return dir;
+};
+const dropDir = (dir) => fs.rm(dir, { recursive: true, force: true, maxRetries: 10, retryDelay: 500 }, () => {});
+async function attachText(page, dir, name, text) {
+  const file = path.join(dir, name);
+  fs.writeFileSync(file, text);
+  await (await page.$("#attach")).uploadFile(file);
+}
+const attachMrn = (page, dir) => attachText(page, dir, MRN_FILE, `Patient notes\nMRN: ${MRN}\n`);
+// Shoots the dialog or corner note the way people actually see it, at a phone size and a desktop size, in
+// both themes.
+async function holdShots(page, name) {
+  for (const [width, height] of [
+    [380, 700],
+    [1280, 800],
+  ])
+    for (const theme of ["light", "dark"])
+      await shotAt(page, `${name}-${width}-${theme}.png`, { width, height, theme });
+  await page.emulateMediaFeatures([{ name: "prefers-color-scheme", value: "light" }]);
+  await page.setViewport({ width: 1000, height: 700 });
+}
+// Stands in for Clotr's own file reader so a check can force it to be slow, to hang forever, or to throw.
+// Each read is counted too, so a check can wait until Clotr has actually started reading the file.
+const READS = {
+  slow: (ms) => `new Promise((r) => setTimeout(r, ${ms})).then(() => real(f))`,
+  never: () => "new Promise(() => {})",
+  broken: () => 'Promise.reject(new Error("test: the reader broke"))',
+};
+const stubReader = (page, kind, ms = 0) =>
+  evalInClotr(
+    page,
+    `(() => { const real = globalThis.Clotr.readAttachment; globalThis.__clotrReads = 0; globalThis.Clotr.readAttachment = (f) => { globalThis.__clotrReads++; return ${READS[kind](ms)}; }; return true; })()`,
+  );
+const readStarted = async (page) =>
+  expect(
+    await waitFor(() => evalInClotr(page, "globalThis.__clotrReads > 0"), 3000),
+    "Clotr never started reading the file",
+  );
+
 module.exports = {
+  docxXml,
+  makeZip,
+  MRN,
+  MRN_FILE,
+  holdDir,
+  dropDir,
+  attachText,
+  attachMrn,
+  holdShots,
+  stubReader,
+  readStarted,
   ALL_GUIDED,
-  ALL_ON,
   BROWSER,
   DIALOG_WAIT,
   EXT,
+  FEATURES,
   HEADED,
   HIGH_RISK,
   KEY,
@@ -901,6 +1172,7 @@ module.exports = {
   TYPED_VALUES,
   USER_BLOCKS_HIGH,
   activeBadge,
+  answerOnClotrPage,
   argValue,
   argv,
   auditShadow,
@@ -920,6 +1192,7 @@ module.exports = {
   findBrowser,
   focusEditor,
   fs,
+  hasPage,
   inClotrUI,
   launch,
   openExtPage,

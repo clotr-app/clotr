@@ -32,7 +32,7 @@
     },
     "watchWords": {
       "title": "Watch words",
-      "description": "Words or phrases (up to 4 words each) to warn about, e.g. project code names. A format with # for a digit and @ for a letter (at least 4 marks, no digits, for example EMP-#####) is watched as a format instead. Together with the words and formats in kinds: 500 words and 50 formats in all. Words are turned into one-way fingerprints on each computer; formats travel as typed (they aren't secret).",
+      "description": "Words or phrases (up to 4 words each) to warn about, e.g. project code names. A format with # for a digit and @ for a letter (at least 4 marks, no digits, for example EMP-#####) is watched as a format instead. Together with the words and formats in kinds: 500 words and 50 formats in all. Words are turned into scrambled fingerprints on each computer; formats travel as typed (they aren't secret).",
       "type": "array",
       "items": {
         "type": "string"
@@ -53,6 +53,11 @@
       "description": "Larger warnings for everyone.",
       "type": "boolean"
     },
+    "holdFiles": {
+      "title": "Hold files",
+      "description": "An attached file waits for the person to answer about anything Clotr finds inside it, not just a kind set to block. On by default once this policy sets anything else; set to false to only hold a file for a kind set to block, the same as for someone with no policy at all.",
+      "type": "boolean"
+    },
     "kinds": {
       "title": "Your own kinds",
       "description": "Up to 20 kinds of detail your organization names itself, for example a matter number or a client name. Clotr warns about each one by its name and, with Bandage on, swaps it for its cover word, like [Matter 1]. Words and formats are shared with watchWords: 500 words and 50 formats in all. Nothing about them leaves the computer.",
@@ -67,7 +72,7 @@
           },
           "words": {
             "title": "Words",
-            "description": "Words or phrases of this kind (up to 4 words each), e.g. client names. Turned into one-way fingerprints on each computer.",
+            "description": "Words or phrases of this kind (up to 4 words each), e.g. client names. Turned into scrambled fingerprints on each computer.",
             "type": "array",
             "items": {
               "type": "string"

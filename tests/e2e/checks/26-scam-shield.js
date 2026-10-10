@@ -1,12 +1,28 @@
-// E2E checks: SN. People find the scam check in one place: a quiet row on the popup's Overview, a section in
-// Settings, and doors from pages they already have open. Each door just opens the page it names, and nothing about
-// them gets counted, flashed, or saved. TQ28 and PD1 live here too, since the 30-day line and the ways into practice
-// use these same doors, and so do WA7 and WA13, since the printed "Never read these out" card belongs to Is this a
-// scam? Run in order by ../run.js with one shared env (helpers from ../lib.js).
+// E2E checks: SN. People find scam help folded into one closed section of Settings, a row on the popup's
+// Overview that only earns its place while Tourniquet protects someone, and doors from pages they already
+// have open. Each door just opens the page it names, and nothing about them gets counted, flashed, or saved.
+// TQ28 and PD1 live here too, since the 30-day line and the ways into practice use these same doors, and so
+// do WA7 and WA13, since the printed "Never read these out" card belongs to Is this a scam? Run in order by
+// ../run.js with one shared env (helpers from ../lib.js).
 "use strict";
 
 module.exports = async function (env) {
-  const { EXT, KEY, OUT, TYPED_VALUES, check, clickNode, ctx, expect, fs, launch, openExtPage, openPopup, path } = env;
+  const {
+    EXT,
+    FEATURES,
+    KEY,
+    OUT,
+    TYPED_VALUES,
+    check,
+    clickNode,
+    ctx,
+    expect,
+    fs,
+    launch,
+    openExtPage,
+    openPopup,
+    path,
+  } = env;
   const { readNotice, resetState, seedEvents, shot, shotAt, sleep, store, typeText, waitFor, waitForNotice } = env;
   const { withSite } = env;
 
@@ -68,17 +84,26 @@ module.exports = async function (env) {
     await popup.emulateMediaFeatures([{ name: "prefers-color-scheme", value: "light" }]);
     await popup.setViewport({ width: 380, height: 700 });
   }
-  // Scrolls Settings to the scam check's section and shoots it at the popup's real size, the way someone
-  // would actually see it.
-  async function settingsShots(popup, base) {
-    await popup.setViewport({ width: 380, height: 600 });
+  // Scrolls Settings to Scam help and shoots it closed, then open, at the popup's real size, the way someone
+  // would actually see it before and after they tap the summary.
+  async function scrollToSection(popup) {
     await popup.evaluate(() => {
       document.getElementById("ss-settings").scrollIntoView({ block: "start" });
       scrollBy(0, -12); // a little of Bandage above it
     });
+  }
+  async function settingsShots(popup, base) {
+    await popup.setViewport({ width: 380, height: 600 });
+    await popup.$eval("#ss-help", (d) => (d.open = false)); // shut in case the test above left it open
+    await scrollToSection(popup);
     for (const theme of ["dark", "light"])
-      await shotAt(popup, `${base}-real-${theme}.png`, { width: 380, height: 600, theme });
-    for (const theme of ["dark", "light"]) await shot(popup, `${base}-380-${theme}.png`, theme);
+      await shotAt(popup, `${base}-closed-real-${theme}.png`, { width: 380, height: 600, theme });
+    for (const theme of ["dark", "light"]) await shot(popup, `${base}-closed-380-${theme}.png`, theme);
+    await popup.$eval("#ss-help", (d) => (d.open = true));
+    await scrollToSection(popup);
+    for (const theme of ["dark", "light"])
+      await shotAt(popup, `${base}-open-real-${theme}.png`, { width: 380, height: 600, theme });
+    for (const theme of ["dark", "light"]) await shot(popup, `${base}-open-380-${theme}.png`, theme);
     await popup.emulateMediaFeatures([{ name: "prefers-color-scheme", value: "light" }]);
     await popup.setViewport({ width: 380, height: 700 });
   }
@@ -112,14 +137,23 @@ module.exports = async function (env) {
 
   await check(
     "SN1",
-    "The popup's Overview: one quiet row with the shield, Scam check, Is this a scam? and Practice, each opening its page (pictures)",
+    "The popup's Overview: the Scam check row is hidden by default, and only shows, with the shield, Is this a scam? and Practice, while Tourniquet is protecting someone (pictures)",
     async () => {
       await resetState(ctx, {});
       await unlockSettings(ctx);
       await setTourniquet(ctx, null);
       const popup = await openPopup(ctx);
       try {
-        const row = await readRow(popup);
+        expect(!(await readRow(popup)).visible, "the row shows on Overview without Tourniquet on");
+        await popupShots(popup, "scam-shield-overview-empty");
+      } finally {
+        await popup.close();
+      }
+      // Tourniquet on: the row earns its place, the same quiet shape it always had.
+      await setTourniquet(ctx, "adult");
+      const withTq = await openPopup(ctx);
+      try {
+        const row = await readRow(withTq);
         expect(row, "no Scam check row in the Overview");
         expect(row.inOverview && row.visible, `the row isn't on the Overview: ${JSON.stringify(row)}`);
         expect(row.name === "Scam check" && row.label === "Scam check", `name: ${row.name} / ${row.label}`);
@@ -132,19 +166,19 @@ module.exports = async function (env) {
         expect(row.aboveHero, "the row isn't above the numbers");
         expect(!row.wide, "the popup scrolls sideways");
         // The row should only show on the Overview tab, not on Settings.
-        await popup.click("#tab-settings");
+        await withTq.click("#tab-settings");
         await sleep(150);
-        expect(!(await readRow(popup)).visible, "the row shows on Settings");
-        await popup.click("#tab-overview");
+        expect(!(await readRow(withTq)).visible, "the row shows on Settings");
+        await withTq.click("#tab-overview");
         await sleep(150);
-        await opensAndClose(ctx, popup, "#ss-row", "Is this a scam?", "check.html");
-        await opensAndClose(ctx, popup, "#ss-row", "Practice", "practice.html");
-        await popupShots(popup, "scam-shield-overview-empty");
+        await opensAndClose(ctx, withTq, "#ss-row", "Is this a scam?", "check.html");
+        await opensAndClose(ctx, withTq, "#ss-row", "Practice", "practice.html");
+        await popupShots(withTq, "scam-shield-overview-tourniquet");
       } finally {
-        await popup.close();
+        await withTq.close();
       }
-      // With history to show, the row should still be the same one row above the numbers. It should also stay
-      // while settings are locked, since neither page changes a setting.
+      // With history to show too, the row should still be the same one row above the numbers, and stay while
+      // settings are locked, since neither page it opens changes a setting.
       await store.set(ctx, { events: seedEvents() });
       await lockSettings(ctx);
       const full = await openPopup(ctx);
@@ -155,30 +189,121 @@ module.exports = async function (env) {
       } finally {
         await full.close();
         await unlockSettings(ctx);
+        await setTourniquet(ctx, null);
         await resetState(ctx, {});
       }
     },
   );
 
-  // Reads the scam check's whole Settings section at once.
+  // One event of today, of the given type, for the today-link check. Only card_code and gift_card are stored
+  // as their own type; the other "who really asks" reasons sit on a generic password match and are never kept.
+  const todayEvent = (type) => ({
+    t: Date.now(),
+    site: "chatgpt.com",
+    type,
+    name: type === "card_code" ? "Card Number" : "Gift Card Code",
+    severity: "high",
+    action: "redacted",
+    fp: "2000000000000001",
+  });
+  const readTodayLink = (popup) =>
+    popup.evaluate(() => {
+      const l = document.getElementById("ss-today-link");
+      return {
+        visible: Boolean(l) && l.getClientRects().length > 0,
+        text: l?.textContent.replace(/\s+/g, " ").trim() || "",
+      };
+    });
+
+  await check(
+    "SN10",
+    "The Overview's quiet link to Scam help, after a card or gift-card warning today, opens Settings with the section already open; it's gone the next day or once Tourniquet is on",
+    async () => {
+      await resetState(ctx, {});
+      await unlockSettings(ctx);
+      await setTourniquet(ctx, null);
+      const empty = await openPopup(ctx);
+      try {
+        expect(!(await readTodayLink(empty)).visible, "the link shows with no warning today");
+      } finally {
+        await empty.close();
+      }
+      await store.set(ctx, { events: [todayEvent("card_code")] });
+      const popup = await openPopup(ctx);
+      try {
+        const link = await readTodayLink(popup);
+        expect(link.visible, "no today-link after a card warning");
+        expect(link.text === "Just saw one of those warnings? Scam help", `link text: ${link.text}`);
+        await popup.click("#ss-today-open");
+        await sleep(200);
+        const open = await popup.evaluate(() => ({
+          tab: document.getElementById("panel-settings")?.hidden === false,
+          details: document.getElementById("ss-help")?.open === true,
+        }));
+        expect(open.tab && open.details, `clicking didn't open Settings' Scam help: ${JSON.stringify(open)}`);
+      } finally {
+        await popup.close();
+      }
+      // A gift-card warning counts the same way.
+      await store.set(ctx, { events: [todayEvent("gift_card")] });
+      const gift = await openPopup(ctx);
+      try {
+        expect((await readTodayLink(gift)).visible, "no today-link after a gift-card warning");
+      } finally {
+        await gift.close();
+      }
+      // Yesterday's warning doesn't count, and neither does one while Tourniquet already shows the row.
+      await store.set(ctx, { events: [{ ...todayEvent("card_code"), t: Date.now() - 86400000 }] });
+      const stale = await openPopup(ctx);
+      try {
+        expect(!(await readTodayLink(stale)).visible, "a stale warning still shows the link");
+      } finally {
+        await stale.close();
+      }
+      await store.set(ctx, { events: [todayEvent("card_code")] });
+      await setTourniquet(ctx, "adult");
+      const withTq = await openPopup(ctx);
+      try {
+        expect(!(await readTodayLink(withTq)).visible, "the link shows on top of Tourniquet's own row");
+      } finally {
+        await withTq.close();
+        await setTourniquet(ctx, null);
+        await resetState(ctx, {});
+      }
+    },
+  );
+
+  // Reads the scam check's whole Settings section at once: a closed <details> titled Scam help, holding
+  // everything that used to sit in the open.
   const readSection = (popup) =>
     popup.evaluate(() => {
       const sec = document.getElementById("ss-settings");
+      const details = document.getElementById("ss-help");
       const toggle = document.getElementById("command-check");
+      const groups = [...(sec?.querySelectorAll(".ss-buttons") || [])].map((g) =>
+        [...g.querySelectorAll("button")].map((b) => ({
+          text: b.textContent.trim(),
+          primary: b.classList.contains("primary"),
+        })),
+      );
       return {
         h2s: [...document.querySelectorAll("#settings-body h2")].map((h) => h.textContent.trim()),
         visible: Boolean(sec) && sec.getClientRects().length > 0,
-        title: sec?.querySelector("h2")?.textContent.trim() || "",
-        shield: Boolean(sec?.querySelector("h2 svg")),
+        open: Boolean(details?.open),
+        title: details?.querySelector("summary b")?.textContent.trim() || "",
+        summaryLead: details?.querySelector("summary .ss-help-lead")?.textContent.trim() || "",
+        shield: Boolean(details?.querySelector("summary svg")),
         lead: sec?.querySelector(".ss-lead")?.textContent.trim() || "",
+        // A closed <details>'s content is skipped on screen (checkVisibility knows this; getClientRects
+        // doesn't, since the browser still lays out a zero-size box for it), so the switch has nothing to
+        // click until it's open.
+        contentShown: Boolean(toggle?.checkVisibility()),
         toggleInside: Boolean(sec?.contains(toggle)),
         toggle: toggle?.closest("label")?.textContent.trim() || "",
         means: toggle?.closest("label")?.nextElementSibling?.textContent.trim() || "",
         checked: toggle?.checked,
-        buttons: [...(sec?.querySelectorAll(".ss-buttons button") || [])].map((b) => ({
-          text: b.textContent.trim(),
-          primary: b.classList.contains("primary"),
-        })),
+        groups,
+        buttons: groups.flat(),
         line: (() => {
           const l = document.getElementById("ss-tq30");
           return l ? { text: l.textContent.replace(/\s+/g, " ").trim(), shown: l.getClientRects().length > 0 } : null;
@@ -206,7 +331,7 @@ module.exports = async function (env) {
 
   await check(
     "SN2",
-    "Settings: the scam check's section after Bandage, with its words, the command check's switch (on until switched off, in What Clotr stores and the backup) and its one button (Is this a scam? and Practice stay in the Overview row only)",
+    "Settings: Scam help sits right after Bandage, closed by default behind one summary, and holds Is this a scam?, Practice, the command check's switch (on until switched off, in What Clotr stores and the backup) and Print Safety Guide",
     async () => {
       await resetState(ctx, {});
       await unlockSettings(ctx);
@@ -216,15 +341,34 @@ module.exports = async function (env) {
       try {
         await popup.click("#tab-settings");
         await sleep(200);
-        const s = await readSection(popup);
-        expect(s.visible, "no Scam check section in Settings");
-        expect(s.title === "Scam check" && s.shield, `title: ${s.title}`);
-        const at = s.h2s.indexOf("Scam check");
-        expect(at > 0 && s.h2s[at - 1] === "Bandage", `not right after Bandage: ${s.h2s.join(" / ")}`);
+        let s = await readSection(popup);
+        expect(s.visible, "no Scam help section in Settings");
+        expect(s.open === false, "Scam help is open by default");
+        expect(s.title === "Scam help" && s.shield, `title: ${s.title}`);
+        expect(
+          s.summaryLead === "Spot a scam, practice with six made-up ones, or print a safety guide.",
+          `summary: ${s.summaryLead}`,
+        );
+        const at = s.h2s.indexOf("Bandage");
+        expect(at >= 0 && s.h2s[at + 1] === "More options", `not right after Bandage: ${s.h2s.join(" / ")}`);
+        expect(!s.contentShown, "the closed section's switch is still in reach");
+        expect(!s.wide, "the popup scrolls sideways");
+        // Open it: everything that used to be spread out is in here now.
+        await popup.$eval("#ss-help", (d) => (d.open = true));
+        s = await readSection(popup);
+        expect(s.open === true, "Scam help didn't open");
         expect(
           s.lead ===
             "When someone asks for something, Clotr helps. Its warnings say who really asks for codes, card numbers and gift cards.",
           `lead: ${s.lead}`,
+        );
+        expect(
+          JSON.stringify(s.groups[0]) ===
+            JSON.stringify([
+              { text: "Is this a scam?", primary: false },
+              { text: "Practice with six made-up scams", primary: false },
+            ]),
+          `first buttons: ${JSON.stringify(s.groups[0])}`,
         );
         expect(s.toggleInside, "the command check's switch isn't in the section");
         expect(s.toggle === "Check commands I copy on AI chats", `switch: ${s.toggle}`);
@@ -235,10 +379,9 @@ module.exports = async function (env) {
         );
         expect(s.checked === true, "the command check isn't on by default");
         expect(
-          JSON.stringify(s.buttons) === JSON.stringify([{ text: "Print Safety Guide", primary: false }]),
-          `buttons: ${JSON.stringify(s.buttons)}`,
+          JSON.stringify(s.groups[1]) === JSON.stringify([{ text: "Print Safety Guide", primary: false }]),
+          `second buttons: ${JSON.stringify(s.groups[1])}`,
         );
-        expect(!s.wide, "the popup scrolls sideways");
         // Turning the switch off should be stored, shown on What Clotr stores, and carried by the backup.
         // Then I turn it back on.
         expect((await storedSays(ctx, "Check commands I copy on AI chats")) === "On", "What Clotr stores: not On");
@@ -255,8 +398,9 @@ module.exports = async function (env) {
         expect(carried[0] === false && carried[1] === false, `the backup doesn't carry the switch: ${carried}`);
         await popup.click("#command-check");
         await waitFor(async () => (await store.get(ctx, "commandCheck")).commandCheck === true, 2000);
-        // Only one button should be left here, since Is this a scam? and Practice moved out to the Overview row.
-        await opensAndClose(ctx, popup, "#ss-settings", "Print Safety Guide", "share.html#card");
+        await opensAndClose(ctx, popup, "#ss-help", "Is this a scam?", "check.html");
+        await opensAndClose(ctx, popup, "#ss-help", "Practice with six made-up scams", "practice.html");
+        await opensAndClose(ctx, popup, "#ss-help", "Print Safety Guide", "share.html#card");
         await settingsShots(popup, "scam-shield-settings");
       } finally {
         await popup.close();
@@ -309,6 +453,7 @@ module.exports = async function (env) {
       try {
         await popup.click("#tab-settings");
         await sleep(200);
+        await popup.$eval("#ss-help", (d) => (d.open = true));
         const s = await readSection(popup);
         expect(
           s.line?.shown && s.line.text === "Just had a scam, or a near miss? Tourniquet can ask first for 30 days.",
@@ -404,67 +549,40 @@ module.exports = async function (env) {
     return page;
   }
 
-  // Reads the welcome page's scam check section at once.
-  const readWelcome = (page) =>
-    page.evaluate(() => {
-      const sec = document.getElementById("ss-welcome");
-      return {
-        visible: Boolean(sec) && sec.getClientRects().length > 0,
-        h2s: [...document.querySelectorAll("#welcome h2")]
-          .filter((h) => h.getClientRects().length)
-          .map((h) => h.textContent.trim()),
-        title: sec?.querySelector("h2")?.textContent.trim() || "",
-        shield: Boolean(sec?.querySelector("h2 svg")),
-        text: sec?.querySelector("p")?.textContent.trim() || "",
-        buttons: [...(sec?.querySelectorAll("button") || [])].map((b) => ({
-          text: b.textContent.trim(),
-          primary: b.classList.contains("primary"),
-        })),
-      };
-    });
+  // Reads the welcome page's h2 order, to confirm the scam check card isn't among them.
+  const readWelcomeH2s = (page) =>
+    page.evaluate(() =>
+      [...document.querySelectorAll("#welcome h2")]
+        .filter((h) => h.getClientRects().length)
+        .map((h) => h.textContent.trim()),
+    );
 
   await check(
     "SN3",
-    "The welcome page: the scam check's section under Try it, its words and its two buttons, each opening its page; there while settings are locked too (pictures)",
+    "The welcome page carries no scam check card: it moved into Settings, so Try it runs straight into Tell Clotr what to look out for",
     async () => {
       await resetState(ctx, {});
       await unlockSettings(ctx);
       const page = await openPage(ctx, "vault.html?welcome=1");
       try {
-        const w = await readWelcome(page);
-        expect(w.visible, "no Scam check section on the welcome page");
-        expect(w.title === "Scam check" && w.shield, `title: ${w.title}`);
-        const at = w.h2s.indexOf("Scam check");
+        expect(!(await page.$("#ss-welcome")), "the old scam check card is still on the welcome page");
+        const h2s = await readWelcomeH2s(page);
+        const at = h2s.indexOf("Try it");
         expect(
-          at > 0 && w.h2s[at - 1] === "Try it" && w.h2s[at + 1] === "Tell Clotr what to look out for",
-          `not under Try it: ${w.h2s.join(" / ")}`,
+          at >= 0 && h2s[at + 1] === "Tell Clotr what to look out for",
+          `Try it isn't followed by the next card: ${h2s.join(" / ")}`,
         );
-        expect(
-          w.text ===
-            "When someone asks you for a code, your card's numbers or gift cards, Clotr's warning says who really asks for them. Got a message that worries you? Clotr can give a second opinion.",
-          `words: ${w.text}`,
-        );
-        expect(
-          JSON.stringify(w.buttons) ===
-            JSON.stringify([
-              { text: "Is this a scam?", primary: true },
-              { text: "Practice with six made-up scams", primary: false },
-            ]),
-          `buttons: ${JSON.stringify(w.buttons)}`,
-        );
-        await opensAndClose(ctx, page, "#ss-welcome", "Is this a scam?", "check.html");
-        await opensAndClose(ctx, page, "#ss-welcome", "Practice with six made-up scams", "practice.html");
         await fitsAt380(page, "The welcome page");
-        await partShots(page, "#ss-welcome", "scam-shield-welcome");
-        expect(!(await store.events(ctx)).length, "the welcome page's section recorded something");
+        await partShots(page, "#welcome", "scam-shield-welcome");
+        expect(!(await store.events(ctx)).length, "the welcome page recorded something");
       } finally {
         await page.close();
       }
-      // Even locked by a PIN, the section should stay, since these pages don't change any setting.
+      // Even locked by a PIN, it should stay gone, since these pages don't change any setting.
       await lockSettings(ctx);
       const locked = await openPage(ctx, "vault.html?welcome=1");
       try {
-        expect((await readWelcome(locked)).visible, "the section hides while settings are locked");
+        expect(!(await locked.$("#ss-welcome")), "the card came back while settings are locked");
       } finally {
         await locked.close();
         await unlockSettings(ctx);
@@ -546,7 +664,8 @@ module.exports = async function (env) {
   }
   async function namesOn(c, lang, name) {
     const problems = [];
-    for (const file of ["vault.html?welcome=1", "share.html", "helper.html", "check.html", "practice.html"]) {
+    // The welcome page carries no scam check card of its own now, so it isn't one of these places.
+    for (const file of ["share.html", "helper.html", "check.html", "practice.html"]) {
       const page = await openPage(c, file);
       try {
         problems.push(...nameProblems(await pageWords(page), `${lang} ${file}`, name));
@@ -586,13 +705,16 @@ module.exports = async function (env) {
       const after = document.getElementById("after");
       return {
         shown: Boolean(after) && after.getClientRects().length > 0,
-        buttons: [...(after?.querySelectorAll("button") || [])].map((b) => b.textContent.trim()),
+        // Only the buttons a person can see: a switched-off feature's button is still in the code build's page, hidden.
+        buttons: [...(after?.querySelectorAll("button") || [])]
+          .filter((b) => b.checkVisibility())
+          .map((b) => b.textContent.trim()),
       };
     });
 
   await check(
     "SN7",
-    "The setup page's last step: Print Safety Guide, Show them “Is this a scam?”, Practice together and Office training walkthrough, each opening its page (pictures)",
+    "The setup page's last step: Print Safety Guide, Show them “Is this a scam?” and Practice together, each opening its page, plus Office training walkthrough once that's on too (pictures)",
     async () => {
       await unlockSettings(ctx);
       await setTourniquet(ctx, null);
@@ -608,14 +730,14 @@ module.exports = async function (env) {
               "Print Safety Guide",
               "Show them “Is this a scam?”",
               "Practice together",
-              "Office training walkthrough",
+              ...(FEATURES.training ? ["Office training walkthrough"] : []),
             ]),
           `buttons: ${JSON.stringify(a.buttons)}`,
         );
         await opensAndClose(ctx, page, "#after", "Print Safety Guide", "share.html#card");
         await opensAndClose(ctx, page, "#after", "Show them “Is this a scam?”", "check.html");
         await opensAndClose(ctx, page, "#after", "Practice together", "practice.html");
-        await opensAndClose(ctx, page, "#after", "Office training walkthrough", "training.html");
+        if (FEATURES.training) await opensAndClose(ctx, page, "#after", "Office training walkthrough", "training.html");
         await fitsAt380(page, "The setup page");
         await partShots(page, "#setup-end", "scam-shield-setup-end");
         expect(
@@ -628,7 +750,7 @@ module.exports = async function (env) {
     },
   );
 
-  // Opens a warning's "Why am I seeing this?" and reads what it says.
+  // A warning's "Why?" opened, and what it says.
   async function openWhy(page, label) {
     const n = await readNotice(page);
     const why = n?.buttons.find((b) => b.text === label);
@@ -656,7 +778,7 @@ module.exports = async function (env) {
         await typeText(page, "the 3 numbers on the back are 482");
         expect(await waitForNotice(page), "no warning for a card's security code");
         await sleep(300);
-        const why = await openWhy(page, "Why am I seeing this?");
+        const why = await openWhy(page, "Why?");
         expect(why.text.includes("Got a message asking for this?"), `no second opinion: ${why.text}`);
         const link = why.buttons.find((b) => b.text === "Get a second opinion");
         expect(link, `no Get a second opinion button: ${why.buttons.map((b) => b.text)}`);
@@ -697,7 +819,7 @@ module.exports = async function (env) {
         await typeText(page, `my key ${KEY}`);
         expect(await waitForNotice(page), "no warning for a key");
         await sleep(300);
-        const why = await openWhy(page, "Why am I seeing this?");
+        const why = await openWhy(page, "Why?");
         expect(!/second opinion/i.test(why.text), `a key's Why? offers a second opinion: ${why.text}`);
       });
     },
@@ -705,13 +827,12 @@ module.exports = async function (env) {
 
   await check(
     "PD1",
-    "Every way into the practice page opens it: the welcome page, the Share page, the setup page's last step, and the popup's Overview row",
+    "Every way into the practice page opens it: the Share page, the setup page's last step, Settings' folded Scam help and the popup's Overview row under Tourniquet",
     async () => {
       await resetState(ctx, {});
       await unlockSettings(ctx);
       await setTourniquet(ctx, null);
       for (const [file, scope, label] of [
-        ["vault.html?welcome=1", "#ss-welcome", "Practice with six made-up scams"],
         ["share.html", "section.no-print", "Practice together"],
         ["helper.html?for=after_scam", "#after", "Practice together"],
       ]) {
@@ -725,9 +846,20 @@ module.exports = async function (env) {
       }
       const popup = await openPopup(ctx);
       try {
-        await opensAndClose(ctx, popup, "#ss-row", "Practice", "practice.html");
+        await popup.click("#tab-settings");
+        await sleep(200);
+        await popup.$eval("#ss-help", (d) => (d.open = true));
+        await opensAndClose(ctx, popup, "#ss-help", "Practice with six made-up scams", "practice.html");
       } finally {
         await popup.close();
+      }
+      await setTourniquet(ctx, "adult");
+      const withTq = await openPopup(ctx);
+      try {
+        await opensAndClose(ctx, withTq, "#ss-row", "Practice", "practice.html");
+      } finally {
+        await withTq.close();
+        await setTourniquet(ctx, null);
       }
     },
   );
@@ -738,6 +870,7 @@ module.exports = async function (env) {
     async () => {
       const es = await launch(EXT, ["--lang=es-ES", "--accept-lang=es-ES"], { LANGUAGE: "es", LANG: "es_ES.UTF-8" });
       try {
+        await setTourniquet(es, "adult");
         const popup = await openPopup(es);
         try {
           const row = await readRow(popup);
@@ -747,17 +880,29 @@ module.exports = async function (env) {
           await popupShots(popup, "scam-shield-es-overview");
           await popup.click("#tab-settings");
           await sleep(200);
-          const s = await readSection(popup);
-          expect(s.title === "Revisión de estafas", `title: ${s.title}`);
+          let s = await readSection(popup);
+          expect(s.open === false, "Ayuda con estafas is open by default");
+          expect(s.title === "Ayuda con estafas", `title: ${s.title}`);
+          expect(
+            s.summaryLead === "Detecta una estafa, practica con seis casos inventados o imprime una guía de seguridad.",
+            `summary: ${s.summaryLead}`,
+          );
+          await popup.$eval("#ss-help", (d) => (d.open = true));
+          s = await readSection(popup);
           expect(
             s.lead ===
               "Cuando alguien te pide algo, Clotr te ayuda. Sus avisos dicen quién pide de verdad códigos, números de tarjeta y tarjetas regalo.",
             `lead: ${s.lead}`,
           );
+          expect(
+            JSON.stringify(s.groups[0].map((b) => b.text)) ===
+              JSON.stringify(["¿Es una estafa?", "Practicar con seis estafas inventadas"]),
+            `first buttons: ${JSON.stringify(s.groups[0])}`,
+          );
           expect(s.toggle === "Comprobar los comandos que copio en los chats de IA", `switch: ${s.toggle}`);
           expect(
-            JSON.stringify(s.buttons.map((b) => b.text)) === JSON.stringify(["Imprimir guía de seguridad"]),
-            `buttons: ${JSON.stringify(s.buttons)}`,
+            JSON.stringify(s.groups[1].map((b) => b.text)) === JSON.stringify(["Imprimir guía de seguridad"]),
+            `second buttons: ${JSON.stringify(s.groups[1])}`,
           );
           expect(
             s.line?.text ===
@@ -768,28 +913,19 @@ module.exports = async function (env) {
           await settingsShots(popup, "scam-shield-es-settings");
         } finally {
           await popup.close();
+          await setTourniquet(es, null);
         }
-        // Checks the welcome page's section.
+        // Checks the welcome page: the old card is gone, so Try it runs straight into the next one.
         const welcome = await openPage(es, "vault.html?welcome=1");
         try {
-          const w = await readWelcome(welcome);
-          const at = w.h2s.indexOf("Revisión de estafas");
+          expect(!(await welcome.$("#ss-welcome")), "the old scam check card is still on the welcome page");
+          const h2s = await readWelcomeH2s(welcome);
+          const at = h2s.indexOf("Pruébalo");
           expect(
-            at > 0 && w.h2s[at - 1] === "Pruébalo" && w.h2s[at + 1] === "Dile a Clotr qué vigilar",
-            `order: ${w.h2s.join(" / ")}`,
-          );
-          expect(
-            w.text ===
-              "Cuando alguien te pide un código, los números de tu tarjeta o tarjetas regalo, el aviso de Clotr dice quién los pide de verdad. ¿Te preocupa un mensaje? Clotr te da una segunda opinión.",
-            `words: ${w.text}`,
-          );
-          expect(
-            JSON.stringify(w.buttons.map((b) => b.text)) ===
-              JSON.stringify(["¿Es una estafa?", "Practicar con seis estafas inventadas"]),
-            `buttons: ${JSON.stringify(w.buttons)}`,
+            at >= 0 && h2s[at + 1] === "Dile a Clotr qué vigilar",
+            `Pruébalo isn't followed by the next card: ${h2s.join(" / ")}`,
           );
           await fitsAt380(welcome, "The Spanish welcome page");
-          await partShots(welcome, "#ss-welcome", "scam-shield-es-welcome");
         } finally {
           await welcome.close();
         }
@@ -821,7 +957,7 @@ module.exports = async function (env) {
                 "Imprimir guía de seguridad",
                 "Enséñale «¿Es una estafa?»",
                 "Practicar juntos",
-                "Recorrido de formación de la oficina",
+                ...(FEATURES.training ? ["Recorrido de formación de la oficina"] : []),
               ]),
             `buttons: ${JSON.stringify(a.buttons)}`,
           );
@@ -837,7 +973,7 @@ module.exports = async function (env) {
           await typeText(page, "los 3 números de atrás son 482");
           expect(await waitForNotice(page), "no Spanish warning for a card's security code");
           await sleep(300);
-          const why = await openWhy(page, "¿Por qué veo esto?");
+          const why = await openWhy(page, "¿Por qué?");
           expect(why.text.includes("¿Te pidieron esto en un mensaje?"), `no second opinion: ${why.text}`);
           expect(
             why.buttons.some((b) => b.text === "Pide una segunda opinión"),

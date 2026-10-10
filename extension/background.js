@@ -36,9 +36,12 @@ const { VAULT_MODES, vaultKey, dedupeVault, cleanVaultEntry, cleanEvent } = glob
 const {
   CONTENT_JS,
   USER_SCRIPT_ID,
+  EVERYWHERE_ORIGIN,
+  EVERYWHERE_SCRIPT_ID,
   AI_URL_REGEX,
   PROMPT_SELECTORS,
   userSitePatterns,
+  builtInMatches,
   applyPolicy,
   policyWords,
   policyShapes,
@@ -47,6 +50,10 @@ const {
   floorOf,
   teamHoldOf,
   isEveryday,
+  isSearchSite,
+  isSupportSite,
+  everywhereGranted,
+  SEARCH_SITES,
   tourniquetRecord,
   cleanTourniquet,
   tourniquetStep,
@@ -96,14 +103,26 @@ const SETTINGS_KEYS = [
   "lock", // only whether there is a PIN reaches a page, never the PIN's hash
 ];
 
-// The admin's policy (managed storage), or {} when there is none.
-async function readPolicy() {
-  try {
-    return mergePolicy((await chrome.storage.managed?.get(null)) || {});
-  } catch {
-    return mergePolicy({});
+// The admin's policy (managed storage), or {} when there is none. Reading managed storage can take seconds in
+// a browser that just started, and every page's settings wait on it, so the answer is kept and read again only
+// when the admin's policy changes (the storage listener below). A read that fails isn't kept.
+let policyRead = null;
+function readPolicy() {
+  if (!policyRead) {
+    const read = Promise.resolve()
+      .then(() => chrome.storage.managed?.get(null))
+      .then(
+        (raw) => mergePolicy(raw || {}),
+        () => {
+          if (policyRead === read) policyRead = null;
+          return mergePolicy({});
+        },
+      );
+    policyRead = read;
   }
+  return policyRead;
 }
+readPolicy(); // started now, so the first page's settings don't wait for all of it
 
 // Opens the office training walkthrough once, the first time a team policy shows up on this computer.
 // Settings keeps its own link to it afterwards, next to the policy's own banner.
@@ -205,7 +224,66 @@ async function chatGuard() {
     under: (id, value) => Boolean(floorOfKind(id)) && !notUnder(value, floorOfKind(id)),
     // Whether anything holds kind `id` here (no "OK to share", no offer to just count).
     holds: (id) => locked || floors.has(id),
+    // What kind `id` does right now on every site, with the policy and Tourniquet applied.
+    current: (id) => globalThis.Clotr.responseFor(id, now),
   };
+}
+
+// ---------- Warning less on every site, from a chat page: asked again on Clotr's own page ----------
+// Clotr's warning sits inside the chat page, which can restyle or cover it and steer a click onto one of its
+// choices. So from a chat page, only a choice that makes Clotr stricter applies right away. One that makes it warn
+// less on every site, like "stop warning me about this kind" or "fine to share", is held here instead, and Clotr's
+// own page opens beside the chat to ask again. No website can reach or draw over that page, and only its answer
+// applies what was held. The chat page never learns the token that names it.
+const ASKED_FOR_MS = 60 * 60 * 1000; // an unanswered question is dropped after an hour
+const MAX_ASKED = 10;
+
+async function askOnClotrPage(request, tab) {
+  const token = Array.from(crypto.getRandomValues(new Uint8Array(16)), (b) => b.toString(16).padStart(2, "0")).join("");
+  const { asked = {} } = await sessionArea.get("asked");
+  const now = Date.now();
+  const kept = Object.entries(asked)
+    .filter(([, a]) => now - a.at < ASKED_FOR_MS)
+    .slice(-(MAX_ASKED - 1));
+  kept.push([token, { ...request, tabId: Number.isInteger(tab?.id) ? tab.id : null, at: now }]);
+  await sessionArea.set({ asked: Object.fromEntries(kept) });
+  openBeside(chrome.runtime.getURL(`confirm.html#${token}`), tab);
+}
+
+async function heldChoice(token, take = false) {
+  if (typeof token !== "string") return null;
+  const { asked = {} } = await sessionArea.get("asked");
+  const a = asked[token];
+  if (take && a) {
+    delete asked[token];
+    await sessionArea.set({ asked });
+  }
+  return a && Date.now() - a.at < ASKED_FOR_MS ? a : null;
+}
+
+// What Clotr's page shows: the kinds and the response, never a fingerprint.
+async function readAsked(token) {
+  const a = await heldChoice(token);
+  if (!a) return { gone: true };
+  return a.entries ? { allow: [...new Set(a.entries.map((e) => e.type))] } : { ids: a.ids, value: a.value };
+}
+
+// The person's answer on Clotr's page. A yes still goes through chatGuard, so a PIN, a policy or Tourniquet that
+// took hold in the meantime still wins. Either way the question is gone and the chat tab comes back to the front.
+async function answerAsked(token, yes) {
+  const a = await heldChoice(token, true);
+  if (!a) return { gone: true };
+  let changed = false;
+  if (yes && a.entries) changed = (await vaultAdd(a.entries, true, { confirmed: true })).added > 0;
+  else if (yes) changed = !(await setResponses(a.ids, a.value, true, { confirmed: true })).error;
+  if (a.tabId !== null) {
+    try {
+      Promise.resolve(chrome.tabs.update(a.tabId, { active: true })).catch(() => {});
+    } catch {
+      /* no such tab anymore */
+    }
+  }
+  return { ok: true, changed };
 }
 
 // Reads Bandage's own on/off state straight from storage: true if it's on, false if the person said no, and
@@ -213,6 +291,20 @@ async function chatGuard() {
 // share this, so they can never disagree about what "on" actually means for a given site.
 function bandageFor(everyday, host, r) {
   return everyday ? false : host && typeof r.bandage?.[host] === "boolean" ? r.bandage[host] : undefined;
+}
+
+const hostOf = (p) => new URL(p.replace(/\*$/, "")).hostname;
+
+// Whether this host has no dedicated setup of its own (not built in, not a site the person added by hand)
+// and is covered only because "Everywhere I type" is on. A site with its own setup keeps it even if the
+// broad switch happens to be on too, so turning Discord off there still means Discord specifically, not
+// "everywhere except Discord".
+async function isEverywhereOnly(host, dedicated) {
+  if (!host || dedicated) return false;
+  const { origins = [] } = await chrome.permissions.getAll();
+  if (!everywhereGranted(origins)) return false;
+  if (new Set(builtInMatches().map(hostOf)).has(host)) return false;
+  return !new Set((await userSitePatterns()).map(hostOf)).has(host);
 }
 
 // Builds what one frame actually needs rather than the whole stored map: its own site's pause state and
@@ -243,8 +335,19 @@ async function settingsFor(url) {
   const rawSiteMode = (host && r.siteModes?.[host]) || null;
   const hasPolicy =
     Boolean(managed?.requiredResponses && Object.keys(managed.requiredResponses).length) || Boolean(tourniquet);
-  // Email and chat apps: you write to people there, so no cover names and no reading of replies.
-  const everyday = isEveryday(host, r.siteKinds || {});
+  // Email and chat apps: you write to people there, so no cover names and no reading of replies. A support
+  // chat is the same shape (someone on the other end reads it, maybe a bot), so it gets the same wording and
+  // the same features turned off. A search engine has nobody reading what you type either, but it isn't a
+  // person or an AI, so it keeps its own wording (warning-ui.js) while still losing the AI-only features.
+  const everydaySite = isEveryday(host, r.siteKinds || {});
+  const support = isSupportSite(host);
+  const search = isSearchSite(host);
+  // Everywhere I type: no list names this host in advance, so it gets the same people-reading wording and
+  // the same AI-only features off as an email or chat app, but the content script also has to tell a chat
+  // box from an ordinary form field itself (the `everywhere` flag below is what tells it to).
+  const everywhere = await isEverywhereOnly(host, everydaySite || support || search);
+  const everyday = everydaySite || support || everywhere;
+  const noAiFeatures = everyday || search;
   return {
     responses: eff.responses,
     paused: eff.paused,
@@ -252,16 +355,19 @@ async function settingsFor(url) {
     vault,
     guided: r.guided || {},
     largeText: eff.largeText,
-    replyCheck: r.replyCheck !== false && !everyday, // on unless switched off in Settings
-    commandCheck: r.commandCheck !== false && !everyday, // off on everyday sites regardless
-    bandage: bandageFor(everyday, host, r), // true = cover names here, false = declined, undefined = not asked
+    replyCheck: r.replyCheck !== false && !noAiFeatures, // on unless switched off in Settings
+    commandCheck: r.commandCheck !== false && !noAiFeatures, // off on everyday, support and search sites regardless
+    bandage: bandageFor(noAiFeatures, host, r), // true = cover names here, false = declined, undefined = not asked
     everyday,
+    everywhere,
+    search,
     kinds,
     pictureNoted: Boolean(host && r.picturesNoted?.[host] === true),
     tourniquet: tourniquet ? tourniquet.for : null,
     firm: firmKinds(policy), // kinds held by policy or Tourniquet; the warning won't offer anything looser
     locked: eff.locked || Boolean(r.lock),
     teamHold: teamHoldOf(managed), // whether the policy wants a pause before sending any of these kinds
+    holdFiles: managed?.holdFiles === true, // whether the policy holds every file finding, not just Ask-level ones
     // Sent with the settings, not fetched separately, so a send between the two requests can't slip a
     // team word past the fingerprint check.
     salt: await ensureSalt(),
@@ -304,8 +410,9 @@ async function setBandage(url, on) {
 }
 
 // Only stores overrides, so a pattern set back to default keeps following future default changes.
-// `fromChat` marks a request from inside a chat page, which chatGuard won't let go under what holds it.
-async function setResponses(ids, value, fromChat = false) {
+// `fromChat` marks a request from inside a chat page, which chatGuard won't let go under what holds it, and
+// where a choice that warns less waits for Clotr's own page (askOnClotrPage) unless that page `confirmed` it.
+async function setResponses(ids, value, fromChat = false, { tab = null, confirmed = false } = {}) {
   if ((value !== "default" && !RESPONSE_VALUES.has(value)) || !Array.isArray(ids)) return { error: "bad request" };
   let clean = ids.filter((id) => typeof id === "string" && /^[a-z0-9_]{1,64}$/.test(id));
   if (!clean.length) return { error: "bad request" };
@@ -313,20 +420,29 @@ async function setResponses(ids, value, fromChat = false) {
   const chosen = (id) => (value === "default" ? globalThis.Clotr.defaultResponse(id) : value);
   if (guard) clean = clean.filter((id) => !guard.under(id, chosen(id)));
   if (!clean.length) return { error: "refused" };
+  const looser = guard && !confirmed ? clean.filter((id) => !notUnder(chosen(id), guard.current(id))) : [];
+  if (looser.length) {
+    await askOnClotrPage({ ids: looser, value }, tab);
+    clean = clean.filter((id) => !looser.includes(id));
+    if (!clean.length) return { ok: true, asked: true };
+  }
   const { responses = {} } = await chrome.storage.local.get("responses");
   for (const id of clean) {
     if (value === "default" || value === globalThis.Clotr.defaultResponse(id)) delete responses[id];
     else responses[id] = value;
   }
   await chrome.storage.local.set({ responses });
-  return { ok: true };
+  return looser.length ? { ok: true, asked: true } : { ok: true };
 }
 
 // A setting changed (popup, vault, another tab): tell open Clotr tabs to fetch theirs again.
 chrome.storage.onChanged.addListener((changes, area) => {
   // Tourniquet chosen, switched or turned off, or its end answered: the end alarm follows (stepTourniquet).
   if (area === "local" && (changes.tourniquet || changes.tourniquetEnded)) stepTourniquetSafely();
-  if (area === "managed") offerTeamTrainingSafely();
+  if (area === "managed") {
+    policyRead = null; // before the tabs below ask again
+    offerTeamTrainingSafely();
+  }
   if (area !== "managed" && (area !== "local" || !SETTINGS_KEYS.some((k) => changes[k]))) return;
   // This messages every tab, not just the registered ones, since a tab still starting up would otherwise
   // miss the change; tabs without Clotr running just don't answer.
@@ -341,13 +457,23 @@ chrome.storage.onChanged.addListener((changes, area) => {
 
 // ---------- Salt & events ----------
 
+// A page's settings ask for the salt outside the write queue (answered, below), so making one has its own
+// lock: pages asking at the same moment on a fresh install all get the one that's kept.
+let saltMaking = null;
 async function ensureSalt() {
   const { salt } = await chrome.storage.local.get("salt");
   if (salt) return salt;
-  const bytes = crypto.getRandomValues(new Uint8Array(16));
-  const fresh = Array.from(bytes, (b) => b.toString(16).padStart(2, "0")).join("");
-  await chrome.storage.local.set({ salt: fresh });
-  return fresh;
+  saltMaking ||= (async () => {
+    const { salt: made } = await chrome.storage.local.get("salt");
+    if (made) return made;
+    const bytes = crypto.getRandomValues(new Uint8Array(16));
+    const fresh = Array.from(bytes, (b) => b.toString(16).padStart(2, "0")).join("");
+    await chrome.storage.local.set({ salt: fresh });
+    return fresh;
+  })().finally(() => {
+    saltMaking = null;
+  });
+  return saltMaking;
 }
 
 // "Keep history for" (dashboard): 90, 365 (default) or 730 days.
@@ -588,13 +714,28 @@ async function installSpotRules() {
 // site from ending up with two registrations.
 const LEGACY_USER_SCRIPT_IDS = ["chainsec-user-sites"];
 
+// Another worker (the one this reload is replacing, or one running the moment a permission changes) can act on
+// the registration between this call's look and its write, so "already gone" on an unregister is a success, not
+// a failure, and the register/update fallbacks below cover the registration turning up or vanishing either way.
+function goneAlready(err) {
+  return /does not exist/i.test(String(err?.message || err));
+}
+
 async function syncUserSites() {
   const legacy = await chrome.scripting.getRegisteredContentScripts({ ids: LEGACY_USER_SCRIPT_IDS });
-  if (legacy.length) await chrome.scripting.unregisterContentScripts({ ids: legacy.map((s) => s.id) });
+  if (legacy.length) {
+    await chrome.scripting.unregisterContentScripts({ ids: legacy.map((s) => s.id) }).catch((err) => {
+      if (!goneAlready(err)) throw err;
+    });
+  }
   const matches = await userSitePatterns();
   const existing = await chrome.scripting.getRegisteredContentScripts({ ids: [USER_SCRIPT_ID] });
   if (!matches.length) {
-    if (existing.length) await chrome.scripting.unregisterContentScripts({ ids: [USER_SCRIPT_ID] });
+    if (existing.length) {
+      await chrome.scripting.unregisterContentScripts({ ids: [USER_SCRIPT_ID] }).catch((err) => {
+        if (!goneAlready(err)) throw err;
+      });
+    }
     return;
   }
   const script = {
@@ -605,8 +746,16 @@ async function syncUserSites() {
     allFrames: true,
     persistAcrossSessions: true,
   };
-  if (existing.length) await chrome.scripting.updateContentScripts([script]);
-  else {
+  if (existing.length) {
+    try {
+      await chrome.scripting.updateContentScripts([script]);
+    } catch (err) {
+      // Another sync unregistered it in the moment between this one's look and its write. Registering it fresh
+      // gives the same result.
+      if (!goneAlready(err)) throw err;
+      await chrome.scripting.registerContentScripts([script]);
+    }
+  } else {
     try {
       await chrome.scripting.registerContentScripts([script]);
     } catch (err) {
@@ -619,6 +768,56 @@ async function syncUserSites() {
   console.info(LOG, "user-added AI sites:", matches);
 }
 
+// Where "Everywhere I type" doesn't run: the built-in AI tools and every site switched on by itself (an email or
+// chat app, a search engine, a support chat, an AI site added by hand), which already have their own copy of
+// Clotr, plus search engines, since a search box isn't a chat box and stays its own choice. An email or chat app
+// or a support chat that isn't switched on by itself is covered: that's every chat box, and on those sites
+// the page gets the people-reading wording all the same (settingsFor).
+async function dedicatedMatches() {
+  return [...builtInMatches(), ...SEARCH_SITES.flatMap((s) => s.matches), ...(await userSitePatterns())];
+}
+
+// Keeps the one dynamic content script for "Everywhere I type": on only while the browser holds the
+// EVERYWHERE_ORIGIN grant, and never on a site with its own dedicated setup. Re-synced alongside
+// syncUserSites, since adding or removing a hand-picked AI site changes what this one has to exclude.
+async function syncEverywhere() {
+  const { origins = [] } = await chrome.permissions.getAll();
+  const existing = await chrome.scripting.getRegisteredContentScripts({ ids: [EVERYWHERE_SCRIPT_ID] });
+  if (!everywhereGranted(origins)) {
+    if (existing.length) {
+      await chrome.scripting.unregisterContentScripts({ ids: [EVERYWHERE_SCRIPT_ID] }).catch((err) => {
+        if (!goneAlready(err)) throw err;
+      });
+    }
+    return;
+  }
+  const script = {
+    id: EVERYWHERE_SCRIPT_ID,
+    matches: [EVERYWHERE_ORIGIN],
+    excludeMatches: await dedicatedMatches(),
+    js: CONTENT_JS,
+    runAt: "document_start",
+    allFrames: true,
+    persistAcrossSessions: true,
+  };
+  if (existing.length) {
+    try {
+      await chrome.scripting.updateContentScripts([script]);
+    } catch (err) {
+      if (!goneAlready(err)) throw err;
+      await chrome.scripting.registerContentScripts([script]);
+    }
+  } else {
+    try {
+      await chrome.scripting.registerContentScripts([script]);
+    } catch (err) {
+      if (!/duplicate/i.test(String(err?.message || err))) throw err;
+      await chrome.scripting.updateContentScripts([script]);
+    }
+  }
+  console.info(LOG, "Everywhere I type is on");
+}
+
 // Starts protecting a newly added site's already-open tabs without needing a reload, but only the tabs
 // inside the sections the user actually chose, not every page on the host.
 async function injectIntoOpenTabs(origins) {
@@ -627,6 +826,23 @@ async function injectIntoOpenTabs(origins) {
   if (!patterns.length) return;
   const tabs = await chrome.tabs.query({ url: patterns });
   for (const tab of tabs) {
+    try {
+      await chrome.scripting.executeScript({ target: { tabId: tab.id, allFrames: true }, files: CONTENT_JS });
+    } catch (err) {
+      console.warn(LOG, "could not start on open tab", tab.id, err);
+    }
+  }
+}
+
+// Same idea as injectIntoOpenTabs, for "Everywhere I type": every open https tab outside the dedicated list,
+// so switching it on protects tabs already open without needing a reload. A no-op while it's off.
+async function injectEverywhereIntoOpenTabs() {
+  const { origins = [] } = await chrome.permissions.getAll();
+  if (!everywhereGranted(origins)) return;
+  const exclude = await dedicatedMatches();
+  const tabs = await chrome.tabs.query({ url: [EVERYWHERE_ORIGIN] });
+  for (const tab of tabs) {
+    if (!tab.url || exclude.some((p) => globalThis.ClotrSites.urlMatchesAny(tab.url, [p]))) continue;
     try {
       await chrome.scripting.executeScript({ target: { tabId: tab.id, allFrames: true }, files: CONTENT_JS });
     } catch (err) {
@@ -657,19 +873,28 @@ async function startInOpenTabs() {
 chrome.permissions.onAdded.addListener(({ origins = [] }) => {
   enqueue(async () => {
     await syncUserSites();
-    await injectIntoOpenTabs(origins);
+    await syncEverywhere();
+    if (everywhereGranted(origins)) await injectEverywhereIntoOpenTabs();
+    else await injectIntoOpenTabs(origins);
   }).catch((err) => console.error(LOG, "adding site failed", err));
 });
 
 chrome.permissions.onRemoved.addListener(() => {
-  enqueue(syncUserSites).catch((err) => console.error(LOG, "removing site failed", err));
+  enqueue(async () => {
+    await syncUserSites();
+    await syncEverywhere();
+  }).catch((err) => console.error(LOG, "removing site failed", err));
 });
 
 // Updates where Clotr runs when the chosen sections change without a permission change, such as adding
-// another section on an already-granted host, or removing one.
+// another section on an already-granted host, or removing one. A user-added site also changes what
+// "Everywhere I type" has to exclude, so it's re-synced here too.
 chrome.storage.onChanged.addListener((changes, area) => {
   if (area === "local" && changes.siteScopes) {
-    enqueue(syncUserSites).catch((err) => console.error(LOG, "site sync failed", err));
+    enqueue(async () => {
+      await syncUserSites();
+      await syncEverywhere();
+    }).catch((err) => console.error(LOG, "site sync failed", err));
   }
 });
 
@@ -726,18 +951,25 @@ async function migrateToVault() {
 // dedupeVault then keeps one entry per fingerprint or format.
 
 // fromChat is true when the call came from inside a chat page itself, where chatGuard won't let someone
-// mark a kind "OK to share" if the team's policy holds it.
-async function vaultAdd(entries, fromChat = false) {
+// mark a kind "OK to share" if the team's policy holds it, and where any "OK to share" waits for Clotr's own
+// page (askOnClotrPage) unless that page `confirmed` it. "Always watch" from a chat page is kept right away.
+async function vaultAdd(entries, fromChat = false, { tab = null, confirmed = false } = {}) {
   let clean = (Array.isArray(entries) ? entries : []).map(cleanVaultEntry).filter(Boolean);
   const guard = fromChat ? await chatGuard() : null;
   if (guard) clean = clean.filter((e) => !(e.mode === "allow" && guard.holds(e.type)));
+  const asked = guard && !confirmed ? clean.filter((e) => e.mode === "allow") : [];
+  if (asked.length) {
+    await askOnClotrPage({ entries: asked }, tab);
+    clean = clean.filter((e) => e.mode !== "allow");
+  }
   const { vault = [] } = await chrome.storage.local.get("vault");
   const before = new Set(vault.map(vaultKey));
   const next = dedupeVault(vault.concat(clean));
   await chrome.storage.local.set({ vault: next });
   return {
     added: clean.filter((e) => !before.has(vaultKey(e))).length,
-    rejected: (entries?.length || 0) - clean.length,
+    rejected: (entries?.length || 0) - clean.length - asked.length,
+    ...(asked.length ? { asked: true } : {}),
   };
 }
 
@@ -912,8 +1144,10 @@ chrome.runtime.onInstalled.addListener((details) => {
   enqueue(ensureSalt).catch((err) => console.error(LOG, "salt setup failed", err));
   enqueue(() => noteEverydayOffer(details?.reason)).catch((err) => console.error(LOG, "offer bookkeeping failed", err));
   enqueue(syncUserSites).catch((err) => console.error(LOG, "site sync failed", err));
+  enqueue(syncEverywhere).catch((err) => console.error(LOG, "everywhere sync failed", err));
   if (details?.reason === "install" || details?.reason === "update") {
     startInOpenTabs().catch((err) => console.warn(LOG, "could not start in open tabs", err));
+    enqueue(injectEverywhereIntoOpenTabs).catch((err) => console.warn(LOG, "could not start on open tabs", err));
   }
   installSpotRules().catch((err) => console.error(LOG, "spotting rules failed", err));
   chrome.alarms.create("refresh-toolbar", { periodInMinutes: 30 });
@@ -925,6 +1159,9 @@ chrome.runtime.onInstalled.addListener((details) => {
 chrome.runtime.onStartup.addListener(() => {
   scheduleUpdateCheck();
   enqueue(syncUserSites).catch((err) => console.error(LOG, "site sync failed", err));
+  // Not injected into open tabs here: the registration persists across sessions, so tabs restored at startup
+  // load it themselves, and injecting again would only start a second copy that then steps aside.
+  enqueue(syncEverywhere).catch((err) => console.error(LOG, "everywhere sync failed", err));
   enqueue(refreshToolbar).catch(() => {});
   offerTeamTrainingSafely();
   stepTourniquetSafely(); // the end alarm again, or the end itself if it came while the browser was closed
@@ -977,10 +1214,9 @@ chrome.commands?.onCommand.addListener(handleCommand); // none on Firefox for An
 // which shares that page with the site's own code.
 const fromClotrPage = (sender) => (sender.url || "").startsWith(chrome.runtime.getURL(""));
 
-// Opens the "Is this a scam?" page from a warning, right next to the chat's own tab when the browser
-// can tell us where that is, or at the end of the window otherwise.
-async function openCheckPage(tab) {
-  const url = chrome.runtime.getURL("check.html");
+// Opens one of Clotr's own pages from a warning, like the "Is this a scam?" page, right next to the chat's own
+// tab when the browser can tell us where that is, or at the end of the window otherwise.
+async function openBeside(url, tab) {
   const beside = Number.isInteger(tab?.index) && Number.isInteger(tab?.windowId);
   try {
     await chrome.tabs.create(beside ? { url, windowId: tab.windowId, index: tab.index + 1 } : { url });
@@ -992,6 +1228,8 @@ async function openCheckPage(tab) {
     }
   }
 }
+const openCheckPage = (tab) => openBeside(chrome.runtime.getURL("check.html"), tab);
+const openTrackingPage = (tab) => openBeside(chrome.runtime.getURL("tracking.html"), tab);
 
 chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   if (sender.id !== chrome.runtime.id) return false;
@@ -1002,10 +1240,19 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
       .catch((err) => sendResponse({ error: String(err) }));
     return true; // respond asynchronously
   };
+  // For a request that only reads: it doesn't wait behind the queue's writes, since a page runs on the defaults
+  // until its settings come (one slow write once held a new chat page there for 9.5 s).
+  const answer = (task) => {
+    Promise.resolve()
+      .then(task)
+      .then((result) => sendResponse(result))
+      .catch((err) => sendResponse({ error: String(err) }));
+    return true;
+  };
 
   switch (msg?.type) {
     case "clotr:getSalt":
-      return reply(async () => ({ salt: await ensureSalt() }));
+      return answer(async () => ({ salt: await ensureSalt() }));
     case "clotr:events":
       return reply(async () => {
         const count = await appendEvents(msg.events);
@@ -1021,7 +1268,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
         return { ok: true };
       });
     case "clotr:vaultAdd":
-      return reply(() => vaultAdd(msg.entries, !fromClotrPage(sender)));
+      return reply(() => vaultAdd(msg.entries, !fromClotrPage(sender), { tab: sender.tab }));
     case "clotr:vaultUpdate":
       // Only the vault page removes an entry or switches it to "allow".
       if (!fromClotrPage(sender)) return false;
@@ -1037,17 +1284,29 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     case "clotr:relaxAnswer":
       return reply(() => relaxAnswer(msg.id, msg.accepted));
     case "clotr:getSettings":
-      return reply(() => settingsFor(sender.url || sender.tab?.url || ""));
+      return answer(() => settingsFor(sender.url || sender.tab?.url || ""));
     case "clotr:setBandage":
       return reply(() => setBandage(sender.url || sender.tab?.url || "", msg.on));
     case "clotr:pictureNoted":
       return reply(() => notePicture(sender.url || sender.tab?.url || ""));
     case "clotr:setResponses":
-      return reply(() => setResponses(msg.ids, msg.value, !fromClotrPage(sender)));
+      return reply(() => setResponses(msg.ids, msg.value, !fromClotrPage(sender), { tab: sender.tab }));
+    case "clotr:askedRead":
+      // Only Clotr's own page reads or answers a choice held for it (askOnClotrPage), never a chat page.
+      if (!fromClotrPage(sender)) return false;
+      return reply(() => readAsked(msg.token));
+    case "clotr:askedAnswer":
+      if (!fromClotrPage(sender)) return false;
+      return reply(() => answerAsked(msg.token, msg.yes === true));
     case "clotr:openCheck":
       // A warning's "Get a second opinion": opens Clotr's own Is this a scam? page in a new tab beside the
       // chat. The page is always this fixed one; nothing from the message goes with it.
       openCheckPage(sender.tab);
+      return false;
+    case "clotr:openTracking":
+      // Clean link's "How ads follow you": same fixed-page, new-tab pattern as openCheck. The content script
+      // can't navigate to an extension page directly, since the chat page it's running on isn't Clotr's own.
+      openTrackingPage(sender.tab);
       return false;
     case "clotr:health":
       if (!sender.tab?.id) return false;

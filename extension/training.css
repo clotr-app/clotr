@@ -56,9 +56,7 @@ body.training-page {
   padding: 12px 14px 14px;
   border-radius: 12px;
   background: var(--card-bg);
-  box-shadow:
-    var(--lift),
-    inset 0 0 0 1px var(--ring);
+  box-shadow: inset 0 0 0 1px var(--ring);
 }
 .tw-check-q {
   margin: 0 0 6px;
@@ -137,14 +135,10 @@ body.training-page {
   line-height: 1.4;
 }
 .tw-quiz-option.tw-correct {
-  box-shadow:
-    var(--btn-lift),
-    inset 0 0 0 2px var(--good-ink);
+  box-shadow: inset 0 0 0 2px var(--good-ink);
 }
 .tw-quiz-option.tw-missed {
-  box-shadow:
-    var(--btn-lift),
-    inset 0 0 0 2px var(--high-fg);
+  box-shadow: inset 0 0 0 2px var(--high-fg);
 }
 
 /* Step 8: completion. A quiet card, printable (policy.css's pattern), never "certified". */
@@ -153,9 +147,7 @@ body.training-page {
   padding: 18px 20px 20px;
   border-radius: 14px;
   background: var(--card-bg);
-  box-shadow:
-    var(--lift),
-    inset 0 0 0 1px var(--ring);
+  box-shadow: inset 0 0 0 1px var(--ring);
 }
 .tw-done-name {
   margin: 0 0 2px;

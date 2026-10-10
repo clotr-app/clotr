@@ -1,0 +1,54 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title data-i18n="tr_title">How ads follow you</title>
+  <link rel="stylesheet" href="popup.css">
+  <link rel="stylesheet" href="vault.css">
+</head>
+<body class="vault-page">
+  <header class="top no-print">
+    <img src="icons/icon-on-32.png" alt="" width="24" height="24">
+    <span class="wordmark" data-i18n-skip>Clotr</span>
+    <h1 data-i18n="tr_title">How ads follow you</h1>
+  </header>
+
+  <p class="lead" data-i18n="tr_lead">You looked something up once, and ads about it showed up for days after, maybe even on someone else's phone. Here's the part of that Clotr can do something about, and the part it can't.</p>
+
+  <section>
+    <h2 data-i18n="tr_step1Title">Looking it up starts it</h2>
+    <p data-i18n="tr_step1Text">A search engine, a ticket site or an airline logs what you looked at, the same way any site remembers a visit. Most of those sites also carry a small script from an ad network, and that script fires the moment the page loads, telling the network you were there.</p>
+  </section>
+
+  <section>
+    <h2 data-i18n="tr_step2Title">The ad network connects the dots</h2>
+    <p data-i18n="tr_step2Text">If you're signed into the same account on more than one device, or two devices share a home Wi-Fi, the ad network can guess they belong to the same person and show the same ad on both. None of that happens inside a browser, so Clotr, or any browser extension, never sees it.</p>
+  </section>
+
+  <section>
+    <h2 data-i18n="tr_stopTitle">What Clotr stops</h2>
+    <p data-i18n="tr_stopText">A link copied from one of these sites often carries a tracking code tucked into its address, something like "fbclid=" or "gclid=", that tells the network the link came from you specifically. Clotr takes that part out before the link leaves your message, so the rest of the address still works and nothing about who shared it rides along.</p>
+  </section>
+
+  <section>
+    <h2 data-i18n="tr_cantTitle">What it can't stop</h2>
+    <p data-i18n="tr_cantText">The script that fires when a page first loads, the matching between your devices, and anything a site sends straight from its own server to the ad network all happen before a link is ever copied, somewhere Clotr can't reach. A tracker blocker, the kind some browsers build in and others add as a separate extension, is built for exactly that job and updates against new trackers daily. Clotr isn't trying to replace it.</p>
+  </section>
+
+  <section>
+    <h2 data-i18n="tr_phoneTitle">On your phone</h2>
+    <p data-i18n="tr_phoneText">Android already has a setting that does this, sending every app's lookups through a DNS service that filters trackers rather than a new app to install. Open Settings, then Network &amp; internet, then Private DNS, choose "Private DNS provider hostname," and type the hostname of one such service (search for a filtering DNS provider to find a hostname to type). On a Samsung phone the same setting sits under Connections, then More connection settings, then Private DNS.</p>
+    <p data-i18n="tr_phoneLimitText">It reaches every app on the phone, the same ad-network domain a browser blocker reaches from one tab. It still can't see a site's own first-party logging, or the account and Wi-Fi matching between your devices, the same ceiling the sections above hit. An iPhone can do something similar with a configuration profile for encrypted DNS, which takes more steps to set up than typing one hostname on Android.</p>
+  </section>
+
+  <footer class="app-footer no-print">
+    <div id="report-root"></div>
+  </footer>
+
+  <script src="page-i18n.js"></script>
+  <script src="patterns.js"></script>
+  <script src="report.js"></script>
+  <script src="quick-exit.js"></script>
+</body>
+</html>

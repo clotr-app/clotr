@@ -14,6 +14,7 @@ require("../extension/decide.js");
 require("../extension/attachments.js");
 require("../extension/pictures.js");
 require("../extension/zip.js");
+require("../extension/csv.js");
 require("../extension/lookback-core.js");
 const C = globalThis.Clotr;
 
@@ -134,6 +135,73 @@ test("Gemini's HTML export is recognized, not read (the page must ask for JSON)"
   const got = await C.readExport(folderEntries("gemini-html"), { salt: "s" });
   assert.equal(got.format, "gemini-html");
   assert.deepEqual(got.chats, []);
+});
+
+async function checkCopilot(entries) {
+  const got = await C.readExport(entries, { salt: "s" });
+  const want = expected.copilot;
+  assert.equal(got.format, "copilot");
+  assert.equal(got.tool, "Copilot");
+  assert.equal(got.company, "Microsoft");
+  assert.equal(got.grouping, "day");
+  assert.equal(got.read.chats, want.chats);
+  assert.deepEqual(got.chats.map(shapeFound), newestFirst(want.found).map(shapeExpected));
+}
+
+test("Copilot: the Prompt column holds exactly what expected.json lists", async () => {
+  await checkCopilot(folderEntries("copilot"));
+});
+
+test("Copilot, from the company's own zip: the same result", async () => {
+  await checkCopilot(await zipEntries("copilot"));
+});
+
+test("Copilot's Response column, the AI's own reply, never reaches a chat's kinds or the totals", async () => {
+  const got = await C.readExport(folderEntries("copilot"), { salt: "s" });
+  const flat = JSON.stringify(got);
+  for (const v of ["sam.lee@example.org", "555-555-0199"]) assert.ok(!flat.includes(v), `found in the reply: ${v}`);
+});
+
+test("a Copilot CSV with a changed header reads as an unknown export, not a guess at which column is which", async () => {
+  const got = await C.readExport(folderEntries("copilot-unknown-header"), { salt: "s" });
+  assert.equal(got.format, null);
+  assert.deepEqual(got.chats, []);
+});
+
+test("Microsoft's separate category CSVs, chosen together, read as one combined export", async () => {
+  const apps =
+    "Date,Time,Application,Prompt,Response\r\n2025-06-11,09:14:00,Copilot,My AWS key is AKIA4HPQ7XZ2R6TWLJ3N,ok\r\n";
+  const chat =
+    "Date,Time,Application,Prompt,Response\r\n2025-09-02,14:05:00,Copilot Chat,my number is 219-09-9999,ok\r\n";
+  const parts = [
+    { name: "CopilotAppsActivity.csv", file: new Blob([apps]) },
+    { name: "CopilotChatActivity.csv", file: new Blob([chat]) },
+  ];
+  const got = await C.readExport(await C.multiPartFileEntries(parts), { salt: "s" });
+  assert.equal(got.format, "copilot");
+  assert.equal(got.chats.length, 2);
+  assert.deepEqual(got.totals.aws_access_key, { count: 1, chats: 1, different: 1 });
+  assert.deepEqual(got.totals.us_ssn, { count: 1, chats: 1, different: 1 });
+});
+
+test("a Copilot CSV bigger than Look back's per-file cap is 'too big', never read in full", async () => {
+  const calls = [];
+  const entry = {
+    name: "CopilotActivity.csv",
+    size: 40 * 1024 * 1024,
+    head: (cap) => {
+      calls.push(cap);
+      return new TextEncoder().encode("Date,Prompt\r\n2026-01-02,hello\r\n");
+    },
+  };
+  const got = await C.readExport([entry], { salt: "s" });
+  assert.equal(got.format, "copilot");
+  assert.equal(got.notRead.tooBig, 1);
+  assert.deepEqual(got.chats, []);
+  assert.ok(
+    calls.every((cap) => cap < entry.size),
+    "never asked to read the whole oversized file",
+  );
 });
 
 test("an export Clotr doesn't know is 'format: null', nothing found or counted", async () => {

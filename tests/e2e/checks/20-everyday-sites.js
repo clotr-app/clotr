@@ -52,12 +52,13 @@ module.exports = async function (env) {
   // copy of the extension whose manifest already grants the two sites. A granted host behaves the same either way.
   async function withGrantedCopy(fn) {
     const copy = fs.mkdtempSync(path.join(os.tmpdir(), "clotr-ext-"));
-    fs.cpSync(EXT, copy, { recursive: true });
-    const m = JSON.parse(fs.readFileSync(path.join(copy, "manifest.json"), "utf8"));
-    m.host_permissions = [...m.host_permissions, "https://mail.google.com/*", "https://discord.com/*"];
-    fs.writeFileSync(path.join(copy, "manifest.json"), JSON.stringify(m, null, 2));
-    const other = await launch(copy);
+    let other;
     try {
+      fs.cpSync(EXT, copy, { recursive: true });
+      const m = JSON.parse(fs.readFileSync(path.join(copy, "manifest.json"), "utf8"));
+      m.host_permissions = [...m.host_permissions, "https://mail.google.com/*", "https://discord.com/*"];
+      fs.writeFileSync(path.join(copy, "manifest.json"), JSON.stringify(m, null, 2));
+      other = await launch(copy);
       await waitFor(
         () =>
           other.worker.evaluate(async () => {
@@ -71,7 +72,11 @@ module.exports = async function (env) {
       await store.set(other, { bandage: {} }); // nothing has answered Bandage yet, which is what makes an AI chat offer it
       return await fn(other);
     } finally {
-      await other.browser.close();
+      if (other) {
+        await other.browser.close();
+        fs.rmSync(other.profile, { recursive: true, force: true });
+      }
+      fs.rmSync(copy, { recursive: true, force: true });
     }
   }
 
@@ -119,7 +124,16 @@ module.exports = async function (env) {
       };
     }, answer);
     await page.goto(`chrome-extension://${new URL(c.swTarget.url()).host}/vault.html?welcome=1`);
+    // The card mounts only once chrome.permissions.getAll() answers, a round trip through the browser that a
+    // loaded machine can stretch well past a fixed pause; a fixed pause alone once left the card still unmounted.
+    await waitFor(() => page.evaluate(() => Boolean(document.getElementById("everyday-offer"))), 10000);
     await sleep(500);
+    // The email/chat and search/support cards now live inside "Pick sites one by one instead", closed by
+    // default, so a real click on anything in them needs the fold open first.
+    await page.evaluate(() => {
+      const d = document.getElementById("where-pick-sites");
+      if (d) d.open = true;
+    });
     return page;
   }
   const readOffer = (page) =>
@@ -156,11 +170,19 @@ module.exports = async function (env) {
         removes: window.__removes,
       };
     });
-  const tick = (page, names) =>
-    page.evaluate((list) => {
+  // The card mounts itself asynchronously (it waits on chrome.permissions.getAll() before its first paint), so a
+  // click right after the page loads can land before the boxes exist. A loaded machine made this miss once: the
+  // click silently found nothing, so nothing got ticked and the button kept its untouched wording.
+  const tick = async (page, names) => {
+    await waitFor(
+      () => page.evaluate(() => document.querySelectorAll("#everyday-offer input[type=checkbox]").length > 0),
+      5000,
+    );
+    await page.evaluate((list) => {
       for (const box of document.querySelectorAll("#everyday-offer input[type=checkbox]"))
         if (list.includes(box.value) && !box.checked) box.click();
     }, names);
+  };
   const offerShots = async (page, name) => {
     for (const width of [700, 380])
       for (const theme of ["light", "dark"])
@@ -237,15 +259,17 @@ module.exports = async function (env) {
       page.on("pageerror", (err) => ctx.problems.push(`welcome page error: ${err.message}`));
       await page.setViewport({ width: 700, height: 900 });
       await page.evaluateOnNewDocument(() => {
-        let added;
-        chrome.permissions.onAdded = { addListener: (cb) => (added = cb) };
+        // The welcome page mounts more than one offer card, each with its own real addListener call, so the
+        // mock has to fire every one of them the way a real browser's event does, not just the last registered.
+        const added = [];
+        chrome.permissions.onAdded = { addListener: (cb) => added.push(cb) };
         chrome.permissions.onRemoved = { addListener: () => {} };
         let granted = [];
         const realGetAll = chrome.permissions.getAll.bind(chrome.permissions);
         chrome.permissions.getAll = async () => (granted.length ? { origins: granted } : realGetAll());
         window.__strayGrant = (origins) => {
           granted = origins;
-          added?.({ origins });
+          added.forEach((cb) => cb({ origins }));
         };
         window.__clearStrayGrant = () => {
           granted = [];
@@ -257,6 +281,10 @@ module.exports = async function (env) {
       });
       await page.goto(`chrome-extension://${new URL(ctx.swTarget.url()).host}/vault.html?welcome=1`);
       await sleep(500);
+      await page.evaluate(() => {
+        const d = document.getElementById("where-pick-sites");
+        if (d) d.open = true;
+      });
       try {
         await tick(page, ["Slack", "WhatsApp"]);
         await page.click("#ev-go"); // Firefox's question is now open and unanswered
@@ -310,19 +338,22 @@ module.exports = async function (env) {
         page.on("pageerror", (err) => ctx.problems.push(`welcome page error (${order}): ${err.message}`));
         await page.setViewport({ width: 700, height: 900 });
         await page.evaluateOnNewDocument(() => {
-          let added, removed;
-          chrome.permissions.onAdded = { addListener: (cb) => (added = cb) };
-          chrome.permissions.onRemoved = { addListener: (cb) => (removed = cb) };
+          // The welcome page mounts more than one offer card, each with its own real addListener call, so the
+          // mock has to fire every one of them the way a real browser's event does, not just the last registered.
+          const added = [];
+          const removed = [];
+          chrome.permissions.onAdded = { addListener: (cb) => added.push(cb) };
+          chrome.permissions.onRemoved = { addListener: (cb) => removed.push(cb) };
           let granted = [];
           const realGetAll = chrome.permissions.getAll.bind(chrome.permissions);
           chrome.permissions.getAll = async () => (granted.length ? { origins: granted } : realGetAll());
           window.__strayAdd = (origins) => {
             granted = origins;
-            added?.({ origins });
+            added.forEach((cb) => cb({ origins }));
           };
           window.__strayRemove = (origins) => {
             granted = [];
-            removed?.({ origins });
+            removed.forEach((cb) => cb({ origins }));
           };
           // Firefox's doorhanger is still open here, so the request's promise doesn't settle until the test says so.
           let settle;
@@ -331,6 +362,10 @@ module.exports = async function (env) {
         });
         await page.goto(`chrome-extension://${new URL(ctx.swTarget.url()).host}/vault.html?welcome=1`);
         await sleep(500);
+        await page.evaluate(() => {
+          const d = document.getElementById("where-pick-sites");
+          if (d) d.open = true;
+        });
         try {
           await tick(page, ["Slack", "WhatsApp"]);
           await page.click("#ev-go"); // Firefox's question is now open and unanswered
@@ -700,6 +735,11 @@ module.exports = async function (env) {
       const popup = await openPopup(ctx);
       try {
         await popup.click("#tab-settings");
+        // #everyday-sites lives inside "Pick sites one by one instead", closed by default, and a real click
+        // needs the row's button to actually be on screen.
+        await popup.evaluate(() => {
+          document.getElementById("pick-sites").open = true;
+        });
         await popup.evaluate(() => {
           window.__asks = [];
           let inClick = false;
@@ -816,6 +856,10 @@ module.exports = async function (env) {
       });
       await page.goto(`chrome-extension://${new URL(ctx.swTarget.url()).host}/vault.html?welcome=1`);
       await sleep(500);
+      await page.evaluate(() => {
+        const d = document.getElementById("where-pick-sites");
+        if (d) d.open = true;
+      });
       try {
         await tick(page, ["Gmail", "Discord"]);
         await page.click("#ev-go");
@@ -870,6 +914,58 @@ module.exports = async function (env) {
         await page.close();
         await store.set(ctx, { everydayOffer: before ?? "welcome" });
       }
+    },
+  );
+
+  // "Pick sites one by one instead" stays closed until something inside it is already on, so a switch someone
+  // already flipped (an email app granted some other way, say) is never left hidden behind the fold.
+  await check(
+    "EV17",
+    "Settings and the welcome page open 'Pick sites one by one instead' by themselves once an email or chat app is already on",
+    async () => {
+      const popup = await openPopup(ctx);
+      try {
+        await popup.click("#tab-settings");
+        const open = await popup.$eval("#pick-sites", (d) => d.open);
+        expect(!open, "Settings' fold was already open with nothing switched on");
+      } finally {
+        await popup.close();
+      }
+      const page = await ctx.browser.newPage();
+      page.on("pageerror", (err) => ctx.problems.push(`welcome page error: ${err.message}`));
+      await page.setViewport({ width: 700, height: 900 });
+      await page.goto(`chrome-extension://${new URL(ctx.swTarget.url()).host}/vault.html?welcome=1`);
+      await waitFor(() => page.evaluate(() => Boolean(document.getElementById("everyday-offer"))), 10000);
+      await sleep(500);
+      try {
+        const open = await page.evaluate(() => document.getElementById("where-pick-sites").open);
+        expect(!open, "the welcome page's fold was already open with nothing switched on");
+      } finally {
+        await page.close();
+      }
+
+      await withGrantedCopy(async (other) => {
+        const p = await openPopup(other);
+        try {
+          await p.click("#tab-settings");
+          const open = await p.$eval("#pick-sites", (d) => d.open);
+          expect(open, "Settings' fold stayed closed with Gmail and Discord already on");
+        } finally {
+          await p.close();
+        }
+        const w = await other.browser.newPage();
+        w.on("pageerror", (err) => other.problems.push(`welcome page error: ${err.message}`));
+        await w.setViewport({ width: 700, height: 900 });
+        await w.goto(`chrome-extension://${new URL(other.swTarget.url()).host}/vault.html?welcome=1`);
+        await waitFor(() => w.evaluate(() => Boolean(document.getElementById("everyday-offer"))), 10000);
+        await sleep(500);
+        try {
+          const open = await w.evaluate(() => document.getElementById("where-pick-sites").open);
+          expect(open, "the welcome page's fold stayed closed with Gmail and Discord already on");
+        } finally {
+          await w.close();
+        }
+      });
     },
   );
 };

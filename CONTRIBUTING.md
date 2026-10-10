@@ -6,8 +6,8 @@ Thanks for helping people keep their private details out of AI chats.
 These are checked automatically (`npm test`); a change that breaks one won't be merged.
 - Only AI chat sites, never all websites. New AI sites go in `extension/ai-sites.json`.
 - Everything runs on the device, with no network requests of any kind from the extension.
-- Never store what someone typed. Only the kind of thing found, the site, the time, what they chose, and a salted
-  one-way fingerprint.
+- Never store what someone typed. Only the kind of thing found, the site, the time, what they chose, and a scrambled
+  code, never the words themselves.
 - Never break the chat. Clotr informs and offers edits; if it fails, the message still goes through.
 - Build the page with `createElement` and `textContent`; it never uses `innerHTML`, remote code or `eval`.
 

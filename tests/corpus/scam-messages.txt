@@ -364,6 +364,18 @@ Lucky draw result: you won 5,000 USDT! Pay the 50 USDT unlock fee to the wallet 
 [signs: pay_hard_to_undo, prob_prize]
 You've been selected for a $15,000 relief grant. A small fee of $250 is required. Send it with Venmo to @Grant-Office.
 ---
+[signs: prob_prize]
+Win a brand new 65" TV this weekend! Reply W to enter at example.invalid/enter
+---
+[signs: asks_details, prob_prize]
+Ticket 4471 has won £5,000 in the Example National Draw. To claim, reply with your full name and date of birth.
+---
+[signs: prob_prize]
+You may now claim your FREE camera phone upgrade! Call 1-800-555-0177 to arrange delivery.
+---
+[signs: prob_prize]
+25 FREE credits added to your account! Visit example.invalid/credits to use them before they expire.
+---
 [signs: prob_account]
 Example Parcel: your package could not be delivered due to an incomplete address. Update it here: example-parcel.example.invalid/redeliver
 ---
@@ -402,6 +414,18 @@ FINAL WARNING: Your toll account is overdue. Pay $11.69 at example.invalid by 11
 ---
 [signs: prob_account]
 Hi, this is Example Post. Your parcel was stopped because the house number is missing. Reply 1 to get the link to fix it.
+---
+[signs: press_rush, prob_account]
+You have (1) Pending Package! Last chance to pick it up: example.invalid/pkg82
+---
+[signs: prob_account]
+The delivery time for your parcel is 03/12. Check your options at example.invalid/opt4
+---
+[signs: prob_account]
+Your order will be delivered by DHL tomorrow between 1 and 3 PM. Track progress at example.invalid/dhl29
+---
+[signs: prob_account]
+Arrival today: your package from the warehouse. More info at example.invalid/arr8
 ---
 [signs: asks_details, press_rush, prob_account]
 Your delivery is suspended because of unpaid customs fees. Act now: update your payment information at example.invalid/pay

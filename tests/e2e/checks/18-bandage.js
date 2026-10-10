@@ -489,15 +489,19 @@ module.exports = async function (env) {
     expect(await waitFor(() => page.evaluate(() => window.__historyShown), 3000), "the conversation didn't come back");
     await sleep(300);
   }
-  // Finds where `label` is drawn in the last message matching `selector` that holds it.
+  // Finds where `label` is drawn in the last message matching `selector` that holds it, or null while the
+  // chat switch or the reply is still rendering and no message has that text yet.
   const pointIn = (page, selector, label) =>
     page.evaluate(
       (sel, label) => {
         const msg = [...document.querySelectorAll(sel)].filter((e) => e.textContent.includes(label)).pop();
-        const t = msg.firstChild;
+        const t = msg?.firstChild;
+        if (!t || typeof t.nodeValue !== "string") return null;
+        const i = t.nodeValue.indexOf(label);
+        if (i < 0) return null;
         const r = document.createRange();
-        r.setStart(t, t.nodeValue.indexOf(label));
-        r.setEnd(t, t.nodeValue.indexOf(label) + label.length);
+        r.setStart(t, i);
+        r.setEnd(t, i + label.length);
         const b = r.getBoundingClientRect();
         return { x: b.left + b.width / 2, y: b.top + b.height / 2 };
       },
@@ -508,8 +512,9 @@ module.exports = async function (env) {
   async function peekAt(page, selector, label, timeout = 3000) {
     const peek = await waitFor(async () => {
       await page.mouse.move(0, 0);
-      const { x, y } = await pointIn(page, selector, label);
-      await page.mouse.move(x, y);
+      const point = await pointIn(page, selector, label);
+      if (!point) return null;
+      await page.mouse.move(point.x, point.y);
       return waitFor(() => readUI(page, "CLOTR-PEEK"), 500);
     }, timeout);
     await page.mouse.move(0, 0);

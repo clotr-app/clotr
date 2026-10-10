@@ -456,10 +456,21 @@
       String.raw`could\s+not\s+be\s+delivered|couldn'?t\s+be\s+delivered|delivery\s+attempts?\s+failed|failed\s+delivery|(?:tried|attempted)\s+to\s+deliver|missed\s+(?:your\s+)?delivery|unpaid\s+(?:toll|shipping|customs|fees?|balance)|payment\s+(?:was\s+)?(?:declined|failed|didn'?t\s+go\s+through|unsuccessful)|(?:couldn'?t|could\s+not|unable\s+to|were\s+unable\s+to)\s+process\s+your\s+(?:[\p{L}]+\s+)?payment|(?:suspicious|unusual)\s+(?:activity|sign-?in|login|charge|transaction)|(?:someone|somebody)\s+tried\s+to\s+(?:sign|log)\s*in|unauthori[sz]ed\s+(?:access|charge|transaction)|if\s+you\s+did(?:\s+not|n'?t)\s+(?:make|place|authori[sz]e|request|recogni[sz]e)\s+(?:this|it|the)(?!\s+change)|problem\s+with\s+your\s+(?:account|order|payment|card|delivery)|(?:has|have)\s+been\s+charged|renewed\s+for\s+\$|for\s+nonpayment|non-?payment|overdue|past\s+due`,
       String.raw`(?:su|tu)\s+(?:[\p{L}-]+\s+){0,3}?(?:cuenta|tarjeta|acceso|suscripci[oó]n|paquete|pedido|env[ií]o|entrega|pago|almacenamiento)(?:\s+[\p{L}]+){0,3}?\s+(?:ha\s+sido|est[aá]|fue|se\s+ha|ha)\s+(?:temporalmente\s+)?(?:bloquead[ao]|suspendid[ao]|limitad[ao]|retenid[ao]|congelad[ao]|fallado|rechazad[ao]|renovad[ao]|en\s+peligro)`,
       String.raw`no\s+(?:pudo|se\s+pudo|pudimos)\s+(?:ser\s+)?(?:entregar|entregado|completar)|acceso\s+no\s+autorizado|actividad\s+sospechosa|intent[oó]\s+entrar\s+en\s+(?:su|tu)\s+cuenta|peaje\s+pendiente|impago|deuda\s+pendiente|saldo\s+pendiente|pago\s+(?:de\s+(?:su|tu)\s+[\p{L}]+\s+)?ha\s+fallado|problema\s+con\s+(?:su|tu)\s+(?:cuenta|pedido|pago)`,
+      // A delivery notice framed as something pending or arriving, not failing, is the bait a smishing campaign
+      // (like Flubot) actually sends: a courier's name next to an order, a package waiting to be picked up, or
+      // an arrival announced for "today". Plain phrases like "out for delivery" or "should arrive Thursday" are
+      // left alone on purpose, since real couriers say those too.
+      String.raw`pending\s+package|delivery\s+time\s+for\s+(?:your|ur)\s+parcel|order\s+will\s+be\s+delivered\s+by\s+(?:dhl|ups|fedex|usps|royal\s+mail)|(?:arrival|arriving)\s+today`,
     ].join("|"),
   );
   const PRIZE = words(
-    String.raw`(?:you(?:'ve|\s+have)?|your\s+(?:[\p{L}]+\s+)?(?:wallet|email|number|phone))\s+(?:just\s+)?(?:won|been\s+(?:selected|chosen|picked))|(?:lucky\s+)?winners?|congratulations|congrats|prizes?|sweepstakes|lottery|jackpot|giveaway|lucky\s+draw|(?:relief|government|cash)\s+grant|(?:reward|refund)\s+waiting|free\s+(?:iphone|phone|cruise|vacation|gift|tv)|chosen\s+to\s+receive|selected\s+(?:as|for)|(?:has|ha|han)\s+(?:sido\s+)?(?:ganado|seleccionad[oa]|elegid[oa])|ganador(?:a)?|enhorabuena|felicidades|premios?|sorteo|loter[ií]a|concurso|(?:un|una)\s+[\p{L}]+\s+gratis`,
+    [
+      String.raw`(?:you(?:'ve|\s+have)?|your\s+(?:[\p{L}]+\s+)?(?:wallet|email|number|phone))\s+(?:just\s+)?(?:won|been\s+(?:selected|chosen|picked))|(?:lucky\s+)?winners?|congratulations|congrats|prizes?|sweepstakes|lottery|jackpot|giveaway|lucky\s+draw|(?:relief|government|cash)\s+grant|(?:reward|refund)\s+waiting|free\s+(?:[\p{L}]+\s+){0,2}?(?:iphone|phone|cruise|vacation|gift|tv|ringtone|bluetooth|entry|auction|credits|text\s+messages?)|chosen\s+to\s+receive|selected\s+(?:as|for)|(?:has|ha|han)\s+(?:sido\s+)?(?:ganado|seleccionad[oa]|elegid[oa])|ganador(?:a)?|enhorabuena|felicidades|premios?|sorteo|loter[ií]a|concurso|(?:un|una)\s+[\p{L}]+\s+gratis`,
+      // "win"/"won" on their own are too common in everyday talk ("if we win", "won't") to count alone, so this
+      // only matches the shape a real prize text uses: the word right next to an article, "cash", or an amount.
+      // "claim" alone is common too, but "to claim" or "claim ur/your/this prize" isn't something people say.
+      String.raw`win\s+(?:a|an|cash)|win\s?[£$€]\s?\d[\d,.]*|won(?!'t)\s+(?:a|an|cash)|won(?!'t)\s?[£$€]\s?\d[\d,.]*|(?:to|2)\s+claim|claim\s+(?:ur|your|yr|this|now|prize|award|code)`,
+    ].join("|"),
   );
   // Something to do right now is either a link, or a word that sends you somewhere or asks you to act.
   const DO_NOW = words(

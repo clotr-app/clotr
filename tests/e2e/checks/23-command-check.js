@@ -63,7 +63,7 @@ module.exports = async function (env) {
       await selectAndCopy(page, "lure-code");
       const note = await noteShown(page);
       expect(note, "no note after copying the lure");
-      expect(/you copied a command/.test(note.text), `note text: ${note.text}`);
+      expect(/You copied a command/.test(note.text), `note text: ${note.text}`);
       // The note only shows once per command: closing it and copying the same lure again brings up nothing new.
       const keep = note.buttons.find((b) => b.text === "Keep it");
       expect(keep, `no "Keep it": ${JSON.stringify(note.buttons.map((b) => b.text))}`);
@@ -79,7 +79,7 @@ module.exports = async function (env) {
       await resetState(ctx, {});
       await clickCopy(page, "lure");
       const note = await noteShown(page);
-      expect(note && /you copied a command/.test(note.text), `note: ${note?.text}`);
+      expect(note && /You copied a command/.test(note.text), `note: ${note?.text}`);
     }),
   );
 
@@ -193,7 +193,7 @@ module.exports = async function (env) {
       try {
         await clickCopy(page, "lure");
         const note = await waitFor(() => readNotice(page), 2500);
-        expect(note && /copiaste un comando/.test(note.text), `Spanish note: ${note?.text}`);
+        expect(note && /Copiaste un comando/.test(note.text), `Spanish note: ${note?.text}`);
         const names = note.buttons.map((b) => b.text);
         expect(names.includes("Borrar lo que copié"), `Spanish buttons: ${JSON.stringify(names)}`);
       } finally {

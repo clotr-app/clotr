@@ -327,8 +327,11 @@ async function render() {
   $("steps").hidden = locked;
   $("setup-end").hidden = locked;
   // Opened with Tourniquet on: start at its preset, so turning it off or switching is right there.
-  if (!chosen() && tourniquet) {
-    document.querySelector(`#who input[value="${tourniquet.for}"]`).checked = true;
+  // Tourniquet held back but an earlier build's record is still in storage: its own tiles are gone, so
+  // there's nothing to check and nothing to show for it; "self" stays the only choice on screen.
+  const tourniquetTile = tourniquet && document.querySelector(`#who input[value="${tourniquet.for}"]`);
+  if (!chosen() && tourniquetTile) {
+    tourniquetTile.checked = true;
     showFor(tourniquet.for);
   } else if (isPreset(chosen())) {
     if (chosen() !== "after_scam") drawMap(chosen());
@@ -356,7 +359,7 @@ $("who").addEventListener("change", () => {
 
 // Turning it on, or switching: one record, and the first-time tips start again so each kind Tourniquet holds gets its
 // one-line explanation. The person's own responses, larger warnings and site modes stay as they are underneath.
-$("tq-on").addEventListener("click", async () => {
+$("tq-on")?.addEventListener("click", async () => {
   const who = chosen();
   if (!isPreset(who)) return;
   disarmOff();
@@ -374,7 +377,7 @@ function disarmOff() {
   $("tq-off").textContent = msg("hp_tqTurnOff", "Turn it off");
   $("tq-off").classList.remove("confirm");
 }
-$("tq-off").addEventListener("click", async () => {
+$("tq-off")?.addEventListener("click", async () => {
   if (!offArmed) {
     $("tq-off").textContent = msg("hp_tqTurnOffAgain", "Click again to turn it off");
     $("tq-off").classList.add("confirm");
@@ -396,21 +399,25 @@ $("review-share").addEventListener("click", () =>
 );
 $("open-share").addEventListener("click", () => chrome.tabs.create({ url: chrome.runtime.getURL("share.html") }));
 // The card for next to their phone: the Share page, at the card.
-$("open-card").addEventListener("click", () => chrome.tabs.create({ url: chrome.runtime.getURL("share.html#card") }));
+$("open-card")?.addEventListener("click", () => chrome.tabs.create({ url: chrome.runtime.getURL("share.html#card") }));
 // Clotr Antibody's two pages: a second opinion on a message, and the six made-up scams to answer together.
-$("open-check").addEventListener("click", () => chrome.tabs.create({ url: chrome.runtime.getURL("check.html") }));
-$("open-practice").addEventListener("click", () => chrome.tabs.create({ url: chrome.runtime.getURL("practice.html") }));
+$("open-check")?.addEventListener("click", () => chrome.tabs.create({ url: chrome.runtime.getURL("check.html") }));
+$("open-practice")?.addEventListener("click", () =>
+  chrome.tabs.create({ url: chrome.runtime.getURL("practice.html") }),
+);
 // The office training walkthrough: the fuller, self-paced walkthrough for a team to run on their own.
-$("open-training").addEventListener("click", () => chrome.tabs.create({ url: chrome.runtime.getURL("training.html") }));
-// Held back features get no door here.
-$("tq-tiles").hidden = !FEATURES.tourniquet;
-$("open-card-row").hidden = !FEATURES.scamcheck;
-$("open-check").hidden = !FEATURES.scamcheck;
-$("open-practice").hidden = !FEATURES.practice;
-$("open-training").hidden = !FEATURES.training;
+$("open-training")?.addEventListener("click", () =>
+  chrome.tabs.create({ url: chrome.runtime.getURL("training.html") }),
+);
+// Held back features get no door here, and no element in the shipped build to hide either.
+if ($("tq-tiles")) $("tq-tiles").hidden = !FEATURES.tourniquet;
+if ($("open-card-row")) $("open-card-row").hidden = !FEATURES.scamcheck;
+if ($("open-check")) $("open-check").hidden = !FEATURES.scamcheck;
+if ($("open-practice")) $("open-practice").hidden = !FEATURES.practice;
+if ($("open-training")) $("open-training").hidden = !FEATURES.training;
 $("after-share-row").hidden = !FEATURES.scamcheck && !FEATURES.practice && !FEATURES.training;
 // Extension check: Safari has no management API, so its build drops the page; hide the line here too.
-if (!FEATURES.extcheck || chrome.runtime.getManifest().browser_specific_settings?.safari)
+if ($("ext-check-line") && (!FEATURES.extcheck || chrome.runtime.getManifest().browser_specific_settings?.safari))
   $("ext-check-line").hidden = true;
 $("large-text").addEventListener("change", (e) => chrome.storage.local.set({ largeText: e.target.checked }));
 $("strict-personal").addEventListener("change", (e) => Helper.setAskBeforePersonal(e.target.checked));

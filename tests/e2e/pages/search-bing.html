@@ -1,0 +1,21 @@
+<!doctype html>
+<!-- Stand-in for Bing's search box: input[type=search] in a form, Enter or the Search button submits. -->
+<html lang="en">
+<head><meta charset="utf-8"><title>Bing (Clotr test page)</title></head>
+<body>
+  <form id="sb_form" action="/search" method="GET">
+    <input type="search" id="sb_form_q" name="q" aria-label="Enter your search here">
+    <button type="submit" id="sb_form_go" aria-label="Search">Search</button>
+  </form>
+  <script>
+    window.__sent = [];
+    document.getElementById("sb_form").addEventListener("submit", (e) => {
+      e.preventDefault();
+      const box = document.getElementById("sb_form_q");
+      if (!box.value) return;
+      window.__sent.push(box.value);
+      box.value = "";
+    });
+  </script>
+</body>
+</html>

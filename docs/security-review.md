@@ -1,4 +1,4 @@
-# Clotr security review (v0.9.16)
+# Clotr security review (v1.3.0)
 
 This review covers everything in `extension/` plus the update tooling in `tools/`. It works through code review of
 every entry point, backed by automated checks that now run on every change, listed at the end.
@@ -161,10 +161,57 @@ hostile-input tests.
   seconds, then goes through as before if they still haven't come.
 - No blocking issues.
 
+## Scam protection, Look back, Extension check, and Clotr for Windows (1.3.0)
+This covers "Is this a scam?", Tourniquet, Look back, Extension check and Clotr for Windows' no-network guarantee,
+the pieces switched on for everyone or shipped for the first time this release.
+- "Is this a scam?" (`check.js`, `scam-signs.js`) has its own rule test beyond the generic ones: `check.html` loads
+  only Clotr's own six scripts, no inline script, and the box you paste a message into has `autocomplete="off"`
+  and `spellcheck="false"`, so the browser's own spell checker can't carry pasted scam text anywhere. `check.js` has
+  no storage write, no `sendMessage`, no `fetch`, XHR, beacon or WebSocket, and no `console.*` call; it reads the
+  vault once to check your own saved details and never writes back. `scam-signs.js` takes no DOM and no `chrome.*`
+  call and returns only where a sign starts and ends and its name, never the words it matched.
+- Tourniquet's stored state (`backup.js`, `sites.js`) is validated the same way wherever it's read: it's either a
+  child or grown-up setting, or the 30 days after a scam with an end that's after its start and no more than 61
+  days away, and anything else is rejected outright. `content.js` only reads Tourniquet from a settings broadcast;
+  it never writes it, and nothing in it listens for a message from the page, so a hostile AI site has no path to
+  Clotr's storage to plant a different setting in the first place.
+- Look back (`lookback.js`, `lookback-core.js`, `lookback-worker.js`, `zip.js`) hands your picked export straight to
+  its own worker as File objects, never a copy of their bytes, and the worker reads them lazily as it unzips. The
+  zip reader caps entries (200,000), the central directory (64 MB) and how far one entry can inflate past its
+  compressed size, aborting mid-stream past the limit; Look back's own reader adds its own caps on a chat's size,
+  how far it peeks ahead, and how many pictures it lists. A rebuilt chat link is built from a validated ID and a
+  fixed address, never the export's own link text, so a tampered export can't turn into a convincing fake link.
+- Extension check (`extcheck.js`, `extcheck-core.js`) asks for the `management` permission in the same click that
+  starts the check and hands it back in a `finally` block whether the check finishes or fails, so it's never held
+  longer than that one look. What's installed is only ever compared, in memory, against the bundled
+  reported-extensions list; nothing about another extension reaches storage or a message.
+- Clotr for Windows' no-network guarantee has two layers, not one: `deny.toml` refuses to build at all if a
+  networking crate (`reqwest`, `hyper`, `tauri-plugin-http`, and others) enters the dependency tree, and a second
+  test parses the *built* program's own list of what it imports from Windows and fails if anything
+  networking-shaped (`ws2_32.dll`, `wininet.dll`, a socket or DNS call) shows up, catching a dependency that slips
+  in disguised. A further end-to-end suite runs the built app through its real screens and watches the operating
+  system's own open sockets, expecting none.
+- `tools/auto-update.ps1` and `.sh`, dev-only scripts that never ship, do reach the network: they run `git fetch`
+  against the project's own GitHub remote to keep a local clone in sync, fast-forward only and never on a branch
+  with uncommitted changes. That's expected, and separate from the rule that the shipped extension and app never do
+  this: nothing a person installs ever makes this call.
+- Found and fixed: the test that checks console output never includes a detected value, a draft or a file name read
+  its list of files by hand, and `check.js`, `scam-signs.js`, `backup.js`, `sites.js`, `editor.js` and `zip.js`
+  weren't on it, so a `console.log` added to one of them later wouldn't have been caught by this specific test,
+  though the broader "100% local" and "no innerHTML" tests already scan every file generically. None of the six
+  currently log anything they shouldn't; the test's list now names them too.
+
+No blocking issues. One thing worth watching, not fixing now: nothing today lets a page send Clotr's content script
+a message it acts on, so Tourniquet's storage has no path from a hostile page to tamper with. If a future feature
+ever adds one, it should come with a test proving Tourniquet can't be reached through it, the same way the
+vault-probing findings above (23) got one.
+
 ## Accepted limits
 - A hostile AI site can defeat Clotr on its own pages. It can remove the warning, though Clotr then notices and
   stops holding messages there, as finding 20 above describes. It can imitate Clotr's warning, or cover its
-  buttons so a click lands elsewhere. Planting fake *sent* entries by scripting its chat box doesn't work, per
+  buttons so a click lands elsewhere. A click it steers that way can't make Clotr warn less on every site,
+  though: such a choice ("stop warning me", "fine to share", "Just count it") only applies after a yes on Clotr's
+  own page, which opens in its own tab beside the chat. Planting fake *sent* entries by scripting its chat box doesn't work, per
   finding 22 above. Clotr's warnings never ask you to type anything, so an imitation can't collect details, and
   the site can't learn anything it doesn't already receive, since it is the destination the text is going to
   anyway. There are two narrow exceptions that need you to act: text the site adds to your chat box while you

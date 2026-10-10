@@ -4,6 +4,7 @@
 module.exports = async function (env) {
   const {
     DIALOG_WAIT,
+    answerOnClotrPage,
     check,
     clearEditor,
     clickDialogButton,
@@ -36,6 +37,8 @@ module.exports = async function (env) {
         expect((await readNotice(page))?.text.includes("How should Clotr handle"), "the tip vanished while typing");
         await shot(page, "notice-first-time.png");
         await clickDialogButton(page, "Just count it", readNotice);
+        expect((await readNotice(page))?.text.includes("say yes on the Clotr page that just opened"), "no pointer");
+        await answerOnClotrPage(ctx, page); // warning less on every site takes a yes on Clotr's own page
         const stored = () => store.get(ctx, ["responses", "guided"]);
         const after =
           (await waitFor(async () => {
@@ -46,12 +49,11 @@ module.exports = async function (env) {
           after.responses?.phone_number === "log" && after.guided?.phone_number,
           `stored: ${JSON.stringify(after)}`,
         );
-        expect((await readNotice(page))?.text.includes("will just count a Phone Number"), "no confirmation");
         await clearEditor(page);
         await typeText(page, "and email ann.lee@example.com");
         const next = await waitForNotice(page);
         expect(next?.text.includes("How should Clotr handle an Email Address"), `second kind: ${next?.text}`);
-        await clickDialogButton(page, "Leave it in", readNotice);
+        await clickDialogButton(page, "Send as is", readNotice);
         await clearEditor(page);
         await typeText(page, "again ann.lee@example.com");
         const again = await waitForNotice(page);
@@ -66,6 +68,7 @@ module.exports = async function (env) {
       await typeText(page, "call me at 555-555-0199");
       expect(await waitForNotice(page), "no notice");
       await clickDialogButton(page, "It's fine to share", readNotice);
+      await answerOnClotrPage(ctx, page); // a lasting "fine to share" takes a yes on Clotr's own page
       const vault = await waitFor(
         async () =>
           ((await store.get(ctx, "vault")).vault || []).length ? (await store.get(ctx, "vault")).vault : null,
@@ -89,7 +92,7 @@ module.exports = async function (env) {
         await resetState(ctx, {});
         await typeText(page, "call me at 555-555-0123");
         expect(await waitForNotice(page), "no notice");
-        await clickDialogButton(page, "Why am I seeing this?", readNotice);
+        await clickDialogButton(page, "Why?", readNotice);
         const n = await readNotice(page);
         expect(n.text.includes("Nothing has left your computer yet"), `why: ${n.text}`);
       });
@@ -111,21 +114,21 @@ module.exports = async function (env) {
         await resetState(ctx, {});
         await typeText(page, "password: Fluffy123!");
         expect(await waitForNotice(page), "no notice");
-        await clickDialogButton(page, "Why am I seeing this?", readNotice);
+        await clickDialogButton(page, "Why?", readNotice);
         const n = await readNotice(page);
         expect(/help line will ever ask/.test(n.text), `why: ${n.text}`);
         // A remote-access code gets its own specific advice here instead of the general sentence above.
         await withSite(ctx, "chatgpt", async (code) => {
           await typeText(code, "the AnyDesk code is 123 456 789");
           expect(await waitForNotice(code), "no notice");
-          await clickDialogButton(code, "Why am I seeing this?", readNotice);
+          await clickDialogButton(code, "Why?", readNotice);
           const c = await readNotice(code);
           expect(/What to do/.test(c.text) && !/help line will ever ask/.test(c.text), `code why: ${c.text}`);
         });
         await withSite(ctx, "chatgpt", async (other) => {
           await typeText(other, "call me at 555-555-0123");
           expect(await waitForNotice(other), "no notice");
-          await clickDialogButton(other, "Why am I seeing this?", readNotice);
+          await clickDialogButton(other, "Why?", readNotice);
           const p = await readNotice(other);
           expect(!/help line will ever ask/.test(p.text), `phone why mentions scams: ${p.text}`);
         });
@@ -144,7 +147,7 @@ module.exports = async function (env) {
           page,
           "globalThis.__opened = []; window.open = (u) => { globalThis.__opened.push(u); return null; }, true",
         );
-        await clickDialogButton(page, "Why am I seeing this?", readNotice);
+        await clickDialogButton(page, "Why?", readNotice);
         await clickDialogButton(page, "Wrong? Report a false alarm", readNotice);
         const [url] = await evalInClotr(page, "globalThis.__opened");
         expect(

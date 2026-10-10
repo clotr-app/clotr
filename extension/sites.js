@@ -30,6 +30,14 @@
     : CONTENT_JS;
   const USER_SCRIPT_ID = "clotr-user-sites";
 
+  // "Everywhere I type": one opt-in switch covering chat-style boxes on every https site, instead of a list
+  // to keep up. Off by default; turning it on asks for the one broad origin the manifest already lists as
+  // optional, so nothing broad is ever granted up front. The dynamic script that uses it excludes every site
+  // with its own dedicated setup (built-in AI tools, email and chat apps, search and support sites, and any
+  // AI site added by hand), so a host never ends up running two copies of Clotr.
+  const EVERYWHERE_ORIGIN = "https://*/*";
+  const EVERYWHERE_SCRIPT_ID = "clotr-everywhere";
+
   // Email and chat apps, where you're writing to a person instead of an AI. None of these run by default:
   // Settings lists them, and each one only starts once you switch it on and the browser grants that site.
   // Bandage and the reply check both stay off here too, since a cover name would reach a real person, and a
@@ -51,7 +59,7 @@
   }
 
   // The addresses for the apps with these names, in the list's order. Anything that isn't a real name on
-  // the list, like a pattern such as "https://*/*", is just ignored.
+  // the list, like the broad origin Everywhere I type uses, is just ignored.
   function everydayOrigins(names) {
     if (!Array.isArray(names)) return [];
     const wanted = new Set(names.filter((n) => typeof n === "string"));
@@ -92,6 +100,33 @@
       console.warn("[Clotr] could not switch off email and chat apps:", kind);
       return false;
     }
+  }
+
+  // Everywhere I type: same shape as requestEverydayApps, for the one broad origin. The ask has to come
+  // first in the click, before anything else awaits, for the same Firefox reason.
+  async function requestEverywhere() {
+    try {
+      return Boolean(await chrome.permissions.request({ origins: [EVERYWHERE_ORIGIN] }));
+    } catch (err) {
+      const kind = err instanceof Error ? err.constructor.name : typeof err;
+      console.warn("[Clotr] could not ask for Everywhere I type:", kind);
+      return false;
+    }
+  }
+
+  async function removeEverywhere() {
+    try {
+      return Boolean(await chrome.permissions.remove({ origins: [EVERYWHERE_ORIGIN] }));
+    } catch (err) {
+      const kind = err instanceof Error ? err.constructor.name : typeof err;
+      console.warn("[Clotr] could not switch off Everywhere I type:", kind);
+      return false;
+    }
+  }
+
+  // Whether the switch is on: the browser's grant is the record, nothing stored as "on" ahead of it.
+  function everywhereGranted(origins) {
+    return Array.isArray(origins) && origins.includes(EVERYWHERE_ORIGIN);
   }
 
   // Decides what to store for the one-time offer to use Clotr on email and chat apps. A new install gets
@@ -167,6 +202,14 @@
     return patterns.some((p) => matchPatternToRegExp(p)?.test(url));
   }
 
+  // The built-in match pattern(s) that cover this page, so the popup can ask the browser for exactly those
+  // when they're missing. A browser can withhold a built-in site's access even though it's in host_permissions,
+  // not just optional_host_permissions: Firefox does this for every install, and Chrome's per-site "On click"
+  // setting does the same thing by hand.
+  function builtInMatchesFor(url) {
+    return builtInMatches().filter((p) => urlMatchesAny(url, [p]));
+  }
+
   function originPattern(hostname) {
     return `https://${hostname}/*`;
   }
@@ -210,7 +253,7 @@
     const { origins = [] } = await chrome.permissions.getAll();
     const { siteScopes = {} } = await chrome.storage.local.get("siteScopes");
     return origins
-      .filter((o) => !builtIn.has(o) && o !== "https://*/*")
+      .filter((o) => !builtIn.has(o) && o !== EVERYWHERE_ORIGIN)
       .flatMap((o) => (siteScopes[o]?.length ? siteScopes[o] : [o]))
       .sort();
   }
@@ -334,6 +377,7 @@
           "stripe_secret_key",
           "anthropic_key",
           "openai_key",
+          "xai_key",
           "google_api_key",
           "slack_token",
           "crypto_secret",
@@ -343,11 +387,13 @@
           "internal_ip",
           "internal_host",
           "otp_secret",
+          "backup_codes",
           "password",
           "stripe_publishable_key",
         ].map((id) => [id, "block"]),
       ),
       allowPause: false,
+      holdFiles: true,
     },
     // For law firms, accountants and agencies: client names always ask first, and every personal-detail kind
     // is at least a warn. That's a floor, so nobody on the team can quietly turn their own SSN down to Just
@@ -387,6 +433,7 @@
         ),
       },
       allowPause: false,
+      holdFiles: true,
     },
     // For a clinic: anything that identifies a patient or staff member always asks. Settings aren't locked
     // here on purpose, so staff can still add their own names to the vault.
@@ -406,6 +453,7 @@
       },
       largeText: true,
       allowPause: false,
+      holdFiles: true,
     },
     // For a tax office: Social Security and tax ID numbers, bank and routing numbers, dates of birth, and the
     // office's own list of client names all always ask first.
@@ -418,6 +466,7 @@
         date_of_birth: "block",
       },
       allowPause: false,
+      holdFiles: true,
     },
   };
 
@@ -462,6 +511,19 @@
       merged.kinds = kinds;
       for (const k of kinds) requiredResponses[k.id] = k.response;
     }
+    // holdFiles: an admin's own value wins, then the preset's, and otherwise it's on by itself whenever this
+    // policy actually sets anything, so nobody has to remember to turn it on. hasPolicy() runs against what's
+    // been merged so far, before holdFiles joins it, so a bare `{ holdFiles: true }` with nothing else set
+    // still counts as a policy. With no explicit value and no policy at all, this adds no field, the same way
+    // the other booleans above don't.
+    const explicitHoldFiles =
+      typeof policy.holdFiles === "boolean"
+        ? policy.holdFiles
+        : typeof preset?.holdFiles === "boolean"
+          ? preset.holdFiles
+          : undefined;
+    const holdFiles = explicitHoldFiles !== undefined ? explicitHoldFiles : hasPolicy(merged);
+    if (explicitHoldFiles !== undefined || holdFiles) merged.holdFiles = holdFiles;
     return merged;
   }
 
@@ -523,6 +585,7 @@
     "stripe_secret_key",
     "anthropic_key",
     "openai_key",
+    "xai_key",
     "google_api_key",
     "slack_token",
     "crypto_secret",
@@ -530,6 +593,7 @@
     "connection_string",
     "jwt",
     "otp_secret",
+    "backup_codes",
     "password",
   ];
   const MONEY_AND_IDS = [
@@ -568,13 +632,15 @@
   const PICTURE_ID = ["id_picture"];
   // A gamer tag, counted quietly by default: a note for both, never a question.
   const GAMES = ["gamer_tag"];
+  // A link's own tracking code, cleaned on its way out: a note for both, never a question.
+  const LINKS = ["share_link"];
   const withResponse = (ids, value) => ids.map((id) => [id, value]);
   const TOURNIQUET = {
     // Who they are and where they live, kept from strangers online: every personal detail asks first.
     child: {
       requiredResponses: Object.fromEntries([
         ...withResponse([...SIGN_IN_CODES, ...MONEY_AND_IDS, ...WHO_AND_WHERE, "student_id"], "block"),
-        ...withResponse([...TECHNICAL, ...CAR], "warn"),
+        ...withResponse([...TECHNICAL, ...CAR, ...LINKS], "warn"),
         ...withResponse([...PICTURE_PLACE, ...PICTURE_ID], "block"),
         ...withResponse(GAMES, "warn"),
       ]),
@@ -584,7 +650,7 @@
     adult: {
       requiredResponses: Object.fromEntries([
         ...withResponse([...SIGN_IN_CODES, ...MONEY_AND_IDS], "block"),
-        ...withResponse([...WHO_AND_WHERE, ...TECHNICAL, ...CAR, "student_id"], "warn"),
+        ...withResponse([...WHO_AND_WHERE, ...TECHNICAL, ...CAR, ...LINKS, "student_id"], "warn"),
         ...withResponse(PICTURE_PLACE, "warn"),
         ...withResponse(PICTURE_ID, "block"),
         ...withResponse(GAMES, "warn"),
@@ -886,6 +952,7 @@
       typeof p.allowPause === "boolean" ||
       typeof p.lockSettings === "boolean" ||
       typeof p.largeText === "boolean" ||
+      typeof p.holdFiles === "boolean" ||
       typeof p.orgName === "string" ||
       typeof p.preset === "string",
     );
@@ -912,6 +979,9 @@
       l: p.lockSettings === true,
       t: p.largeText === true,
     };
+    // holdFiles only joins the canonical form when mergePolicy actually set it, the same as kinds below, so a
+    // policy printed before holdFiles existed keeps exactly the same code.
+    if (typeof p.holdFiles === "boolean") canon.h = p.holdFiles;
     // The team's own kinds only join the canonical form when there are any, so every code printed before
     // kinds existed stays unchanged. Their order is kept as-is, since it's what decides the ids when two
     // names collide.
@@ -927,6 +997,92 @@
         k.near.slice().sort(),
       ]);
     return globalThis.Clotr.sha256(JSON.stringify(canon)).slice(0, 16).toUpperCase();
+  }
+
+  // Search engines, where what you type becomes a search instead of a message to an AI or a person. None of
+  // these run by default: Settings lists them, and each one only starts once you switch it on and the browser
+  // grants that one host. Google's other country domains (google.co.uk, google.de, and the rest) aren't
+  // listed: there's no single match pattern that reaches them without also reaching sites a wildcard like that
+  // shouldn't, so only google.com is covered.
+  const SEARCH_SITES = [
+    { name: "Google", kind: "search", matches: ["https://www.google.com/*"] },
+    { name: "Bing", kind: "search", matches: ["https://www.bing.com/*"] },
+    { name: "DuckDuckGo", kind: "search", matches: ["https://duckduckgo.com/*"] },
+    { name: "Brave Search", kind: "search", matches: ["https://search.brave.com/*"] },
+    { name: "Startpage", kind: "search", matches: ["https://www.startpage.com/*"] },
+    { name: "Ecosia", kind: "search", matches: ["https://www.ecosia.org/*"] },
+    { name: "Yahoo Search", kind: "search", matches: ["https://search.yahoo.com/*"] },
+  ];
+
+  // Support chat widgets a company embeds on its own site. Each one's actual conversation box loads in an
+  // iframe at an address the widget's maker controls, the same address wherever a company puts the widget, so
+  // switching one on only ever asks for that one host and then covers it everywhere that widget turns up.
+  // None of these run by default either. LiveChat only covers sites that embed it as its own iframe (one of
+  // the two ways LiveChat can be added); its other, script-only embed doesn't have one fixed address to ask for.
+  // Zendesk, HubSpot and Olark are left out: their own CSP guidance asks integrators to allow a whole family of
+  // hosts (`*.zendesk.com`/`*.zopim.com`, `*.hubspot.com`, `*.olark.com`), not one fixed address, and HubSpot's
+  // conversation host also differs by the account's hosting region, so none of the three fit the one-host rule.
+  const SUPPORT_SITES = [
+    { name: "Intercom", kind: "support", matches: ["https://widget.intercom.io/*"] },
+    { name: "Drift", kind: "support", matches: ["https://widget.drift.com/*"] },
+    { name: "Freshchat", kind: "support", matches: ["https://wchat.freshchat.com/*"] },
+    { name: "Crisp", kind: "support", matches: ["https://client.crisp.chat/*"] },
+    { name: "LiveChat", kind: "support", matches: ["https://secure.livechatinc.com/*"] },
+    { name: "Tawk.to", kind: "support", matches: ["https://embed.tawk.to/*"] },
+    { name: "Tidio", kind: "support", matches: ["https://widget-v4.tidiochat.com/*"] },
+  ];
+
+  // Search engines and support-chat widgets together, so one lookup covers every site in either list without
+  // touching how EVERYDAY_SITES (email and chat apps) is looked up, since those two keep their own wording.
+  const MORE_SITES = [...SEARCH_SITES, ...SUPPORT_SITES];
+
+  function moreSiteFor(host) {
+    return MORE_SITES.find((s) => s.matches.some((p) => hostOf(p) === host)) || null;
+  }
+
+  function isSearchSite(host) {
+    return moreSiteFor(host)?.kind === "search";
+  }
+
+  function isSupportSite(host) {
+    return moreSiteFor(host)?.kind === "support";
+  }
+
+  // Same idea as everydayOrigins, for the search and support lists.
+  function moreSiteOrigins(names) {
+    if (!Array.isArray(names)) return [];
+    const wanted = new Set(names.filter((n) => typeof n === "string"));
+    return [...new Set(MORE_SITES.filter((s) => wanted.has(s.name)).flatMap((s) => s.matches))];
+  }
+
+  function grantedMoreSites(origins) {
+    const granted = new Set(Array.isArray(origins) ? origins : []);
+    return MORE_SITES.filter((s) => s.matches.some((p) => granted.has(p))).map((s) => s.name);
+  }
+
+  // Same shape as requestEverydayApps and removeEverydayApps, for the search and support lists.
+  async function requestMoreSites(names) {
+    const origins = moreSiteOrigins(names);
+    if (!origins.length) return false;
+    try {
+      return Boolean(await chrome.permissions.request({ origins }));
+    } catch (err) {
+      const kind = err instanceof Error ? err.constructor.name : typeof err;
+      console.warn("[Clotr] could not ask for a search or support site:", kind);
+      return false;
+    }
+  }
+
+  async function removeMoreSites(names) {
+    const origins = moreSiteOrigins(names);
+    if (!origins.length) return false;
+    try {
+      return Boolean(await chrome.permissions.remove({ origins }));
+    } catch (err) {
+      const kind = err instanceof Error ? err.constructor.name : typeof err;
+      console.warn("[Clotr] could not switch off a search or support site:", kind);
+      return false;
+    }
   }
 
   globalThis.ClotrSites = {
@@ -956,12 +1112,26 @@
     hasPolicy,
     CONTENT_JS: SHIPPED_JS,
     USER_SCRIPT_ID,
+    EVERYWHERE_ORIGIN,
+    EVERYWHERE_SCRIPT_ID,
+    requestEverywhere,
+    removeEverywhere,
+    everywhereGranted,
     EVERYDAY_SITES,
     everydaySiteFor,
     everydayOrigins,
     grantedEverydayApps,
     requestEverydayApps,
     removeEverydayApps,
+    SEARCH_SITES,
+    SUPPORT_SITES,
+    MORE_SITES,
+    moreSiteFor,
+    isSearchSite,
+    isSupportSite,
+    grantedMoreSites,
+    requestMoreSites,
+    removeMoreSites,
     offerAfterInstall,
     isEveryday,
     collapseBatch,
@@ -969,6 +1139,7 @@
     AI_URL_REGEX,
     PROMPT_SELECTORS,
     builtInMatches,
+    builtInMatchesFor,
     matchPatternToRegExp,
     urlMatchesAny,
     originPattern,

@@ -63,12 +63,14 @@ module.exports = async function (env) {
       expect(state.text.includes("What's already out there"), `card text: ${state.text}`);
       expect(state.text.includes("Look back") && state.text.includes("Extension check"), `card text: ${state.text}`);
       expect(state.sideBySide, "Look back and Extension check aren't side by side as two equal tiles");
+      // The Scam check row only shows under Tourniquet now, so with none of that on screen, Look back's own
+      // card is the next thing below "Showing".
       const gap = await popup.evaluate(() => {
         const bar = document.getElementById("filter-bar").getBoundingClientRect();
-        const row = document.getElementById("ss-row").getBoundingClientRect();
-        return row.top - bar.bottom;
+        const card = document.getElementById("lb-card").getBoundingClientRect();
+        return card.top - bar.bottom;
       });
-      expect(gap >= 6, `no room below "Showing" before the Scam check row (gap: ${gap}px)`);
+      expect(gap >= 6, `no room below "Showing" before the look-back card (gap: ${gap}px)`);
       await shot(popup, "popup-lookback-card-empty-light.png");
       await shot(popup, "popup-lookback-card-empty-dark.png", "dark");
 

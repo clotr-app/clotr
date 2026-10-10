@@ -135,6 +135,15 @@ Example Shop: your return was received. Your refund of $34.99 will show on your 
 The neighbor took in your package, it's on her porch.
 ---
 [signs: none]
+Your DHL delivery is scheduled for Thursday between 9 AM and noon. No action needed.
+---
+[signs: none]
+Your FedEx package arrived at the front desk this afternoon.
+---
+[signs: none]
+Example Shop: your package arrived early! Enjoy.
+---
+[signs: none]
 Your Example Pharmacy prescription is ready for pickup.
 ---
 [signs: none]
@@ -304,6 +313,15 @@ Congratulations to our bake-off winners! The trophies are on the shelf by the br
 ---
 [signs: none]
 Did you see we won the trivia night? First place!
+---
+[signs: none]
+Did you win the raffle at the fair? Let me know, call me when you can: example.invalid/party
+---
+[signs: none]
+I claim the window seat for the road trip, shotgun!
+---
+[signs: none]
+I'm free to call you tonight after dinner, just checking you're around.
 ---
 [signs: none]
 Your Example Rewards points are ready: you have enough for a free coffee next time you visit.

@@ -1,0 +1,24 @@
+<!doctype html>
+<!-- Stand-in for a company's own site, with a support-chat widget embedded in an iframe at the widget maker's
+     own address. The path after /support/ names which widget, so one page covers every vendor. -->
+<html lang="en">
+<head><meta charset="utf-8"><title>Example Shop (Clotr test page)</title></head>
+<body>
+  <h1>Example Shop</h1>
+  <p>Need help? Chat with us below.</p>
+  <iframe id="widget-frame" title="Support chat" width="360" height="500"></iframe>
+  <script>
+    const vendor = location.pathname.split("/").pop();
+    const ORIGINS = {
+      intercom: "https://widget.intercom.io",
+      drift: "https://widget.drift.com",
+      freshchat: "https://wchat.freshchat.com",
+      crisp: "https://client.crisp.chat",
+      livechat: "https://secure.livechatinc.com",
+      tawkto: "https://embed.tawk.to",
+      tidio: "https://widget-v4.tidiochat.com",
+    };
+    document.getElementById("widget-frame").src = `${ORIGINS[vendor]}/frame`;
+  </script>
+</body>
+</html>

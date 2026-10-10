@@ -8,6 +8,7 @@ module.exports = async function (env) {
     KEY,
     OUT,
     TYPED_VALUES,
+    answerOnClotrPage,
     check,
     clearEditor,
     clickDialogButton,
@@ -182,7 +183,13 @@ module.exports = async function (env) {
         for (const [text, names] of cases) {
           await clearEditor(page);
           await typeText(page, text);
-          const n = await waitForNotice(page);
+          // On a busy computer the first warning can come from the usual responses, before this page has the
+          // vault (it waits 3 s for it at most), and the vault's names join it once it comes.
+          const all = await waitFor(async () => {
+            const shown = await readNotice(page);
+            return shown && names.every((name) => shown.text.includes(name)) ? shown : null;
+          }, DIALOG_WAIT * 2);
+          const n = all || (await readNotice(page));
           const missing = names.filter((name) => !n?.text.includes(name));
           expect(!missing.length, `"${text}" → missing ${missing.join(", ")} (notice: ${n?.text})`);
           if (text.startsWith("their"))
@@ -190,7 +197,7 @@ module.exports = async function (env) {
               !n.text.includes("Your Account/ID Number"),
               `someone else's ID in your format was called yours: ${n.text}`,
             );
-          await clickDialogButton(page, "Leave it in", readNotice);
+          await clickDialogButton(page, "Send as is", readNotice);
         }
       });
     },
@@ -228,7 +235,7 @@ module.exports = async function (env) {
       await typeText(page, "call 555.555.5636");
       const n = await waitForNotice(page);
       expect(n?.text.includes("Phone Number"), `your phone wasn't caught: ${n?.text}`);
-      await clickDialogButton(page, "Leave it in", readNotice);
+      await clickDialogButton(page, "Send as is", readNotice);
       await clearEditor(page);
       await typeText(page, "or 555-555-1234");
       await expectNoUI(page, "other phone numbers are Log only");
@@ -237,6 +244,17 @@ module.exports = async function (env) {
 
   await check("V3", 'Vault → "OK to share" makes your own item quiet; Remove forgets it', async () => {
     await store.set(ctx, { responses: {} });
+    // Runs standalone too, so it can't rely on V1 having already saved a phone number: seed one here if it's
+    // not there yet (same fingerprint V1's would make, so running after V1 just finds it already present).
+    const fp = await ctx.worker.evaluate(async () => {
+      const salt = await ensureSalt();
+      return globalThis.Clotr.fingerprint(salt, "phone_number", "(555) 555-5636");
+    });
+    const { vault = [] } = await store.get(ctx, "vault");
+    if (!vault.some((e) => e.kind === "value" && e.type === "phone_number" && e.fp === fp))
+      await store.set(ctx, {
+        vault: [...vault, { kind: "value", type: "phone_number", fp, mode: "protect", added: Date.now() }],
+      });
     const vp = await openExtPage(ctx, "vault.html");
     const setPhone = (v) =>
       vp.evaluate((val) => {
@@ -252,7 +270,9 @@ module.exports = async function (env) {
       await typeText(page, "call me at five five five five five five five six three six");
       await expectNoUI(page, "your phone is OK to share");
     });
-    const logged = await store.events(ctx);
+    // Recorded through the background's write queue, so it can land a moment after the page goes quiet.
+    const logged =
+      (await waitFor(async () => ((await store.events(ctx)).length ? store.events(ctx) : null), 3000)) || [];
     expect(
       logged.length === 1 && logged[0].action === "suppressed",
       `OK-to-share item should still be recorded: ${JSON.stringify(logged)}`,
@@ -268,6 +288,46 @@ module.exports = async function (env) {
     await vp.close();
     expect((await store.get(ctx, "vault")).vault.length === before - 1, "entry not removed");
   });
+
+  // A busy browser can take seconds to hand a new page its settings (each storage call once stalled 2.5 s). While
+  // they're on the way, what you type must not be warned about by Clotr's defaults if your own settings say
+  // otherwise: the warning waits for them (at most 3 seconds), and checks again the moment they come.
+  await check(
+    "V5",
+    "A kind set to Log only stays quiet while a slow browser is still sending the page its settings",
+    async () => {
+      await store.set(ctx, { responses: { phone_number: "log" }, vault: [] });
+      // The background holds the page's settings until this check lets them go.
+      await ctx.worker.evaluate(() => {
+        globalThis.__v5SettingsFor = settingsFor;
+        globalThis.__v5Gate = new Promise((r) => (globalThis.__v5Open = r));
+        globalThis.settingsFor = async (url) => {
+          await globalThis.__v5Gate;
+          return globalThis.__v5SettingsFor(url);
+        };
+      });
+      try {
+        await withSite(ctx, "chatgpt", async (page) => {
+          await typeText(page, "call me on 555-555-1234");
+          await sleep(900); // past the pause after typing that a check waits for
+          const early = await readNotice(page);
+          expect(!early, `warned with the defaults while the settings were on the way: ${early?.text}`);
+          await ctx.worker.evaluate(() => globalThis.__v5Open());
+          expect(
+            await waitFor(() => page.logs.some((l) => l.startsWith("[Clotr] responses:")), 15000),
+            "the settings never came",
+          );
+          await expectNoUI(page, "phone numbers are Log only, once the settings came");
+        });
+      } finally {
+        await ctx.worker.evaluate(() => {
+          globalThis.__v5Open();
+          globalThis.settingsFor = globalThis.__v5SettingsFor;
+        });
+        await store.set(ctx, { responses: {} });
+      }
+    },
+  );
 
   // Deletes `part` from the chat box the way a person actually would, by selecting it and pressing Backspace.
   async function deleteByHand(page, part) {
@@ -302,7 +362,7 @@ module.exports = async function (env) {
         await clearEditor(page);
         await typeText(page, "call me at 555-555-2222 later");
         await waitForNotice(page);
-        await clickDialogButton(page, "Hide it", readNotice);
+        await clickDialogButton(page, "Cover it", readNotice);
         await expectNoUI(page, "after Redact");
         // Deleted by hand: offer.
         await clearEditor(page);
@@ -331,7 +391,7 @@ module.exports = async function (env) {
         await clearEditor(page);
         await typeText(page, `mail me at friend${i}@gmail.com`);
         expect(await waitForNotice(page), `no notice #${i}`);
-        await clickDialogButton(page, "Leave it in", readNotice);
+        await clickDialogButton(page, "Send as is", readNotice);
         await sleep(300);
       }
       const offer = await waitFor(async () => {
@@ -341,9 +401,12 @@ module.exports = async function (env) {
       expect(offer?.text.includes("Email Address"), `offer: ${(await readNotice(page))?.text}`);
       await page.screenshot({ path: path.join(OUT, "offer-relax.png") });
       await clickDialogButton(page, "Just count it", readNotice);
-      await sleep(300);
-      const { responses } = await store.get(ctx, "responses");
-      expect(responses?.email === "log", `responses: ${JSON.stringify(responses)}`);
+      await answerOnClotrPage(ctx, page); // warning less on every site takes a yes on Clotr's own page
+      const responses = await waitFor(async () => {
+        const r = (await store.get(ctx, "responses")).responses;
+        return r?.email === "log" ? r : null;
+      }, 2000);
+      expect(responses?.email === "log", `responses: ${JSON.stringify(await store.get(ctx, "responses"))}`);
     }),
   );
 

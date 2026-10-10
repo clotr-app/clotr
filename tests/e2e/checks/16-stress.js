@@ -63,7 +63,7 @@ module.exports = async function (env) {
             expect(n, `tab ${i}: no notice`);
           }),
         );
-        await Promise.all(pages.map((page) => clickDialogButton(page, "Hide it", readNotice)));
+        await Promise.all(pages.map((page) => clickDialogButton(page, "Cover it", readNotice)));
         const events =
           (await waitFor(async () => {
             const ev = await store.events(ctx);

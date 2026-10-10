@@ -4,7 +4,16 @@
 // `worker.terminate()`, so this file never needs its own stop flag, and it never writes anything to storage.
 "use strict";
 
-importScripts("patterns.js", "detector.js", "decide.js", "attachments.js", "pictures.js", "zip.js", "lookback-core.js");
+importScripts(
+  "patterns.js",
+  "detector.js",
+  "decide.js",
+  "attachments.js",
+  "pictures.js",
+  "zip.js",
+  "csv.js",
+  "lookback-core.js",
+);
 
 const { readExport, detectManifest, fileEntriesFromZip, folderFileEntries, multiPartFileEntries, fromFile } =
   globalThis.Clotr;
@@ -20,7 +29,7 @@ async function buildFileEntries(picked, entries) {
     for (const { name, file } of entries) byName[name] = file;
     return folderFileEntries(byName);
   }
-  if (picked === "json") return folderFileEntries({ [entries[0].name]: entries[0].file });
+  if (picked === "json" || picked === "csv") return folderFileEntries({ [entries[0].name]: entries[0].file });
   // "parts" reads several files chosen together, such as Claude's split export, as one export.
   // "zip" is just the one file the company sent.
   if (picked === "parts") return multiPartFileEntries(entries);

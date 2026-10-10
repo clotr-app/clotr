@@ -148,14 +148,29 @@
     .checking p { margin: 0; } /* "Checking your file": a note, nothing to press */
     p { margin: 0 0 10px; }
     code { font-family: ui-monospace, Consolas, monospace; font-size: 12px; white-space: nowrap; }
+    /* The notice's "name (masked)" items wrap like ordinary text instead of running past the notice's edge
+       with a long translated name; the masked part has no space in it, so it still never breaks mid-word. */
+    .notice code { white-space: normal; }
     .actions { display: flex; gap: 8px; justify-content: flex-end; }
     button { font: inherit; cursor: pointer; border-radius: 8px; padding: 5px 12px; border: 1px solid ${NOTE_EDGE}; background: #fff; color: ${INK}; }
     button:focus-visible { outline: 3px solid ${PLUM}; outline-offset: 2px; }
     button.primary { background: ${PLUM}; border-color: ${PLUM}; color: ${ON_PLUM}; }
     .notice .actions { flex-wrap: wrap; }
+    /* The main warning: a plum label strip across the top instead of the left accent rail, bled to the box's
+       own edges and clipped back to its rounded corners. */
+    .notice.card { border-left: none; border: 1px solid ${NOTE_EDGE}; }
+    .notice.card .head { display: flex; align-items: center; gap: 8px; margin: -12px -14px 10px; padding: 10px 14px; background: ${PLUM}; border-radius: 11px 11px 0 0; }
+    .notice.card .head b { margin: 0; font-size: 14px; color: ${ON_PLUM}; }
+    .notice.card .head svg { flex: none; width: 15px; height: 15px; }
+    .plaster-outer { fill: none; stroke: #fff; stroke-width: 1.1; }
+    .plaster-pad { fill: #fff; opacity: .5; }
+    .plaster-stitch { stroke: #fff; stroke-width: .6; stroke-dasharray: .8 .8; opacity: .85; }
     /* Larger warnings (settings → helping someone): easier to read and to hit */
     .notice.large { width: min(440px, calc(100vw - 32px)); font-size: 17px; padding: 16px 18px; }
     .notice.large b { font-size: 19px; }
+    .notice.card.large .head { margin: -16px -18px 12px; padding: 13px 18px; }
+    .notice.card.large .head b { font-size: 16px; }
+    .notice.card.large .head svg { width: 18px; height: 18px; }
     .notice.large .hint { font-size: 15px; }
     .notice.large button { font-size: 16px; padding: 9px 16px; }
     /* Everything grows, not just the headline; text links stay links (no button padding). */
@@ -194,6 +209,7 @@
         font-size: 16px; padding: 14px 16px;
         max-height: calc(var(--vv-height, 100vh) - 32px); overflow-y: auto; overscroll-behavior: contain;
       }
+      .notice.card .head { margin: -14px -16px 10px; }
       b { font-size: 17px; }
       .hint, .why, .more, .tip { font-size: 15px; }
       code { font-size: 14px; }

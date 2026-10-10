@@ -5,6 +5,7 @@
 "use strict";
 
 const { zipOf } = require("../../fixtures/exports/make-exports.js");
+const fx = require("../../../tools/make-picture-fixtures.js");
 
 module.exports = async function (env) {
   const {
@@ -52,8 +53,8 @@ module.exports = async function (env) {
       body{margin:0;width:1280px;height:800px;box-sizing:border-box;padding:0 60px 0 72px;display:flex;align-items:center;gap:48px;
         font-family:Recursive,system-ui,sans-serif;color:#1f2226;background:#f3f4f5}
       .text{flex:0 0 380px}
-      .brand{margin-bottom:44px}
-      .brand img{height:39px}
+      .brand{margin-bottom:40px}
+      .brand img{height:56px}
       h1{font-size:46px;font-weight:700;line-height:1.1;letter-spacing:-.02em;margin:0}
       p{font-size:21px;line-height:1.5;color:#5e6670;margin:20px 0 0}
       .shot{flex:1;display:flex;justify-content:center}
@@ -76,17 +77,38 @@ module.exports = async function (env) {
     await page.screenshot({ path: path.join(shots, name) });
     return b64(path.join(shots, name));
   };
+  // The corner warning on its own, for the small promo tile (tools/make-brand.js). It sits in a closed shadow root,
+  // so its box comes from DevTools: the biggest element directly inside the root.
+  const snapNotice = async (page, name) => {
+    page.cdp ??= await page.createCDPSession();
+    const { root } = await page.cdp.send("DOM.getDocument", { depth: -1, pierce: true });
+    let host = null;
+    (function find(n) {
+      if (host) return;
+      if (n.nodeName === "CLOTR-NOTICE") host = n;
+      for (const c of [...(n.children || []), ...(n.shadowRoots || [])]) find(c);
+    })(root);
+    let box = null;
+    for (const n of host?.shadowRoots?.[0]?.children || []) {
+      const { model } = await page.cdp.send("DOM.getBoxModel", { nodeId: n.nodeId }).catch(() => ({}));
+      if (model && (!box || model.width * model.height > box.width * box.height)) box = model;
+    }
+    expect(box, "the notice has no box to photograph");
+    const [x, y] = box.border;
+    await page.screenshot({ path: path.join(shots, name), clip: { x, y, width: box.width, height: box.height } });
+  };
 
   // Email and chat apps only run Clotr once you switch them on, so this makes a copy of the extension with the
   // two demo sites already granted.
   async function withGrantedCopy(fn) {
     const copy = fs.mkdtempSync(path.join(os.tmpdir(), "clotr-ext-"));
-    fs.cpSync(EXT, copy, { recursive: true });
-    const m = JSON.parse(fs.readFileSync(path.join(copy, "manifest.json"), "utf8"));
-    m.host_permissions = [...m.host_permissions, "https://outlook.live.com/*", "https://app.slack.com/*"];
-    fs.writeFileSync(path.join(copy, "manifest.json"), JSON.stringify(m, null, 2));
-    const other = await launch(copy);
+    let other;
     try {
+      fs.cpSync(EXT, copy, { recursive: true });
+      const m = JSON.parse(fs.readFileSync(path.join(copy, "manifest.json"), "utf8"));
+      m.host_permissions = [...m.host_permissions, "https://outlook.live.com/*", "https://app.slack.com/*"];
+      fs.writeFileSync(path.join(copy, "manifest.json"), JSON.stringify(m, null, 2));
+      other = await launch(copy);
       await waitFor(
         () =>
           other.worker.evaluate(async () => {
@@ -99,15 +121,46 @@ module.exports = async function (env) {
       await resetState(other, {});
       return await fn(other);
     } finally {
-      await other.browser.close();
+      if (other) {
+        await other.browser.close();
+        fs.rmSync(other.profile, { recursive: true, force: true });
+      }
+      fs.rmSync(copy, { recursive: true, force: true });
     }
   }
+
+  // A picture attached in the demo chat, written to a throwaway temp file so `#attach` can upload it.
+  const attach = async (page, name, bytes) => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "clotr-ss-pic-"));
+    const file = path.join(dir, name);
+    fs.writeFileSync(file, bytes);
+    await (await page.$("#attach")).uploadFile(file);
+    fs.rm(dir, { recursive: true, force: true, maxRetries: 10, retryDelay: 500 }, () => {});
+  };
 
   await check(
     "SS1",
     "Store pictures: AI chat, email, group chat, Bandage, report, ask first, welcome (docs/store/)",
     async () => {
-      // Picture 1: a tax question in an AI chat. Picture 8 reuses the same message after clicking Hide it.
+      // Picture 1: a photo attached to an everyday question, carrying the place it was taken.
+      await withSite(ctx, "demo", async (page) => {
+        await prepare(page);
+        await resetState(ctx, {});
+        await page.evaluate(() => window.__setLog([["ai", "Hi! What can I help you with today?"]]));
+        await typeText(page, "What colour should I paint my kitchen?");
+        await attach(page, "kitchen.jpg", fx.jpegWithGps(fx.PLACES.liberty));
+        expect(await waitForNotice(page), "no notice");
+        const shot = await snap(page, "ai-chat.png");
+        await frame(
+          "1-ai-chat.png",
+          "Photos carry more than you see",
+          "A phone saves the place a photo was taken inside the file. Attach one to an AI chat, and Clotr notices before it's sent.",
+          shot,
+          740,
+        );
+      });
+
+      // Picture 8: a tax question with a Social Security number, hidden with one click.
       await withSite(ctx, "demo", async (page) => {
         await prepare(page);
         await resetState(ctx, {});
@@ -119,15 +172,8 @@ module.exports = async function (env) {
         );
         await typeText(page, "Is this right? My Social Security number is 219-09-9999 and I made $41,200 last year.");
         expect(await waitForNotice(page), "no notice");
-        const shot = await snap(page, "ai-chat.png");
-        await frame(
-          "1-ai-chat.png",
-          "Clot your data leaks",
-          "Your Social Security number in a tax question? Clotr notices before you hit send. Hide it, or leave it in: your call.",
-          shot,
-          740,
-        );
-        await clickDialogButton(page, "Hide it", readNotice);
+        await snapNotice(page, "warning-card.png");
+        await clickDialogButton(page, "Cover it", readNotice);
         await frame(
           "8-hidden.png",
           "Hidden with one click",
@@ -255,9 +301,9 @@ module.exports = async function (env) {
       await welcome.emulateMediaFeatures([{ name: "prefers-color-scheme", value: "light" }]);
       await welcome.type("#try", "call me at 555-555-0123");
       await sleep(600);
-      // The email and chat card sits just above the practice box, so scrolling to its heading fits both in frame.
+      // "Where should Clotr check?" sits just above the practice box, so scrolling to its heading fits both in frame.
       await welcome.evaluate(() => {
-        document.getElementById("everyday-offer")?.scrollIntoView({ block: "start" });
+        document.getElementById("where-title")?.scrollIntoView({ block: "start" });
         scrollBy(0, -16);
       });
       await sleep(200);
@@ -312,8 +358,8 @@ module.exports = async function (env) {
       // Picture 10: Look back shows which old chats already hold a password, a card number, or an address.
       async function lookBackShot(c, fileName) {
         const page = await openExtPage(c, "lookback.html");
+        const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "clotr-ss-lb-"));
         try {
-          const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "clotr-ss-lb-"));
           const zipPath = path.join(tmp, "export.zip");
           fs.writeFileSync(zipPath, zipOf("chatgpt"));
           const input = await page.$("#file-input");
@@ -322,6 +368,7 @@ module.exports = async function (env) {
           return await snapPage(page, fileName, 820, 900);
         } finally {
           await page.close();
+          fs.rmSync(tmp, { recursive: true, force: true });
         }
       }
 
@@ -335,34 +382,38 @@ module.exports = async function (env) {
           dirs.push(d);
           return d;
         };
-        const copy = tmp("clotr-ss-ext-mgmt-");
-        fs.cpSync(EXT, copy, { recursive: true });
-        const m = JSON.parse(fs.readFileSync(path.join(copy, "manifest.json"), "utf8"));
-        m.permissions = [...m.permissions, "management"];
-        m.optional_permissions = (m.optional_permissions || []).filter((p) => p !== "management");
-        fs.writeFileSync(path.join(copy, "manifest.json"), JSON.stringify(m, null, 2));
-
-        const allSites = tmp("clotr-ss-allsites-");
-        fs.writeFileSync(
-          path.join(allSites, "manifest.json"),
-          JSON.stringify(
-            {
-              manifest_version: 3,
-              name: "Page Helper",
-              version: "1.0",
-              content_scripts: [{ matches: ["<all_urls>"], js: ["cs.js"] }],
-            },
-            null,
-            2,
-          ),
-        );
-        fs.writeFileSync(path.join(allSites, "cs.js"), "// Clotr e2e test fixture: no-op content script\n");
-
-        const other = await launch([copy, allSites], langArgs, langEnv);
+        let other;
         try {
+          const copy = tmp("clotr-ss-ext-mgmt-");
+          fs.cpSync(EXT, copy, { recursive: true });
+          const m = JSON.parse(fs.readFileSync(path.join(copy, "manifest.json"), "utf8"));
+          m.permissions = [...m.permissions, "management"];
+          m.optional_permissions = (m.optional_permissions || []).filter((p) => p !== "management");
+          fs.writeFileSync(path.join(copy, "manifest.json"), JSON.stringify(m, null, 2));
+
+          const allSites = tmp("clotr-ss-allsites-");
+          fs.writeFileSync(
+            path.join(allSites, "manifest.json"),
+            JSON.stringify(
+              {
+                manifest_version: 3,
+                name: "Page Helper",
+                version: "1.0",
+                content_scripts: [{ matches: ["<all_urls>"], js: ["cs.js"] }],
+              },
+              null,
+              2,
+            ),
+          );
+          fs.writeFileSync(path.join(allSites, "cs.js"), "// Clotr e2e test fixture: no-op content script\n");
+
+          other = await launch([copy, allSites], langArgs, langEnv);
           return await fn(other, { allSitesName: "Page Helper" });
         } finally {
-          await other.browser.close();
+          if (other) {
+            await other.browser.close();
+            fs.rmSync(other.profile, { recursive: true, force: true });
+          }
           for (const d of dirs) fs.rmSync(d, { recursive: true, force: true });
         }
       }

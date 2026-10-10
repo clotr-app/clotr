@@ -1,0 +1,24 @@
+<!doctype html>
+<!-- Stand-in for Google's search box: a plain text input in a form, Enter or the search button submits. -->
+<html lang="en">
+<head><meta charset="utf-8"><title>Google (Clotr test page)</title></head>
+<body>
+  <form id="tsf" role="search" action="/search" method="GET">
+    <input type="text" id="q" name="q" title="Search" aria-label="Search">
+    <button type="submit" id="search-btn" aria-label="Google Search">Google Search</button>
+  </form>
+  <ul id="suggestions">
+    <li><a href="/search?q=direct-suggestion">a suggestion that navigates straight away</a></li>
+  </ul>
+  <script>
+    window.__sent = [];
+    document.getElementById("tsf").addEventListener("submit", (e) => {
+      e.preventDefault();
+      const box = document.getElementById("q");
+      if (!box.value) return;
+      window.__sent.push(box.value);
+      box.value = "";
+    });
+  </script>
+</body>
+</html>

@@ -32,7 +32,6 @@
   border: 2px solid var(--axis);
   border-radius: 14px;
   background: var(--card-bg);
-  box-shadow: var(--lift);
   font-size: 17px;
   line-height: 1.5;
 }
@@ -60,7 +59,7 @@
   background: var(--brand-wash);
   border-radius: 4px 10px 10px 4px;
 }
-/* Tourniquet's paragraph: the orange edge and small shield of its line in a warning. */
+/* Tourniquet's paragraph: the plum edge and small shield of its line in a warning. */
 .guide-tq {
   margin-top: 14px;
   padding: 2px 12px 8px;
@@ -103,7 +102,6 @@
   border: 2px solid var(--axis);
   border-radius: 14px;
   background: var(--card-bg);
-  box-shadow: var(--lift);
   font-size: 16px;
   line-height: 1.45;
 }

@@ -1,0 +1,13 @@
+<!doctype html>
+<!-- Stand-in for an ordinary company site, unknown to Clotr and with no dedicated setup, that embeds a chat
+     widget in an iframe at the widget maker's own address (also unknown). "Everywhere I type" has to reach into
+     that frame the same way it reaches the top page, since allFrames is what makes this page's own warning show
+     up inside the iframe rather than on the host page around it. -->
+<html lang="en">
+<head><meta charset="utf-8"><title>Acme Hardware (Clotr test page)</title></head>
+<body>
+  <h1>Acme Hardware</h1>
+  <p>Need help? Chat with us below.</p>
+  <iframe id="widget-frame" title="Support chat" width="360" height="500" src="https://widget.unknownchat.test/frame"></iframe>
+</body>
+</html>

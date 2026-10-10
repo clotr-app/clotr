@@ -1131,15 +1131,30 @@
   // "twenty" ending the line above isn't read as part of "Twelve Oak Street" below it.
   const HOUSE_NUM = String.raw`(?:\d{1,6}[A-Za-z]?|(?:${NUM_WORDS})(?:(?:[^\S\n]|-)+(?:${NUM_WORDS}|and)){0,7})`;
   const DIRECTION = String.raw`(?:north|south|east|west|n|s|e|w|ne|nw|se|sw)\.?`;
-  const SUFFIX = String.raw`(?:street|st|avenue|ave|av|road|rd|boulevard|blvd|drive|dr|lane|ln|court|ct|way|place|pl|terrace|ter|circle|cir|parkway|pkwy|highway|hwy|trail|trl|square|sq|loop|pike|crescent|cres)\.?`;
-  const UNIT = String.raw`(?:,?\s+(?:apt|apartment|unit|suite|ste|#)\.?\s*#?\s*[A-Za-z0-9-]+)?`;
+  // The British, Canadian and Australian words after "crescent/cres" are UK/AU suffixes added for 1.4.0.
+  const SUFFIX_PLAIN = String.raw`(?:street|st|avenue|ave|av|road|rd|boulevard|blvd|drive|dr|lane|ln|court|ct|way|place|pl|terrace|ter|circle|cir|parkway|pkwy|highway|hwy|trail|trl|square|sq|loop|pike|crescent|cres|close|mews|gardens|grove|croft|parade|esplanade|quay|wynd|circuit|promenade)`;
+  // These eight are everyday words too, so a street only ends on one when the word right after it isn't
+  // itself a plain suffix ("Sparrow Hill Dr" is the street "Sparrow Hill", not "Sparrow" on "Hill Dr"), and
+  // AMBIGUOUS_SUFFIX below still asks for a tail, a flat or unit front, or an address phrase nearby.
+  const SUFFIX_AMBIGUOUS = String.raw`(?:park|green|hill|view|gate|walk|rise|row)`;
+  const SUFFIX = String.raw`(?:${SUFFIX_PLAIN}|${SUFFIX_AMBIGUOUS}(?!\.?[^\S\n]+${SUFFIX_PLAIN}\.?\b))\.?`;
+  const AMBIGUOUS_SUFFIX = new Set(["park", "green", "hill", "view", "gate", "walk", "rise", "row"]);
+  // Between a label and its value, each run of spaces is read in one way only: "\s*(?:#\s*)?" rather than
+  // "\s*#?\s*", whose two runs could split the same spaces between them in every possible way. Text with a
+  // label, a huge run of spaces and then no value would otherwise take quadratic time (cubic with three runs)
+  // to rule out. The same goes for every label-to-value gap below.
+  const UNIT = String.raw`(?:,?\s+(?:apt|apartment|unit|suite|ste|#)\.?\s*(?:#\s*)?[A-Za-z0-9-]+)?`;
+  // A flat or apartment number before the house number ("Flat 3, 12 Acacia Avenue"), an Australian unit before
+  // a slash ("Unit 4/12", "4/12"), or a Canadian unit-dash ("12-345 Main St"), so Hide it covers the unit too.
+  // The canonical fingerprint (addressCore) still ignores it, the same way it already ignores UNIT above.
+  const FRONT = String.raw`(?:(?:flat|apartment|apt)\.?\s*\d{1,4}[a-z]?,?[^\S\n]+|(?:unit[^\S\n]+)?\d{1,4}\/[^\S\n]*|\d{1,4}-[^\S\n]*)`;
   // This only matches within one line (using [^\S\n] for spaces, not line breaks), since a match that ran on
   // from a ZIP code into the next line used to hide the address written there.
   const STREET_RE = new RegExp(
-    String.raw`\b(?<num>${HOUSE_NUM})[^\S\n]+(?:(?<pre>${DIRECTION})[^\S\n]+)?(?<name>(?:[A-Za-z0-9][\w'.-]*[^\S\n]+){0,3}?[A-Za-z0-9][\w'.-]*)[^\S\n]+(?<suf>${SUFFIX})(?:[^\S\n]+(?<post>${DIRECTION}))?(?![\w])${UNIT}`,
+    String.raw`\b(?<front>${FRONT})?(?<num>${HOUSE_NUM})[^\S\n]+(?:(?<pre>${DIRECTION})[^\S\n]+)?(?<name>(?:[A-Za-z0-9][\w'.-]*[^\S\n]+){0,3}?[A-Za-z0-9][\w'.-]*)[^\S\n]+(?<suf>${SUFFIX})(?:[^\S\n]+(?<post>${DIRECTION}))?(?![\w])${UNIT}`,
     "gi",
   );
-  const PO_BOX_RE = /\b(?:p\.?\s?o\.?\s*box|post\s+office\s+box)\s*#?\s*\d{1,6}\b/gi;
+  const PO_BOX_RE = /\b(?:p\.?\s?o\.?\s*box|post\s+office\s+box)\s*(?:#\s*)?\d{1,6}\b/gi;
   // Words that make "<number> <word> <street word>" something else: "2 hard drive", "5 minutes drive".
   const NOT_A_STREET = new Set(
     (
@@ -1157,6 +1172,38 @@
   const CITY_STATE_ZIP = new RegExp(
     String.raw`^(?:,?\s*[A-Z][a-z]+(?:\s[A-Z][a-z]+){0,2},?\s+(?:${STATES})\b(?:\s+\d{5}(?:-\d{4})?)?|,?\s+(?:${STATES})\s+\d{5}(?:-\d{4})?|,?\s+\d{5}(?:-\d{4})?\b)`,
   );
+  // A UK postcode: the outward part (one or two letters, a digit, an optional letter or digit) and the inward
+  // part (a digit, two letters), with the letters Royal Mail never puts first (Q, V, X) excluded.
+  const UK_POSTCODE = String.raw`[A-PR-UWYZ][A-HK-Y]?\d[A-Z\d]?\s?\d[A-Z]{2}`;
+  const UK_TAIL_RE = new RegExp(String.raw`^,?\s*[A-Z][a-zA-Z]+(?:\s[A-Z][a-zA-Z]+){0,2},?\s+${UK_POSTCODE}\b`, "i");
+  // A Canadian postal code: A1A 1A1, the letters D, F, I, O, Q, U never used in either half.
+  const CA_POSTAL = String.raw`[ABCEGHJKLMNPRSTVXY]\d[ABCEGHJKLMNPRSTVWXYZ]\s?\d[ABCEGHJKLMNPRSTVWXYZ]\d`;
+  const CA_PROVINCES = "AB|BC|MB|NB|NL|NS|NT|NU|ON|PE|QC|SK|YT";
+  const CA_TAIL_RE = new RegExp(
+    String.raw`^,?\s*[A-Z][\p{L}'-]+(?:[\s-][A-Z][\p{L}'-]+){0,2},?\s+(?:\(Qu[ée]bec\)|${CA_PROVINCES})\s+${CA_POSTAL}\b`,
+    "iu",
+  );
+  const AU_STATES = "NSW|VIC|QLD|WA|SA|TAS|ACT|NT";
+  const AU_TAIL_RE = new RegExp(
+    String.raw`^,?\s*[A-Z][a-zA-Z]+(?:\s[A-Z][a-zA-Z]+){0,2},?\s+(?:${AU_STATES})\s+\d{4}\b`,
+    "i",
+  );
+  // The longest of these that matches right after a street becomes its tail, so Hide it covers the town and
+  // postcode too, the way CITY_STATE_ZIP already does for a US address. Longest, not first, because a state
+  // code can read both ways ("WA" is Washington and Western Australia): the shorter, ZIP-less US reading
+  // would otherwise win over the Australian one that actually accounts for the postcode after it.
+  function addressTail(rest) {
+    let best = null;
+    for (const re of [CITY_STATE_ZIP, UK_TAIL_RE, CA_TAIL_RE, AU_TAIL_RE]) {
+      const m = re.exec(rest);
+      if (m && (!best || m[0].length > best.length)) best = m[0];
+    }
+    return best;
+  }
+  // The everyday suffix words in AMBIGUOUS_SUFFIX only count as a street when something nearby says this is an
+  // address: a tail (checked by the caller), a flat or unit front, or a phrase like "I live at" or "send it to".
+  const ADDRESS_PHRASE_EN =
+    /\b(?:I\s+live\s+at|living\s+at|send\s+it\s+to|ship\s+it\s+to|mail\s+it\s+to|deliver\s+it\s+to|my\s+address\s+is|moved\s+to|move\s+to)\s*$/i;
 
   // Turns the same address into one canonical core for fingerprints no matter how it's written, so "123 Oak
   // St., Springfield" and "one twenty three oak street apt 4" both become "123 oak street".
@@ -1194,7 +1241,7 @@
   };
 
   function addressCore(text) {
-    const box = /\b(?:p\.?\s?o\.?\s*box|post\s+office\s+box)\s*#?\s*(\d{1,6})\b/i.exec(text);
+    const box = /\b(?:p\.?\s?o\.?\s*box|post\s+office\s+box)\s*(?:#\s*)?(\d{1,6})\b/i.exec(text);
     if (box) return `po box ${box[1]}`;
     const m = new RegExp(STREET_RE.source, "i").exec(text);
     if (!m) return colombianAddressCore(text) || spanishAddressCore(text);
@@ -1228,9 +1275,10 @@
   // Map coordinates can be as exact as an address, as in "my home is at 40.712776, -74.005974". I only read
   // them this way after a home phrase and with 4 or more decimals, about 10 meters of precision. A
   // landmark's or a restaurant search's coordinates aren't read as yours.
-  const COORD = String.raw`-?\d{1,3}\.\d{4,}°?\s*[NSEW]?`;
+  const COORD_NUM = String.raw`-?\d{1,3}\.\d{4,}°?`;
+  const COORD = String.raw`${COORD_NUM}\s*[NSEW]?`;
   const HOME_COORDINATES = new RegExp(
-    String.raw`(?<![\p{L}])(?:my\s+(?:home|house|place|apartment|flat|address)|I\s+live|mi\s+(?:casa|piso|domicilio)|vivo)(?![\p{L}])[^\n\d-]{0,25}(${COORD}\s*,?\s*${COORD})`,
+    String.raw`(?<![\p{L}])(?:my\s+(?:home|house|place|apartment|flat|address)|I\s+live|mi\s+(?:casa|piso|domicilio)|vivo)(?![\p{L}])[^\n\d-]{0,25}(${COORD_NUM}\s*(?:[NSEW]\s*)?(?:,\s*)?${COORD})`,
     "giu",
   );
   // Matches in any case, but only right after an address phrase like "vivo en" or "mi dirección es".
@@ -1286,11 +1334,41 @@
     const tail = CITY_STATE_ZIP.exec(text.slice(at + suf.length));
     return !(tail && /\d{5}/.test(tail[0]));
   }
+  // A postcode given as the person's own, with no street name: "my postcode is SW1A 1AA", "postal code: K1A
+  // 0B1". A bare Australian 4-digit code is too everyday on its own, so it only counts next to a state.
+  const POSTCODE_LABEL = /\b(?:my\s+)?post(?:al\s+code|code)(?:\s+(?:is|number))?\s*[:=]?\s*/gi;
+  function ownPostcodes(text) {
+    const found = [];
+    for (const m of text.matchAll(POSTCODE_LABEL)) {
+      const rest = text.slice(m.index + m[0].length);
+      const uk = new RegExp(`^${UK_POSTCODE}\\b`, "i").exec(rest);
+      if (uk) {
+        found.push(uk[0]);
+        continue;
+      }
+      const ca = new RegExp(String.raw`^${CA_POSTAL}\b`, "i").exec(rest);
+      if (ca) {
+        found.push(ca[0]);
+        continue;
+      }
+      const au = new RegExp(String.raw`^\d{4}(?=\s*,?\s*(?:${AU_STATES})\b)`, "i").exec(rest);
+      if (au) found.push(au[0]);
+    }
+    return found;
+  }
+  // Quebec writes the street type lower-case, after the number, like Spanish: "123 rue Sainte-Catherine", "12
+  // chemin de la Rivière". No addressCore form yet (Later): the vault only matches these by their own text.
+  const QC_JOIN = String.raw`(?:(?:de|du|des|d'|la|le|les)\s*){0,2}`;
+  const QC_WORD = "[A-ZÀ-Ý][\\p{L}.'-]*";
+  const QC_STREET_RE = new RegExp(
+    String.raw`\b\d{1,6}[^\S\n]+(?:rue|avenue|boulevard|chemin)[^\S\n]+${QC_JOIN}${QC_WORD}(?:[^\S\n]+${QC_JOIN}${QC_WORD}){0,3}`,
+    "giu",
+  );
   function findAddresses(text) {
     const found = [];
     const withTail = (start, end) => {
-      const tail = CITY_STATE_ZIP.exec(text.slice(end));
-      found.push(text.slice(start, end + (tail ? tail[0].length : 0)));
+      const tail = addressTail(text.slice(end));
+      found.push(text.slice(start, end + (tail ? tail.length : 0)));
     };
     STREET_RE.lastIndex = 0;
     for (let m; (m = STREET_RE.exec(text));) {
@@ -1301,18 +1379,28 @@
       const typed = m.groups.name.split(/[^\S\n]+/);
       const words = typed.map((w) => w.replace(/\.+$/, ""));
       if (typed.some((w, k) => w !== words[k] && dotEndsSentence(words[k]))) {
-        STREET_RE.lastIndex = m.index + m.groups.num.length;
+        STREET_RE.lastIndex = m.index + (m.groups.front || "").length + m.groups.num.length;
         continue;
       }
       if (words.some((w) => NOT_A_STREET.has(w.toLowerCase()))) continue;
       const yearLike = /^(?:19|20)\d\d$/.test(m[0].split(/\s/)[0]);
       if (yearLike && YEAR_BEFORE.test(text.slice(Math.max(0, m.index - 12), m.index))) continue;
       if (doctorNotDrive(text, m)) continue;
+      // An everyday word like "park" or "view" only counts as a street when it has a front, an address phrase
+      // right before it, or a tail (checked the same way withTail does, just slightly ahead of it here).
+      if (AMBIGUOUS_SUFFIX.has(m.groups.suf.toLowerCase().replace(/\.$/, ""))) {
+        const hasFront = !!m.groups.front;
+        const hasTail = !!addressTail(text.slice(m.index + m[0].length));
+        const hasPhrase = ADDRESS_PHRASE_EN.test(text.slice(Math.max(0, m.index - 40), m.index));
+        if (!hasFront && !hasTail && !hasPhrase) continue;
+      }
       withTail(m.index, m.index + m[0].length);
     }
     for (const m of text.matchAll(PO_BOX_RE)) withTail(m.index, m.index + m[0].length);
     for (const m of text.matchAll(ES_STREET_RE)) found.push(m[0]);
+    for (const m of text.matchAll(QC_STREET_RE)) found.push(m[0]);
     for (const m of text.matchAll(HOME_COORDINATES)) found.push(m[1]);
+    found.push(...ownPostcodes(text));
     // Reads an address all in lowercase, like "vivo en calle mayor 5", but only right after an address phrase
     // that says what follows is one.
     for (const m of text.matchAll(ES_ADDRESS_CONTEXT)) {
@@ -1549,31 +1637,77 @@
   // Reads an IBAN after its name in any case, like "iban: es26 0000 …". On its own, an IBAN must be in
   // capitals instead (see findIbans).
   const IBAN_LABELLED =
-    /(?<![\p{L}])iban(?![\p{L}])\s*(?:[:=#]|(?:is|was|es|era)(?![\p{L}]))?\s*(?:(?:el|la)\s+)?([a-z]{2}\d{2}(?: ?[a-z0-9]{4}){2,7}(?: ?[a-z0-9]{1,4})?)(?![\p{L}\d])/giu;
+    /(?<![\p{L}])iban(?![\p{L}])\s*(?:(?:[:=#]|(?:is|was|es|era)(?![\p{L}]))\s*)?(?:(?:el|la)\s+)?([a-z]{2}\d{2}(?: ?[a-z0-9]{4}){2,7}(?: ?[a-z0-9]{1,4})?)(?![\p{L}\d])/giu;
 
   // The number before its name: "1234567890 is my account number", "1234567890 es mi número de cuenta".
   const ACCOUNT_NAMED_AFTER = new RegExp(
-    String.raw`(?<![\p{L}\d])(?<!\d[-./])(\d{2,22}(?:[ -]\d{2,8}){0,5})\s*,?\s*(?:is|was|es|era)\s+(?:my|our|the|mi|el|nuestro)\s+(?:(?:(?:bank|checking|savings)\s+)?(?:account|acct)\s+(?:number|no\.?|#)|${CUENTA}|clabe|cbu|cvu)(?![\p{L}])`,
+    String.raw`(?<![\p{L}\d])(?<!\d[-./])(\d{2,22}(?:[ -]\d{2,8}){0,5})\s*(?:,\s*)?(?:is|was|es|era)\s+(?:my|our|the|mi|el|nuestro)\s+(?:(?:(?:bank|checking|savings)\s+)?(?:account|acct)\s+(?:number|no\.?|#)|${CUENTA}|clabe|cbu|cvu)(?![\p{L}])`,
     "giu",
   );
 
   const accountSize = (d) => d.length >= 6 && d.length <= 22;
-  const findBankNumbers = (text) => [
-    ...numberAfter(BANK_LABELS, text, (d) => d.length >= 6 && d.length <= 17),
-    ...numberAfter(ROUTING_LABELS, text, abaValid),
-    ...accountAfter(CUENTA_LABEL, text, accountSize),
-    ...accountAfter(CCI_LABEL, text, (d) => d.length === 20),
-    ...checkedAccounts(text),
-    ...[...text.matchAll(IBAN_LABELLED)].map((m) => m[1]).filter((v) => ibanValid(v.toUpperCase())),
-    ...[...text.matchAll(ACCOUNT_NAMED_AFTER)].map((m) => m[1]).filter((v) => accountSize(v.replace(/\D/g, ""))),
-  ];
+  // A UK sort code, an Australian BSB, or a Canadian transit and institution number, each read with the
+  // account number right after it as one match, so Hide it takes the whole thing. None of these three has a
+  // check digit, so on their own they'd be too easy to confuse with another number; the account right after
+  // is what tells them apart from an everyday mention of a sort code or a BSB with nothing else next to it.
+  const BANK_CONNECT = String.raw`(?:\s*(?:number|no\.?|num|#))?\s*(?:[:=#]|is|was)?\s*`;
+  const ACCOUNT_WORD = String.raw`account(?:\s+(?:number|no\.?|num|#))?`;
+  const UK_SORT_CODE_RE = new RegExp(
+    String.raw`\bsort\s*code\b${BANK_CONNECT}\d{2}[- ]?\d{2}[- ]?\d{2}\b[^\n\d]{0,30}\b${ACCOUNT_WORD}\b${BANK_CONNECT}\d{6,10}\b`,
+    "gi",
+  );
+  const AU_BSB_RE = new RegExp(
+    String.raw`\bBSB\b${BANK_CONNECT}\d{3}[- ]?\d{3}\b[^\n\d]{0,30}\b${ACCOUNT_WORD}\b${BANK_CONNECT}\d{3,10}(?:[ ]\d{3,6}){0,2}\b`,
+    "gi",
+  );
+  const CA_TRANSIT_RE = new RegExp(
+    String.raw`\btransit(?:\s+number)?\b${BANK_CONNECT}\d{5}\b[^\n\d]{0,30}\binstitution(?:\s+number)?\b${BANK_CONNECT}\d{3}\b[^\n\d]{0,30}\b${ACCOUNT_WORD}\b${BANK_CONNECT}\d{5,12}\b`,
+    "gi",
+  );
+  const findBankNumbers = (text) => {
+    const combined = [
+      ...(text.match(UK_SORT_CODE_RE) || []),
+      ...(text.match(AU_BSB_RE) || []),
+      ...(text.match(CA_TRANSIT_RE) || []),
+    ];
+    const plain = [
+      ...numberAfter(BANK_LABELS, text, (d) => d.length >= 6 && d.length <= 17),
+      ...numberAfter(ROUTING_LABELS, text, abaValid),
+      ...accountAfter(CUENTA_LABEL, text, accountSize),
+      ...accountAfter(CCI_LABEL, text, (d) => d.length === 20),
+      ...checkedAccounts(text),
+      ...[...text.matchAll(IBAN_LABELLED)].map((m) => m[1]).filter((v) => ibanValid(v.toUpperCase())),
+      ...[...text.matchAll(ACCOUNT_NAMED_AFTER)].map((m) => m[1]).filter((v) => accountSize(v.replace(/\D/g, ""))),
+    ];
+    // A sort code, BSB or transit number's own account digits would also match the plain "account …" label on
+    // their own; dropping anything already inside a combined match keeps Hide it from leaving the code behind.
+    return [...combined, ...plain.filter((v) => !combined.some((c) => c.includes(v)))];
+  };
+  // A UK driving licence's 16-character number, unlabelled: 5 letters (the surname, padded with 9s if
+  // shorter), 6 digits encoding the date of birth (month +50 for a woman, so it reads 1-12 or 51-62), 2
+  // letters (initials, 9 if there's no middle one), a digit and 2 more letters. This is a structure check,
+  // not the DVLA's full algorithm, so it's read only on its own, the same way a bare VIN is.
+  const UK_DL_RE = /\b[A-Z9]{5}\d{6}[A-Z9]{2}\d[A-Z]{2}\b/g;
+  function ukDlValid(v) {
+    const month = Number(v.slice(6, 8)) % 50;
+    const day = Number(v.slice(8, 10));
+    return month >= 1 && month <= 12 && day >= 1 && day <= 31;
+  }
+  const findUkLicences = (text) => (text.match(UK_DL_RE) || []).filter(ukDlValid);
+  const CA_HEALTH_CARD_LABELS = [label(String.raw`(?:provincial\s+)?health\s+card|OHIP`)];
   const findMedicare = (text) => [
     ...(text.match(MBI_RE) || []),
     ...idAfter(MEDICARE_LABELS, text),
     ...numberAfter(AU_MEDICARE_LABELS, text, auMedicareValid),
+    ...idAfter(CA_HEALTH_CARD_LABELS, text),
   ];
   // Also checks Spanish labels, in spanishLicenses and the functions below it.
-  const findLicenses = (text) => [...idAfter(LICENSE_LABELS, text), ...dlLicenses(text), ...spanishLicenses(text)];
+  const findLicenses = (text) => [
+    ...idAfter(LICENSE_LABELS, text),
+    ...dlLicenses(text),
+    ...spanishLicenses(text),
+    ...findUkLicences(text),
+  ];
   const findPassports = (text) => [...idAfter(PASSPORT_LABELS, text), ...spanishPassports(text)];
   const findInsuranceIds = (text) => [...idAfter(INSURANCE_LABELS, text), ...spanishInsuranceIds(text)];
 
@@ -1587,7 +1721,7 @@
   // America may have no check digit and the label is what vouches for it. Next to a vehicle word, it needs
   // a capitals code ending in four digits with a valid check digit instead. On its own, see VIN_ALONE below.
   const VIN_LABELLED = new RegExp(
-    String.raw`\b(?:VIN|vehicle\s+identification|chassis|chasis|n[uú]mero\s+de\s+bastidor|bastidor|NIV|n[uú]mero\s+de\s+identificaci[oó]n\s+vehicular|n[uú]mero\s+de\s+serie\s+${CAR})(?![\p{L}\d])(?:\s*(?:number|no\.?|num|#))?\s*(?:[:=#]|is|was|es|era)?\s*([A-HJ-NPR-Z0-9]{17})(?![\p{L}\d])`,
+    String.raw`\b(?:VIN|vehicle\s+identification|chassis|chasis|n[uú]mero\s+de\s+bastidor|bastidor|NIV|n[uú]mero\s+de\s+identificaci[oó]n\s+vehicular|n[uú]mero\s+de\s+serie\s+${CAR})(?![\p{L}\d])(?:\s*(?:number|no\.?|num|#))?\s*(?:(?:[:=#]|is|was|es|era)\s*)?([A-HJ-NPR-Z0-9]{17})(?![\p{L}\d])`,
     "giu",
   );
   const VIN_RE = /(?<![\p{L}\d_/-])[A-HJ-NPR-Z0-9]{13}\d{4}(?![\p{L}\d_/-])/gu;
@@ -1696,7 +1830,7 @@
   // ("S-1-5-21-…"), a database's or a session's ID, or a PubChem substance's number. So it counts only in capitals,
   // right before 7 to 10 digits, and not in a message about computers or chemistry unless it's about school too.
   const SID_LABEL =
-    /(?<![\p{L}\d])SID(?:\s*(?:number|no\.?|num|#))?\s*(?:[:#]|is|was)?\s*(\d{7,10})(?![\p{L}\d]|[-./,]\d)/gu;
+    /(?<![\p{L}\d])SID(?:\s*(?:number|no\.?|num|#))?\s*(?:(?:[:#]|is|was)\s*)?(\d{7,10})(?![\p{L}\d]|[-./,]\d)/gu;
   const SID_TECH =
     /(?<![\p{L}])(?:windows|security|domain|registry|powershell|active\s+directory|ldap|kerberos|sql|oracle|database|db|server|session|process|pid|kill|twilio|api|pubchem|substance|compound|cid|assay|chemical|molecule|gsm|cdma|network|cookie|token)(?![\p{L}])/iu;
   const SID_SCHOOL =
@@ -1903,7 +2037,7 @@
   // Mexico's RFC (a tax ID: 3 to 4 letters, a date, then 3 characters) and Spain's social security number
   // (12 digits) only count right after their label, since in English "RFC 7231" names an internet standard.
   const RFC_RE =
-    /\bRFC\b(?:\s+(?:es|is))?\s*:?\s*([A-ZÑ&]{3,4}\d{2}(?:0[1-9]|1[0-2])(?:0[1-9]|[12]\d|3[01])[A-Z0-9]{3})\b/giu;
+    /\bRFC\b(?:\s+(?:es|is))?\s*(?::\s*)?([A-ZÑ&]{3,4}\d{2}(?:0[1-9]|1[0-2])(?:0[1-9]|[12]\d|3[01])[A-Z0-9]{3})\b/giu;
   const NSS_RE = /(?:\bNSS\b|seguridad\s+social)[^\n\d]{0,20}?(\d{2}[\s/-]?\d{8}[\s/-]?\d{2})(?![\d])/giu;
   // A US ITIN, the tax number for people without an SSN, is shaped like an SSN but starts with 9 and has
   // its own middle ranges, so with its dashes or spaces it counts on its own. It has no check digit and 1 in
@@ -1911,7 +2045,7 @@
   // (US_ID_LABELLED), same as tax IDs, immigration numbers and VA file numbers below.
   const ITIN_RE = /\b9\d{2}[- ](?:5\d|6[0-5]|7\d|8[0-8]|9[0-2]|9[4-9])[- ]\d{4}\b/g;
   const US_ID_LABELLED =
-    /\b(?:ITIN|EIN|TIN|tax\s*(?:payer\s*)?id(?:entification)?(?:\s+number)?|employer\s+identification\s+number|a-?number|alien\s+(?:registration\s+)?number|uscis\s*(?:number|#)|green\s+card(?:\s+(?:number|receipt))?|va\s+(?:file|claim)\s+number)\s*(?:#|no\.?|number)?\s*(?:is|:|=)?\s*((?:[A-Z]{1,3}[\s-]?)?\d(?:[\d-]{6,12})\d)(?![\d-])/gi;
+    /\b(?:ITIN|EIN|TIN|tax\s*(?:payer\s*)?id(?:entification)?(?:\s+number)?|employer\s+identification\s+number|a-?number|alien\s+(?:registration\s+)?number|uscis\s*(?:number|#)|green\s+card(?:\s+(?:number|receipt))?|va\s+(?:file|claim)\s+number)\s*(?:(?:#|no\.?|number)\s*)?(?:(?:is|:|=)\s*)?((?:[A-Z]{1,3}[\s-]?)?\d(?:[\d-]{6,12})\d)(?![\d-])/gi;
   const findNationalIds = (text) => [
     ...(text.match(ITIN_RE) || []),
     ...[...text.matchAll(US_ID_LABELLED)].map((m) => m[1]),
@@ -2457,6 +2591,92 @@
   }
   const findOtpSecrets = (text) => otpFinds(text).map((f) => f.value);
 
+  // ---------- Clean link: a URL's own tracking code ----------
+  // A link copied out of an app often carries more than the address: a code that ties it back to whoever
+  // copied it (YouTube's and Spotify's "si", Instagram's and Threads' "igsh"/"igshid", Reddit's "share_id"),
+  // or an ad network's own click id (Google, Meta, Microsoft, TikTok, X and LinkedIn each set their own,
+  // plus any "utm_" campaign tag). Both ride as ordinary query parameters, so cleaning a link just means
+  // dropping the matching name=value pairs and leaving everything else, including the #fragment, exactly as
+  // it was typed. Written from each company's own naming, not copied from a filter list, since those are GPL.
+  const SHARE_HOSTS = {
+    "youtube.com": ["si"],
+    "www.youtube.com": ["si"],
+    "m.youtube.com": ["si"],
+    "music.youtube.com": ["si"],
+    "youtu.be": ["si"],
+    "open.spotify.com": ["si"],
+    "instagram.com": ["igsh", "igshid"],
+    "www.instagram.com": ["igsh", "igshid"],
+    "threads.com": ["xmt", "igshid"],
+    "threads.net": ["xmt", "igshid"],
+    "reddit.com": ["share_id"],
+    "www.reddit.com": ["share_id"],
+  };
+  const AD_PARAMS = new Set(["gclid", "fbclid", "msclkid", "ttclid", "twclid", "li_fat_id", "mc_eid"]);
+  const isAdParam = (name) => AD_PARAMS.has(name) || name.startsWith("utm_");
+  // A plain, bounded character class, so a link thousands of characters long still costs one pass, never a
+  // backtrack.
+  const LINK_RE = /\bhttps?:\/\/[^\s"'<>]+/gi;
+
+  // The host a link's address names, lowercased, stopping at the first "/", ":", "?" or "#" and skipping
+  // any "user:pass@" in front of it.
+  function linkHost(link) {
+    const m = /^https?:\/\/(?:[^/?#@]*@)?([^/?#:]+)/i.exec(link);
+    return m ? m[1].toLowerCase() : "";
+  }
+
+  // Splits a link into its base, its query string and everything from its "#" on (kept as-is), or null when
+  // there's no "?" to split on.
+  function linkQuery(link) {
+    const at = link.indexOf("?");
+    if (at < 0) return null;
+    const hash = link.indexOf("#", at);
+    return {
+      base: link.slice(0, at),
+      query: link.slice(at + 1, hash < 0 ? link.length : hash),
+      tail: hash < 0 ? "" : link.slice(hash),
+    };
+  }
+
+  // The share code and ad-tracking parameter names this link actually carries, in the order they appear.
+  // Reading the query string pair by pair with indexOf, rather than a regex over the whole link, keeps a
+  // link packed with thousands of short parameters at one pass over its own length.
+  function cleanableParamsOf(link) {
+    const parts = linkQuery(link);
+    if (!parts?.query) return [];
+    const codes = SHARE_HOSTS[linkHost(link)] || [];
+    const found = [];
+    for (const pair of parts.query.split("&")) {
+      const eq = pair.indexOf("=");
+      const name = eq < 0 ? pair : pair.slice(0, eq);
+      if (isAdParam(name) || codes.includes(name)) found.push(name);
+    }
+    return found;
+  }
+
+  function findShareLinks(text) {
+    const found = [];
+    for (const m of text.matchAll(LINK_RE)) {
+      const link = m[0].replace(/[).,;:!?\]}>]+$/, "");
+      if (cleanableParamsOf(link).length) found.push(link);
+    }
+    return found;
+  }
+
+  // Drops the share code and ad-tracking parameters from a link, keeping every other parameter in its
+  // original order and spelling, and the #fragment untouched. A "?" left with nothing after it goes too.
+  function cleanShareLink(link) {
+    const parts = linkQuery(link);
+    if (!parts) return link;
+    const codes = SHARE_HOSTS[linkHost(link)] || [];
+    const kept = parts.query.split("&").filter((pair) => {
+      const eq = pair.indexOf("=");
+      const name = eq < 0 ? pair : pair.slice(0, eq);
+      return !isAdParam(name) && !codes.includes(name);
+    });
+    return (kept.length ? `${parts.base}?${kept.join("&")}` : parts.base) + parts.tail;
+  }
+
   // ---------- Developer secrets: connection strings, JWTs, internal addresses ----------
 
   // A connection string like scheme://user:password@host, matched only when the password part looks real.
@@ -2636,10 +2856,10 @@
   // How people write a password out to a person, as in "my password is Fluffy123" or "my password for
   // netflix is …". This also catches common misspellings like "pasword" or "passwrod".
   const TOLD_SECRET =
-    /\b(?:(?:my|the|our|his|her|their|your)\s+)?(?:wi-?fi\s+|email\s+|bank\s+|computer\s+|phone\s+)?(?:pa?ss?(?:w(?:or|ro|ar)d|owrd|wrd|wd)|pw|pwd|passcode|passphrase|pin(?:\s+(?:number|code))?)(?:\s+(?:for|to|on|at|of)\s+(?:(?:my|the|our|his|her|their|your)\s+)?[A-Za-z\d.'-]+(?:\s+[A-Za-z\d.'-]+)?)?\s+(?:is|was)\s*:?\s*["'“‘]?([^\s"'”’,;!?]+)/gi;
+    /\b(?:(?:my|the|our|his|her|their|your)\s+)?(?:wi-?fi\s+|email\s+|bank\s+|computer\s+|phone\s+)?(?:pa?ss?(?:w(?:or|ro|ar)d|owrd|wrd|wd)|pw|pwd|passcode|passphrase|pin(?:\s+(?:number|code))?)(?:\s+(?:for|to|on|at|of)\s+(?:(?:my|the|our|his|her|their|your)\s+)?[A-Za-z\d.'-]+(?:\s+[A-Za-z\d.'-]+)?)?\s+(?:is|was)\s*(?::\s*)?["'“‘]?([^\s"'”’,;!?]+)/gi;
   // Spanish: "mi contraseña es Gato2024!", "la contraseña del wifi es sol-y-luna".
   const TOLD_SECRET_ES =
-    /(?<![\p{L}])(?:(?:mi|la|el|tu|su|nuestra)\s+)?(?:contrase(?:ñ|n)a|clave|pin)(?:\s+(?:del?|de\s+(?:la|mi|tu|su)|para(?:\s+(?:el|la|mi|tu|su))?)\s+[\p{L}\d-]+){0,2}\s+(?:es|era)\s*:?\s*["'“‘]?([^\s"'”’,;!?]+)/giu;
+    /(?<![\p{L}])(?:(?:mi|la|el|tu|su|nuestra)\s+)?(?:contrase(?:ñ|n)a|clave|pin)(?:\s+(?:del?|de\s+(?:la|mi|tu|su)|para(?:\s+(?:el|la|mi|tu|su))?)\s+[\p{L}\d-]+){0,2}\s+(?:es|era)\s*(?::\s*)?["'“‘]?([^\s"'”’,;!?]+)/giu;
   // Answers to account-recovery questions work the same way passwords do, as in "my mother's maiden name
   // is Smith" or "the answer to my security question is Rover". Each label here is written once and read
   // twice: once by the rule that finds a code told after it, and once by the scam-detection check in
@@ -2647,11 +2867,11 @@
   const ANSWER_LABEL = String.raw`mother'?s\s+maiden\s+name|maiden\s+name|memorable\s+(?:word|information|answer|phrase)|first\s+pet'?s\s+name|answer\s+to\s+(?:my|the)\s+security\s+question|security\s+(?:question\s+)?answer`;
   const ANSWER_LABEL_ES = String.raw`apellido\s+de\s+soltera(?:\s+de\s+mi\s+madre)?|nombre\s+de\s+mi\s+primera\s+mascota|respuesta\s+(?:de|a\s+la\s+pregunta\s+de)\s+seguridad`;
   const TOLD_ANSWER = new RegExp(
-    String.raw`\b(?:${ANSWER_LABEL})(?:\s*\([^()\n]{1,30}\))?\s+(?:is|was)\s*:?\s*["'“‘]?([\p{L}][\p{L}'-]{1,40})`,
+    String.raw`\b(?:${ANSWER_LABEL})(?:\s*\([^()\n]{1,30}\))?\s+(?:is|was)\s*(?::\s*)?["'“‘]?([\p{L}][\p{L}'-]{1,40})`,
     "giu",
   );
   const TOLD_ANSWER_ES = new RegExp(
-    String.raw`(?<![\p{L}])(?:${ANSWER_LABEL_ES})\s+(?:es|era)\s*:?\s*["'“‘]?([\p{L}][\p{L}'-]{1,40})`,
+    String.raw`(?<![\p{L}])(?:${ANSWER_LABEL_ES})\s+(?:es|era)\s*(?::\s*)?["'“‘]?([\p{L}][\p{L}'-]{1,40})`,
     "giu",
   );
   // A password word right before a value that looks like one, as in "…and the password Summer2024". A
@@ -2665,14 +2885,14 @@
   // Codes that open a home, a card or a phone, as in "the gate code is 1234" or "the safe combination is
   // 12-34-56". Unrelated codes like a zip code or an error code stay quiet.
   const CODE_TOLD =
-    /\b(?:(?:gate|alarm|garage|door|lock\s*box|locker|lock|keypad|safe|building|entry|house|atm|debit(?:\s+card)?|credit\s+card|card|phone|iphone|bank)\s+(?:code|combination|combo|passcode|pin)|passcode|combination|pin(?=\s+(?:number|code|#))|my\s+pin)(?:\s+(?:number|code))?(?:\s+(?:to|for|on|of)\s+(?:my|the|our|his|her)\s+[\p{L}-]+)?\s*(?:is|was|:|=)?\s*["'“‘]?(\d{3,10}#?|\d{1,3}(?:-\d{1,3}){2,3}|\d{1,2}(?: \d{1,2}){2,3})(?![\d-]| \d)/giu;
+    /\b(?:(?:gate|alarm|garage|door|lock\s*box|locker|lock|keypad|safe|building|entry|house|atm|debit(?:\s+card)?|credit\s+card|card|phone|iphone|bank)\s+(?:code|combination|combo|passcode|pin)|passcode|combination|pin(?=\s+(?:number|code|#))|my\s+pin)(?:\s+(?:number|code))?(?:\s+(?:to|for|on|of)\s+(?:my|the|our|his|her)\s+[\p{L}-]+)?\s*(?:(?:is|was|:|=)\s*)?["'“‘]?(\d{3,10}#?|\d{1,3}(?:-\d{1,3}){2,3}|\d{1,2}(?: \d{1,2}){2,3})(?![\d-]| \d)/giu;
   // Sign-in codes sent by text or email, as in "the verification code they texted me is 482913", which is
   // what a scam caller is after. Error codes, zip codes and a plain "sent the code" stay quiet.
   // The code itself is 4 to 8 digits, or two groups of 3 like WhatsApp's "482-913". It's never a year,
   // never part of a longer number, and never a size, so "my code is 3000 lines long" doesn't match.
   const SIGN_IN_VALUE = String.raw`["'“‘]?(?<![\p{L}\d])(?!(?:19|20)\d\d(?!\d))(\d{4,8}|\d{3}[\s-]\d{3})(?![\p{L}\d-]|\s\d)(?!\s+(?:lines?|characters?|chars|bytes?|words?|pages?|rows?|times|errors?|l[ií]neas|caracteres|palabras|p[aá]ginas|filas|veces|errores)(?![\p{L}]))`;
-  const IS = String.raw`\s*(?:(?:is|was)\s*)?[:=,]?\s*`;
-  const IS_SAID = String.raw`\s*(?:(?:is|was)(?![\p{L}])\s*[:=]?|[:=])\s*`;
+  const IS = String.raw`\s*(?:(?:is|was)\s*)?(?:[:=,]\s*)?`;
+  const IS_SAID = String.raw`\s*(?:(?:is|was)(?![\p{L}])\s*(?:[:=]\s*)?|[:=]\s*)`;
   // The words that mark a code as a sign-in code, and the apps whose codes scammers ask for most, as in
   // "G-482913 is your Google verification code".
   const SIGN_IN_WORD = String.raw`(?:verification|one[- ]time|login|log-?in|sign[- ]?in|two[- ]factor|2fa|mfa|otp|authentication|auth|access|sms)`;
@@ -2702,11 +2922,11 @@
   const LOGIN_NAMES = String.raw`(?:verification|one[- ]time|login|log-?in|sign[- ]?in|two[- ]factor|authentication|auth|access|sms)\s+(?:code|pin|passcode)|(?:otp|2fa|mfa)(?:\s+(?:code|pin))?`;
   const CODE_THEY_SENT = String.raw`${NOT_SIGN_IN}(?<![\p{L}])(?:pass)?code\s+${SENT_TO_ME}`;
   const LOGIN_CODE = new RegExp(
-    String.raw`(?<![\p{L}\d])(?:${LOGIN_NAMES})(?![\p{L}])[^\n\d]{0,30}?(?:\b(?:is|was)\b)?\s*[:=]?\s*["'“‘]?(?<!(?<![\p{L}])(?:in|since|by|from|of|until|before|after|at|to|about|around|every)\s+)(?<![\p{L}\d])(?!(?:19|20)\d\d(?!\d))(\d{4,8}|\d{3}[\s-]\d{3})(?![\p{L}\d-]|\s\d)|(?<![\p{L}])(?:(?:texted|sent|messaged|emailed|gave)\s+(?:me|us|him|her)\s+(?:(?:the|a|that|this|my)\s+)?|ask(?:ed|ing|s)?\s+(?:me\s+)?for\s+(?:the|my|a|that)\s+)(?:\p{L}+\s+)?${NOT_SIGN_IN}code\s*(?:(?:is|was)\s*)?[:=]?\s*["'“‘]?(?<!(?<![\p{L}])(?:in|since|by|from|of|until|before|after|at|to|about|around|every)\s+)(?<![\p{L}\d])(?!(?:19|20)\d\d(?!\d))(\d{4,8}|\d{3}[\s-]\d{3})(?![\p{L}\d-]|\s\d)` +
+    String.raw`(?<![\p{L}\d])(?:${LOGIN_NAMES})(?![\p{L}])[^\n\d]{0,30}?(?:\b(?:is|was)\b)?\s*(?:[:=]\s*)?["'“‘]?(?<!(?<![\p{L}])(?:in|since|by|from|of|until|before|after|at|to|about|around|every)\s+)(?<![\p{L}\d])(?!(?:19|20)\d\d(?!\d))(\d{4,8}|\d{3}[\s-]\d{3})(?![\p{L}\d-]|\s\d)|(?<![\p{L}])(?:(?:texted|sent|messaged|emailed|gave)\s+(?:me|us|him|her)\s+(?:(?:the|a|that|this|my)\s+)?|ask(?:ed|ing|s)?\s+(?:me\s+)?for\s+(?:the|my|a|that)\s+)(?:\p{L}+\s+)?${NOT_SIGN_IN}code\s*(?:(?:is|was)\s*)?(?:[:=]\s*)?["'“‘]?(?<!(?<![\p{L}])(?:in|since|by|from|of|until|before|after|at|to|about|around|every)\s+)(?<![\p{L}\d])(?!(?:19|20)\d\d(?!\d))(\d{4,8}|\d{3}[\s-]\d{3})(?![\p{L}\d-]|\s\d)` +
       // "the code they texted me is 482913", "the passcode I got by text: 482913"
       String.raw`|${CODE_THEY_SENT}${IS}${SIGN_IN_VALUE}` +
       // "the code from the text is 482913", "the code in the email: 482913"
-      String.raw`|${NOT_SIGN_IN}(?<![\p{L}])(?:pass)?code\s+(?:in|from|on)\s+(?:the|that|this|my|your|their|a|an)\s+(?:text(?:\s+message)?|sms|e-?mail|message|texts)\s*(?:(?:is|was|says|said|reads)\s*)?[:=,]?\s*${SIGN_IN_VALUE}` +
+      String.raw`|${NOT_SIGN_IN}(?<![\p{L}])(?:pass)?code\s+(?:in|from|on)\s+(?:the|that|this|my|your|their|a|an)\s+(?:text(?:\s+message)?|sms|e-?mail|message|texts)\s*(?:(?:is|was|says|said|reads)\s*)?(?:[:=,]\s*)?${SIGN_IN_VALUE}` +
       // "I got a text with the code 482913", "I received a code 482913", "my code is 482913", "Your WhatsApp code: 482-913"
       String.raw`|(?<![\p{L}])(?:(?:text|sms|message|e-?mail)\s+with|got|received|get|getting)\s+(?:a|an|the|this|that|my)\s+(?:new\s+)?${SIGN_IN_NAME}(?:pass)?code${IS}${SIGN_IN_VALUE}${CODE_ENDS}` +
       String.raw`|(?<![\p{L}])(?:my\s+(?:pass)?code|${SIGN_IN_APP}\s+(?:${SIGN_IN_WORD}\s+)?(?:pass)?code)${IS_SAID}${SIGN_IN_VALUE}` +
@@ -2724,7 +2944,7 @@
   // it as a different kind of code, like "de seguimiento" or "de la puerta".
   const ES_NOT_SIGN_IN = String.raw`(?:puerta|portal|alarma|garaje|edificio|casa|caja|cajero|tarjeta|seguimiento|descuento|promoci[oó]n|cup[oó]n|pedido|reserva|producto|referencia|error|regalo|canje|barras|[aá]rea|fuente|cliente|la|el|los|las|un|una)`;
   const ES_MORE = String.raw`(?:sms|otp|de\s+un\s+solo\s+uso|de\s+(?:\d|cuatro|seis|ocho)\s+d[ií]gitos|(?:de|del|por|para|al|en)\s+(?:(?:la|el|mi|tu|su)\s+)?(?!${ES_NOT_SIGN_IN}(?![\p{L}]))\p{L}+)`;
-  const ES_VALUE = String.raw`\s*(?:(?:es|era)(?![\p{L}]))?\s*:?\s*["'“‘]?(?<!(?<![\p{L}])(?:en|desde|hasta|de|del|a|al|antes|despu[eé]s|por|para|cada)\s+)${SIGN_IN_VALUE}`;
+  const ES_VALUE = String.raw`\s*(?:(?:es|era)(?![\p{L}])\s*)?(?::\s*)?["'“‘]?(?<!(?<![\p{L}])(?:en|desde|hasta|de|del|a|al|antes|despu[eé]s|por|para|cada)\s+)${SIGN_IN_VALUE}`;
   // The label, as for English: the code's names, and a code someone sent.
   const LOGIN_LABEL_ES =
     // "el código de verificación (que me llegó) es …", "clave de acceso de un solo uso …", "la contraseña de un solo uso"
@@ -2740,7 +2960,7 @@
     String.raw`(?<![\p{L}\d])(?:${LOGIN_LABEL_ES}|mi\s+c[oó]digo(?=\s*(?:(?:es|era)(?![\p{L}])|:)))(?![\p{L}])${ES_VALUE}` +
       // The code before its name: "482913 es mi código", "482913 es el código que me mandaron", "me mandaron 482913
       // como código de verificación"
-      String.raw`|(?<!\d[-./\s])${SIGN_IN_VALUE}\s*,?\s*(?:es|era)\s+(?:mi\s+c[oó]digo(?:\s+${ES_SIGN_IN})?(?![\p{L}])(?!\s+(?:postal|de|del|para|fuente|en)(?![\p{L}]))|el\s+c[oó]digo\s+(?:${ES_SIGN_IN}|que\s+(?:me|nos)\s+${ES_SENT})(?![\p{L}]))` +
+      String.raw`|(?<!\d[-./\s])${SIGN_IN_VALUE}\s*(?:,\s*)?(?:es|era)\s+(?:mi\s+c[oó]digo(?:\s+${ES_SIGN_IN})?(?![\p{L}])(?!\s+(?:postal|de|del|para|fuente|en)(?![\p{L}]))|el\s+c[oó]digo\s+(?:${ES_SIGN_IN}|que\s+(?:me|nos)\s+${ES_SENT})(?![\p{L}]))` +
       String.raw`|(?<![\p{L}])(?:me|nos)\s+${ES_SENT}\s+${SIGN_IN_VALUE}\s+como\s+(?:c[oó]digo|clave)(?:\s+${ES_SIGN_IN})?(?![\p{L}])`,
     "giu",
   );
@@ -2807,11 +3027,11 @@
   const REMOTE_WORDS = String.raw`any\s*desk|team\s*viewer|remote\s+(?:access|support|desktop)|quick\s*assist|ultra\s*viewer|rust\s*desk`;
   const REMOTE_WORDS_ES = String.raw`any\s*desk|team\s*viewer|acceso\s+remoto`;
   const CODE_TOLD_ES = new RegExp(
-    String.raw`(?<![\p{L}])(?:c[oó]digo|clave|id|pin)\s+(?:de\s+la|del|de)\s+(?:${REMOTE_WORDS_ES}|puerta|portal|alarma|garaje|caja\s+fuerte|edificio|casa|cajero|tarjeta)\s*(?:es|era|:)?\s*["']?(\d{3}[\s-]?\d{3}[\s-]?\d{3,4}|\d{3,10}#?)(?![\d-])`,
+    String.raw`(?<![\p{L}])(?:c[oó]digo|clave|id|pin)\s+(?:de\s+la|del|de)\s+(?:${REMOTE_WORDS_ES}|puerta|portal|alarma|garaje|caja\s+fuerte|edificio|casa|cajero|tarjeta)\s*(?:(?:es|era|:)\s*)?["']?(\d{3}[\s-]?\d{3}[\s-]?\d{3,4}|\d{3,10}#?)(?![\d-])`,
     "giu",
   );
   const REMOTE_CODE = new RegExp(
-    String.raw`\b(?:${REMOTE_WORDS})(?:\s+(?:id|code|number|address|password|pin))?\s*(?:is|:|=)?\s*["']?(\d{3}[\s-]?\d{3}[\s-]?\d{3,4}|\d{6,10})(?![\d-])`,
+    String.raw`\b(?:${REMOTE_WORDS})(?:\s+(?:id|code|number|address|password|pin))?\s*(?:(?:is|:|=)\s*)?["']?(\d{3}[\s-]?\d{3}[\s-]?\d{3,4}|\d{6,10})(?![\d-])`,
     "gi",
   );
   // Two-factor backup codes and recovery keys, as in "backup codes are 1234 5678, 2345 6789". Reads
@@ -2819,9 +3039,46 @@
   // like "…is lost" doesn't count as a code.
   const RECOVERY_LABEL = String.raw`(?:backup|recovery|2fa|two[- ]factor|mfa)\s+(?:codes?|keys?)|(?:c[oó]digos?|claves?)\s+de\s+(?:respaldo|recuperaci[oó]n)`;
   const RECOVERY_CODES = new RegExp(
-    String.raw`(?<![\p{L}])(?:${RECOVERY_LABEL})(?![\p{L}])(?:\s+(?:are|is|was|were|es|son|era|eran))?\s*:?\s*((?:[A-Za-z0-9]{3,8}(?:-[A-Za-z0-9]{3,8}){0,7}(?:\s*[,;]\s*|\s+|$)){1,16})`,
+    String.raw`(?<![\p{L}])(?:${RECOVERY_LABEL})(?![\p{L}])(?:\s+(?:are|is|was|were|es|son|era|eran))?\s*(?::\s*)?((?:[A-Za-z0-9]{3,8}(?:-[A-Za-z0-9]{3,8}){0,7}(?:\s*[,;]\s*|\s+|$)){1,16})`,
     "giu",
   );
+
+  // ---------- A downloaded two-step backup-code file ----------
+  // Google's ten 8-digit codes (printed two to a line) or GitHub's github-recovery-codes.txt (a short
+  // letters-and-digits code per line) aren't read out after a label like "backup codes are 1234…" above; they're
+  // saved as their own file, so the label is somewhere in the file instead (a title line), not right next to the
+  // grid. A plain list of 8-digit numbers alone is too common a shape (order numbers, part numbers) to flag on
+  // its own, so this still needs the same backup/recovery/2FA wording to appear anywhere in the text.
+  const RECOVERY_WORD = new RegExp(RECOVERY_LABEL, "iu");
+  const BACKUP_CODE =
+    /^[ \t]*([0-9]{8}|(?=[A-Za-z0-9]{6,10}$)(?=[^0-9]*[0-9])(?=[^A-Za-z]*[A-Za-z])[A-Za-z0-9]{6,10})(?:[ \t]+([0-9]{8}|(?=[A-Za-z0-9]{6,10}$)(?=[^0-9]*[0-9])(?=[^A-Za-z]*[A-Za-z])[A-Za-z0-9]{6,10}))?[ \t]*$/;
+  function findBackupCodes(text) {
+    if (!RECOVERY_WORD.test(text)) return [];
+    const found = [];
+    let runStart = -1;
+    let runEnd = -1;
+    let codeCount = 0;
+    const closeRun = () => {
+      if (codeCount >= 8) found.push(text.slice(runStart, runEnd));
+      runStart = -1;
+      codeCount = 0;
+    };
+    for (const m of text.matchAll(/[^\n]*\n|[^\n]+$/g)) {
+      const line = m[0].replace(/\r?\n$/, "");
+      if (!line.trim()) continue; // a blank line doesn't break a run, or extend one
+      const cm = BACKUP_CODE.exec(line);
+      if (!cm) {
+        closeRun();
+        continue;
+      }
+      if (runStart < 0) runStart = m.index;
+      runEnd = m.index + line.length;
+      codeCount += cm[2] ? 2 : 1;
+    }
+    closeRun();
+    return found;
+  }
+
   // A session cookie from a pasted request, like "Cookie: sessionid=…". Whoever has one is logged in as
   // you, so this only matches cookies named like a session or login with a long, random-looking value.
   const SESSION_COOKIE =
@@ -3161,7 +3418,9 @@
       secret: true,
       name: "AWS Access Key",
       severity: "high",
-      regex: /\b(?:AKIA|ASIA)[0-9A-Z]{16}\b/g,
+      // ABIA (AWS STS) and ACCA (context credentials) are rarer than AKIA/ASIA but just as real; AI-Prompt-Redaction
+      // (MIT, Aaditya Joshi, see THIRD-PARTY-NOTICES) matches all four.
+      regex: /\b(?:AKIA|ASIA|ABIA|ACCA)[0-9A-Z]{16}\b/g,
     },
     {
       id: "github_token",
@@ -3196,6 +3455,17 @@
       severity: "high",
       regex: /\bsk-(?!ant-)(?:proj-)?[A-Za-z0-9_-]{20,}/g,
       validate: (m) => looksRandom(m.replace(/^sk-(?:proj-)?/, "")),
+    },
+    {
+      id: "xai_key",
+      group: "credentials",
+      secret: true,
+      name: "xAI API Key",
+      severity: "high",
+      // Same `xai-` prefix shadow-ai-dlp matches (MIT, Erik Sanchez, see THIRD-PARTY-NOTICES), with the same
+      // randomness check Clotr already runs on Anthropic and OpenAI keys instead of the rival's regex-only version.
+      regex: /\bxai-[A-Za-z0-9_-]{16,}/g,
+      validate: (m) => looksRandom(m.replace(/^xai-/, "")),
     },
     {
       id: "google_api_key",
@@ -3267,6 +3537,13 @@
       name: "Two-Step Sign-in Key",
       severity: "high",
       find: findOtpSecrets,
+    },
+    {
+      id: "backup_codes",
+      group: "credentials",
+      name: "Backup Codes",
+      severity: "high",
+      find: findBackupCodes,
     },
     { id: "password", group: "credentials", name: "Password or Secret", severity: "high", find: findSecrets },
 
@@ -3368,6 +3645,19 @@
     { id: "my_id", group: "personal", name: "Your Account/ID Number", severity: "high", find: findVault("my_id") },
     { id: "watch_list", group: "custom", name: "Watch List Item", severity: "medium", find: findVault("watch_list") },
     { id: "email", group: "personal", name: "Email Address", severity: "low", find: findEmails },
+
+    // --- Links ---
+    // Its own Settings group, so the switch for personal details doesn't hold it, and `bandage: false` keeps
+    // Bandage from covering it while typing: a link isn't finished until the whole thing is there to clean.
+    {
+      id: "share_link",
+      group: "links",
+      name: "Share Code in a Link",
+      severity: "low",
+      bandage: false,
+      find: findShareLinks,
+      replace: cleanShareLink,
+    },
   ];
   // Names in the browser's language (English is the name written above).
   for (const p of PATTERNS) p.name = msg(`type_${p.id}`, p.name);
@@ -3383,5 +3673,8 @@
     vaultKinds,
     addressCore,
     msg,
+    cleanableParamsOf,
+    cleanShareLink,
+    findShareLinks,
   };
 })();

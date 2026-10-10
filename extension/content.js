@@ -14,7 +14,6 @@
   globalThis.__clotrActive = true;
 
   const {
-    detect,
     redact,
     generalize,
     fingerprint,
@@ -27,7 +26,9 @@
     bandageKindOf,
     msg,
   } = globalThis.Clotr;
-  const { realTarget, findEditor, getText, replaceText } = globalThis.Clotr.editor;
+  // Looked up fresh at each call, like readAttachment below, so a test can stand in a result that was cut short.
+  const detect = (text) => globalThis.Clotr.detect(text);
+  const { realTarget, findEditor, getText, replaceText, isChatComposer, composerInfo } = globalThis.Clotr.editor;
   const IS_TOP = window === window.top;
   // Which held-back features this build ships (`clotr_features` in manifest.json).
   const FEATURES = chrome.runtime.getManifest().clotr_features || {};
@@ -109,6 +110,7 @@
     editor: () => activeEditor,
     largeText: () => largeText,
     everyday: () => everyday,
+    search: () => search,
     tourniquet: () => tourniquet,
     isFirm: (id) => holds(id),
     bandageUnasked: () => bandage === undefined,
@@ -126,6 +128,8 @@
     // A warning's "Get a second opinion": the background opens Clotr's Is this a scam? page. Fails quietly.
     // Held back in this build: no function here means no door (warning-ui.js checks).
     openCheck: FEATURES.scamcheck ? () => message({ type: "clotr:openCheck" }).catch(() => {}) : undefined,
+    // Clean link's explainer page: same new-tab-beside-the-chat pattern, ships unconditionally.
+    openTracking: () => message({ type: "clotr:openTracking" }).catch(() => {}),
     // A hotspot keeps the chat it was made for: its detail comes from that chat only.
     currentChat: () => bandageChat(),
     realValue: (label, chat) => chat?.byLabel.get(label),
@@ -150,12 +154,22 @@
   function noteEditor() {
     if (!health.editor) reportHealth({ editor: true });
   }
+  // On a page with no dedicated setup of its own, a box findEditor accepts still has to look like a chat
+  // composer (isChatComposer), not just any textarea or contenteditable region: that's what keeps a shipping
+  // form's address box or a sign-up form's fields from ever warning. Every spot that used to call findEditor
+  // directly calls this instead; on every other kind of page it's exactly the same as findEditor.
+  function qualifyingEditor(node) {
+    const editor = findEditor(node);
+    if (!editor || !everywhere) return editor;
+    return isChatComposer(composerInfo(editor)) ? editor : null;
+  }
+
   // Looks for the chat box right after load without waiting for the user to type, including inside open
   // shadow roots where sites like Gemini keep theirs. I keep trying for a while, since focus and typing
   // events catch anything that shows up later. Returns the chat box, or null.
   function findChatBox(root = document, depth = 0) {
     for (const node of root.querySelectorAll('textarea, [contenteditable="true"], [contenteditable=""]')) {
-      if (node.getClientRects().length && findEditor(node)) return findEditor(node);
+      if (node.getClientRects().length && qualifyingEditor(node)) return qualifyingEditor(node);
     }
     if (depth > 2) return null;
     for (const node of root.querySelectorAll("*")) {
@@ -175,8 +189,19 @@
     return { found: true };
   }
   let chatBoxChecks = 0;
+  let chatBoxWaits = 0;
   function lookForChatBox() {
-    if (health.editor || retired) return;
+    // On a page covered only by "Everywhere I type", nothing scans the page on its own: no list names this
+    // page in advance, so repeatedly walking its whole DOM would mean doing that on every https site, chat
+    // box or not. There, the self-check waits for the person's own focus or typing instead, same as the
+    // warning itself.
+    if (health.editor || retired || everywhere) return;
+    // Until the settings say whether this page is one of those, don't walk it: wait for them, up to 10 s, before
+    // the usual tries start.
+    if (!settingsLoaded && !prepFailed && ++chatBoxWaits < 20) {
+      setTimeout(lookForChatBox, 500);
+      return;
+    }
     try {
       if (document.documentElement && findChatBox()) return noteEditor();
     } catch {
@@ -188,7 +213,7 @@
   window.addEventListener(
     "focusin",
     safely((e) => {
-      if (!health.editor && findEditor(realTarget(e))) noteEditor();
+      if (!health.editor && qualifyingEditor(realTarget(e))) noteEditor();
     }),
     true,
   );
@@ -204,12 +229,13 @@
 
   const SCAN_DELAY_MS = 400; // wait for typing to pause so half-typed keys don't trigger
 
-  // Checks whether a real person triggered this, not a script. Without that check, a page could type
-  // guesses into its own chat box, fire a fake keystroke or Enter, and watch whether Clotr's warning
-  // appears, which would tell it what's in your vault. I still count events a script re-dispatches right
-  // after a real key or click, since some sites genuinely do that, and I fall back to reacting as before
-  // wherever the browser can't tell the difference.
-  const byUser = (e) => e.isTrusted || navigator.userActivation?.isActive !== false;
+  // Checks whether a real person triggered this, not a script. Without it, a page could type guesses
+  // into its own chat box, fire a fake keystroke or Enter, and watch whether Clotr's warning appears,
+  // which would tell it what's in your vault. `isTrusted` is the one thing a page can't fake on an event
+  // it dispatches itself, so that's the whole check here. A `submit` event needs its own, separate check
+  // further down: the browser marks one trusted even when a page script starts it with
+  // form.requestSubmit(), with no person acting at all.
+  const byUser = (e) => e.isTrusted;
 
   // ---------- Per-pattern responses (set in the popup, or "stop warning me about this kind" = log) ----------
 
@@ -222,13 +248,18 @@
   const responseOf = (patternId) => globalThis.Clotr.responseOf(patternId, { responses, siteMode });
 
   function setToLog(patternIds) {
-    setResponse(patternIds, "log");
-    console.info(LOG, "won't warn again for", patternIds);
+    const asked = setResponse(patternIds, "log");
+    console.info(LOG, asked ? "Clotr's own page asks before it stops warning for" : "won't warn again for", patternIds);
   }
 
+  // A stricter choice applies here right away. One that warns less, on every site, waits for the person to say
+  // yes on Clotr's own page (background.js opens it), so it isn't applied here: this tab gets it with the rest of
+  // the settings once they do. Returns true when a choice went there to be confirmed.
   function setResponse(patternIds, value) {
+    const { stricter, responseFor } = globalThis.Clotr;
+    const looser = patternIds.filter((id) => stricter(value, responseFor(id, responses)) !== value);
     responses = { ...responses };
-    for (const id of patternIds) responses[id] = value;
+    for (const id of patternIds) if (!looser.includes(id)) responses[id] = value;
     try {
       message({ type: "clotr:setResponses", ids: patternIds, value }).catch((err) =>
         console.warn(LOG, "could not save preference", err),
@@ -236,6 +267,7 @@
     } catch (err) {
       console.warn(LOG, "could not save preference", err);
     }
+    return looser.length > 0;
   }
 
   // ---------- Pause per site (toggled from the popup) ----------
@@ -284,7 +316,11 @@
   let replyCheck = true; // Settings → "Check the AI's replies for my details"
   let commandCheck = true; // Settings → "Check commands I copy on AI chats"
   let bandage; // Bandage on this site: true on, false the user said no, undefined not asked yet
-  let everyday = false; // an email or chat app you switched on: your words go to people, not to an AI
+  let everyday = false; // an email, chat or support-chat app you switched on: your words go to people, not to an AI
+  let search = false; // a search engine you switched on: what you type becomes a search, not a message
+  // A page with no dedicated setup of its own, covered only by "Everywhere I type": here Clotr has to tell a
+  // chat box from an ordinary form field itself (isChatComposer), instead of trusting any box it finds.
+  let everywhere = false;
   let pictureNoted = false; // the "can't read pictures" note was already shown on this site
   // Tourniquet mode: "child", "adult", or "after_scam" for the 30 days after a scam, while it's on. Whatever
   // kinds it or an organization's policy holds, and whether settings are locked, the warning never offers a
@@ -336,8 +372,11 @@
         bandage = typeof r.bandage === "boolean" ? r.bandage : undefined;
         safely(watchLabels)(); // turns the label watch on (picking up labels from a reload) or off
         everyday = r.everyday === true;
+        search = r.search === true;
+        everywhere = r.everywhere === true;
         pictureNoted = r.pictureNoted === true;
         teamHold = r.teamHold === true;
+        holdFiles = r.holdFiles === true;
         tourniquet = ["child", "adult", "after_scam"].includes(r.tourniquet) ? r.tourniquet : null;
         firm = new Set(Array.isArray(r.firm) ? r.firm : []);
         locked = r.locked === true;
@@ -353,6 +392,9 @@
         if (!settingsLoaded) {
           settingsLoaded = true;
           console.info(LOG, "responses:", JSON.stringify(responses), isPaused() ? "(paused on this site)" : "");
+          // What you typed while they were on the way, even if it was already checked with the defaults: a
+          // warning they don't call for goes away.
+          if (scanAfterReady || activeEditor) setTimeout(safely(scanNowReady), 0);
           return;
         }
         if (wasPaused === isPaused()) return;
@@ -440,11 +482,13 @@
     allowedValues.clear();
     loggedSilenced.clear();
     bandageFailed.clear();
+    truncatedNoted = false;
   }
   let activeEditor = null; // the chat input the user last typed in
   let pending = []; // "block" detections the user hasn't answered yet
   let warnings = []; // "warn" detections shown in the notice, not yet answered
   let fileWarnings = []; // detections in attached files, not yet acknowledged
+  let truncatedNoted = false; // the standalone "part of it wasn't checked" notice already shown for this message
   const flagged = new Map(); // value → { id, name }: shown to the user and still in the text
   const offered = new Set(); // values already offered for the vault on this page
   // Vault-only types have nothing left to learn, and a team's own kinds are set by its policy, so I never
@@ -489,7 +533,7 @@
       if (!activeEditor?.isConnected) return;
       clearTimeout(scanTimer);
       scanTimer = setTimeout(
-        safely(() => scan(activeEditor)),
+        safely(() => scanWhenReady(activeEditor)),
         SCAN_DELAY_MS,
       );
     }),
@@ -829,6 +873,8 @@
   // for this exact item, saved to the vault as "fine to share" or "always watch", or for this whole kind of
   // data.
 
+  // "Fine to share" waits for the person to say yes on Clotr's own page, as setResponse explains; "always watch"
+  // is kept right away. Returns true when it went there to be confirmed.
   function addToVault(results, mode) {
     const entries = results.flatMap((r) =>
       r.matches.map((m) => ({
@@ -840,10 +886,11 @@
       })),
     );
     message({ type: "clotr:vaultAdd", entries }).catch((err) => console.warn(LOG, "could not add to vault", err));
+    return mode === "allow";
   }
 
   // "Ask before sending": one decision for everything found, the warn-level items included.
-  function askFirst(results) {
+  function askFirst(results, truncated = false) {
     // Opened by a send attempt: leaving it in sends the message.
     const resend = heldVia;
     const answer = (doRedact, general = false) => {
@@ -878,6 +925,7 @@
       leave: () => answer(false),
       cover: () => answer(true),
       general: () => answer(true, true),
+      truncated,
       // Back to the message without choosing: the dialog comes back when you send.
       back: () => {
         ui.closeDialog();
@@ -889,7 +937,7 @@
 
   // Shows the corner warning, which never blocks or takes focus. The `file` argument is { name, lines } for
   // an attached file, which can't be redacted in place, only removed by the user.
-  function warn(results, file = null) {
+  function warn(results, file = null, truncated = false) {
     ui.showNotice(results, file, {
       leave: () => {
         allowWarnings();
@@ -907,6 +955,7 @@
           results.map((r) => r.id),
         );
       },
+      truncated,
     });
   }
 
@@ -998,7 +1047,11 @@
     if (isPaused()) return;
     const draft = getText(editor);
     if (!draft.trim()) newMessage();
-    const all = splitOwnIds(detect(draft));
+    // Read off detect()'s own return value: splitOwnIds and everything after it build new arrays that don't
+    // carry this along.
+    const raw = detect(draft);
+    const truncated = Boolean(raw.truncated);
+    const all = splitOwnIds(raw);
     noteTyped(all);
 
     // Log-only patterns don't interrupt, but are still counted (once per value per page).
@@ -1044,7 +1097,7 @@
         pending.concat(warnings).map((r) => r.id),
       );
       ui.closeNotice();
-      askFirst(pending.concat(warnings));
+      askFirst(pending.concat(warnings), truncated);
     } else {
       if (ui.isDialogOpen() && ui.dialogKind() === "ask") ui.closeDialog(); // a file's question stays: the file's still there
       if (warnings.length) {
@@ -1053,11 +1106,17 @@
           "warning about",
           warnings.map((r) => r.id),
         );
-        warn(warnings);
+        warn(warnings, null, truncated);
       } else if (ui.isNoticeOpen() && ui.noticeKind() === "warn") {
         ui.closeNotice();
       }
       if (!warnings.length && removed.length && !lost) offerVault(removed);
+      // Nothing found, but the check itself gave up partway: silence here would read as "all clear", so say
+      // so even with nothing to warn about. Once per message, so it doesn't reopen on every keystroke.
+      else if (!warnings.length && truncated && !truncatedNoted && !lost && !ui.isDialogOpen() && !ui.isNoticeOpen()) {
+        truncatedNoted = true;
+        ui.tellTruncated();
+      }
     }
   }
 
@@ -1086,6 +1145,24 @@
   let passThrough = false; // the send being let through after the wait: already checked
   const ready = () => settingsLoaded && Boolean(saltValue);
   const shouldWait = () => !ready() && !prepFailed && !readyGaveUp && !orphaned();
+
+  // While you type, a warning waits for those settings too, so nothing you've marked OK to share, or set to
+  // just count, gets warned about in the moment before they arrive. It waits at most the same 3 seconds, then
+  // checks with the usual responses, as before.
+  let scanAfterReady = null;
+  let scanReadyTimer = 0;
+  function scanWhenReady(editor) {
+    if (!shouldWait()) return scan(editor);
+    scanAfterReady = editor;
+    if (!scanReadyTimer) scanReadyTimer = setTimeout(safely(scanNowReady), READY_WAIT_MS);
+  }
+  function scanNowReady() {
+    clearTimeout(scanReadyTimer);
+    scanReadyTimer = 0;
+    const editor = scanAfterReady || activeEditor;
+    scanAfterReady = null;
+    if (editor?.isConnected && !isPaused() && getText(editor).trim()) scan(editor);
+  }
   function waitUntilReady(via) {
     if (readyWait) return true; // another Enter while waiting: still the one wait
     const started = Date.now();
@@ -1240,13 +1317,13 @@
   // Capture-phase listeners on window run before the site's own handlers.
   const onTyping = safely((e) => {
     if (isPaused() || globalThis.Clotr.editor.isEditing() || !byUser(e)) return;
-    const editor = findEditor(realTarget(e));
+    const editor = qualifyingEditor(realTarget(e));
     if (!editor) return;
     activeEditor = editor;
     noteEditor();
     clearTimeout(scanTimer);
     scanTimer = setTimeout(
-      safely(() => scan(editor)),
+      safely(() => scanWhenReady(editor)),
       SCAN_DELAY_MS,
     );
   });
@@ -1257,12 +1334,15 @@
   window.addEventListener("beforeinput", onTyping, true);
 
   let enterDown = false; // true while Enter is physically down, so its own check decides, not the new line it types
+  let lastTrustedEnterAt = 0; // a real Enter keydown, whatever happens after: evidence for the submit check below
+  let lastTrustedClickAt = 0; // a real click on something that could send: the same kind of evidence
   window.addEventListener(
     "keydown",
     safely((e) => {
       enterDown = e.key === "Enter";
+      if (enterDown && e.isTrusted) lastTrustedEnterAt = Date.now();
       if (e.key !== "Enter" || e.shiftKey || e.isComposing || !byUser(e)) return;
-      const editor = findEditor(realTarget(e));
+      const editor = qualifyingEditor(realTarget(e));
       if (!editor) return;
       activeEditor = editor;
       if (shouldBlock({ via: editor })) block(e, "Enter key");
@@ -1288,7 +1368,7 @@
         (e.inputType === "insertText" && /^\r?\n$/.test(e.data || ""));
       if (!newLine || enterDown || e.isComposing || !e.cancelable || !byUser(e)) return;
       if (globalThis.Clotr.editor.isEditing()) return;
-      const editor = findEditor(realTarget(e));
+      const editor = qualifyingEditor(realTarget(e));
       if (!editor) return;
       activeEditor = editor;
       if (shouldBlock({ via: editor })) block(e, "a phone keyboard's new line");
@@ -1317,11 +1397,12 @@
   window.addEventListener(
     "click",
     safely((e) => {
-      if (!byUser(e)) return;
       const target = realTarget(e);
       if (!(target instanceof Element)) return;
       const sendBtn = target.closest(SEND_BUTTON_SELECTOR);
       const otherBtn = !sendBtn && composerButton(target);
+      if (e.isTrusted && (sendBtn || otherBtn)) lastTrustedClickAt = Date.now();
+      if (!byUser(e)) return;
       if (sendBtn) {
         if (shouldBlock({ via: sendBtn })) block(e, "send button");
       } else if (otherBtn && shouldBlock({ unsure: true, via: otherBtn })) {
@@ -1662,7 +1743,11 @@
       return /\.pdf$/i.test(f.name) || f.type === "application/pdf"
         ? { all: namedDocument(f), lines: 0, picture: "scan" }
         : null;
-    return { all: splitOwnIds(detect(text)), lines: text.split("\n").length, picture: false };
+    // splitOwnIds builds a new array, which doesn't carry detect()'s truncated flag along, so that's read here.
+    const raw = detect(text);
+    const all = splitOwnIds(raw);
+    if (raw.truncated) all.truncated = true;
+    return { all, lines: text.split("\n").length, picture: false };
   }
 
   async function scanFiles(files) {
@@ -1679,12 +1764,14 @@
     let lines = 0;
     let pictures = 0;
     let picture = false; // "photo" or "scan": a picture is among the files with something found
+    let truncated = false; // a file's own text was too long for detect() to check all the way through
     try {
       for (const f of list.slice(0, MAX_FILES)) {
         if (isPicture(f)) pictures++; // its words can't be read
         const read = await readFindings(f, unchecked);
         if (!read) continue;
         const { all } = read;
+        if (all.truncated) truncated = true;
         const silenced = filterMatches(all, (r, m) => respFor(r, m) === "log");
         if (silenced.length) report(silenced, "suppressed");
         const hits = filterMatches(all, (r, m) => respFor(r, m) !== "log" && !allowedValues.has(m));
@@ -1720,6 +1807,7 @@
           names.length === 1
             ? { name: names[0], lines, picture }
             : { name: quoted(names), lines, count: names.length, picture },
+          truncated,
         );
     } finally {
       fileReads.delete(reading);
@@ -1743,10 +1831,15 @@
   // says the organization is the one asking, and a file still being read after SCAN_WAIT_MS turns into a
   // question too, never a silent send.
   let teamHold = false;
+  // A policy can also widen the file hold itself, past kinds set to Ask before sending: with holdFiles on,
+  // any finding in a file (short of Just count, already filtered out of hits) holds it the same way.
+  let holdFiles = false;
 
-  // Something is set to Ask before sending here, so a file could hold a message.
-  const couldHoldFiles = () => (siteMode ? siteMode === "block" : Object.values(responses).includes("block"));
-  const holdsSend = (hits) => hits.some((r) => r.matches.some((m) => respFor(r, m) === "block"));
+  // Something is set to Ask before sending here, so a file could hold a message. holdFiles widens this past
+  // that: with it on, anything a file holds (hits already excludes Just count) could end up holding the send.
+  const couldHoldFiles = () =>
+    holdFiles || (siteMode ? siteMode === "block" : Object.values(responses).includes("block"));
+  const holdsSend = (hits) => holdFiles || hits.some((r) => r.matches.some((m) => respFor(r, m) === "block"));
   // “a.pdf”, “b.txt”, “c.csv” and 2 more
   const quoted = (names) =>
     names
@@ -1856,7 +1949,7 @@
   // noted.
   function fileWaitTimedOut(wait) {
     if (fileWait !== wait) return;
-    if (teamHold && !orphaned() && !health.uiRemoved) return askStillChecking(wait);
+    if ((teamHold || holdFiles) && !orphaned() && !health.uiRemoved) return askStillChecking(wait);
     for (const r of wait.reading) r.late = true;
     endFileWait(wait);
     console.info(LOG, "an attached file took too long to check; the message goes");
@@ -1905,7 +1998,13 @@
     const hold = fileHold;
     ui.showFileHold(
       hold.results,
-      { name: quoted(hold.names), names: hold.names, count: hold.names.length, second: hold.asked, team: teamHold },
+      {
+        name: quoted(hold.names),
+        names: hold.names,
+        count: hold.names.length,
+        second: hold.asked,
+        team: teamHold || holdFiles,
+      },
       {
         send: () => answerFiles(hold, false, via),
         off: () => answerFiles(hold, true, via),
@@ -1953,11 +2052,13 @@
     ui.tellFileUnchecked(quoted(names), names.length);
   }
 
+  // A page can't fake `isTrusted`, so that's enough to know a person really picked, dropped or pasted the
+  // file: nothing here runs for files a page added on its own.
   window.addEventListener(
     "change",
     safely((e) => {
       const t = realTarget(e);
-      if (t instanceof HTMLInputElement && t.type === "file")
+      if (e.isTrusted && t instanceof HTMLInputElement && t.type === "file")
         scanFiles(t.files).catch((err) => console.warn(LOG, "file scan failed", err));
     }),
     true,
@@ -1965,7 +2066,7 @@
   window.addEventListener(
     "drop",
     safely((e) => {
-      if (e.dataTransfer?.files?.length)
+      if (e.isTrusted && e.dataTransfer?.files?.length)
         scanFiles(e.dataTransfer.files).catch((err) => console.warn(LOG, "file scan failed", err));
     }),
     true,
@@ -1973,7 +2074,7 @@
   window.addEventListener(
     "paste",
     safely((e) => {
-      if (e.clipboardData?.files?.length)
+      if (e.isTrusted && e.clipboardData?.files?.length)
         scanFiles(e.clipboardData.files).catch((err) => console.warn(LOG, "file scan failed", err));
     }),
     true,
@@ -1999,10 +2100,19 @@
     return false;
   });
 
+  const TRUSTED_SUBMIT_WINDOW_MS = 1000; // how long a real Enter or send-button click counts as "just before" a submit
+
+  // The browser marks a `submit` event trusted even when a page script starts it with form.requestSubmit(),
+  // so isTrusted alone can't prove a person sent this one. A real Enter or a real click on a send-like button
+  // fires in the same turn as the native submit that follows it, so requiring one close enough closes that
+  // gap without holding up a genuine send.
+  const trustedSubmit = () =>
+    Math.min(Date.now() - lastTrustedEnterAt, Date.now() - lastTrustedClickAt) < TRUSTED_SUBMIT_WINDOW_MS;
+
   window.addEventListener(
     "submit",
     safely((e) => {
-      if (byUser(e) && shouldBlock({ via: e.target instanceof HTMLFormElement ? e.target : null }))
+      if (trustedSubmit() && shouldBlock({ via: e.target instanceof HTMLFormElement ? e.target : null }))
         block(e, "form submit");
     }),
     true,

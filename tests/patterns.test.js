@@ -117,6 +117,7 @@ const FAKE = {
   github: "ghp_" + "7Rk2QwZ9LmX4vB8nT1cY6pJ3sH5dF0gA2eUi",
   anthropic: "sk-ant-api03-Zq8Lm2Xv9Rt4Kp7Wn1Bc6Hy3Jd5Gf0Qs",
   openai: "sk-proj-Hk3Pq9Zr7Tm2Xw5Lv8Nb1Cy4Jg6Df0Sa",
+  xai: "xai-" + "Qp7Lk2Xv9Rt4Wn1Bc6Hy3Jd5Gf0Mz8As",
 };
 
 test("credentials", () => {
@@ -128,6 +129,40 @@ test("credentials", () => {
   expectOnly("-----BEGIN RSA PRIVATE KEY-----", "private_key");
   // A Google key may end in a dash
   expectOnly("maps key AIzaHvneKu6rq2gXKZtw-eOhOYwuVw6AAiq_ps- is failing", "google_api_key");
+});
+
+test("AWS access keys: the rarer STS (ABIA) and context (ACCA) prefixes match too, same as AKIA/ASIA", () => {
+  expectOnly("key ABIA4HPQ7XZ2R6TWLJ3N here", "aws_access_key");
+  expectOnly("key ACCA4HPQ7XZ2R6TWLJ3N here", "aws_access_key");
+  expectOnly("key ASIA4HPQ7XZ2R6TWLJ3N here", "aws_access_key");
+});
+
+test("xAI API key: the xai- prefix, with the same randomness check as Anthropic and OpenAI keys", () => {
+  expectOnly(`XAI_API_KEY=${FAKE.xai}`, "xai_key");
+  // A documentation placeholder isn't random enough to flag.
+  expectNone("XAI_API_KEY=xai-your-api-key-here");
+});
+
+// A downloaded two-step backup-code file: Google's ten 8-digit codes, printed two to a line, or GitHub's
+// github-recovery-codes.txt, a short letters-and-digits code per line. Both need the backup/recovery wording
+// to appear somewhere in the file (a title line), since a bare grid of 8-digit numbers is too common a shape
+// on its own (order numbers, part numbers) to flag without it.
+test("backup codes: Google's ten 8-digit codes and a GitHub-style letters-and-digits list, each under their own title", () => {
+  expectOnly(
+    "Backup codes.\n\n12345678  23456789\n34567890  45678901\n56789012  67890123\n78901234  89012345\n90123456  10234567",
+    "backup_codes",
+  );
+  expectOnly(
+    "GitHub recovery codes.\n\n1a2b3c4d\n5e6f7g8h\n9i0j1k2l\n3m4n5o6p\np7q8r9s0\nt1u2v3w4\nx5y6z7a8\nb9c0d1e2\nf3g4h5i6\nj7k8l9m0",
+    "backup_codes",
+  );
+});
+
+test("backup codes: an 8-digit list that isn't one (no backup/recovery wording) stays quiet, like order or part numbers", () => {
+  expectNone("order ids:\n12345678\n23456789\n34567890\n45678901\n56789012\n67890123\n78901234\n89012345");
+  expectNone("part numbers\n10293847\n20394857\n30495867\n40596877\n50697887\n60798897\n70899907\n80990017\n90001127");
+  // The wording is there, but fewer than 8 codes: too short a fragment to call it the file.
+  expectNone("Backup codes.\n\n12345678  23456789\n34567890  45678901");
 });
 
 // Private keys written as JSON Web Keys (RFC 7517/7518), not just PEM/OpenSSH. Every value below is made up.
@@ -1514,6 +1549,85 @@ test("US tax and immigration numbers, VA file and Medicaid IDs", () => {
   expectNothing("order 912-40-1234 shipped"); // not an ITIN range
 });
 
+// 1.4.0: British, Canadian and Australian addresses. The tail (town, province or state, and postcode) joins the
+// street in one match, so Hide it covers the whole address, the way a US city/state/ZIP already does.
+test("UK addresses: flats, the new street words, a town and postcode tail, Hide it covers all of it", () => {
+  expectOnly("Flat 3, 12 Acacia Avenue, Leeds LS6 2AB", "street_address", "Flat 3, 12 Acacia Avenue, Leeds LS6 2AB");
+  expectOnly("12 Acacia Close, Leeds LS6 2AB", "street_address", "12 Acacia Close, Leeds LS6 2AB");
+  expectOnly("4 Mill Mews, York YO1 7HH", "street_address", "4 Mill Mews, York YO1 7HH");
+  expectOnly("send it to 7 Sunset Gardens, Bristol BS1 4ZZ", "street_address", "7 Sunset Gardens, Bristol BS1 4ZZ");
+  expectOnly("my address is 2 Quay Walk, Cardiff CF10 1AA", "street_address", "2 Quay Walk, Cardiff CF10 1AA");
+  // The everyday street words (park, green, hill, view, gate, walk, rise, row) only count with a tail, a
+  // flat or unit front, or an address phrase right before them.
+  expectOnly("ship it to 5 Hyde Park, Leeds LS6 2AB", "street_address", "5 Hyde Park, Leeds LS6 2AB");
+  expectNothing("at 5 Hyde Park");
+  expectNothing("I'll meet you at the park");
+  expectNothing("the view from here is amazing");
+  expectNothing("let's go for a walk");
+  expectNothing("please close the gate");
+  // A real street's own name can still be one of those words, when the true suffix comes right after it.
+  expectOnly(
+    "Lives with me at 2201 Sparrow Hill Dr, El Paso, TX 79912",
+    "street_address",
+    "2201 Sparrow Hill Dr, El Paso, TX 79912",
+  );
+  // A postcode given as the person's own, with no street in sight.
+  expectOnly("my postcode is SW1A 1AA", "street_address", "SW1A 1AA");
+  expectOnly("postal code: LS6 2AB", "street_address", "LS6 2AB");
+});
+
+test("Canadian addresses: a postal code tail, Quebec's lower-case streets, a unit-dash front", () => {
+  expectOnly("123 Main St, Calgary, AB T2P 2M5", "street_address", "123 Main St, Calgary, AB T2P 2M5");
+  expectOnly("12-345 Main St, Calgary, AB T2P 2M5", "street_address", "12-345 Main St, Calgary, AB T2P 2M5");
+  // Quebec's lower-case streets are read on their own; no tail or vault form yet (a later piece of work).
+  expectOnly("123 rue Sainte-Catherine, Montréal, QC H3B 1A7", "street_address", "123 rue Sainte-Catherine");
+  expectOnly("12 chemin de la Rivière", "street_address", "12 chemin de la Rivière");
+  expectOnly("my postal code is K1A 0B1", "street_address", "K1A 0B1");
+  expectNothing("flight 12-345 was cancelled"); // a dash-joined number with nothing to follow
+});
+
+test("Australian addresses: a state and postcode tail, a unit before the slash", () => {
+  expectOnly("12 Smith Parade, Brisbane QLD 4000", "street_address", "12 Smith Parade, Brisbane QLD 4000");
+  expectOnly("Unit 4/12 Smith St, Fitzroy VIC 3065", "street_address", "Unit 4/12 Smith St, Fitzroy VIC 3065");
+  expectOnly("4/12 Smith St, Fitzroy VIC 3065", "street_address", "4/12 Smith St, Fitzroy VIC 3065");
+  expectOnly("my postcode is 4000 VIC", "street_address", "4000");
+  expectNothing("my postcode is 4000"); // no state next to it: too everyday on its own
+  expectNothing("there is a 4/12 chance of rain");
+  expectNothing("I got 4/12 questions right");
+});
+
+test("UK, Australian and Canadian bank numbers: the sort code, BSB or transit number with its account, as one", () => {
+  expectOnly("sort code 12-34-56 account 12345678", "bank_account", "sort code 12-34-56 account 12345678");
+  expectOnly("BSB 062-000 account 1234 5678", "bank_account", "BSB 062-000 account 1234 5678");
+  expectOnly(
+    "transit 12345 institution 004 account 1234567",
+    "bank_account",
+    "transit 12345 institution 004 account 1234567",
+  );
+  // Neither on its own is enough: no check digit tells a sort code or a BSB apart from an everyday number.
+  expectNothing("my sort code is 12-34-56");
+  expectNothing("the BSB is 062-000");
+  expectNothing("transit number 12345, no institution given");
+});
+
+test("a UK driving licence's 16-character number, unlabelled, and a Canadian provincial health card", () => {
+  expectOnly("MORGA657054SM9IJ", "drivers_license", "MORGA657054SM9IJ");
+  expectOnly("my driving licence number is MORGA657054SM9IJ", "drivers_license", "MORGA657054SM9IJ");
+  expectNothing("MORGA699954SM9IJ"); // the month digits don't decode to a real month
+  expectOnly("my health card number is 1234567890AB", "medicare_id", "1234567890AB");
+  expectOnly("OHIP 1234567890AB", "medicare_id", "1234567890AB");
+  expectNothing("my library card number is 1234567890AB");
+});
+
+// 1.4.0's new regular expressions: the street front and tail, the ambiguous-suffix lookahead, and the three
+// combined bank matches, all stay fast on hostile text.
+test("the UK, Canadian and Australian address and bank patterns stay fast on hostile text", () => {
+  const detectOnly = (text) => globalThis.Clotr.detect(text);
+  assertLinear(detectOnly, (u, n) => u.repeat(n), ["4/", "12-", "flat 9, ", "9 hill ", "9 park ", "9 view dr "], 5000);
+  assertLinear(detectOnly, (u, n) => "sort code 12-34-56 account " + u.repeat(n), ["1", "11", "1 "], 5000);
+  assertLinear(detectOnly, (u, n) => u.repeat(n) + "SM9IJ", ["A", "9", "1"], 5000);
+});
+
 test("bank, Medicare, license, passport and insurance numbers", () => {
   expectOnly("my account number is 123456789012", "bank_account", "123456789012");
   expectOnly("routing: 021000021", "bank_account", "021000021");
@@ -2701,6 +2815,51 @@ test("no pattern is slow on hostile text (ReDoS fuzz)", () => {
   assert.deepEqual(slow, []);
 });
 
+// A label, then a huge run of spaces or line breaks, then no value, as in "password is" followed by a pasted
+// megabyte of blank lines. The fuzz above never tries this shape: repeating a short unit never produces one label
+// followed by a long run of nothing. Between a label and its value, two optional pieces each reading the same
+// run of spaces, like "\s*:?\s*", can split those spaces between them in every possible way, so ruling out the
+// whole thing took quadratic time, or cubic with three such gaps: "ITIN", 5,000 spaces and a comma once took
+// about a minute. Each label below once sat in front of such a gap; "_" marks where the run goes. Add any new
+// labelled pattern's own gap here, the same way, before it ships.
+test("a label before a huge run of spaces with no value stays fast", () => {
+  const C = globalThis.Clotr;
+  let runs = 0; // each run gets its own text, so no kept answer hides the work
+  const read = (text) => {
+    for (const r of C.detect(text + " ".repeat(++runs % 7))) for (const m of r.matches) C.fingerprint("s", r.id, m);
+  };
+  const labels = [
+    "my password is_,",
+    "mi contraseña es_,",
+    "my mother's maiden name is_,",
+    "apellido de soltera es_,",
+    "the gate code is_,",
+    "the code they texted me is_,",
+    "my code is_,",
+    "verification code is_,",
+    "texted me the code_,",
+    "the code in the text says_,",
+    "I got a verification code_,",
+    "el código de verificación_,",
+    "482913_,",
+    "el código de la puerta_,",
+    "anydesk_,",
+    "backup codes are_,",
+    "1 Oak St apt_,",
+    "PO Box_,",
+    "1 po box_x st",
+    "my house GPS: 51.5007°_,",
+    "iban_,",
+    "12345678_,",
+    "VIN_,",
+    "SID_,",
+    "RFC_,",
+    "ITIN_,",
+    "tax id number is_,",
+  ];
+  for (const gap of [" ", "\n"]) assertLinear(read, (label, n) => label.replace("_", gap.repeat(n)), labels, 3000);
+});
+
 test("your ID's fingerprint ignores case, like the format match does", () => {
   const { fingerprint } = globalThis.Clotr;
   assert.equal(fingerprint("s4lt", "my_id", "AB-123456"), fingerprint("s4lt", "my_id", "ab-123456"));
@@ -2778,6 +2937,17 @@ test("not personal: ordinary prose, hashes, invalid IBANs, 9-digit numbers witho
   expectNone("the invoice id DE89 3704 0044 0532 0130 01 is wrong"); // bad checksum
   expectNone("order 046454286 shipped");
   expectNone("the server at 8.8.8.8 answers DNS");
+});
+
+// Ordinary developer text that shares a shape with something Clotr looks for, but isn't one: a git SHA isn't a
+// crypto key (no "private/wallet/secret key" label), a UUID isn't a card or phone number, a hex colour and a
+// docker image:tag aren't an account number, and a package@version isn't either.
+test("not a leak: a git SHA, a UUID, a hex colour, a docker image tag, and a package version", () => {
+  expectNone("git commit 9fceb02d0ae598e95dc970b74767f19372d61af8");
+  expectNone("const id = '550e8400-e29b-41d4-a716-446655440000'");
+  expectNone("docker run -p 8080:80 nginx:1.25");
+  expectNone("border: 1px solid #ccc; color: #1F2A2E;");
+  expectNone("npm install react@18.3.1 lodash@4.17.21");
 });
 
 // Text copied from web pages, documents and chat apps can carry invisible or look-alike characters. They must
@@ -3107,11 +3277,29 @@ test("PDF page text: literal strings, TJ arrays and ToUnicode-mapped fonts; host
   const text = pdfPageText([cmap, page]);
   assert.match(text, /call me at 555-555-012/);
   assert.match(text, /55/);
+  // A range can also list each code's text in an array.
+  const arrayRange = "begincmap 1 beginbfrange <0020> <0022> [<0041> <0042> <0043>] endbfrange endcmap";
+  assert.match(pdfPageText([arrayRange, "BT <002000210022> Tj ET"]), /ABC/);
   assertLinear(
     (x) => pdfPageText([x]),
     (u, n) => "BT " + u.repeat(n) + " Tj",
     ["(", "<0", "beginbfchar ", "[(", "(a\\"],
   );
+  // ToUnicode maps are only read from streams with "begincmap", so these hostile ranges sit inside one. A regex
+  // version rescanned 20,000 characters for every range whose "[" never closed.
+  assertLinear(
+    (x) => pdfPageText([x]),
+    (u, n) => "begincmap beginbfrange " + u.repeat(n) + " endbfrange endcmap",
+    ["<0><0>[", "<0> <0> [<0041> ", "<0><0>[<0041>] "],
+  );
+  // A single range is already capped at 5,001 codes, but nothing capped how many ranges one block could pack
+  // in. 20,000 of them this wide, the shape of a real 2 MB PDF, would mean about 100 million map.set calls with
+  // no total budget, which took several seconds unpatched.
+  const many = "begincmap beginbfrange " + "<0000><ffff><0000> ".repeat(20000) + "endbfrange endcmap";
+  const started = Date.now();
+  pdfPageText([many]);
+  const elapsed = Date.now() - started;
+  assert.ok(elapsed < 300, `took ${elapsed} ms for ranges that would otherwise expand to about 100 million codes`);
 });
 
 // Office documents are attacker-controlled too, so stripping their tags must stay linear. The first tag stripper,
@@ -3924,4 +4112,181 @@ test("reading a long run of digits grows in step with its length (no freeze on a
     if (grewMoreThan(small, big, 8))
       return `20,000 digits: ${small.wall.toFixed(0)} ms, 80,000: ${big.wall.toFixed(0)} ms (four times the text should take about four times as long)`;
   });
+});
+
+// Every pattern is meant to stay fast (the ReDoS fuzz above), but a slip, or a kind a team adds at run time,
+// could still run long, and detect() has no way to interrupt a pattern once it's started. So this plants one that
+// deliberately runs well past the wall-clock backstop on its own, the way a stuck regex would, and checks that
+// detect() still gives up on time: it never reaches whatever comes after the slow one, and the call as a whole
+// stays near one slow pattern's length, not two. Without that cutoff, both run and this test fails.
+test("a pattern that runs long can't drag the next one with it: detect() stops once its time is up", () => {
+  const { PATTERNS, DETECT_BACKSTOP_MS } = globalThis.Clotr;
+  const stuck = DETECT_BACKSTOP_MS + 200; // longer than the whole backstop by itself
+  const burn = (ms) => {
+    const until = Date.now() + ms;
+    while (Date.now() < until) {
+      /* standing in for a pattern stuck on hostile text */
+    }
+  };
+  const slow = { id: "test_stuck_pattern", severity: "low", name: "stuck", find: () => (burn(stuck), []) };
+  const after = { id: "test_after_stuck", severity: "low", name: "after", find: () => ["seen"] };
+  PATTERNS.push(slow, after);
+  try {
+    const started = Date.now();
+    const found = globalThis.Clotr.detect("anything");
+    const elapsed = Date.now() - started;
+    assert.ok(elapsed < stuck * 1.8, `took ${elapsed} ms: the pattern after the stuck one still ran`);
+    assert.ok(!found.some((r) => r.id === "test_after_stuck"), "the pattern after the stuck one still ran");
+  } finally {
+    PATTERNS.splice(PATTERNS.indexOf(slow), 1);
+    PATTERNS.splice(PATTERNS.indexOf(after), 1);
+  }
+});
+
+// A busy device makes the same scan take longer in wall-clock terms without doing any more real work. The budget
+// that decides what gets checked must not read that as a bigger or stranger message than it is, so this fakes a
+// much slower clock (no actual sleeping, so the test itself stays fast) and checks that an ordinary message still
+// finds everything it would on a device that isn't busy.
+test("a slow clock doesn't change what a normal message finds", () => {
+  const filler = "the quick brown fox jumps over the lazy dog, and then it runs away into the woods again. ";
+  let text = "";
+  while (text.length < 100000) text += filler;
+  text = `${text.slice(0, 100000)}my ssn is 078-05-1120, call me on 555-123-4567, card 4111 1111 1111 1111`;
+  const shape = (results) => results.map((r) => ({ id: r.id, matches: [...r.matches].sort() }));
+  const baseline = globalThis.Clotr.detect(text);
+  assert.ok(!baseline.truncated, "the baseline run itself got cut short; pick a shorter message");
+  assert.ok(baseline.length > 0, "the message should have findings to compare");
+  // Ticks forward by a fixed amount each time something asks, instead of tracking real elapsed time: a device
+  // that's busy doing something else entirely (a CPU-bound test just before this one, say) still reads real time
+  // as slower right afterwards, which would make a multiplier on real elapsed time flaky here for a reason that
+  // has nothing to do with the budget being tested.
+  const real = Date.now.bind(Date);
+  const start = real();
+  let fake = start;
+  Date.now = () => (fake += 10);
+  let slow;
+  try {
+    slow = globalThis.Clotr.detect(text);
+  } finally {
+    Date.now = real;
+  }
+  assert.ok(!slow.truncated, "the slow clock made a normal message's scan look cut short");
+  assert.deepEqual(shape(slow), shape(baseline));
+});
+
+// `truncated` is set on the array detect() returns, not on anything inside it, so a host has to read it off
+// that exact array before passing it through map/filter/flatMap, each of which builds a new array and leaves
+// the flag behind. This is why a host reads `.truncated` right off detect()'s return value and keeps it in
+// its own variable, instead of expecting it to survive further filtering.
+test("detect()'s truncated flag has to be read before any filtering, since filtering drops it", () => {
+  const { PATTERNS, DETECT_BACKSTOP_MS } = globalThis.Clotr;
+  const burn = (ms) => {
+    const until = Date.now() + ms;
+    while (Date.now() < until) {
+      /* standing in for a pattern stuck on hostile text */
+    }
+  };
+  const slow = {
+    id: "test_stuck_for_truncation",
+    severity: "low",
+    name: "stuck",
+    find: () => (burn(DETECT_BACKSTOP_MS + 200), []),
+  };
+  PATTERNS.push(slow);
+  try {
+    const result = globalThis.Clotr.detect("my ssn is 078-05-1120");
+    assert.equal(result.truncated, true);
+    const keptEarly = Boolean(result.truncated);
+    const filtered = result.filter(() => true);
+    assert.equal(filtered.truncated, undefined, "a filtered copy doesn't carry the flag along");
+    assert.equal(keptEarly, true, "reading it before filtering still has it");
+  } finally {
+    PATTERNS.splice(PATTERNS.indexOf(slow), 1);
+  }
+});
+
+// Clean link: a share code or an ad network's click id riding along in a link's own address. detect() finds the
+// whole link, and cleanShareLink() is the per-pattern replace() redact()/generalize() use instead of the usual
+// [REDACTED …] label, so what comes back still works as a link.
+test("Clean link: every known ad-tracking parameter is removed, wherever it sits in the query string", () => {
+  const { cleanShareLink } = globalThis.Clotr;
+  for (const param of ["gclid", "fbclid", "msclkid", "ttclid", "twclid", "li_fat_id", "mc_eid"]) {
+    assert.equal(
+      cleanShareLink(`https://example.com/page?${param}=abc123`),
+      "https://example.com/page",
+      `${param} should be removed on its own`,
+    );
+    assert.equal(
+      cleanShareLink(`https://example.com/page?keep=1&${param}=abc123&also=2`),
+      "https://example.com/page?keep=1&also=2",
+      `${param} should be removed from the middle, keeping the rest in order`,
+    );
+  }
+  // Every utm_* parameter, not just a fixed list of names.
+  assert.equal(
+    cleanShareLink("https://example.com/page?utm_source=newsletter&utm_campaign=fall&id=5"),
+    "https://example.com/page?id=5",
+  );
+});
+
+test("Clean link: a site's own share code only comes out on that site, and only that code's name", () => {
+  const { cleanShareLink } = globalThis.Clotr;
+  assert.equal(
+    cleanShareLink("https://open.spotify.com/track/abc123?si=xyz789"),
+    "https://open.spotify.com/track/abc123",
+  );
+  assert.equal(cleanShareLink("https://youtu.be/dQw4w9WgXcQ?si=xyz789"), "https://youtu.be/dQw4w9WgXcQ");
+  assert.equal(cleanShareLink("https://www.instagram.com/p/abc123?igsh=xyz789"), "https://www.instagram.com/p/abc123");
+  // "si" only means a share code on the sites that use it that way; elsewhere it's left alone.
+  assert.equal(cleanShareLink("https://example.com/page?si=xyz789"), "https://example.com/page?si=xyz789");
+});
+
+test("Clean link: everything else in the link is kept, in order, including the fragment", () => {
+  const { cleanShareLink } = globalThis.Clotr;
+  assert.equal(
+    cleanShareLink("https://example.com/path/to/page?a=1&gclid=abc&b=2#section"),
+    "https://example.com/path/to/page?a=1&b=2#section",
+  );
+  // No query string at all, or nothing left to clean: untouched.
+  assert.equal(cleanShareLink("https://example.com/path"), "https://example.com/path");
+  assert.equal(cleanShareLink("https://example.com/path?a=1&b=2"), "https://example.com/path?a=1&b=2");
+  // Nothing left after cleaning: the "?" itself goes too.
+  assert.equal(cleanShareLink("https://example.com/path?gclid=abc"), "https://example.com/path");
+});
+
+test("Clean link: odd or malformed links pass through untouched instead of being mangled", () => {
+  const { cleanShareLink, findShareLinks } = globalThis.Clotr;
+  // A bare "=" has an empty name, not "gclid", so it isn't a real ad parameter.
+  assert.equal(cleanShareLink("https://example.com/page?=gclid"), "https://example.com/page?=gclid");
+  // A name that merely starts with the same letters isn't the same parameter.
+  assert.equal(cleanShareLink("https://example.com/page?gclidfoo=abc"), "https://example.com/page?gclidfoo=abc");
+  // Nothing that looks like a link at all: cleanShareLink never throws, just returns it as given.
+  assert.equal(cleanShareLink("not-a-url"), "not-a-url");
+  // A value that itself contains "=" is kept whole; only the real gclid pair is removed.
+  assert.equal(cleanShareLink("https://example.com/page?a=1=2&gclid=abc"), "https://example.com/page?a=1=2");
+  // A plain message with no link at all finds nothing to clean.
+  assert.deepEqual(findShareLinks("just saying hello, no links here"), []);
+  // A link with nothing trackable in it isn't flagged either.
+  assert.deepEqual(findShareLinks("see https://example.com/page?a=1&b=2 please"), []);
+});
+
+test("Clean link: detect() finds the link and redact()/generalize() clean it instead of hiding it", () => {
+  const { redact, generalize } = globalThis.Clotr;
+  const text = "check this out: https://example.com/deal?utm_source=ad&gclid=abc123&ref=friend";
+  const found = detect(text);
+  assert.deepEqual(found.share_link, ["https://example.com/deal?utm_source=ad&gclid=abc123&ref=friend"]);
+  const cleaned = "check this out: https://example.com/deal?ref=friend";
+  const results = globalThis.Clotr.detect(text);
+  assert.equal(redact(text, results), cleaned);
+  assert.equal(generalize(text, results, "en-US"), cleaned);
+});
+
+// Hostile input: a message built around one very long query string must still scan and clean in time that grows
+// with its length, not with the square of it. cleanableParamsOf() and cleanShareLink() both parse with
+// indexOf()/split("&") rather than a backtracking regex.
+test("Clean link: a link with a huge query string still scans and cleans in linear time", () => {
+  const { findShareLinks, cleanShareLink } = globalThis.Clotr;
+  const bigLink = (unit, n) => `https://example.com/page?gclid=abc&filler=${"x".repeat(n)}`;
+  assertLinear((link) => findShareLinks(`look at ${link} thanks`), bigLink, [null], 50000, 400);
+  assertLinear((link) => cleanShareLink(link), bigLink, [null], 50000, 400);
 });

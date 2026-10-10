@@ -71,9 +71,7 @@
   padding: 16px;
   border-radius: 14px;
   background: var(--card-bg);
-  box-shadow:
-    var(--lift),
-    inset 0 0 0 1px var(--grid);
+  box-shadow: inset 0 0 0 1px var(--grid);
 }
 .lb-card h2 {
   font-size: 18px;
@@ -314,10 +312,15 @@
 .lb-card-item {
   border-radius: 14px;
   background: var(--card-bg);
-  box-shadow:
-    var(--lift),
-    inset 0 0 0 1px var(--grid);
+  box-shadow: inset 0 0 0 1px var(--grid);
   overflow: hidden;
+}
+/* A chat holding a key or an ID number gets the same red edge every risky item in the extension uses
+   (--critical: dashboard.css's .moment, popup.css's .digest-todo.urgent); every other chat stays plain. */
+.lb-card-item.serious {
+  box-shadow:
+    inset 3px 0 0 var(--critical),
+    inset 0 0 0 1px var(--grid);
 }
 .lb-card-item > summary {
   display: flex;

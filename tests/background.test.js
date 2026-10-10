@@ -155,7 +155,12 @@ function loadBackground(browser, { chromeManifest = false } = {}) {
     for (const fn of chrome.runtime.onInstalled.listeners) fn({ reason });
     await settle();
   };
-  return { chrome, calls, local, session, send, install, manifest, setNow };
+  // An admin changing the team's policy: the browser swaps what managed storage holds and says so.
+  const setManaged = (policy) => {
+    chrome.storage.managed.get = async () => policy;
+    for (const fn of chrome.storage.onChanged.listeners) fn({}, "managed");
+  };
+  return { chrome, calls, local, session, send, install, manifest, setNow, setManaged };
 }
 
 const tab = { id: 7, url: "https://chatgpt.com/c/1" };
@@ -400,12 +405,105 @@ test("Get a second opinion opens Is this a scam? beside the chat, only that page
   }
 });
 
+// Clotr's warning sits inside the chat page, which can restyle or cover it and steer a click onto one of its
+// choices. So from a chat page only a stricter choice applies at once. One that warns less on every site, a kind
+// set to Just count or a value marked fine to share, waits for a yes on Clotr's own page, opened beside the chat;
+// only that page can read or answer it, and a PIN set in the meantime still wins.
+test("From a chat page, warning less on every site waits for a yes on Clotr's own page", async () => {
+  for (const browser of ["chrome", "safari-no-session"]) {
+    const bg = loadBackground(browser);
+    await bg.install();
+    const opened = [];
+    const fronted = [];
+    bg.chrome.tabs.create = async (o) => void opened.push(plain(o));
+    bg.chrome.tabs.update = async (id, o) => void fronted.push([id, plain(o)]);
+    const chat = { tab: { id: 7, index: 2, windowId: 3, url: "https://chatgpt.com/c/1" } };
+    const ours = { url: bg.chrome.runtime.getURL("confirm.html") };
+    const tokenOf = (o) => new URL(o.url).hash.slice(1);
+    const fp = "0123456789abcdef";
+    const allow = { kind: "value", type: "phone_number", fp, mode: "allow", added: 1 };
+    const protect = { kind: "value", type: "email", fp: "fedcba9876543210", mode: "protect", added: 1 };
+
+    // Stricter: kept right away, nothing to ask.
+    assert.deepEqual(await bg.send({ type: "clotr:setResponses", ids: ["email"], value: "block" }, chat), {
+      ok: true,
+    });
+    assert.deepEqual(bg.local.data.responses, { email: "block" });
+    // Looser: nothing changes, and Clotr's own page opens beside the chat to ask.
+    const asked = await bg.send({ type: "clotr:setResponses", ids: ["phone_number", "email"], value: "log" }, chat);
+    assert.deepEqual(asked, { ok: true, asked: true }, browser);
+    assert.deepEqual(bg.local.data.responses, { email: "block" }, "loosened from the chat");
+    await settle();
+    assert.equal(opened.length, 1);
+    assert.match(opened[0].url, /^[a-z-]+:\/\/clotr-test\/confirm\.html#[0-9a-f]{32}$/);
+    assert.equal(opened[0].index, 3, "beside the chat");
+    const first = tokenOf(opened[0]);
+    assert.ok(!JSON.stringify(asked).includes(first), "the chat page never gets the token");
+    // "Always watch" is kept at once; "fine to share" waits for its own question.
+    const added = await bg.send({ type: "clotr:vaultAdd", entries: [allow, protect] }, chat);
+    assert.deepEqual(added, { added: 1, rejected: 0, asked: true });
+    assert.deepEqual(
+      bg.local.data.vault.map((e) => e.mode),
+      ["protect"],
+    );
+    await settle();
+    assert.equal(opened.length, 2);
+    const second = tokenOf(opened[1]);
+    assert.notEqual(first, second);
+
+    // The chat page can't read or answer a question, even with its token.
+    assert.equal(await bg.send({ type: "clotr:askedRead", token: first }, chat), undefined);
+    assert.equal(await bg.send({ type: "clotr:askedAnswer", token: first, yes: true }, chat), undefined);
+    assert.deepEqual(bg.local.data.responses, { email: "block" });
+
+    // Clotr's page reads kinds and the response, never a fingerprint, and its yes applies what was held.
+    assert.deepEqual(await bg.send({ type: "clotr:askedRead", token: first }, ours), {
+      ids: ["phone_number", "email"],
+      value: "log",
+    });
+    assert.deepEqual(await bg.send({ type: "clotr:askedRead", token: second }, ours), { allow: ["phone_number"] });
+    assert.deepEqual(await bg.send({ type: "clotr:askedAnswer", token: first, yes: true }, ours), {
+      ok: true,
+      changed: true,
+    });
+    assert.deepEqual(bg.local.data.responses, { email: "log", phone_number: "log" });
+    assert.deepEqual(fronted, [[7, { active: true }]], "back to the chat");
+    // A no changes nothing, and each question is answered once.
+    assert.deepEqual(await bg.send({ type: "clotr:askedAnswer", token: second, yes: false }, ours), {
+      ok: true,
+      changed: false,
+    });
+    assert.deepEqual(
+      bg.local.data.vault.map((e) => e.mode),
+      ["protect"],
+    );
+    for (const token of [first, second, "nope", undefined])
+      assert.deepEqual(await bg.send({ type: "clotr:askedAnswer", token, yes: true }, ours), { gone: true });
+
+    // A PIN set while the question was open still wins over the yes.
+    await bg.send({ type: "clotr:vaultAdd", entries: [allow] }, chat);
+    await settle();
+    bg.local.data.lock = { salt: "00", iterations: 1, hash: "ab" };
+    assert.deepEqual(await bg.send({ type: "clotr:askedAnswer", token: tokenOf(opened[2]), yes: true }, ours), {
+      ok: true,
+      changed: false,
+    });
+    assert.ok(!bg.local.data.vault.some((e) => e.mode === "allow"), "a PIN was set, and still fine to share");
+    // Clotr's own pages, like Settings, change things directly, as before.
+    delete bg.local.data.lock;
+    assert.deepEqual(await bg.send({ type: "clotr:setResponses", ids: ["us_ssn"], value: "log" }, ours), { ok: true });
+    assert.equal(bg.local.data.responses.us_ssn, "log");
+    assert.equal(opened.length, 3);
+    assert.deepEqual(bg.calls.errors, []);
+  }
+});
+
 // A page's settings always include the salt its words were fingerprinted with. The page used to ask for the
 // salt separately, but that answer could arrive after the settings did, and anything sent in between went
 // unchecked against a team's word list.
 test("Settings come with the salt that fingerprinted the team's words, the one kept", async () => {
   const bg = loadBackground("chrome");
-  bg.chrome.storage.managed.get = async () => ({
+  bg.setManaged({
     watchWords: ["Acme Holdings"],
     requiredResponses: { watch_list: "block" },
   });
@@ -427,7 +525,7 @@ test("teamHold reaches the page: on under a policy that asks before sending, off
   const bg = loadBackground("chrome");
   await bg.install();
   const settings = async (managed) => {
-    bg.chrome.storage.managed.get = async () => managed;
+    bg.setManaged(managed);
     return bg.send({ type: "clotr:getSettings" }, { tab });
   };
   const clinic = await settings({ preset: "clinic", orgName: "Riverside Clinic" });
@@ -439,6 +537,24 @@ test("teamHold reaches the page: on under a policy that asks before sending, off
   const tq = await settings({});
   assert.equal(tq.responses.us_ssn, "block", "Tourniquet asks for itself");
   assert.equal(tq.teamHold, false, "Tourniquet isn't an organization");
+  assert.deepEqual(bg.calls.errors, []);
+});
+
+// holdFiles widens the file hold past teamHold's kinds set to Ask before sending, to anything a file holds.
+// It's a real managed field, on by itself under a preset and off with no policy; an admin can switch it off.
+test("holdFiles reaches the page: on under a policy by default, off with no policy, and an admin can opt out", async () => {
+  const bg = loadBackground("chrome");
+  await bg.install();
+  const settings = async (managed) => {
+    bg.setManaged(managed);
+    return bg.send({ type: "clotr:getSettings" }, { tab });
+  };
+  assert.equal((await settings({ preset: "clinic" })).holdFiles, true);
+  assert.equal((await settings({ requiredResponses: { email: "warn" } })).holdFiles, true, "a bare policy defaults on");
+  assert.equal((await settings({})).holdFiles, false, "no policy at all");
+  assert.equal((await settings({ preset: "clinic", holdFiles: false })).holdFiles, false, "an admin can opt out");
+  await bg.local.set({ tourniquet: { for: "child", since: Date.now() } });
+  assert.equal((await settings({})).holdFiles, false, "Tourniquet isn't an organization either");
   assert.deepEqual(bg.calls.errors, []);
 });
 
@@ -580,4 +696,203 @@ test("Added sites: a script another worker registered in the meantime is updated
   assert.deepEqual(bg.calls.errors, []);
   assert.deepEqual(plain(updated), [["https://chat.example/*"]]);
   assert.deepEqual(plain(registered.get("clotr-user-sites").matches), ["https://chat.example/*"]);
+});
+
+// The mirror image of the race above: this sync finds a registration, but another sync (or the worker that's
+// going away) removes it before the update lands, so the browser says it doesn't exist any more.
+test("Added sites: a script another sync unregistered in the meantime is registered fresh, not left broken", async () => {
+  const bg = loadBackground("chrome");
+  const registered = new Map([["clotr-user-sites", { id: "clotr-user-sites", matches: ["https://old.example/*"] }]]);
+  const updated = [];
+  bg.chrome.permissions.getAll = async () => ({ origins: ["https://chat.example/*"] });
+  Object.assign(bg.chrome.scripting, {
+    getRegisteredContentScripts: async ({ ids }) =>
+      ids.filter((id) => registered.has(id)).map((id) => registered.get(id)),
+    registerContentScripts: async (scripts) => {
+      for (const s of scripts) if (registered.has(s.id)) throw new Error(`Duplicate script ID '${s.id}'`);
+      for (const s of scripts) registered.set(s.id, s);
+    },
+    updateContentScripts: async (scripts) => {
+      updated.push(scripts.map((s) => s.matches));
+      // A concurrent sync removed the registration between this call's look and this write.
+      for (const s of scripts) registered.delete(s.id);
+      throw new Error(`Script with ID '${scripts[0].id}' does not exist or is not fully registered`);
+    },
+  });
+  for (const fn of bg.chrome.runtime.onStartup.listeners) fn();
+  await settle();
+  assert.deepEqual(bg.calls.errors, []);
+  assert.equal(updated.length, 1, "tried to update before falling back");
+  assert.deepEqual(plain(registered.get("clotr-user-sites").matches), ["https://chat.example/*"]);
+});
+
+// Removing a site can race the same way: the registration is already gone (another sync got there first), and
+// that's a success, not an error worth logging.
+test("Removed sites: unregistering a script another sync already removed doesn't throw", async () => {
+  const bg = loadBackground("chrome");
+  bg.chrome.permissions.getAll = async () => ({ origins: [] });
+  Object.assign(bg.chrome.scripting, {
+    getRegisteredContentScripts: async ({ ids }) =>
+      ids.includes("clotr-user-sites") ? [{ id: "clotr-user-sites", matches: ["https://old.example/*"] }] : [],
+    unregisterContentScripts: async ({ ids }) => {
+      throw new Error(`Script with ID '${ids[0]}' does not exist or is not fully registered`);
+    },
+  });
+  for (const fn of bg.chrome.permissions.onRemoved.listeners) fn({});
+  await settle();
+  assert.deepEqual(bg.calls.errors, []);
+});
+
+// "Everywhere I type" reacts to the same grant the browser's own permission prompt gives, with no state of
+// its own to fall out of sync: switching it off removes the grant, and syncEverywhere reads that straight
+// from chrome.permissions.getAll(), the same way turning it on registers the script in the first place.
+test("Everywhere I type: removing the browser's grant unregisters the dynamic script", async () => {
+  const bg = loadBackground("chrome");
+  const registered = new Map([["clotr-everywhere", { id: "clotr-everywhere", matches: ["https://*/*"] }]]);
+  let origins = ["https://*/*"];
+  bg.chrome.permissions.getAll = async () => ({ origins });
+  Object.assign(bg.chrome.scripting, {
+    getRegisteredContentScripts: async ({ ids }) =>
+      ids.filter((id) => registered.has(id)).map((id) => registered.get(id)),
+    unregisterContentScripts: async ({ ids }) => ids.forEach((id) => registered.delete(id)),
+  });
+  origins = [];
+  for (const fn of bg.chrome.permissions.onRemoved.listeners) fn({});
+  await settle();
+  assert.deepEqual(bg.calls.errors, []);
+  assert.equal(registered.has("clotr-everywhere"), false, "the switch stayed on after the grant was removed");
+});
+
+// Every chat box: with the switch on, an email or chat app or a support chat that isn't switched on by itself
+// is covered too. Only the built-in AI tools, the sites switched on by themselves (they have their own copy) and
+// search engines (a search box isn't a chat box) are left out.
+test("Everywhere I type: covers email, chat and support sites not switched on; skips built-in, switched-on and search", async () => {
+  const bg = loadBackground("chrome");
+  const registered = new Map();
+  bg.chrome.permissions.getAll = async () => ({ origins: ["https://*/*", "https://discord.com/*"] });
+  Object.assign(bg.chrome.scripting, {
+    getRegisteredContentScripts: async ({ ids }) =>
+      ids.filter((id) => registered.has(id)).map((id) => registered.get(id)),
+    registerContentScripts: async (scripts) => scripts.forEach((x) => registered.set(x.id, x)),
+    updateContentScripts: async (scripts) => scripts.forEach((x) => registered.set(x.id, x)),
+  });
+  for (const fn of bg.chrome.permissions.onAdded.listeners) fn({ origins: ["https://*/*"] });
+  await settle();
+  const ex = registered.get("clotr-everywhere")?.excludeMatches || [];
+  assert.ok(ex.includes("https://chatgpt.com/*"), "a built-in AI tool would run two copies");
+  assert.ok(ex.includes("https://discord.com/*"), "a site switched on by itself would run two copies");
+  assert.ok(ex.includes("https://www.google.com/*"), "a search box isn't a chat box");
+  assert.ok(!ex.includes("https://mail.google.com/*"), "an email app not switched on should be covered");
+  assert.ok(!ex.some((p) => p.includes("intercom")), "a support chat not switched on should be covered");
+  assert.deepEqual(bg.calls.errors, []);
+});
+
+// Real overlap: a grant, a revoke and another grant land close enough together that their syncs are still
+// queued up when the next one fires. They must run one at a time and never leave two registrations racing,
+// even when one of them hits the "vanished mid-write" case above.
+test("Overlapping add/remove/add syncs never throw and settle on the last grant", async () => {
+  const bg = loadBackground("chrome");
+  const registered = new Map();
+  let origins = [];
+  let raceOnce = true;
+  bg.chrome.permissions.getAll = async () => ({ origins });
+  Object.assign(bg.chrome.scripting, {
+    getRegisteredContentScripts: async ({ ids }) =>
+      ids.filter((id) => registered.has(id)).map((id) => registered.get(id)),
+    registerContentScripts: async (scripts) => {
+      for (const s of scripts) if (registered.has(s.id)) throw new Error(`Duplicate script ID '${s.id}'`);
+      for (const s of scripts) registered.set(s.id, s);
+    },
+    updateContentScripts: async (scripts) => {
+      if (raceOnce) {
+        raceOnce = false;
+        for (const s of scripts) registered.delete(s.id);
+        throw new Error(`Script with ID '${scripts[0].id}' does not exist or is not fully registered`);
+      }
+      for (const s of scripts) registered.set(s.id, { ...registered.get(s.id), ...s });
+    },
+    unregisterContentScripts: async ({ ids }) => ids.forEach((id) => registered.delete(id)),
+  });
+  origins = ["https://a.example/*"];
+  for (const fn of bg.chrome.permissions.onAdded.listeners) fn({ origins: ["https://a.example/*"] });
+  origins = [];
+  for (const fn of bg.chrome.permissions.onRemoved.listeners) fn({});
+  origins = ["https://b.example/*"];
+  for (const fn of bg.chrome.permissions.onAdded.listeners) fn({ origins: ["https://b.example/*"] });
+  await settle();
+  assert.deepEqual(bg.calls.errors, []);
+  assert.deepEqual(plain(registered.get("clotr-user-sites")?.matches), ["https://b.example/*"]);
+});
+
+// Reading managed storage can take seconds in a browser that just started (2 to 9 s seen in Brave), and every
+// page waits on its settings, so the page ran on the defaults all that time: your "OK to share" and Log only
+// choices didn't apply yet (V2, V3). The policy is read once and again only when the admin changes it.
+test("The team's policy is read once for every page, and again only when the admin changes it", async () => {
+  const bg = loadBackground("chrome");
+  await bg.install();
+  let reads = 0;
+  bg.setManaged({ requiredResponses: { email: "block" } });
+  const get = bg.chrome.storage.managed.get;
+  bg.chrome.storage.managed.get = async () => (reads++, get());
+  const pages = await Promise.all([1, 2, 3].map(() => bg.send({ type: "clotr:getSettings" }, { tab })));
+  for (const p of pages) assert.equal(p.responses.email, "block");
+  await bg.send({ type: "clotr:getSettings" }, { tab });
+  assert.ok(reads <= 1, `managed storage read ${reads} times for four pages`);
+  bg.setManaged({});
+  assert.notEqual(
+    (await bg.send({ type: "clotr:getSettings" }, { tab })).responses.email,
+    "block",
+    "the change applies",
+  );
+  bg.setManaged({ requiredResponses: { email: "block" } });
+  assert.equal((await bg.send({ type: "clotr:getSettings" }, { tab })).responses.email, "block", "and back");
+  assert.deepEqual(bg.calls.errors, []);
+});
+
+// A read that fails isn't kept: the next page asks again, so a passing hiccup can't drop a team's policy.
+test("A failed policy read isn't kept", async () => {
+  const bg = loadBackground("chrome");
+  await bg.install();
+  bg.setManaged({ requiredResponses: { email: "block" } });
+  bg.chrome.storage.managed.get = async () => {
+    throw new Error("not ready");
+  };
+  for (const fn of bg.chrome.storage.onChanged.listeners) fn({}, "managed");
+  await bg.send({ type: "clotr:getSettings" }, { tab });
+  bg.chrome.storage.managed.get = async () => ({ requiredResponses: { email: "block" } });
+  assert.equal((await bg.send({ type: "clotr:getSettings" }, { tab })).responses.email, "block");
+});
+
+// Every storage write waits its turn in one queue. A page asking for its settings only reads, so it doesn't wait
+// behind them: one slow write (a closed tab's bookkeeping once took 9.5 s in a busy browser) left a new chat page
+// on the defaults all that time, ignoring your vault and Log only choices.
+test("A page's settings and salt don't wait behind a slow write", async () => {
+  const bg = loadBackground("chrome");
+  await bg.install();
+  await bg.session.set({ protectedTabs: { 7: { paused: false } } });
+  let release;
+  const stuck = new Promise((r) => (release = r));
+  const set = bg.session.set;
+  bg.session.set = async (items) => (await stuck, set(items));
+  for (const fn of bg.chrome.tabs.onRemoved.listeners) fn(7);
+  const timeout = (ms) => new Promise((r) => setTimeout(() => r("timed out"), ms));
+  const settings = await Promise.race([bg.send({ type: "clotr:getSettings" }, { tab }), timeout(500)]);
+  assert.notEqual(settings, "timed out", "the settings waited for the stuck write");
+  assert.match(settings.salt, /^[0-9a-f]{32}$/);
+  const salt = await Promise.race([bg.send({ type: "clotr:getSalt" }, { tab }), timeout(500)]);
+  assert.equal(salt?.salt, settings.salt);
+  release();
+  await settle();
+});
+
+// The salt is made once, even when several pages ask for it at the same moment on a fresh install.
+test("Pages asking at once on a fresh install all get the one salt kept", async () => {
+  const bg = loadBackground("chrome");
+  delete bg.local.data.salt;
+  const replies = await Promise.all(
+    [1, 2, 3, 4].map((i) => bg.send({ type: i % 2 ? "clotr:getSettings" : "clotr:getSalt" }, { tab })),
+  );
+  const salts = new Set(replies.map((r) => r.salt));
+  assert.equal(salts.size, 1, `different salts handed out: ${[...salts]}`);
+  assert.equal([...salts][0], bg.local.data.salt);
 });

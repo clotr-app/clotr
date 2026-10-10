@@ -28,13 +28,11 @@
     <p id="unlock-msg" class="msg" role="status"></p>
   </section>
 
- <!-- One rail of numbered steps. The first asks who it's for; the answer decides which of the
-       others show (data-for), so either path is five steps: Tourniquet's own, or today's four. -->
   <ol id="steps" class="helper-steps">
     <li id="step-who">
       <fieldset id="who" class="tq-who">
         <legend><h2 data-i18n="hp_tqWho">Who is it for?</h2></legend>
-        <div class="tq-tiles" id="tq-tiles">
+        <div class="tq-tiles" id="tq-tiles" data-feature="tourniquet">
           <label class="tq-tile">
             <input type="radio" name="who" value="child" aria-labelledby="who-child" aria-describedby="who-child-text">
             <span id="who-child" class="tq-tile-title" data-i18n="hp_tqChild">A child or teen</span>
@@ -47,7 +45,6 @@
             <span id="who-adult-text" class="tq-tile-text"><span data-i18n="hp_tqAdultText">Clotr asks before bank, card and ID numbers and sign-in codes go out. Bigger warnings, on their email too.</span>
               <span class="tq-tile-name" data-i18n="hp_tqAdultName">Tourniquet for a grown-up</span></span>
           </label>
-          <!-- After a scam (Scam Shield): the first two say who, this one says when, so it spans both. -->
           <label class="tq-tile tq-tile-wide">
             <input type="radio" name="who" value="after_scam" aria-labelledby="who-after-scam" aria-describedby="who-after-scam-text">
             <span id="who-after-scam" class="tq-tile-title" data-i18n="hp_tqAfterScam">Someone who was just scammed, or nearly</span>
@@ -59,18 +56,14 @@
       </fieldset>
     </li>
 
-    <li id="step-tq" data-for="child adult after_scam" hidden>
+    <li id="step-tq" data-for="child adult after_scam" data-feature="tourniquet" hidden>
       <h2 id="tq-title" data-i18n="hp_tqTurnOnTitle">Turn on Tourniquet</h2>
       <p id="tq-what"></p>
-      <!-- The 30 days after a scam: a track of 30 days instead of the map. It's only a picture; the words beside it
-           (today or day N, and the end date) carry the meaning. -->
       <div id="tq-days" class="tq-days" data-for="after_scam" hidden>
         <div class="tq-track" aria-hidden="true"></div>
         <p class="tq-days-words"><b id="tq-days-start"></b> <b id="tq-days-end"></b></p>
       </div>
       <p id="tq-then" data-for="after_scam" hidden data-i18n="hp_tqThen">Then Clotr goes back to how it was, and says so in its popup. You can turn it off sooner, any time (with the PIN, if one is set).</p>
-      <!-- The map: lines drawn beside a real list, rows a fixed height so they meet in any language. The
-           drawing is only a picture; the list carries the meaning, and on a narrow window it's all that shows. -->
       <div id="tq-map" class="tq-map" data-for="child adult">
         <div class="tq-map-art" aria-hidden="true">
           <svg class="tq-map-lines" focusable="false"></svg>
@@ -84,8 +77,6 @@
         <button id="tq-on" class="btn primary" type="button" data-i18n="hp_tqTurnOn">Turn on Tourniquet</button>
         <button id="tq-off" class="linkish tq-off" type="button" hidden data-i18n="hp_tqTurnOff">Turn it off</button>
       </p>
-      <!-- What to do now (Scam Shield): the FTC's advice after a scam. The same words live once, as ss_now… messages;
-           the two addresses open only when clicked. -->
       <section id="ss-now" class="ss-now" data-for="after_scam" hidden aria-labelledby="ss-now-title">
         <h3 id="ss-now-title"><svg class="tq-shield" viewBox="0 0 16 16" aria-hidden="true"><path d="M8 1 14 3.4V8c0 3.4-2.5 6.1-6 7-3.5-.9-6-3.6-6-7V3.4Z"/></svg><span data-i18n="ss_nowTitle">What to do now</span></h3>
         <ul>
@@ -101,8 +92,8 @@
 
     <li id="step-vault" data-for="child adult after_scam self" hidden>
       <h2 data-i18n="hp_step1">Tell Clotr what to protect</h2>
-      <p data-for="adult after_scam self" data-i18n="hp_step1Text">Their name, phone numbers, home address, email and the names of family members. Clotr keeps only one-way fingerprints of them, never the details themselves.</p>
-      <p data-for="child" data-i18n="hp_tqDetailsChild">Their name, home address, phone and email, the names of family members, and words like their school or team. Clotr keeps only one-way fingerprints of them, never the details themselves.</p>
+      <p data-for="adult after_scam self" data-i18n="hp_step1Text">Their name, phone numbers, home address, email and the names of family members. Clotr keeps only scrambled fingerprints of them, never the details themselves.</p>
+      <p data-for="child" data-i18n="hp_tqDetailsChild">Their name, home address, phone and email, the names of family members, and words like their school or team. Clotr keeps only scrambled fingerprints of them, never the details themselves.</p>
       <p class="step-action">
         <button id="open-vault" class="btn primary" type="button" data-i18n="hp_addTheirDetails">Add their details</button>
         <span id="vault-count" class="muted" role="status"></span>
@@ -120,8 +111,6 @@
       <label class="toggle"><input type="checkbox" id="strict-personal"> <span data-i18n="popup_askBeforeSendingPersonalDetails">Ask before sending personal details</span></label>
     </li>
 
-    <!-- Email and chat apps (the shared card, everyday-offer.js): the preset's apps come ticked, one browser prompt
-         for exactly the ticked ones. -->
     <li id="step-apps" data-for="child adult after_scam" hidden>
       <h2 data-i18n="hp_tqAppsTitle">Also on their email and chat apps</h2>
       <p><span data-i18n="hp_tqAppsText">Tick the ones they use. The browser then asks once, for just those sites.</span>
@@ -145,7 +134,7 @@
   </ol>
 
   <div id="setup-end">
-    <section id="how" class="helper-done helper-how" data-for="child adult after_scam" hidden aria-labelledby="how-title">
+    <section id="how" class="helper-done helper-how" data-for="child adult after_scam" data-feature="tourniquet" hidden aria-labelledby="how-title">
       <h2 id="how-title" data-i18n="hp_tqHowTitle">How it works</h2>
       <ul>
         <li data-i18n="hp_tqHow1">Clotr asks before these details go out, and they can always send it anyway.</li>
@@ -161,13 +150,11 @@
     <section id="after" class="helper-after" data-for="child adult after_scam self" hidden>
       <p id="try-line"></p>
       <p><button id="open-share" class="btn" type="button" data-i18n="hp_printAGuide">Print a one-page guide for them</button></p>
-      <p id="open-card-row"><button id="open-card" class="btn" type="button" data-i18n="hp_printTheCard">Print Safety Guide</button></p>
- <!-- Clotr Antibody's two pages, to try together before leaving. -->
-      <p id="after-share-row"><button id="open-check" class="btn" type="button" data-i18n="ss_showCheck">Show them “Is this a scam?”</button>
-        <button id="open-practice" class="btn" type="button" data-i18n="ss_shareTogether">Practice together</button>
-        <button id="open-training" class="btn" type="button" data-i18n="hp_openTraining">Office training walkthrough</button></p>
- <!-- Extension check: one line, no button, since this step is about what to try next, not a door. -->
-      <p id="ext-check-line" class="muted" data-i18n="hp_extCheckLine">While you're here, Extension check shows which of their extensions can read AI chats.</p>
+      <p id="open-card-row" data-feature="scamcheck"><button id="open-card" class="btn" type="button" data-i18n="hp_printTheCard">Print Safety Guide</button></p>
+      <p id="after-share-row"><button id="open-check" class="btn" type="button" data-feature="scamcheck" data-i18n="ss_showCheck">Show them “Is this a scam?”</button>
+        <button id="open-practice" class="btn" type="button" data-feature="practice" data-i18n="ss_shareTogether">Practice together</button>
+        <button id="open-training" class="btn" type="button" data-feature="training" data-i18n="hp_openTraining">Office training walkthrough</button></p>
+      <p id="ext-check-line" class="muted" data-feature="extcheck" data-i18n="hp_extCheckLine">While you're here, Extension check shows which of their extensions can read AI chats.</p>
     </section>
   </div>
 
@@ -182,6 +169,7 @@
   <script src="detector.js"></script>
   <script src="helper-core.js"></script>
   <script src="everyday-offer.js"></script>
+  <script src="quick-exit.js"></script>
   <script src="helper.js"></script>
 </body>
 </html>

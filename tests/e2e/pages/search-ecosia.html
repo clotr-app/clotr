@@ -1,0 +1,21 @@
+<!doctype html>
+<!-- Stand-in for Ecosia's box: a plain text input in a form, Enter or the Search button submits. -->
+<html lang="en">
+<head><meta charset="utf-8"><title>Ecosia (Clotr test page)</title></head>
+<body>
+  <form id="search-form" action="/search" method="GET">
+    <input type="text" id="search-input" name="q" aria-label="Search">
+    <button type="submit" id="search-submit" aria-label="Search">Search</button>
+  </form>
+  <script>
+    window.__sent = [];
+    document.getElementById("search-form").addEventListener("submit", (e) => {
+      e.preventDefault();
+      const box = document.getElementById("search-input");
+      if (!box.value) return;
+      window.__sent.push(box.value);
+      box.value = "";
+    });
+  </script>
+</body>
+</html>

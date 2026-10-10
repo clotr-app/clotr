@@ -8,6 +8,24 @@
 
   const SEVERITY_RANK = { high: 3, medium: 2, low: 1 };
 
+  const LOG = "[Clotr]";
+  // detect() is bounded by two limits, checked before each pattern (never mid-pattern: a single hung regex can't
+  // be interrupted, so one slow pattern can still drag out, but nothing after it does too).
+  //
+  // The character budget is spent by the length of text actually handed to a pattern, which is exactly the same
+  // for the same message and kind list no matter how fast the device reading it is right now, so two phones, or
+  // the same phone busy and idle, skip the same patterns for the same paste instead of each cutting off at a
+  // different, unpredictable point. It only matters for text far past anything normal, since it's sized for
+  // every vault kind a team can add, over and over, well past attachments.js' 2 MB document cap.
+  //
+  // The wall-clock backstop is what actually catches an ordinary-sized message on a genuinely slow device, since
+  // the character budget alone would let a huge paste run for as long as the device needs: it's generous enough
+  // that a realistic document, even read twice over for the phone-keyboard-dot re-check, finishes on a phone
+  // several times slower than an everyday laptop, and only cuts off something at the far edge of both size and
+  // slowness, where no budget could finish fast and stay honest about what it checked.
+  const DETECT_BUDGET_CHARS = 1_000_000_000;
+  const DETECT_BACKSTOP_MS = 10000;
+
   // ---------- Text as copied from web pages, documents and chat apps ----------
   // Invisible characters, exotic spaces and dashes, and full-width or other-script digits could hide a leak, so
   // the patterns run against a cleaned copy instead. `start` and `end` map each cleaned character back to the
@@ -132,15 +150,30 @@
           ? pattern.find(t, reasons)
           : pattern.find(t)
         : t.match(pattern.regex) || [];
+    const deadline = Date.now() + DETECT_BACKSTOP_MS;
+    let charsLeft = DETECT_BUDGET_CHARS;
+    let timedOut = false;
+    // `cost` is the length of text this call is about to hand a pattern, spent from the character budget before
+    // the wall clock is even looked at, since that budget alone is enough for anything normal.
+    const withinBudget = (cost) => {
+      if (timedOut) return false;
+      charsLeft -= cost;
+      if (charsLeft > 0 && Date.now() <= deadline) return true;
+      timedOut = true;
+      console.info(LOG, "a scan ran past its time limit; sending what it found so far");
+      return false;
+    };
     // Every pattern reads the full text first, then the version with phone-keyboard dots removed. I run them in
     // that order because patterns.js caches the previous text's number runs, so interleaving the two readings
     // would throw that cache off.
-    const first = kinds.map((pattern) => read(pattern, clean, why[0]));
-    const reading = withoutPhoneDots(clean);
+    const first = kinds.map((pattern) => (withinBudget(clean.length) ? read(pattern, clean, why[0]) : []));
+    const reading = withinBudget(clean.length) && withoutPhoneDots(clean);
     // The vault's own words and formats don't read Bandage labels (patterns.js' findVault), and a team's kinds are
     // just more vault entries.
     const second = reading
-      ? PATTERNS.map((pattern) => (pattern.find?.fromVault ? [] : read(pattern, reading.text, why[1])))
+      ? PATTERNS.map((pattern) =>
+          pattern.find?.fromVault || !withinBudget(reading.text.length) ? [] : read(pattern, reading.text, why[1]),
+        )
       : [];
     for (const [i, pattern] of kinds.entries()) {
       const firstFound = new Set(first[i]);
@@ -190,7 +223,14 @@
       const asks = ASK_REASONS.filter((r) => reasons.has(r));
       if (asks.length) Object.assign(k, { asks, reasonOf });
     }
-    if (!start) return kept;
+    // Marked on the array itself so a caller that wants to know can, without changing the shape every caller
+    // already reads. A host has to read this flag off detect()'s own return value, since map/filter/flatMap
+    // all build a new array and leave it behind.
+    const flagged = (arr) => {
+      if (timedOut) arr.truncated = true;
+      return arr;
+    };
+    if (!start) return flagged(kept);
     // Maps each cleaned match back to every place it occurs in the original text.
     const original = (m) => {
       const out = new Set();
@@ -199,12 +239,14 @@
       }
       return out.size ? [...out] : [m];
     };
-    return kept.map((r) => {
-      const matches = [...new Set(r.matches.flatMap(original))];
-      if (!r.reasonOf) return { ...r, matches };
-      const reasonOf = new Map([...r.reasonOf].flatMap(([m, reason]) => original(m).map((o) => [o, reason])));
-      return { ...r, matches, reasonOf };
-    });
+    return flagged(
+      kept.map((r) => {
+        const matches = [...new Set(r.matches.flatMap(original))];
+        if (!r.reasonOf) return { ...r, matches };
+        const reasonOf = new Map([...r.reasonOf].flatMap(([m, reason]) => original(m).map((o) => [o, reason])));
+        return { ...r, matches, reasonOf };
+      }),
+    );
   }
 
   // ---------- PDF attachments: finding the streams ----------
@@ -270,20 +312,44 @@
     }
     return out;
   }
-  function readCMap(text, map) {
+  // A single range is already capped at 5,001 codes, but nothing capped how many ranges or bfchar entries a
+  // hostile file could pack in: one 2 MB stream of tiny ranges could still mean hundreds of millions of map.set
+  // calls. `budget` is shared across every stream of one PDF, so the total stays bounded no matter how it's split.
+  const MAX_CMAP_TOTAL = 50000;
+  function readCMap(text, map, budget) {
     for (const block of blocks(text, "beginbfchar", "endbfchar")) {
-      for (const m of block.matchAll(/<([0-9a-fA-F]{1,8})>\s{0,20}<([0-9a-fA-F]{1,64})>/g))
+      for (const m of block.matchAll(/<([0-9a-fA-F]{1,8})>\s{0,20}<([0-9a-fA-F]{1,64})>/g)) {
+        if (budget.left-- <= 0) return;
         map.set(m[1].toLowerCase(), hexToString(m[2]));
+      }
     }
     for (const block of blocks(text, "beginbfrange", "endbfrange")) {
-      for (const m of block.matchAll(
-        /<([0-9a-fA-F]{1,8})>\s{0,20}<([0-9a-fA-F]{1,8})>\s{0,20}(?:<([0-9a-fA-F]{1,64})>|\[([^\]]{0,20000})\])/g,
-      )) {
+      // An array entry's closing "]" (at most 20,000 characters on) is found with indexOf, and the next "]" is
+      // remembered, so a hostile file full of unclosed "[" can't make every entry rescan 20,000 characters.
+      const entry = /<([0-9a-fA-F]{1,8})>\s{0,20}<([0-9a-fA-F]{1,8})>\s{0,20}(?:<([0-9a-fA-F]{1,64})>|\[)/g;
+      let close = -1; // the first "]" at or after the last "[" looked at; Infinity once there's none left
+      for (let m = entry.exec(block); m; m = entry.exec(block)) {
+        if (budget.left <= 0) return;
+        let array = null;
+        if (m[3] === undefined) {
+          const open = entry.lastIndex;
+          if (close < open) {
+            close = block.indexOf("]", open);
+            if (close < 0) close = Infinity;
+          }
+          if (close - open > 20000) {
+            entry.lastIndex = m.index + 1; // not an entry: look again from the next character
+            continue;
+          }
+          array = block.slice(open, close);
+          entry.lastIndex = close + 1;
+        }
         const lo = parseInt(m[1], 16);
-        const hi = Math.min(parseInt(m[2], 16), lo + 5000);
+        const hi = Math.min(parseInt(m[2], 16), lo + 5000, lo + budget.left);
         const width = m[1].length;
-        const list = m[4] ? [...m[4].matchAll(/<([0-9a-fA-F]{1,64})>/g)].map((x) => hexToString(x[1])) : null;
+        const list = array ? [...array.matchAll(/<([0-9a-fA-F]{1,64})>/g)].map((x) => hexToString(x[1])) : null;
         for (let c = lo; c <= hi; c++) {
+          budget.left--;
           map.set(
             c.toString(16).padStart(width, "0").toLowerCase(),
             list ? (list[c - lo] ?? "") : String.fromCharCode(parseInt(m[3], 16) + (c - lo)),
@@ -358,7 +424,8 @@
   }
   function pdfPageText(streams) {
     const cmap = new Map();
-    for (const s of streams) if (s.includes("begincmap")) readCMap(s, cmap);
+    const budget = { left: MAX_CMAP_TOTAL };
+    for (const s of streams) if (s.includes("begincmap")) readCMap(s, cmap, budget);
     return streams
       .filter((s) => !s.includes("begincmap") && /Tj|TJ/.test(s))
       .map((s) => showText(s, cmap))
@@ -583,10 +650,13 @@
   const fingerprint = (salt, patternId, match) => sha256(salt + normalize(patternId, match)).slice(0, 16);
 
   // The Hide it option replaces every found item with a label naming its kind, like "[REDACTED PHONE NUMBER]".
+  // A pattern with its own `replace(match)` (Clean link) uses that instead, so "hiding" a link really means
+  // cleaning it rather than blanking it out.
   function redact(text, results) {
     let out = text;
     for (const r of results) {
-      for (const m of r.matches) out = out.split(m).join(`[REDACTED ${r.name.toUpperCase()}]`);
+      for (const m of r.matches)
+        out = out.split(m).join(r.replace ? r.replace(m) : `[REDACTED ${r.name.toUpperCase()}]`);
     }
     return out;
   }
@@ -636,13 +706,22 @@
   function townOf(match) {
     const parts = match.split(",").map((p) => p.trim());
     if (parts.length < 2) return null;
-    const town = parts[1]
-      .replace(/\s+[A-Z]{1,2}\d[A-Z\d]?\s*\d[A-Z]{2}$/, "") // UK postcode
-      .replace(/\s*\b\d{5}(-\d{4})?$/, "") // US ZIP
-      .replace(/\s+[A-Z]{2}$/, "") // US state
-      .replace(/^\d{4,5}\s+/, "") // a postal code before the town (Spain, much of Europe)
-      .trim();
-    return /^[\p{L}][\p{L} .'-]{0,39}$/u.test(town) ? town : null;
+    // A flat or apartment number in front of the street adds its own comma-separated part, so the town isn't
+    // always parts[1]: try each part after the street and keep the first one that's left holding just a name
+    // once its own trailing postcode, state or ZIP (if any) is stripped.
+    for (const part of parts.slice(1)) {
+      const town = part
+        .replace(/\s+(?:AB|BC|MB|NB|NL|NS|NT|NU|ON|PE|QC|SK|YT)?\s*[A-Z]\d[A-Z]\s?\d[A-Z]\d$/i, "") // Canadian postal code
+        .replace(/\s+\(?Qu[ée]bec\)?$/i, "") // Quebec written as the province name
+        .replace(/\s+(?:NSW|VIC|QLD|WA|SA|TAS|ACT|NT)\s+\d{4}$/, "") // Australian state and postcode
+        .replace(/\s+[A-Z]{1,2}\d[A-Z\d]?\s*\d[A-Z]{2}$/, "") // UK postcode
+        .replace(/\s*\b\d{5}(-\d{4})?$/, "") // US ZIP
+        .replace(/\s+[A-Z]{2}$/, "") // US state
+        .replace(/^\d{4,5}\s+/, "") // a postal code before the town (Spain, much of Europe)
+        .trim();
+      if (/^[\p{L}][\p{L} .'-]{0,39}$/u.test(town)) return town;
+    }
+    return null;
   }
 
   function generalForm(patternId, match, locale = "en-US") {
@@ -669,7 +748,9 @@
     let out = text;
     for (const r of results) {
       for (const m of r.matches) {
-        out = out.split(m).join(generalForm(r.id, m, locale) ?? `[REDACTED ${r.name.toUpperCase()}]`);
+        out = out
+          .split(m)
+          .join(r.replace ? r.replace(m) : (generalForm(r.id, m, locale) ?? `[REDACTED ${r.name.toUpperCase()}]`));
       }
     }
     return out;
@@ -725,8 +806,9 @@
   const bandageKindOf = (word) => BANDAGE_KIND.get(plainWord(word)) || `team:${plainWord(word)}`;
   // Matches "[word 2]" with any word up to 40 characters long, though only the words belonging to kinds set
   // through the vault actually count. The pattern itself is static, so nothing a team writes can ever change
-  // what it matches.
-  const OWN_LABEL_RE = /\[\s*([^[\]\d\n]{1,40}?)\s+(\d{1,4})\s*\]/gu;
+  // what it matches. The word can't start with a space, so the spaces after "[" are only ever read one way:
+  // otherwise a "[" before a long run of spaces would take time growing with the square of that run.
+  const OWN_LABEL_RE = /\[\s*([^[\]\d\s][^[\]\d\n]{0,39}?)\s+(\d{1,4})\s*\]/gu;
   let coverKinds = { list: null, words: new Map() }; // the cover words of the kinds set with the vault, read once
   function teamCovers() {
     const list = globalThis.Clotr.vaultKinds?.() || [];
@@ -774,6 +856,8 @@
   globalThis.Clotr = {
     ...globalThis.Clotr,
     SEVERITY_RANK,
+    DETECT_BUDGET_CHARS,
+    DETECT_BACKSTOP_MS,
     detect,
     redact,
     generalize,

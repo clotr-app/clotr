@@ -5,8 +5,9 @@
 //   npm run test:e2e -- --headed         watch it happen
 //   npm run test:e2e -- --only A2,F      run selected checks (ID prefixes)
 //   npm run test:e2e -- --part 1/3       the first third of the sections (then 2/3, 3/3)
+//   npm run test:e2e -- --shard 1        the sections tests/e2e/shards.js assigns to CI's shard 1 (then 2, 3)
 //   npm run test:e2e -- --browser "C:/path/to/chrome.exe"
-//   npm run test:e2e:all-on              a held-back feature's own checks, against an all-on build (sections.js)
+//   npm run test:e2e:all-on              every held-back feature's own checks too, against an all-on build (sections.js)
 //
 // This also runs in a Linux container, so CI and cloud sessions fall back to the Playwright Chromium build and add
 // --no-sandbox when running as root.
@@ -16,21 +17,40 @@
 "use strict";
 
 const fs = require("fs");
+const os = require("os");
 const path = require("path");
+
+// Every browser profile and scratch file a check makes goes through os.tmpdir(), so pointing TEMP/TMP/TMPDIR at a
+// root of this run's own, deleted once the run ends, catches anything a check forgets to clean up itself (the same
+// trick tools/run-tests.js uses for npm test).
+const TMP_ROOT = fs.mkdtempSync(path.join(os.tmpdir(), "clotr-e2e-run-"));
+process.env.TEMP = TMP_ROOT;
+process.env.TMP = TMP_ROOT;
+process.env.TMPDIR = TMP_ROOT;
+
 const lib = require("./lib.js");
 const { sections } = require("./sections.js");
+const { sectionsForShard } = require("./shards.js");
 
-const { OUT, ONLY, BROWSER, HEADED, ALL_ON, launch, check, expect, writeReport } = lib;
-const SECTIONS = sections(undefined, ALL_ON);
+const { EXT, OUT, ONLY, BROWSER, HEADED, argValue, launch, check, expect, writeReport } = lib;
+// A held-back feature's section only runs once its flag is actually on in the build under test, read from
+// manifest.json in whichever folder --ext points at. npm run test:e2e:all-on builds that folder with every flag
+// on, so it runs every section; any other run picks up whatever the manifest already ships.
+const manifestFeatures = JSON.parse(fs.readFileSync(path.join(EXT, "manifest.json"), "utf8")).clotr_features;
+const SECTIONS = sections(undefined, manifestFeatures);
 
 // --part k/n picks the k-th of n slices of the sections, each short enough to finish under a runner that kills any
-// one command after 10 minutes.
+// one command after 10 minutes. --shard instead picks the sections tests/e2e/shards.js names for that shard, built
+// to keep CI's parallel jobs close in length rather than close in section count.
 const PART = (() => {
   const i = process.argv.indexOf("--part");
   const m = /^(\d+)\/(\d+)$/.exec(i > 0 ? process.argv[i + 1] || "" : "");
   return m && +m[1] >= 1 && +m[1] <= +m[2] ? { k: +m[1], n: +m[2] } : { k: 1, n: 1 };
 })();
-const RUN_SECTIONS = SECTIONS.filter((_, i) => Math.floor((i * PART.n) / SECTIONS.length) === PART.k - 1);
+const SHARD = argValue("--shard");
+const RUN_SECTIONS = SHARD
+  ? SECTIONS.filter((s) => sectionsForShard(SHARD).includes(s))
+  : SECTIONS.filter((_, i) => Math.floor((i * PART.n) / SECTIONS.length) === PART.k - 1);
 
 async function main() {
   fs.mkdirSync(OUT, { recursive: true });
@@ -59,7 +79,16 @@ async function main() {
   writeReport(ctx);
 }
 
-main().catch((err) => {
-  console.error("\nE2E run crashed:", err);
-  process.exit(2); // Exit right away, so a leftover handle can't keep a crashed run waiting forever.
-});
+main()
+  .catch((err) => {
+    console.error("\nE2E run crashed:", err);
+    process.exitCode = 2; // A leftover handle can't keep a crashed run waiting forever once TMP_ROOT is cleaned up.
+  })
+  .finally(() => {
+    try {
+      fs.rmSync(TMP_ROOT, { recursive: true, force: true, maxRetries: 3 });
+    } catch {
+      // A file a check left open: the folder's name says what it is, and the next clean-up takes it.
+    }
+    process.exit(process.exitCode || 0);
+  });

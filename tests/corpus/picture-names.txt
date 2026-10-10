@@ -168,3 +168,34 @@
 - sample passport.jpg
 - blank w2 form.png
 - medicare plans comparison.png
+
+# Crypto wallet seeds and 2FA backup codes
++ seed phrase.png
++ my seed phrase.jpg
++ Seed_Phrase_Backup.HEIC
++ recovery phrase.png
++ Recovery Phrase Screenshot.jpg
++ mnemonic.png
++ my mnemonic.jpg
++ crypto wallet.png
++ CryptoWallet_Backup.jpg
++ wallet seed.png
++ backup codes.png
++ Backup_Codes_Google.png
++ recovery codes.png
++ github-recovery-codes.png
++ passwords.png
++ my passwords.jpg
++ frase semilla.jpg
++ codigos de respaldo.png
++ codigos de recuperacion.jpg
++ contrasenas.png
+
+# About seeds and wallets, but not a crypto secret
+- seed catalog.png
+- vegetable seeds.jpg
+- bird seed.png
+- wallet-sized photo.jpg
+- new wallet.jpg
+- leather wallet.jpg
+- wallet photo.jpg

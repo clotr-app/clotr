@@ -1,0 +1,21 @@
+<!doctype html>
+<!-- Stand-in for Yahoo Search's box: input[type=text] in a form, Enter or the Search button submits. -->
+<html lang="en">
+<head><meta charset="utf-8"><title>Yahoo Search (Clotr test page)</title></head>
+<body>
+  <form id="sf" action="/search" method="GET">
+    <input type="text" id="yschsp" name="p" aria-label="Search query">
+    <button type="submit" id="search-submit" aria-label="Search">Search</button>
+  </form>
+  <script>
+    window.__sent = [];
+    document.getElementById("sf").addEventListener("submit", (e) => {
+      e.preventDefault();
+      const box = document.getElementById("yschsp");
+      if (!box.value) return;
+      window.__sent.push(box.value);
+      box.value = "";
+    });
+  </script>
+</body>
+</html>

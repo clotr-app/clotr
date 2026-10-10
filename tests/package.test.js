@@ -39,7 +39,16 @@ function unzip(buf) {
   return out;
 }
 
-const tmp = () => fs.mkdtempSync(path.join(os.tmpdir(), "clotr-pkg-test-"));
+// Every folder a test makes is removed when the file's tests end (npm test also wipes its own scratch folder).
+const made = [];
+const tmp = () => {
+  const d = fs.mkdtempSync(path.join(os.tmpdir(), "clotr-pkg-test-"));
+  made.push(d);
+  return d;
+};
+test.after(() => {
+  for (const d of made) fs.rmSync(d, { recursive: true, force: true, maxRetries: 3 });
+});
 
 test("release zip is byte-identical when built twice, and its checksum is recorded", () => {
   const a = build({ outDir: tmp() });
@@ -74,7 +83,8 @@ test("release zip holds exactly the shipped files, sorted, manifest at the root,
   assert.ok(names.includes("manifest.json") && names.includes("content.js") && names.includes("dashboard.html"));
   assert.ok(!names.some((n) => n.startsWith("bravelogs/") || n.endsWith(".log") || n.includes("\\")), names.join());
   for (const [name, data] of entries) {
-    if (name === "manifest.json") continue; // trimmed for held-back features: checked below
+    // trimmed for held-back features: checked in their own tests below and in package-features.test.js
+    if (name === "manifest.json" || name.endsWith(".html") || name.endsWith("/messages.json")) continue;
     const disk = fs.readFileSync(path.join(EXT, ...name.split("/")));
     if (/\.(js|json|html|css|md|txt|svg)$/.test(name)) {
       assert.ok(!data.includes("\r\n"), `${name}: CRLF`);
@@ -83,14 +93,17 @@ test("release zip holds exactly the shipped files, sorted, manifest at the root,
       assert.ok(data.equals(disk), `${name} differs`);
     }
   }
-  // The shipped manifest turns every held-back feature off, so it has no optional permission and no Command
-  // check listener.
+  // The shipped manifest carries the held-back features' flags exactly as the source manifest has them: no
+  // optional permission unless Extension check is on, no Command check listener unless Command check is on,
+  // and no off feature's name at all (an off feature's key is dropped, not set to false).
   const shipped = JSON.parse(entries.find(([n]) => n === "manifest.json")[1].toString("utf8"));
   const disk = JSON.parse(fs.readFileSync(path.join(EXT, "manifest.json"), "utf8"));
-  delete disk.optional_permissions;
-  disk.content_scripts = disk.content_scripts.map((c) => ({ ...c, js: c.js.filter((f) => f !== "commands.js") }));
+  if (!disk.clotr_features.extcheck) delete disk.optional_permissions;
+  if (!disk.clotr_features.commandcheck)
+    disk.content_scripts = disk.content_scripts.map((c) => ({ ...c, js: c.js.filter((f) => f !== "commands.js") }));
+  disk.clotr_features = Object.fromEntries(Object.entries(disk.clotr_features).filter(([, on]) => on));
   assert.deepStrictEqual(shipped, disk);
-  assert.ok(Object.values(shipped.clotr_features).every((v) => v === false));
+  assert.deepStrictEqual(shipped.clotr_features, disk.clotr_features);
 });
 
 test("Firefox zip gets the Firefox manifest; checksums of both builds sit side by side", () => {
@@ -140,13 +153,16 @@ const BACKGROUND_SCRIPTS = [
 test("Chrome and Firefox builds stay as they were: their manifests, exactly", () => {
   const dir = tmp();
   const source = sourceManifest();
-  // Every held-back feature is off in source: no optional permission, and Command check's listener isn't shipped.
+  // Features still held back in source drop their trace from the manifest too: no optional permission unless
+  // Extension check is on, no Command check listener unless Command check is on.
   const noHeldBack = { ...source };
-  delete noHeldBack.optional_permissions;
-  noHeldBack.content_scripts = source.content_scripts.map((c) => ({
-    ...c,
-    js: c.js.filter((f) => f !== "commands.js"),
-  }));
+  if (!source.clotr_features.extcheck) delete noHeldBack.optional_permissions;
+  if (!source.clotr_features.commandcheck)
+    noHeldBack.content_scripts = source.content_scripts.map((c) => ({
+      ...c,
+      js: c.js.filter((f) => f !== "commands.js"),
+    }));
+  noHeldBack.clotr_features = Object.fromEntries(Object.entries(source.clotr_features).filter(([, on]) => on));
   assert.deepStrictEqual(zipManifest(build({ outDir: dir }).out), noHeldBack);
   const expected = { ...noHeldBack };
   delete expected.storage;
@@ -187,10 +203,12 @@ test("Safari build: the Safari manifest, the same files, and a ready folder besi
   assert.ok(!m.storage, "Safari has no managed storage, so no managed_schema");
   assert.deepStrictEqual(m.browser_specific_settings, { safari: { strict_min_version: "17.0" } });
   assert.deepStrictEqual(m.host_permissions, source.host_permissions, "the same exact AI-site list");
-  // Command check is held back in source: its listener isn't shipped, on any target.
+  // Command check's listener ships on every target exactly when its flag is on.
   assert.deepStrictEqual(
     m.content_scripts,
-    source.content_scripts.map((c) => ({ ...c, js: c.js.filter((f) => f !== "commands.js") })),
+    source.clotr_features.commandcheck
+      ? source.content_scripts
+      : source.content_scripts.map((c) => ({ ...c, js: c.js.filter((f) => f !== "commands.js") })),
   );
   assert.deepStrictEqual(m.optional_host_permissions, source.optional_host_permissions);
   assert.ok(!("optional_permissions" in m), "Safari has no chrome.management, so no optional_permissions either");

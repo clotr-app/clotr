@@ -101,6 +101,20 @@
       return [el("p", { className, textContent: text })];
     }
     const publicName = (r) => (isTeam(r) ? msg("teamKindAnon", "A kind your organization added") : r.name);
+    // The ten-second backstop in detector.js cut this check short. Shown alongside whatever else the warning
+    // already says, so staying quiet about the cut-off part never reads as "all clear."
+    function truncatedLine(truncated, className = "hint") {
+      if (!truncated) return [];
+      return [
+        el("p", {
+          className,
+          textContent: msg(
+            "truncatedLine",
+            "This message was too long to check all the way through, so part of it wasn't checked.",
+          ),
+        }),
+      ];
+    }
 
     // ---------- Clotr's own boxes ----------
     // The dialog, the corner warning and the reload prompt all sit directly under <html>. If one of them
@@ -209,8 +223,9 @@
           lines === 1 ? msg("linesOne", "1 line") : msg("linesMany", "$1 lines", lines),
           counts,
         );
-      return lines >= BULK_LINES
-        ? msg("bulkPaste", "Large paste: $1 lines, with $2.", lines, counts)
+      if (lines >= BULK_LINES) return msg("bulkPaste", "Large paste: $1 lines, with $2.", lines, counts);
+      return app.search()
+        ? msg("bulkSearch", "This search has $1.", counts)
         : msg("bulkMessage", "This message has $1.", counts);
     }
 
@@ -298,7 +313,8 @@
     // for a file, since a file can't be remembered the way a typed value can. general swaps a detail for a
     // vaguer version, like a full address becoming just a city, and hides the rest. If a team policy holds
     // one of the listed kinds, or a PIN locks the settings, only the choices that add protection are offered,
-    // and this returns null once none are left.
+    // and this returns null once none are left. A lasting choice that warns less only takes effect once the
+    // person says yes on Clotr's own page, which opens beside the chat for it (background.js askOnClotrPage).
     function moreChoices(results, { leave, cover, general = null }) {
       const loosen = !results.some((r) => app.isFirm(r.id));
       const perItem =
@@ -451,6 +467,27 @@
       icon.append(disc, mark, dot);
       return icon;
     }
+    // The plaster from Clotr's own mark, drawn small and white for the notice's label strip.
+    function plasterIcon() {
+      const icon = svgIcon("plaster-icon");
+      const g = document.createElementNS(SVG_NS, "g");
+      g.setAttribute("transform", "translate(8 8) rotate(-32)");
+      const outer = document.createElementNS(SVG_NS, "rect");
+      Object.entries({ x: -5.5, y: -2, width: 11, height: 4, rx: 1, class: "plaster-outer" }).forEach(([k, v]) =>
+        outer.setAttribute(k, v),
+      );
+      const pad = document.createElementNS(SVG_NS, "rect");
+      Object.entries({ x: -2, y: -1.2, width: 4, height: 2.4, rx: 0.4, class: "plaster-pad" }).forEach(([k, v]) =>
+        pad.setAttribute(k, v),
+      );
+      const stitch = document.createElementNS(SVG_NS, "line");
+      Object.entries({ x1: -5, y1: 0, x2: 5, y2: 0, class: "plaster-stitch" }).forEach(([k, v]) =>
+        stitch.setAttribute(k, v),
+      );
+      g.append(outer, pad, stitch);
+      icon.append(g);
+      return icon;
+    }
     // A question (bold, on its own line) and its answer, in Tourniquet's warm box.
     const askBox = (icon, question, answer, extra = "") =>
       el("p", { className: `tq ask${extra}` }, [
@@ -471,7 +508,7 @@
 
     // The "Ask before sending" dialog, where one decision covers everything listed. resend means this dialog
     // actually stopped a send, so leaving it in now sends the message. back returns to the message unchanged.
-    function showDialog(results, { resend, leave, cover, general, back }) {
+    function showDialog(results, { resend, leave, cover, general, back, truncated = false }) {
       if (!host) {
         host = ownHost("clotr-guard");
         shadow = host.attachShadow({ mode: "closed" });
@@ -495,20 +532,25 @@
       });
       const backBtn = el("button", {
         className: "link",
-        textContent: msg("backToMessage", "Go back to my message (Esc)"),
+        textContent: app.search()
+          ? msg("backToSearch", "Go back to my search (Esc)")
+          : msg("backToMessage", "Go back to my message (Esc)"),
       });
 
       const box = el("div", { className: sized("box"), tabIndex: -1 }, [
         el("h2", { id: "title", textContent: msg("dialogTitle", "⚠️ This looks private") }),
         el("p", {
-          textContent: app.everyday()
-            ? msg("dialogLeadHere", "If you send this, the people who read it here will see:")
-            : msg("dialogLead", "If you send this, the AI service will see:"),
+          textContent: app.search()
+            ? msg("dialogLeadSearch", "If you search for this, it goes out as part of your search:")
+            : app.everyday()
+              ? msg("dialogLeadHere", "If you send this, the people who read it here will see:")
+              : msg("dialogLead", "If you send this, the AI service will see:"),
         }),
         ...(bulk ? [el("p", { className: "bulk", textContent: bulk })] : []),
         el("ul", {}, items),
         ...(line ? [line] : []),
         ...teamLine(results, "note"),
+        ...truncatedLine(truncated, "note"),
         el("div", {
           className: "note",
           textContent: msg(
@@ -971,12 +1013,15 @@
       // or add protection are offered, so there's no way to use this tip to get around the PIN.
       const held = app.isFirm(t.id);
       const keeps = (value) => !held || globalThis.Clotr.stricter(value, current) === value;
+      // A choice that warns less, on every site, only takes effect once the person says yes on Clotr's own page,
+      // which opens beside the chat for it (background.js), since this page could have steered the click.
+      const askedThere = () =>
+        msg("tipAskedThere", "To change this on every site, say yes on the Clotr page that just opened.");
       const choice = (value, label, after) => {
         const b = el("button", { className: value === current ? "chosen" : "", textContent: label });
         b.setAttribute("aria-pressed", String(value === current));
         b.addEventListener("click", () => {
-          app.setResponse([t.id], value);
-          done(after);
+          done(app.setResponse([t.id], value) ? askedThere() : after);
         });
         return b;
       };
@@ -1039,10 +1084,7 @@
           ),
         );
         const share = el("button", { textContent: msg("tipShare", "It's fine to share") });
-        share.addEventListener(
-          "click",
-          vault("allow", msg("tipShareDone", "Saved. This $1 is fine to share, so Clotr will only count it.", t.name)),
-        );
+        share.addEventListener("click", vault("allow", askedThere()));
         parts.push(
           el("p", { textContent: msg("tipYours", "Is this $1 yours?", t.name) }),
           el("div", { className: "choices" }, held ? [mine] : [mine, share]),
@@ -1069,10 +1111,20 @@
       ]);
     }
 
+    // noticeWords (decide.js) only knows "everyday" or an AI; a search engine is neither, so its own words
+    // are built here instead, in the same shape, rather than teaching decide.js a third audience.
+    function noticeWordsForSearch(results) {
+      return {
+        lead: msg("noticeContainsSearch", "Your search contains "),
+        items: results.flatMap((r) => r.matches.map((m) => `${r.name} (${mask(m)})`)),
+        tail: msg("noticeSharedSearch", ". If you send it, it goes out as part of your search."),
+      };
+    }
+
     // Builds the corner warning. file holds a name and line count when the warning is about an attached
     // file, since a file can't be redacted, only removed by the user. leave keeps what was found, and
     // cover hides it, or keeps it general if called with true.
-    function showNotice(results, file, { leave, cover }) {
+    function showNotice(results, file, { leave, cover, truncated = false }) {
       if (!noticeHost) {
         noticeHost = ownHost("clotr-notice");
         noticeShadow = noticeHost.attachShadow({ mode: "closed" });
@@ -1082,15 +1134,30 @@
       const asks = whoAsksIn(results);
       const bulk = bulkSummary(shown, file);
       const pic = pictureLines(results, file);
-      // decide.js builds the sentence every site uses, with one <code> element per item, so a single item
-      // never breaks across lines and the whole sentence wraps between items instead of overflowing the notice.
-      const words = bulk ? null : noticeWords(shown, { everyday: app.everyday() });
+      // A paste that's nothing but a link with a share code reads differently: there's no "detail" to
+      // hide, just a tracking part to strip, so the notice calls that out by name instead of the generic wording.
+      const linkOnly = !file && !bulk && shown.length > 0 && shown.every((r) => r.id === "share_link");
+      const linkParams = linkOnly
+        ? [...new Set(shown.flatMap((r) => r.matches.flatMap((m) => globalThis.Clotr.cleanableParamsOf(m))))].join(", ")
+        : "";
+      // decide.js builds the sentence every site uses, with one <code> element per item, so the sentence
+      // wraps between items instead of overflowing the notice. Each item reads "name (masked)"; the masked
+      // part never has a space in it, so letting the item itself wrap (ui-styles.js) only ever breaks
+      // between words of a long translated name, never inside the masked part.
+      const words = bulk
+        ? null
+        : app.search()
+          ? noticeWordsForSearch(shown)
+          : noticeWords(shown, { everyday: app.everyday() });
       const what = bulk
         ? []
         : words.items.flatMap((item, i) => [...(i ? [", "] : []), el("code", { textContent: item })]);
-      const redactBtn = el("button", { className: "primary", textContent: msg("coverIt", "Hide it") });
-      const keepBtn = el("button", { textContent: file ? msg("ok", "OK") : msg("leaveIt", "Leave it in") });
-      const whyBtn = el("button", { className: "link", textContent: msg("why", "Why am I seeing this?") });
+      const redactBtn = el("button", {
+        className: "primary",
+        textContent: linkOnly ? msg("cl_remove", "Remove the share code") : msg("noticeCover", "Cover it"),
+      });
+      const keepBtn = el("button", { textContent: file ? msg("ok", "OK") : msg("noticeSendAsIs", "Send as is") });
+      const whyBtn = el("button", { className: "link", textContent: msg("noticeWhy", "Why?") });
       whyBtn.setAttribute("aria-expanded", String(whyOpen));
       // "Wrong?" opens a prefilled GitHub issue naming only the kind of data, never the value or the site.
       // It's a page the user has to choose to open themselves; Clotr itself never sends anything.
@@ -1103,8 +1170,20 @@
         const url = `${REPORT_URL}?template=false-alarm.yml&title=${encodeURIComponent(`False alarm: ${kinds}`)}&kind=${encodeURIComponent(kinds)}`;
         window.open(url, "_blank", "noopener");
       });
+      // A button, not a link: this is a content script running on the chat page, not Clotr's own page, so
+      // opening tracking.html goes through the background (app.openTracking()) the same way "Get a second
+      // opinion" reaches check.html, instead of a raw chrome-extension:// href the chat page can't navigate to.
+      const learnMoreLink = linkOnly
+        ? el("button", {
+            className: "link",
+            type: "button",
+            textContent: msg("cl_learnMore", "How ads follow you"),
+          })
+        : null;
+      learnMoreLink?.addEventListener("click", () => app.openTracking());
       const why = el("div", { className: "why", hidden: !whyOpen }, [
         ...whyParts(results, shown, file, asks),
+        ...(learnMoreLink ? [learnMoreLink] : []),
         reportBtn,
       ]);
       whyBtn.addEventListener("click", () => {
@@ -1126,23 +1205,50 @@
         cover: file ? null : () => cover(),
         general: file ? null : () => cover(true),
       });
-      const box = el("div", { className: sized("notice") }, [
-        el("b", { textContent: msg("noticeTitle", "⚠️ Heads up") }),
-        el(
-          "p",
-          {},
-          pic?.lead
-            ? pic.lead
-            : bulk
-              ? [
-                  bulk,
-                  everyday
+      // The label strip names the one kind found; with several kinds, a file or a bulk paste, it stays general.
+      const headText =
+        !file && !bulk && shown.length === 1 ? shown[0].name : msg("noticeTitle", "Before you send this");
+      const head = el("div", { className: "head" }, [plasterIcon(), el("b", { textContent: headText })]);
+      // The lead sentence (what was found) and the tail (what happens if it's sent) read as two short lines
+      // instead of one run-on paragraph; decide.js still owns both sentences' words.
+      const body = pic?.lead
+        ? [el("p", {}, pic.lead)]
+        : bulk
+          ? [
+              el("p", {}, [
+                bulk,
+                app.search()
+                  ? msg("noticeSharedBulkSearch", " If you send it, it goes out as part of your search.")
+                  : everyday
                     ? msg("noticeSharedBulkHere", " If you send it, the people who read it here get it.")
                     : msg("noticeSharedBulk", " If you send it, this AI gets it."),
-                ]
-              : [words.lead, ...what, words.tail],
-        ),
+              ]),
+            ]
+          : linkOnly
+            ? [
+                el("p", {}, [
+                  msg(
+                    everyday ? "cl_leadPeople" : "cl_leadAi",
+                    everyday
+                      ? "Your message has a link with a share code ($1) that the app added when you copied it. It can tell the app, and sometimes whoever opens the link, that you're the one who shared it."
+                      : "Your message has a link with a share code ($1) that the app added when you copied it. It can tell the app the link came from you.",
+                    linkParams,
+                  ),
+                ]),
+                el("p", { className: "hint" }, [
+                  el("b", { textContent: msg("cl_lineTitle", "Only the code goes") }),
+                  ` ${msg(
+                    "cl_lineText",
+                    "Clotr removes the share code and the ad-tracking parts it knows. The rest of the link stays as it is.",
+                  )}`,
+                ]),
+              ]
+            : [el("p", {}, [words.lead, ...what]), el("p", {}, [words.tail.replace(/^\.\s*/, "")])];
+      const box = el("div", { className: sized("notice card") }, [
+        head,
+        ...body,
         ...teamLine(results),
+        ...truncatedLine(truncated),
         ...(file
           ? [
               el("p", {
@@ -1165,11 +1271,11 @@
             ]
           : []),
         ...(line ? [line] : []),
-        el("div", { className: "actions" }, file ? [keepBtn] : [keepBtn, redactBtn]),
+        el("div", { className: "actions" }, file ? [keepBtn] : [redactBtn, keepBtn]),
         ...(more ? [more] : []),
+        ...(tipBox ? [tipBox] : []),
         whyBtn,
         why,
-        ...(tipBox ? [tipBox] : []),
       ]);
       box.setAttribute("role", "status");
       box.setAttribute("aria-live", "polite");
@@ -1423,19 +1529,29 @@
     function tellJustSent(results, onAskFirst) {
       const items = results.flatMap((r) => r.matches.map((m) => `${r.name} (${mask(m)})`));
       const everyday = app.everyday();
+      const search = app.search();
       showOffer({
-        title: everyday ? msg("justSentTitleHere", "⚠️ Just sent") : msg("justSentTitle", "⚠️ Just sent to this AI"),
-        text: everyday
+        title:
+          everyday || search
+            ? msg("justSentTitleHere", "⚠️ Just sent")
+            : msg("justSentTitle", "⚠️ Just sent to this AI"),
+        text: search
           ? msg(
-              "justSentTextHere",
-              "Your message had $1 in it. If that was a mistake, delete or unsend it if you can. Next time, Clotr can ask you first.",
+              "justSentTextSearch",
+              "Your search had $1 in it. If that was a mistake, clear it from your search history if you can. Next time, Clotr can ask you first.",
               items.join(", "),
             )
-          : msg(
-              "justSentText",
-              "Your message had $1 in it. If that was a mistake, delete the message in the chat. Next time, Clotr can ask you first.",
-              items.join(", "),
-            ),
+          : everyday
+            ? msg(
+                "justSentTextHere",
+                "Your message had $1 in it. If that was a mistake, delete or unsend it if you can. Next time, Clotr can ask you first.",
+                items.join(", "),
+              )
+            : msg(
+                "justSentText",
+                "Your message had $1 in it. If that was a mistake, delete the message in the chat. Next time, Clotr can ask you first.",
+                items.join(", "),
+              ),
         yes: msg("askFirstNextTime", "Ask me first next time"),
         no: msg("ok", "OK"),
         onYes: onAskFirst,
@@ -1495,13 +1611,28 @@
       });
     }
 
+    // The message was too long for detect() to check all the way through (ten-second backstop in
+    // detector.js), and nothing turned up in the part it did check. Staying quiet here would read as "all
+    // clear" for the whole message, so this says so on its own, the same corner and look as any other notice.
+    function tellTruncated() {
+      showOffer({
+        title: msg("truncatedTitle", "ℹ️ Part of this wasn't checked"),
+        text: msg(
+          "truncatedText",
+          "This message was too long to check all the way through, so part of it wasn't checked. Nothing turned up in the part Clotr did check, so look over the rest yourself before you send it.",
+        ),
+        yes: msg("ok", "OK"),
+        no: null,
+      });
+    }
+
     // Builds the content for the command-check note, shown when a command copied on an AI chat matches the
     // "verify you're human, press Win+R and paste this" trick. It says plainly what the command would do and
     // who really asks for this, and offers "Clear what I copied" or "Keep it" without ever stopping or
     // changing the copy itself. shape is just "download" or "hidden"; the actual command is never stored or
     // logged, and this shows at most once per copied command.
     function commandCopiedNote(shape) {
-      const title = msg("cmdTitle", "⚠️ Heads up: you copied a command");
+      const title = msg("cmdTitle", "⚠️ You copied a command");
       const what =
         shape === "hidden"
           ? msg("cmdHidden", "It runs hidden instructions on your computer.")
@@ -1921,6 +2052,7 @@
       tellJustSent,
       tellReplyMentions,
       tellCantReadPictures,
+      tellTruncated,
       tellCommandCopied,
       hasSpots,
       hasSpot,

@@ -90,16 +90,24 @@ async function render() {
       msg("pa_largerWarnings", "Larger warnings"),
       [policy.largeText === true ? msg("pa_yes", "Yes") : msg("pa_no", "No")],
     ],
-    // Worked out from the kinds set to Ask before sending: no field of its own, so the fingerprint
-    // above doesn't change with it.
-    ...(Sites.teamHoldOf(policy)
+    // holdFiles widens the file hold past kinds set to Ask before sending, to anything a file holds. Without
+    // it, the hold still follows those kinds alone, worked out from the floor with no field of its own, so
+    // the fingerprint doesn't change just because one of them is set to block.
+    ...(policy.holdFiles === true
       ? [
           [
             msg("pa_files", "Attached files"),
-            [msg("pa_filesHeld", "held until the person answers, when they hold a kind set to Ask before sending")],
+            [msg("pa_filesHeldAll", "held until you confirm, for anything Clotr finds inside")],
           ],
         ]
-      : []),
+      : Sites.teamHoldOf(policy)
+        ? [
+            [
+              msg("pa_files", "Attached files"),
+              [msg("pa_filesHeld", "held until the person answers, when they hold a kind set to Ask before sending")],
+            ],
+          ]
+        : []),
   ];
   $("pa-counts").replaceChildren(
     ...items.map(([label, list]) => {

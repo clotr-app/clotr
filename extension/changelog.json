@@ -33,7 +33,7 @@
     "A new look in burnt orange, set in Atkinson Hyperlegible, a typeface made to be easy to read."
   ],
   "0.8": [
-    "Your vault: tell Clotr your name, family, addresses, phones, emails, employer and ID formats once. It keeps only one-way fingerprints and catches them however they're written.",
+    "Your vault: tell Clotr your name, family, addresses, phones, emails, employer and ID formats once. It keeps only scrambled fingerprints and catches them however they're written.",
     "Clotr learns, on this device only: delete a flagged item by hand and it offers to always watch for it; keep the same warning 3 times and it offers to warn less.",
     "Updates: a copy running from a git folder now reloads itself when its files change."
   ],
@@ -78,7 +78,27 @@
         "Detecta más: muchas más claves de servicios, frases semilla de criptomonedas, IBAN, documentos del Reino Unido y Canadá, números de historia clínica, códigos de casa y de tarjeta (incluido el CVV), códigos de verificación que te llegan por SMS, códigos de acceso remoto, inicios de sesión compartidos como «correo / contraseña», respuestas a preguntas de seguridad y números o tarjetas dichos en palabras («treinta y cuatro»).",
         "Palabras sencillas en todo (Ocultarlo / Dejarlo, Más opciones para decidir de una vez), y las actualizaciones ya no necesitan recargar la página.",
         "Un aspecto nuevo en naranja tostado, con la letra Atkinson Hyperlegible, pensada para leerse con facilidad."
+      ],
+      "1.3": [
+        "\"¿Es una estafa?\", la revisión de órdenes, Tourniquet y Practicar se activan ahora para todos.",
+        "El aviso ahora nombra el único dato que encontró, y sus opciones dicen \"Cubrirlo\" y \"Enviarlo tal cual.\"",
+        "Las direcciones, códigos postales, datos bancarios y números de identificación del Reino Unido, Canadá y Australia quedan todos detectados, y también los códigos de respaldo y más tipos de claves de API.",
+        "Configuración puede activar Clotr para buscadores como Google y Bing, y para chats de ayuda, igual que ya lo hace con las apps de chat.",
+        "\"En todas partes donde escribo\" llega a un cuadro de chat en cualquier sitio que elijas, apagado hasta que lo activas.",
+        "Un enlace que lleva un código de rastreo recibe su propio aviso, con un botón para quitar solo esa parte.",
+        "Un mensaje ahora necesita algo que tú hiciste de verdad, para que el propio script de una página no pueda fingir un envío y probar qué avisaría Clotr.",
+        "La política de un equipo puede hacer que un archivo espere por cualquier cosa que encuentre adentro, no solo lo puesto en Preguntar antes de enviar."
       ]
     }
-  }
+  },
+  "1.3": [
+    "\"Is this a scam?\", the command check, Tourniquet and Practice are switched on for everyone now.",
+    "The warning now names the one detail it found, and its choices read \"Cover it\" and \"Send as is.\"",
+    "UK, Canadian and Australian addresses, postcodes, bank details and ID numbers are all caught now, and so are backup codes and more kinds of API keys.",
+    "Settings can switch Clotr on for search engines like Google and Bing, and for support chats, the same way it already does for chat apps.",
+    "\"Everywhere I type\" reaches a chat box on any site you choose, off until you turn it on.",
+    "A link that carries a tracking code gets its own warning, with a button to remove just that part.",
+    "A message now needs something you actually did first, so a page's own script can't fake a send to test what Clotr would warn about.",
+    "A team's policy can hold a file for anything it finds inside, not only what's set to Ask before sending."
+  ]
 }

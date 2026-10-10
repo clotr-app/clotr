@@ -1,0 +1,20 @@
+<!doctype html>
+<!-- Stand-in for the same made-up site's checkout form: a multi-line "Delivery notes" box sits in a form with
+     address and email fields, and must never be treated as a chat box, Send button or not. -->
+<html lang="en">
+<head><meta charset="utf-8"><title>Checkout (Clotr test page)</title></head>
+<body>
+  <h1>Checkout</h1>
+  <form id="checkout">
+    <input type="text" name="name" autocomplete="name" aria-label="Full name">
+    <input type="email" name="email" autocomplete="email" aria-label="Email">
+    <input type="text" name="address" autocomplete="street-address" aria-label="Address">
+    <input type="text" name="postal" autocomplete="postal-code" aria-label="Postal code">
+    <textarea id="notes" placeholder="Delivery notes" rows="3" cols="60"></textarea>
+    <button type="submit" id="send">Send</button>
+  </form>
+  <script>
+    document.getElementById("checkout").addEventListener("submit", (e) => e.preventDefault());
+  </script>
+</body>
+</html>

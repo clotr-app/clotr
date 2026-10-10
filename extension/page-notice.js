@@ -58,7 +58,7 @@
       buttons.append(edit);
     }
     const notice = el("div", { className: "try-notice" }, [
-      el("b", { className: "notice-title", textContent: msg("noticeTitle", "⚠️ Heads up") }),
+      el("b", { className: "notice-title", textContent: msg("noticeTitle", "⚠️ Before you send this") }),
       el("p", {}, [words.lead, ...items, words.tail]),
       ...(line ? [line] : []),
       buttons,

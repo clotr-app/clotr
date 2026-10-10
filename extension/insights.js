@@ -9,6 +9,7 @@
     "stripe_secret_key",
     "anthropic_key",
     "openai_key",
+    "xai_key",
     "google_api_key",
     "slack_token",
     "service_token",
@@ -46,6 +47,11 @@
       return msg(
         "ad_otp",
         "Turn two-step sign-in off and on again for that account. That makes a new key, and the old one stops working.",
+      );
+    if (type === "backup_codes")
+      return msg(
+        "ad_backup_codes",
+        "Make a fresh set of backup codes for that account now. The old list stops working once you do.",
       );
     if (KEYS.has(type))
       return msg(
