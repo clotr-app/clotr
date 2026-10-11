@@ -96,6 +96,7 @@ const DROP_FOR = {
 // training, so I handle it separately below.
 const FEATURE_FILES = {
   tourniquet: [],
+  checkup: [],
   lookback: [
     "lookback.html",
     "lookback.css",
@@ -116,9 +117,10 @@ const FEATURE_FILES = {
 // A couple of held-back features also need something removed from the manifest itself, not just their own
 // files. Command check's copy listener is a content script, so there's nothing to toggle at runtime once
 // it isn't shipped. And since Extension check is the only reason the optional `management` permission
-// exists, that comes out too when the feature is off.
+// exists, that comes out too when the feature is off. A feature's name only appears here once it's shipped:
+// an off one isn't running, so there's nothing for the person's browser (or a store reviewer) to read it as.
 function featureManifest(m, features) {
-  m = { ...m, clotr_features: features };
+  m = { ...m, clotr_features: Object.fromEntries(Object.entries(features).filter(([, on]) => on)) };
   if (!features.commandcheck)
     m.content_scripts = m.content_scripts.map((c) => ({ ...c, js: c.js.filter((f) => f !== "commands.js") }));
   if (!features.extcheck) {
@@ -126,6 +128,70 @@ function featureManifest(m, features) {
     if (!m.optional_permissions.length) delete m.optional_permissions;
   }
   return m;
+}
+
+// A held-back feature's own card in a shared page (popup.html, vault.html, helper.html, share.html) carries
+// data-feature="<name>" on its wrapping element, the same name as in FEATURE_FILES and clotr_features. Pulled
+// from the package while the feature is off, so its title and subtitle never ship as dead text for a store
+// reviewer to find; the element (and the switch that un-hides it) stays in the source untouched. Every HTML
+// comment goes too: they're dev notes, not needed once the page is built, and some of them name a held-back
+// feature by hand.
+function stripFeatureMarkup(html, features) {
+  let out = html.replace(/<!--[\s\S]*?-->/g, "");
+  for (const [name, on] of Object.entries(features)) if (!on) out = removeDataFeature(out, name);
+  return out.replace(/[ \t]+\n/g, "\n").replace(/\n{3,}/g, "\n\n");
+}
+
+// Finds and removes every element carrying data-feature="<feature>", open tag through its matching close tag.
+function removeDataFeature(html, feature) {
+  const openTag = new RegExp(`<([a-zA-Z][a-zA-Z0-9]*)\\b[^>]*\\bdata-feature="${feature}"[^>]*>`);
+  let out = html;
+  let m;
+  while ((m = openTag.exec(out))) {
+    const tag = m[1];
+    const start = m.index;
+    const openEnd = start + m[0].length;
+    const end = m[0].endsWith("/>") ? openEnd : findMatchingClose(out, openEnd, tag);
+    out = out.slice(0, start) + out.slice(end);
+  }
+  return out;
+}
+
+// From just past an open tag, scans same-named tags to find the close that balances it (nested elements of
+// other tag names don't matter; same-named ones nested inside do, and this counts those too).
+function findMatchingClose(html, from, tag) {
+  const re = new RegExp(`<(/?)${tag}\\b[^>]*?(/?)>`, "g");
+  re.lastIndex = from;
+  let depth = 1;
+  let m;
+  while ((m = re.exec(html))) {
+    if (m[1] === "/") {
+      if (--depth === 0) return re.lastIndex;
+    } else if (!m[2]) depth++;
+  }
+  throw new Error(`package: <${tag} data-feature> has no matching closing tag`);
+}
+
+// A message key a held-back feature's own markup or files needed, and nothing else shipped does, goes with
+// them. Found the plain way: once the zip's other files are final, does the key's name still appear in any
+// of them? type_* and sev_* are built from a pattern's id or a severity at runtime (`` `type_${p.id}` ``), so
+// they never appear whole in the source and are always kept.
+const DYNAMIC_MESSAGE_PREFIXES = ["type_", "sev_"];
+
+function pruneMessages(entries) {
+  const corpus = entries
+    .filter(([name]) => !name.startsWith("_locales/") && TEXT.has(path.extname(name)))
+    .map(([, data]) => data.toString("utf8"))
+    .join("\n");
+  for (let i = 0; i < entries.length; i++) {
+    const [name, data] = entries[i];
+    if (!name.startsWith("_locales/") || !name.endsWith("/messages.json")) continue;
+    const messages = JSON.parse(data.toString("utf8"));
+    const kept = {};
+    for (const [key, value] of Object.entries(messages))
+      if (DYNAMIC_MESSAGE_PREFIXES.some((p) => key.startsWith(p)) || corpus.includes(key)) kept[key] = value;
+    entries[i] = [name, Buffer.from(`${JSON.stringify(kept, null, 2)}\n`, "utf8")];
+  }
 }
 
 // App Store Connect only takes a version with one to three numbers. A build between releases has a fourth
@@ -182,10 +248,13 @@ function collect(target, features) {
         let m = featureManifest(JSON.parse(data.toString("utf8")), features);
         if (target !== "chrome") m = MANIFEST_FOR[target](m);
         data = Buffer.from(`${JSON.stringify(m, null, 2)}\n`, "utf8");
+      } else if (rel.endsWith(".html")) {
+        data = Buffer.from(stripFeatureMarkup(data.toString("utf8"), features), "utf8");
       }
       entries.push([rel, data]);
     }
   })(EXT);
+  pruneMessages(entries);
   return entries.sort((a, b) => (a[0] < b[0] ? -1 : a[0] > b[0] ? 1 : 0));
 }
 
@@ -427,6 +496,8 @@ module.exports = {
   firefoxManifest,
   safariManifest,
   featureManifest,
+  stripFeatureMarkup,
+  pruneMessages,
   BACKGROUND_SCRIPTS,
   DROP_FOR,
   FEATURE_FILES,

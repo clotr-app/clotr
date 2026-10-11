@@ -20,52 +20,56 @@ module.exports = async function (env) {
       return d;
     };
 
-    const copy = tmp("clotr-ext-mgmt-");
-    fs.cpSync(EXT, copy, { recursive: true });
-    const m = JSON.parse(fs.readFileSync(path.join(copy, "manifest.json"), "utf8"));
-    m.permissions = [...m.permissions, "management"];
-    m.optional_permissions = (m.optional_permissions || []).filter((p) => p !== "management");
-    fs.writeFileSync(path.join(copy, "manifest.json"), JSON.stringify(m, null, 2));
-
-    const allSites = tmp("clotr-ext-allsites-");
-    fs.writeFileSync(
-      path.join(allSites, "manifest.json"),
-      JSON.stringify(
-        {
-          manifest_version: 3,
-          name: "Clotr e2e test: all sites",
-          version: "1.0",
-          content_scripts: [{ matches: ["<all_urls>"], js: ["cs.js"] }],
-        },
-        null,
-        2,
-      ),
-    );
-    fs.writeFileSync(path.join(allSites, "cs.js"), "// Clotr e2e test fixture: no-op content script\n");
-
-    const chatgptHost = tmp("clotr-ext-chatgpt-");
-    fs.writeFileSync(
-      path.join(chatgptHost, "manifest.json"),
-      JSON.stringify(
-        {
-          manifest_version: 3,
-          name: "Clotr e2e test: chatgpt host",
-          version: "1.0",
-          host_permissions: ["https://chatgpt.com/*"],
-        },
-        null,
-        2,
-      ),
-    );
-
-    const other = await launch([copy, allSites, chatgptHost]);
+    let other;
     try {
+      const copy = tmp("clotr-ext-mgmt-");
+      fs.cpSync(EXT, copy, { recursive: true });
+      const m = JSON.parse(fs.readFileSync(path.join(copy, "manifest.json"), "utf8"));
+      m.permissions = [...m.permissions, "management"];
+      m.optional_permissions = (m.optional_permissions || []).filter((p) => p !== "management");
+      fs.writeFileSync(path.join(copy, "manifest.json"), JSON.stringify(m, null, 2));
+
+      const allSites = tmp("clotr-ext-allsites-");
+      fs.writeFileSync(
+        path.join(allSites, "manifest.json"),
+        JSON.stringify(
+          {
+            manifest_version: 3,
+            name: "Clotr e2e test: all sites",
+            version: "1.0",
+            content_scripts: [{ matches: ["<all_urls>"], js: ["cs.js"] }],
+          },
+          null,
+          2,
+        ),
+      );
+      fs.writeFileSync(path.join(allSites, "cs.js"), "// Clotr e2e test fixture: no-op content script\n");
+
+      const chatgptHost = tmp("clotr-ext-chatgpt-");
+      fs.writeFileSync(
+        path.join(chatgptHost, "manifest.json"),
+        JSON.stringify(
+          {
+            manifest_version: 3,
+            name: "Clotr e2e test: chatgpt host",
+            version: "1.0",
+            host_permissions: ["https://chatgpt.com/*"],
+          },
+          null,
+          2,
+        ),
+      );
+
+      other = await launch([copy, allSites, chatgptHost]);
       return await fn(other, {
         allSitesName: "Clotr e2e test: all sites",
         chatgptName: "Clotr e2e test: chatgpt host",
       });
     } finally {
-      await other.browser.close();
+      if (other) {
+        await other.browser.close();
+        fs.rmSync(other.profile, { recursive: true, force: true });
+      }
       for (const d of dirs) fs.rmSync(d, { recursive: true, force: true });
     }
   }
@@ -150,14 +154,35 @@ module.exports = async function (env) {
       await sleep(100);
       const tabsCreated = await page.evaluate(() => window.__tabsCreated);
       const mgmtCalls = await page.evaluate(() => window.__mgmtCalls);
+      // The worth-a-look card's edge colour, read before the page closes: design 5.5 reserves red for this
+      // one card, so its edge must resolve to --critical, never the plum --signal every other card uses.
+      const edge = await page.evaluate((id) => {
+        const root = getComputedStyle(document.documentElement);
+        return {
+          shadow: getComputedStyle(document.querySelector(`.ec-card-item[data-id="${id}"]`)).boxShadow,
+          critical: root.getPropertyValue("--critical").trim(),
+          signal: root.getPropertyValue("--signal").trim(),
+        };
+      }, allSitesId);
 
       await page.close();
-      shared = { allSitesId, chatgptId, selfId, results, tabsCreated, mgmtCalls };
+      shared = { allSitesId, chatgptId, selfId, results, tabsCreated, mgmtCalls, edge };
     }),
   );
 
+  // "#rrggbb" to the "r, g, b" form a computed box-shadow's rgb()/rgba() carries, so a hex token from CSS can be
+  // matched against what the browser actually rendered.
+  const rgbOfHex = (hex) => {
+    const h = hex.replace("#", "");
+    return [0, 2, 4].map((i) => parseInt(h.slice(i, i + 2), 16)).join(", ");
+  };
+
   await check("EX1", "Extension check: each fake extension's reach matches what it actually asked for", async () => {
-    const { allSitesId, chatgptId, results } = shared;
+    const { allSitesId, chatgptId, results, edge } = shared;
+    expect(
+      edge.shadow.includes(rgbOfHex(edge.critical)) && !edge.shadow.includes(rgbOfHex(edge.signal)),
+      `worth-a-look card's edge should use --critical (${edge.critical}), not --signal (${edge.signal}): ${edge.shadow}`,
+    );
     const allSitesRow = [...results.worth, ...results.rows].find((r) => r.id === allSitesId);
     expect(allSitesRow, `the all-sites fake isn't listed: ${JSON.stringify(results)}`);
     expect(

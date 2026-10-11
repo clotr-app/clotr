@@ -204,6 +204,14 @@ test("a team's cover words are read as labels while its kinds are set, and a bui
       if (t.over(1000))
         return `a long chat with team labels took ${t.wall.toFixed(0)} ms (${t.allowed.toFixed(0)} allowed on this computer now)`;
     });
+    // A "[" before a long run of spaces, like in a code block, is read just as quickly.
+    const spaced = "[" + " ".repeat(10000) + "x, then [" + " \n".repeat(5000) + "Matter 6]";
+    assert.deepEqual(ids(spaced), ["team:matter 6"]);
+    retrySlow(() => {
+      const t = bestOfBoth(() => readBandageLabels(spaced), 1);
+      if (t.over(50))
+        return `a "[" before a long run of spaces took ${t.wall.toFixed(0)} ms (${t.allowed.toFixed(0)} allowed on this computer now)`;
+    });
   } finally {
     C.setVault(null);
   }

@@ -20,9 +20,16 @@
     .me { align-self: flex-end; background: #dfe7ff; }
     .ai { align-self: flex-start; background: #fff; border: 1px solid #e3e6eb; }
     footer { padding: 16px 24px 28px; }
-    .composer { max-width: 760px; margin: 0 auto; display: flex; gap: 10px; background: #fff; border: 1px solid #d5d9e0; border-radius: 16px; padding: 10px 10px 10px 16px; box-shadow: 0 2px 10px rgba(20, 30, 60, .06); }
+    .composer { max-width: 760px; margin: 0 auto; display: flex; flex-direction: column; gap: 8px; background: #fff; border: 1px solid #d5d9e0; border-radius: 16px; padding: 10px 10px 10px 16px; box-shadow: 0 2px 10px rgba(20, 30, 60, .06); }
+    .row { display: flex; gap: 10px; align-items: flex-end; }
     textarea { flex: 1; border: 0; outline: 0; resize: none; font: inherit; min-height: 56px; background: transparent; color: inherit; }
+    #attach-label { align-self: flex-end; display: flex; align-items: center; justify-content: center; width: 36px; height: 36px; border-radius: 10px; cursor: pointer; color: #5e6670; }
+    #attach-label:hover { background: #eef0f3; }
+    #attach { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); }
     #send { align-self: flex-end; border: 0; border-radius: 12px; background: #1d2330; color: #fff; padding: 9px 16px; font: inherit; cursor: pointer; }
+    .chip { display: none; align-items: center; gap: 8px; background: #f0f2f5; border-radius: 10px; padding: 6px 10px 6px 6px; width: fit-content; font-size: 13px; }
+    .chip.on { display: flex; }
+    .chip img { width: 28px; height: 28px; border-radius: 6px; object-fit: cover; }
     /* Dark, like most AI chats offer, for the website's dark pictures (--website). Still neutral and unbranded. */
     @media (prefers-color-scheme: dark) {
       :root { color-scheme: dark; }
@@ -31,6 +38,9 @@
       .me { background: #33405f; }
       .ai { background: #25282f; border-color: #33363e; }
       .composer { background: #25282f; border-color: #3a3e47; box-shadow: none; }
+      #attach-label { color: #aeb4bf; }
+      #attach-label:hover { background: #2c303a; }
+      .chip { background: #2c303a; }
       #send { background: #e7e9ee; color: #1d2330; }
     }
   </style>
@@ -42,13 +52,24 @@
     <div class="msg ai">Of course. Tell me what happened and how to reach you, and I'll draft a short, polite note.</div>
   </div></main>
   <footer><div class="composer">
-    <textarea id="prompt" aria-label="Message AI Assistant" placeholder="Message AI Assistant"></textarea>
-    <button id="send" aria-label="Send message">Send</button>
+    <div class="chip" id="chip"><img id="chip-img" alt="" /><span id="chip-name"></span></div>
+    <div class="row">
+      <label id="attach-label" for="attach" aria-label="Attach a photo">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21.44 11.05l-9.19 9.19a6 6 0 01-8.49-8.49l9.19-9.19a4 4 0 015.66 5.66l-9.2 9.19a2 2 0 01-2.83-2.83l8.49-8.48"/></svg>
+      </label>
+      <input type="file" id="attach" accept="image/*" aria-label="Attach a photo" />
+      <textarea id="prompt" aria-label="Message AI Assistant" placeholder="Message AI Assistant"></textarea>
+      <button id="send" aria-label="Send message">Send</button>
+    </div>
   </div></footer>
   <script>
     window.__sent = [];
     const box = document.getElementById("prompt");
     const log = document.getElementById("log");
+    const attach = document.getElementById("attach");
+    const chip = document.getElementById("chip");
+    const chipImg = document.getElementById("chip-img");
+    const chipName = document.getElementById("chip-name");
     const bubble = (who, text) => {
       const d = document.createElement("div");
       d.className = `msg ${who}`;
@@ -62,11 +83,21 @@
       log.replaceChildren();
       for (const [who, text] of pairs) bubble(who, text);
     };
+    attach.addEventListener("change", () => {
+      const file = attach.files[0];
+      if (!file) { chip.classList.remove("on"); return; }
+      chipImg.src = URL.createObjectURL(file);
+      chipName.textContent = file.name;
+      chip.classList.add("on");
+    });
     function send() {
-      if (!box.value.trim()) return;
-      window.__sent.push(box.value);
-      bubble("me", box.value);
+      const name = attach.files[0]?.name;
+      if (!box.value.trim() && !name) return;
+      window.__sent.push(box.value || `[${name}]`);
+      bubble("me", box.value || `[${name}]`);
       box.value = "";
+      attach.value = "";
+      chip.classList.remove("on");
     }
     document.getElementById("send").addEventListener("click", send);
     box.addEventListener("keydown", (e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); send(); } });

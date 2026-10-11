@@ -30,6 +30,7 @@
     "stripe_secret_key",
     "anthropic_key",
     "openai_key",
+    "xai_key",
     "google_api_key",
     "slack_token",
     "crypto_secret",
@@ -37,6 +38,7 @@
     "connection_string",
     "jwt",
     "otp_secret",
+    "backup_codes",
     "internal_ip",
     "internal_host",
     "us_ssn",
@@ -140,6 +142,14 @@
       openName: "Google Takeout",
       helpUrl: "https://support.google.com/gemini/answer/16920332",
     },
+    copilot: {
+      label: "Copilot",
+      stepsKey: "lb_copilotSteps",
+      openUrl: "https://account.microsoft.com/privacy/activity-history",
+      openName: "your privacy dashboard",
+      helpUrl:
+        "https://support.microsoft.com/en-us/privacy/manage-your-copilot-activity-history-in-the-privacy-dashboard",
+    },
   };
 
   let currentTool = "chatgpt";
@@ -172,7 +182,9 @@
     return /\.tgz$|\.tar\.gz$/i.test(name || "");
   }
   function pickedKindFor(name) {
-    return /\.jsonl?$/i.test(name || "") ? "json" : "zip";
+    if (/\.jsonl?$/i.test(name || "")) return "json";
+    if (/\.csv$/i.test(name || "")) return "csv";
+    return "zip";
   }
   // Several files chosen at once, such as Claude's split export, get read as one export through
   // lookback-worker.js's "parts" branch, rather than as a single zip or a folder.
@@ -538,7 +550,8 @@
 
   function chatCard(chat, result) {
     const grouping = result.grouping;
-    const details = el("details", { className: "lb-card-item" });
+    const serious = Object.keys(chat.kinds).some((k) => RED_KINDS.has(k));
+    const details = el("details", { className: serious ? "lb-card-item serious" : "lb-card-item" });
     const summary = el("summary");
     const head = el("div", { className: "lb-card-head" });
     head.append(el("span", { className: "lb-card-title", textContent: chat.title }));
@@ -569,7 +582,7 @@
     const actions = el("div", { className: "lb-card-actions" });
     if (chat.link && chatLinkOk(chat.link)) {
       const a = el("a", { href: chat.link, target: "_blank", rel: "noopener noreferrer" });
-      a.textContent = grouping === "day" ? scanWord("lb_openActivity") : scanWord("lb_openChat");
+      a.textContent = grouping === "day" ? scanWord("lb_openActivity", result.tool) : scanWord("lb_openChat");
       actions.append(a);
     }
     const askButton = el("button", {
@@ -624,8 +637,11 @@
     const now = new Date().toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
     $("res-note").textContent = scanWord("lb_resNote", result.tool, now);
 
+    const dayGroupingWord = { gemini: "lb_geminiDays", copilot: "lb_copilotDays" }[result.format];
     $("chats-heading").textContent =
-      result.grouping === "day" ? `${scanWord("lb_chats")} — ${scanWord("lb_geminiDays")}` : scanWord("lb_chats");
+      result.grouping === "day" && dayGroupingWord
+        ? `${scanWord("lb_chats")} — ${scanWord(dayGroupingWord)}`
+        : scanWord("lb_chats");
 
     renderSharedRows(result.totals);
     renderInstructions(result.instructions);
@@ -642,6 +658,7 @@
     chatgpt: { formUrl: "https://privacy.openai.com", email: "dsar@openai.com" },
     claude: { formUrl: null, email: "privacy@anthropic.com" },
     gemini: { formUrl: "https://support.google.com/legal/troubleshooter/1114905", email: null },
+    copilot: { formUrl: "https://www.microsoft.com/en-us/privacy/privacy-support-requests", email: null },
   };
 
   let lastResult = null;

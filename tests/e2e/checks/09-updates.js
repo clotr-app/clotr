@@ -169,30 +169,48 @@ module.exports = async function (env) {
     },
   );
 
+  await check("U4", "What's new carries the Rate Clotr link too", async () => {
+    const version = await ctx.worker.evaluate(() => chrome.runtime.getManifest().version);
+    await store.set(ctx, { lastUpdate: { from: "1.0.0", to: version, t: Date.now(), seen: false } });
+    const popup = await openPopup(ctx);
+    try {
+      const got = await popup.$eval("#rate-root-whatsnew .rate-link", (a) => a.textContent);
+      expect(got === "Rate Clotr", `text: ${got}`);
+      await shot(popup, "popup-whats-new-rate-link.png");
+      await popup.click("#whats-new-ok");
+      await sleep(300);
+    } finally {
+      await popup.close();
+    }
+  });
+
   // A copy of the extension in its own browser, with its version bumped on disk.
   // `before` edits the copy's manifest before it's installed (to start from an older shape).
   async function withChangedCopy(fn, before = null) {
     const copy = fs.mkdtempSync(path.join(os.tmpdir(), "clotr-ext-"));
-    fs.cpSync(EXT, copy, { recursive: true });
-    const current = fs.readFileSync(path.join(copy, "manifest.json"), "utf8");
-    if (before) {
-      const m = JSON.parse(current);
-      before(m);
-      fs.writeFileSync(path.join(copy, "manifest.json"), JSON.stringify(m, null, 2));
-    }
-    const other = await launch(copy);
-    other.restoreManifest = () => fs.writeFileSync(path.join(copy, "manifest.json"), current);
-    const bump = () => {
-      const file = path.join(copy, "manifest.json");
-      const m = JSON.parse(fs.readFileSync(file, "utf8"));
-      m.version = "9.9.9";
-      fs.writeFileSync(file, JSON.stringify(m, null, 2));
-    };
+    let other;
     try {
+      fs.cpSync(EXT, copy, { recursive: true });
+      const current = fs.readFileSync(path.join(copy, "manifest.json"), "utf8");
+      if (before) {
+        const m = JSON.parse(current);
+        before(m);
+        fs.writeFileSync(path.join(copy, "manifest.json"), JSON.stringify(m, null, 2));
+      }
+      other = await launch(copy);
+      other.restoreManifest = () => fs.writeFileSync(path.join(copy, "manifest.json"), current);
+      const bump = () => {
+        const file = path.join(copy, "manifest.json");
+        const m = JSON.parse(fs.readFileSync(file, "utf8"));
+        m.version = "9.9.9";
+        fs.writeFileSync(file, JSON.stringify(m, null, 2));
+      };
       return await fn(other, bump, copy);
     } finally {
-      await other.browser.close();
-      fs.rmSync(other.profile, { recursive: true, force: true });
+      if (other) {
+        await other.browser.close();
+        fs.rmSync(other.profile, { recursive: true, force: true });
+      }
       fs.rmSync(copy, { recursive: true, force: true });
     }
   }

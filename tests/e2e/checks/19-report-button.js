@@ -3,8 +3,9 @@
 "use strict";
 
 module.exports = async function (env) {
-  const { OUT, check, ctx, expect, openExtPage, openPopup, shot, sleep, store, typeText, withSite } = env;
+  const { OUT, check, ctx, expect, hasPage, openExtPage, openPopup, shot, sleep, store, typeText, withSite } = env;
 
+  // check.html drops out here when its feature is held back and this build doesn't ship it.
   const PAGES = [
     "vault.html",
     "dashboard.html",
@@ -13,7 +14,7 @@ module.exports = async function (env) {
     "share.html",
     "policy.html",
     "check.html",
-  ];
+  ].filter(hasPage);
 
   // Opens the popup over a tab showing `url`, answering the tab lookup by hand.
   const openPopupOn = async (url) => {
@@ -459,6 +460,28 @@ module.exports = async function (env) {
       } finally {
         await page.close();
         await store.set(ctx, { events: [] });
+      }
+    },
+  );
+
+  await check(
+    "RB7",
+    "Rate Clotr: a plain link in the popup's footer, opening the right store's reviews page with no pop-up",
+    async () => {
+      const popup = await openPopup(ctx);
+      try {
+        const got = await popup.$eval("#rate-root .rate-link", (a) => ({
+          text: a.textContent,
+          href: a.href,
+          target: a.target,
+          rel: a.rel,
+        }));
+        expect(got.text === "Rate Clotr", `text: ${got.text}`);
+        expect(/^https:\/\/chromewebstore\.google\.com\/detail\/.+\/reviews$/.test(got.href), `href: ${got.href}`);
+        expect(got.target === "_blank" && got.rel === "noopener", `target/rel: ${got.target}/${got.rel}`);
+        await (await popup.$(".app-footer")).screenshot({ path: `${OUT}/popup-footer-rate-link.png` });
+      } finally {
+        await popup.close();
       }
     },
   );

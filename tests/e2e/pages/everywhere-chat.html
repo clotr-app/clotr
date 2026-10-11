@@ -1,0 +1,17 @@
+<!doctype html>
+<!-- Stand-in for a made-up site with its own chat box, no AI tool and no dedicated setup of its own: Clotr can
+     only run here through "Everywhere I type". A plain textarea next to a Send button, the shape isChatComposer
+     looks for. -->
+<html lang="en">
+<head><meta charset="utf-8"><title>Forum thread (Clotr test page)</title></head>
+<body>
+  <h1>Ask the community</h1>
+  <form id="composer">
+    <textarea id="msg" placeholder="Write a reply" rows="3" cols="60"></textarea>
+    <button type="submit" id="send">Send</button>
+  </form>
+  <script>
+    document.getElementById("composer").addEventListener("submit", (e) => e.preventDefault());
+  </script>
+</body>
+</html>

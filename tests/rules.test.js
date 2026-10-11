@@ -12,15 +12,39 @@ const EXT = path.join(__dirname, "..", "extension");
 const manifest = JSON.parse(fs.readFileSync(path.join(EXT, "manifest.json"), "utf8"));
 const scripts = fs.readdirSync(EXT).filter((f) => f.endsWith(".js"));
 const htmls = fs.readdirSync(EXT).filter((f) => f.endsWith(".html"));
+const cssFiles = fs.readdirSync(EXT).filter((f) => f.endsWith(".css"));
 
-// Strips comments out of the source first, so a rule explained in a comment doesn't trip its own scan.
+// Strips comments out of the source first, so a rule explained in a comment doesn't trip its own scan. Has to
+// walk the source a character at a time rather than just matching /* ... */ and // against the raw text: a
+// string or template literal can itself contain a "/*" or "*/" (every "https://host/*" match pattern ends in
+// one), and a naive match would read that as a real comment and eat everything up to the next genuine one.
 function code(file) {
-  return fs
-    .readFileSync(path.join(EXT, file), "utf8")
-    .replace(/\/\*[\s\S]*?\*\//g, "")
-    .split("\n")
-    .filter((l) => !l.trim().startsWith("//"))
-    .join("\n");
+  const src = fs.readFileSync(path.join(EXT, file), "utf8");
+  let out = "";
+  let quote = null;
+  for (let i = 0; i < src.length; i++) {
+    const c = src[i];
+    if (quote) {
+      out += c;
+      if (c === "\\") out += src[++i] ?? "";
+      else if (c === quote) quote = null;
+      continue;
+    }
+    if (c === '"' || c === "'" || c === "`") {
+      quote = c;
+      out += c;
+    } else if (c === "/" && src[i + 1] === "/") {
+      while (i < src.length && src[i] !== "\n") i++;
+      out += "\n";
+    } else if (c === "/" && src[i + 1] === "*") {
+      i += 2;
+      while (i < src.length && !(src[i] === "*" && src[i + 1] === "/")) i++;
+      i++;
+    } else {
+      out += c;
+    }
+  }
+  return out;
 }
 
 function offenders(re, files = scripts) {
@@ -66,6 +90,26 @@ test("scope: only specific https AI-site origins, never broad patterns", () => {
   assert.ok(!(manifest.permissions || []).some(broad), "broad pattern in permissions");
 });
 
+// "Everywhere I type" is the one feature allowed to touch the broad https://*/* origin the manifest already
+// lists as optional. The pattern is only ever built from EVERYWHERE_ORIGIN, never spelled out again, and only
+// syncEverywhere's own registration, never syncUserSites', uses it as a match.
+test("scope: the broad https://*/* origin is built in exactly one place and registered in exactly one place", () => {
+  const literalHits = scripts.flatMap((f) =>
+    code(f)
+      .split("\n")
+      .filter((line) => /EVERYWHERE_ORIGIN\s*=\s*"/.test(line))
+      .map((line) => `${f}: ${line.trim()}`),
+  );
+  assert.deepEqual(literalHits, ['sites.js: const EVERYWHERE_ORIGIN = "https://*/*";']);
+
+  const bg = code("background.js");
+  const userSitesSync = /async function syncUserSites\(\) \{[\s\S]*?\n\}/.exec(bg)?.[0] || "";
+  const everywhereSync = /async function syncEverywhere\(\) \{[\s\S]*?\n\}/.exec(bg)?.[0] || "";
+  assert.ok(userSitesSync && everywhereSync, "both sync functions found");
+  assert.ok(!userSitesSync.includes("EVERYWHERE_ORIGIN"), "syncUserSites must never register the broad origin");
+  assert.match(everywhereSync, /matches:\s*\[EVERYWHERE_ORIGIN\]/, "syncEverywhere registers EVERYWHERE_ORIGIN");
+});
+
 // A permission like webRequest, declarativeNetRequest, debugger, tabs, cookies or history would let a
 // compromised copy of Clotr read or reroute traffic across the whole browser, far beyond the AI sites it
 // protects. This checks every manifest the build produces: the one Chrome and Edge ship from extension/, and
@@ -80,12 +124,14 @@ test("scope: no manifest the build produces gains a permission that can read or 
       assert.ok(!banned.includes(p) && !p.startsWith("declarativeNetRequest"), `required permission gained: ${p}`);
     for (const p of m.optional_permissions || []) assert.ok(allowedOptional.has(p), `optional permission gained: ${p}`);
   }
-  // In the build Clotr ships, Extension check is held back, so there's no optional permission at all.
+  // The shipped build's optional permission follows Extension check's own flag, whichever way it's set, not a
+  // build that's hardcoded to assume it's off.
+  const extcheckOn = Boolean(manifest.clotr_features.extcheck);
   const shipped = build({ zip: false }).manifest;
-  assert.deepEqual(shipped.optional_permissions ?? [], []);
-  // In the all-on build used for the browser suite's held-back-feature checks, that management permission comes back.
-  const allOn = build({ zip: false, features: { extcheck: true } }).manifest;
-  assert.deepEqual(allOn.optional_permissions, ["management"]);
+  assert.deepEqual(shipped.optional_permissions ?? [], extcheckOn ? ["management"] : []);
+  // Flipping the flag the other way proves it's the flag driving this, not the build's current state.
+  const flipped = build({ zip: false, features: { extcheck: !extcheckOn } }).manifest;
+  assert.deepEqual(flipped.optional_permissions ?? [], extcheckOn ? [] : ["management"]);
 });
 
 // Email and chat apps are never built in. Each one runs Clotr only after the person switches it on and the
@@ -109,15 +155,42 @@ test("scope: everyday sites (email, chat apps) are specific https hosts and neve
   }
 });
 
-// Clotr only ever asks the browser for a new permission in four places. requestEverydayApps in sites.js asks for
-// listed email and chat apps by name, so it can only request addresses already on that list. protectSite in
-// popup.js asks for the single site the popup is open on. askForAiChats in vault.js, on the welcome page's card,
-// asks for built-in AI chats the browser hasn't granted yet, and ignores anything not on the manifest's own list.
-// startCheck in extcheck.js asks for the optional management permission, reads it once, and hands it straight
-// back; a test below checks it's never kept or used to change an extension. Any other ask, anywhere, fails here.
+// Search engines and support-chat widgets are opt-in the same way: never built in, one specific https host
+// each, switched on only once the person picks that site.
+test("scope: search and support sites are specific https hosts and never built in", () => {
+  globalThis.chrome ??= {};
+  require("../extension/sites.js");
+  const { SEARCH_SITES, SUPPORT_SITES, MORE_SITES } = globalThis.ClotrSites;
+  assert.ok(SEARCH_SITES.length >= 3, "the search list is there");
+  assert.ok(SUPPORT_SITES.length >= 1, "the support list is there");
+  const builtIn = new Set(
+    [...manifest.content_scripts.flatMap((c) => c.matches), ...(manifest.host_permissions || [])].map(
+      (p) => new URL(p.replace(/\*$/, "")).hostname,
+    ),
+  );
+  for (const s of MORE_SITES) {
+    assert.ok(s.name && ["search", "support"].includes(s.kind), `${s.name}: a name and a kind`);
+    assert.equal(s.matches.length, 1, `${s.name}: one optional host permission`);
+    for (const m of s.matches) {
+      assert.match(m, /^https:\/\/[a-z0-9.-]+\.[a-z]+\/\*$/, `${s.name}: ${m} is one whole https host`);
+      assert.ok(!builtIn.has(new URL(m.replace(/\*$/, "")).hostname), `${s.name}: ${m} is built in`);
+    }
+  }
+});
+
+// Clotr only ever asks the browser for a new permission in six places. requestEverydayApps and requestMoreSites
+// in sites.js ask for listed email/chat apps or listed search/support sites by name, so they can only request
+// addresses already on those lists. requestEverywhere, also in sites.js, asks for the one broad origin the
+// manifest already lists as optional, for "Everywhere I type". protectSite in popup.js asks for the single site
+// the popup is open on. allowBuiltInHere, also in popup.js, asks for a built-in site the browser withheld
+// access to, scoped to the host_permissions pattern(s) covering that one page. askForAiChats in vault.js, on
+// the welcome page's card, asks for every built-in AI chat the browser hasn't granted yet, and ignores anything
+// not on the manifest's own list. startCheck in extcheck.js asks for the optional management permission, reads
+// it once, and hands it straight back; a test below checks it's never kept or used to change an extension. Any
+// other ask, anywhere, fails here.
 const ASK_ALLOWED = {
-  "sites.js": ["requestEverydayApps"],
-  "popup.js": ["protectSite"],
+  "sites.js": ["requestEverydayApps", "requestMoreSites", "requestEverywhere"],
+  "popup.js": ["protectSite", "allowBuiltInHere"],
   "vault.js": ["askForAiChats"],
   "extcheck.js": ["startCheck"],
 };
@@ -310,6 +383,7 @@ test("Look back and Extension check write nothing to storage", () => {
       "reported-extensions.js",
       "scan-words.js",
       "zip.js",
+      "csv.js",
     ]),
     [],
   );
@@ -319,26 +393,135 @@ test("no innerHTML-style HTML injection (Trusted Types)", () => {
   assert.deepEqual(offenders(/\.(innerHTML|outerHTML)\s*=|insertAdjacentHTML|document\.write\(/), []);
 });
 
+// A remote image, iframe, audio/video source or stylesheet loads the moment it's set, with no fetch/XHR call
+// to catch, and the in-page warning runs under each chat site's own rules rather than Clotr's CSP, so this is
+// the real guard against that route. These match a scheme literal on the same line, the way every check in this
+// file reads one line at a time, so a remote address built across several lines or from a variable alone
+// wouldn't be caught; nothing in the shipped source does that.
+const REMOTE_MEDIA_JS =
+  /\.(?:src|srcset|data)\s*=\s*[^;]*https?:\/\/|setAttribute\(\s*["'`](?:src|srcset|data)["'`]\s*,[^)]*https?:\/\//;
+const REMOTE_MEDIA_HTML = /<(?:img|iframe|object|embed|audio|video|source)\b[^>]*\b(?:src|data|srcset)=["']https?:/i;
+const REMOTE_CSS = /@import\s+(?:url\()?["']?https?:|url\(\s*["']?https?:/i;
+// A page jump away from the chat, or away from one of Clotr's own pages, is never something Clotr does on its
+// own; every link it offers is a plain anchor the person clicks.
+const REMOTE_NAV = /\blocation\s*\.(?:href\s*=(?!=)|replace\s*\(|assign\s*\()/;
+// The first argument is the other extension's id; Clotr's own messages are always an object, so this only
+// matches a message aimed outside the extension.
+const EXTERNAL_RUNTIME = /\bruntime\.(?:connect|sendMessage)\(\s*["'`]/;
+
 test("100% local: no network calls, no remote code", () => {
   assert.deepEqual(offenders(/XMLHttpRequest|WebSocket|EventSource|sendBeacon|importScripts\(\s*["'`]http/), []);
   // fetch is only allowed for the extension's own files.
   assert.deepEqual(offenders(/fetch\((?!\s*chrome\.runtime\.getURL\()/), []);
   assert.deepEqual(offenders(/<script[^>]+src=["']https?:/i, htmls), []);
   assert.deepEqual(offenders(/<link[^>]+href=["']https?:/i, htmls), []);
+  assert.deepEqual(offenders(REMOTE_MEDIA_JS), []);
+  assert.deepEqual(offenders(REMOTE_MEDIA_HTML, htmls), []);
+  assert.deepEqual(offenders(REMOTE_CSS, cssFiles), []);
+  assert.deepEqual(offenders(REMOTE_NAV), []);
+  assert.deepEqual(offenders(EXTERNAL_RUNTIME), []);
   // Code can't be built from strings. The CSP forbids that outright on Clotr's own pages, and content scripts
   // run under each AI site's own policy instead.
   assert.deepEqual(offenders(/\beval\s*\(|\bnew\s+Function\s*\(|\bset(Timeout|Interval)\(\s*["'`]/), []);
 });
 
+// Each planted case is the kind of one-line change that would pass the test above before this file reached
+// further: a remote image load, a remote CSS source, a silent page jump and a message aimed outside the
+// extension. Unique temp file names avoid two test runs over the same checkout colliding on one file.
+test("100% local: the widened check catches what it's meant to", () => {
+  const pid = `${process.pid}-${Date.now()}`;
+  const plantedJs = path.join(EXT, `zz-rule-check-planted-${pid}.js`);
+  const plantedHtml = path.join(EXT, `zz-rule-check-planted-${pid}.html`);
+  const plantedCss = path.join(EXT, `zz-rule-check-planted-${pid}.css`);
+  try {
+    for (const bad of [
+      'new Image().src = "https://example.com/?" + text;',
+      'img.src = "https://example.com/pixel.gif";',
+      'el.srcset = "https://example.com/a.png 1x";',
+      'frame.setAttribute("src", "https://example.com/");',
+    ]) {
+      fs.writeFileSync(plantedJs, `${bad}\n`);
+      assert.equal(offenders(REMOTE_MEDIA_JS, [path.basename(plantedJs)]).length, 1, bad);
+    }
+    for (const bad of [
+      '<img src="https://example.com/pixel.gif">',
+      '<iframe src="https://example.com/"></iframe>',
+      '<audio src="https://example.com/a.mp3"></audio>',
+    ]) {
+      fs.writeFileSync(plantedHtml, `${bad}\n`);
+      assert.equal(offenders(REMOTE_MEDIA_HTML, [path.basename(plantedHtml)]).length, 1, bad);
+    }
+    for (const bad of [
+      "body { background: url(https://example.com/bg.png); }",
+      '@import "https://example.com/a.css";',
+    ]) {
+      fs.writeFileSync(plantedCss, `${bad}\n`);
+      assert.equal(offenders(REMOTE_CSS, [path.basename(plantedCss)]).length, 1, bad);
+    }
+    for (const bad of [
+      'location.href = "https://example.com/?" + text;',
+      'location.replace("https://example.com/");',
+      'location.assign("https://example.com/");',
+    ]) {
+      fs.writeFileSync(plantedJs, `${bad}\n`);
+      assert.equal(offenders(REMOTE_NAV, [path.basename(plantedJs)]).length, 1, bad);
+    }
+    for (const bad of [
+      'chrome.runtime.sendMessage("abcdefghijklmnopqrstuvwxyzabcdef", { text });',
+      'chrome.runtime.connect("abcdefghijklmnopqrstuvwxyzabcdef");',
+    ]) {
+      fs.writeFileSync(plantedJs, `${bad}\n`);
+      assert.equal(offenders(EXTERNAL_RUNTIME, [path.basename(plantedJs)]).length, 1, bad);
+    }
+  } finally {
+    fs.rmSync(plantedJs, { force: true });
+    fs.rmSync(plantedHtml, { force: true });
+    fs.rmSync(plantedCss, { force: true });
+  }
+});
+
+// The build strips every HTML comment before it ships, but the source itself is what a public checkout and a
+// store reviewer actually read, so a dev note or an internal cross-reference left in the markup is already
+// public the moment it's committed, strip or no strip.
+const INTERNAL_REF = /\b[DRQT]\d{1,3}(-\d+)?\b(?![\w.-])/;
+
+test("the extension's own pages carry no HTML comment and no internal decision or request number", () => {
+  for (const f of htmls) {
+    const text = fs.readFileSync(path.join(EXT, f), "utf8");
+    assert.ok(!text.includes("<!--"), `${f}: has an HTML comment`);
+    const hit = text.match(INTERNAL_REF);
+    assert.ok(!hit, `${f}: carries an internal reference (${hit && hit[0]})`);
+  }
+});
+
+test("the HTML-comment and internal-reference check catches what it's meant to", () => {
+  const planted = path.join(EXT, `zz-rule-check-planted-${process.pid}-${Date.now()}.html`);
+  try {
+    fs.writeFileSync(planted, "<!-- a dev note -->\n<p>Hello</p>\n");
+    assert.ok(fs.readFileSync(planted, "utf8").includes("<!--"));
+    fs.writeFileSync(planted, `<p>Fixed in D${45} after a report.</p>\n`);
+    assert.match(fs.readFileSync(planted, "utf8"), INTERNAL_REF);
+  } finally {
+    fs.rmSync(planted, { force: true });
+  }
+});
+
 // Clotr's scripts inside an AI page share that page with the site's own code, so a message that removes or
-// loosens a protected detail, replaces every setting, or clears history only gets accepted from Clotr's own pages.
+// loosens a protected detail, replaces every setting, clears history, or answers Clotr's own page about warning
+// less on every site only gets accepted from Clotr's own pages.
 test("vault edits, backups and clearing history are accepted only from Clotr's own pages", () => {
   const bg = code("background.js");
   assert.match(
     bg,
     /const fromClotrPage = \(sender\) => \(sender\.url \|\| ""\)\.startsWith\(chrome\.runtime\.getURL\(""\)\);/,
   );
-  for (const type of ["clotr:vaultUpdate", "clotr:importBackup", "clotr:clearHistory"]) {
+  for (const type of [
+    "clotr:vaultUpdate",
+    "clotr:importBackup",
+    "clotr:clearHistory",
+    "clotr:askedRead",
+    "clotr:askedAnswer",
+  ]) {
     const at = bg.indexOf(`case "${type}":`);
     assert.ok(at > 0, type);
     const body = bg.slice(at, bg.indexOf("return reply(", at));
@@ -347,7 +530,7 @@ test("vault edits, backups and clearing history are accepted only from Clotr's o
   // And the scripts inside AI pages never send them.
   assert.deepEqual(
     offenders(
-      /clotr:(vaultUpdate|importBackup|clearHistory)/,
+      /clotr:(vaultUpdate|importBackup|clearHistory|askedRead|askedAnswer)/,
       manifest.content_scripts.flatMap((c) => c.js),
     ),
     [],
@@ -459,7 +642,7 @@ test("built-in AI-site list (ai-sites.json) matches the manifest", () => {
 test("every pattern belongs to a Settings group", () => {
   require("../extension/patterns.js");
   for (const p of globalThis.Clotr.PATTERNS)
-    assert.ok(["credentials", "personal", "custom"].includes(p.group), `${p.id}: group ${p.group}`);
+    assert.ok(["credentials", "personal", "links", "custom"].includes(p.group), `${p.id}: group ${p.group}`);
 });
 
 test("changelog.json has notes for the current version", () => {
@@ -558,6 +741,12 @@ test("console output never includes detected values, drafts or file names", () =
     "letter.js",
     "extcheck.js",
     "extcheck-core.js",
+    "check.js",
+    "scam-signs.js",
+    "backup.js",
+    "sites.js",
+    "editor.js",
+    "zip.js",
   ]) {
     const text = fs.readFileSync(path.join(EXT, f), "utf8");
     for (const m of text.matchAll(/console\.(log|info|warn|error|debug)\(/g)) {
@@ -639,6 +828,56 @@ test("phones: every Clotr page is as wide as the phone and keeps its text size, 
     const rule = new RegExp(`\\.${box} \\{[^}]*\\stext-size-adjust: 100%`);
     assert.match(ui, rule, `the warning's .${box} doesn't keep its text size`);
   }
+});
+
+// A custom property that's ever defined as the literal `none` (like --lift, an elevation shadow not yet
+// designed) is a valid box-shadow value on its own, but dropped into a comma-separated list it makes the whole
+// declaration invalid, so the browser discards every shadow in the list, not just that one entry. That silently
+// erased a card's 1px rim and its red --critical edge across several pages before anyone noticed.
+test("a box-shadow list never includes a custom property that can resolve to none", () => {
+  const read = (f) => fs.readFileSync(path.join(EXT, f), "utf8");
+
+  const noneVars = new Set();
+  for (const f of cssFiles) {
+    for (const m of read(f).matchAll(/--([\w-]+)\s*:\s*none\s*;/g)) {
+      noneVars.add(m[1]);
+    }
+  }
+
+  function splitTopLevel(value) {
+    const parts = [];
+    let depth = 0;
+    let current = "";
+    for (const ch of value) {
+      if (ch === "(") depth++;
+      if (ch === ")") depth--;
+      if (ch === "," && depth === 0) {
+        parts.push(current);
+        current = "";
+      } else {
+        current += ch;
+      }
+    }
+    parts.push(current);
+    return parts;
+  }
+
+  const found = [];
+  for (const f of cssFiles) {
+    for (const m of read(f).matchAll(/box-shadow\s*:\s*([^;]+);/g)) {
+      const entries = splitTopLevel(m[1])
+        .map((e) => e.trim())
+        .filter(Boolean);
+      if (entries.length < 2) continue; // a single value resolving to none is valid CSS, not this bug
+      for (const entry of entries) {
+        const varName = entry.match(/^var\(\s*--([\w-]+)\s*(?:,.*)?\)$/)?.[1];
+        if (varName && noneVars.has(varName)) {
+          found.push(`${f}: "${entry}" in "box-shadow: ${entries.join(", ")}"`);
+        }
+      }
+    }
+  }
+  assert.deepEqual(found, []);
 });
 
 // CI runs with a read-only token, and third-party actions are pinned to exact commits, so a moved tag can't
@@ -762,8 +1001,8 @@ test("every translated string has a Spanish message; placeholders are well forme
   assert.equal(manifest.default_locale, "en");
 });
 
-test('the manifest\'s name is exactly "Clotr: clot your data leaks"', () => {
-  assert.equal(manifest.name, "Clotr: clot your data leaks");
+test('the manifest\'s name is exactly "Clotr: AI chat privacy, clot your data leaks"', () => {
+  assert.equal(manifest.name, "Clotr: AI chat privacy, clot your data leaks");
 });
 
 test("every data-i18n key in Clotr's pages, and every self-check message, has a Spanish message", () => {
@@ -949,28 +1188,65 @@ test("e2e check IDs are unique", () => {
 
 // The browser suite discovers its check files instead of naming them all in run.js, so adding a new area never
 // means editing the same shared list. Files run in number order, with the --stress and --store sections last. A
-// held-back feature's own checks, marked FEATURE_ONLY, run only against an all-on build instead, since their
-// doors are hidden in the default one; across the two runs, every check file still runs exactly once.
-test("the e2e runner runs every check file, in number order, with the stress and store sections last", () => {
+// held-back feature's own checks, marked in SECTION_FLAGS, run only once every flag they name is actually on in
+// the build under test; 30-feature-gates.js is the mirror image (SECTION_FLAGS_OFF), proving those doors stay
+// hidden, so it only makes sense while its flags are still off. An all-on build turns on every FEATURE_ONLY
+// section and turns off feature-gates'; a feature that ships for real runs its own section against the normal
+// build too.
+test("the e2e runner picks its sections by the build's own flags, in number order, with the stress and store sections last", () => {
   const run = fs.readFileSync(path.join(__dirname, "e2e", "run.js"), "utf8");
-  assert.match(run, /^const SECTIONS = sections\(undefined, ALL_ON\);$/m, "run.js names its sections by hand");
-  const { sections, FEATURE_ONLY } = require("./e2e/sections.js");
+  assert.match(
+    run,
+    /^const SECTIONS = sections\(undefined, manifestFeatures\);$/m,
+    "run.js names its sections by hand",
+  );
+  const { sections, FEATURE_ONLY, SECTION_FLAGS, SECTION_FLAGS_OFF } = require("./e2e/sections.js");
   const files = fs
     .readdirSync(path.join(__dirname, "e2e", "checks"))
     .filter((f) => f.endsWith(".js"))
     .map((f) => f.slice(0, -3));
-  const found = sections();
-  const allOn = sections(undefined, true);
-  assert.deepEqual(allOn.slice().sort(), FEATURE_ONLY.slice().sort(), "the all-on run is exactly FEATURE_ONLY");
-  assert.deepEqual([...found, ...allOn].sort(), files.sort(), "each check file once, between the two runs");
-  assert.deepEqual(
-    found.filter((f) => FEATURE_ONLY.includes(f)),
-    [],
-    "a held-back feature's own check runs in the default build too",
+
+  const allOn = Object.fromEntries(
+    Object.values(SECTION_FLAGS)
+      .flat()
+      .map((flag) => [flag, true]),
   );
-  assert.deepEqual(found.slice(-2), ["16-stress", "17-store-screenshots"]);
-  const numbered = found.slice(0, -2);
-  assert.deepEqual(numbered, numbered.slice().sort(), "in number order");
+  const everything = sections(undefined, allOn);
+  const noFlags = sections(undefined, {});
+  assert.deepEqual(
+    noFlags.filter((f) => FEATURE_ONLY.includes(f)),
+    [],
+    "a held-back feature's own check runs with every flag off",
+  );
+  assert.deepEqual(
+    everything.filter((f) => Object.keys(SECTION_FLAGS_OFF).includes(f)),
+    [],
+    "feature-gates' own check runs with every flag on",
+  );
+  assert.deepEqual(
+    [...new Set([...noFlags, ...everything])].sort(),
+    files.sort(),
+    "every check file is reachable with no flags or every flag",
+  );
+
+  // The manifest Clotr actually ships: each gated section runs exactly when its own flags say it should.
+  const manifest = JSON.parse(fs.readFileSync(path.join(EXT, "manifest.json"), "utf8"));
+  const current = sections(undefined, manifest.clotr_features);
+  for (const [name, needs] of Object.entries(SECTION_FLAGS)) {
+    const shouldRun = needs.every((flag) => manifest.clotr_features[flag]);
+    assert.equal(current.includes(name), shouldRun, `${name} against the shipped manifest`);
+  }
+  for (const [name, needsOff] of Object.entries(SECTION_FLAGS_OFF)) {
+    const shouldRun = needsOff.every((flag) => !manifest.clotr_features[flag]);
+    assert.equal(current.includes(name), shouldRun, `${name} against the shipped manifest`);
+  }
+
+  for (const ordered of [everything, noFlags, current]) {
+    const last = ordered.filter((f) => ["16-stress", "17-store-screenshots"].includes(f));
+    assert.deepEqual(ordered.slice(ordered.length - last.length), last, "stress and store sections run last");
+    const numbered = ordered.slice(0, ordered.length - last.length);
+    assert.deepEqual(numbered, numbered.slice().sort(), "in number order");
+  }
 });
 
 // The website keeps the extension's promise: no script, nothing loaded from other sites, and every local file
@@ -1110,6 +1386,31 @@ test('no words to people say "elder": messages, Clotr\'s pages, the website, the
   assert.deepEqual(hits, []);
 });
 
+// Voice: no warning or card title says "Heads up", or opens with the same empty-greeting shape in Spanish
+// ("Atención:", "Aviso:"). Name what was found instead.
+test('no warning or card title says "Heads up" or opens with a Spanish "Atención:"/"Aviso:" greeting', () => {
+  const hits = [];
+  const bare = (s) => s.replace(/^[^\p{L}]+/u, "");
+  const lookAnywhere = (where, text) => {
+    if (/heads up/i.test(text)) hits.push(where);
+  };
+  const lookGreeting = (where, text) => {
+    if (/^(atención|aviso)\s*:/i.test(bare(text))) hits.push(where);
+  };
+  for (const lang of fs.readdirSync(path.join(EXT, "_locales")))
+    for (const [k, v] of Object.entries(
+      JSON.parse(fs.readFileSync(path.join(EXT, "_locales", lang, "messages.json"), "utf8")),
+    )) {
+      lookAnywhere(`_locales/${lang}: ${k}`, v.message);
+      lookGreeting(`_locales/${lang}: ${k}`, v.message);
+    }
+  for (const f of htmls) lookAnywhere(f, fs.readFileSync(path.join(EXT, f), "utf8"));
+  for (const f of scripts.filter((n) => n !== "patterns.js"))
+    for (const m of code(f).matchAll(/\bmsg\(\s*"[A-Za-z0-9_]+",\s*(["'`])((?:\\.|(?!\1).)*)\1/g))
+      lookAnywhere(f, m[2]);
+  assert.deepEqual(hits, []);
+});
+
 // Tourniquet's words leave room for later. Each one says only what this version does, never promises what
 // Clotr or the helper will never do, and the protected person's own screens never say who the setup is for. The
 // English comes straight from the code and the pages; the Spanish comes from _locales.
@@ -1156,7 +1457,7 @@ test("Tourniquet's words: factual, no promises, and never who it's for on the pr
 // bad case, so loosening any one of them takes a deliberate change rather than a quiet slip. The no-network check
 // above covers the way out; these cover what an admin could even ask for in the first place.
 
-// 1. A team policy sets rules, never reporting. The managed schema has exactly these eight fields, and nothing
+// 1. A team policy sets rules, never reporting. The managed schema has exactly these nine fields, and nothing
 // in a field's name, title, description or allowed values asks for an address, an endpoint, or anything sent
 // back. The only field with fields of its own is a team's kinds, and each kind has exactly these six, all rules
 // for this computer. Whatever else an admin writes, the policy Clotr builds from it carries only these fields.
@@ -1168,6 +1469,7 @@ const POLICY_FIELDS = {
   lockSettings: "boolean",
   allowPause: "boolean",
   largeText: "boolean",
+  holdFiles: "boolean",
   kinds: "array",
 };
 const KIND_FIELDS = {
@@ -1244,7 +1546,7 @@ function reportingOffenders(schema, mergePolicy) {
       if (!Object.hasOwn(KIND_FIELDS, key) && !KIND_MADE.has(key)) found.push(`a merged kind carries ${key}`);
   return found;
 }
-test("a team policy sets rules, never reporting: the managed schema's eight fields and a kind's six, nothing sent back", () => {
+test("a team policy sets rules, never reporting: the managed schema's nine fields and a kind's six, nothing sent back", () => {
   globalThis.chrome ??= {};
   require("../extension/sites.js");
   const { mergePolicy } = globalThis.ClotrSites;
@@ -1730,6 +2032,8 @@ function appsModelOffenders(dir, pinned = PINNED_BIG_FILES) {
         // Built output and the build tools' caches aren't the source. A model a library brings in gets caught by
         // the runtime rules above instead, and the Android build checks its own app separately.
         if (!NOT_SOURCE.has(e.name)) walk(full);
+      } else if (/.(msix|appx|msixbundle)$/i.test(e.name)) {
+        // A built Store package (npm run msix): output made from the source checked here, and git-ignored.
       } else if (fs.statSync(full).size > MAX_FILE) {
         const sum = require("crypto").createHash("sha256").update(fs.readFileSync(full)).digest("hex");
         if (pinned[rel] !== sum) found.push(`${rel}: over 2 MB and not pinned`);
@@ -2124,4 +2428,30 @@ test("Is this a scam?: every sign has its name, its meaning and a source, in Eng
     assert.ok(en[`sc_group_${group}`] && es[`sc_group_${group}`], `no words for the group ${group}`);
     assert.match(src, new RegExp(`\\b${id}:\\s*\\[\\s*\\d+`), `${id} has no source`);
   }
+});
+
+// A rival's own security review found raw secrets reachable from the chat page itself, because an open shadow
+// root let the page read into a lookup Clotr meant to keep to itself. Every shadow root Bandage's hotspots and
+// peek bubble sit in has to stay closed, or the real detail behind a label would be one `.shadowRoot` read away
+// from the site's own script.
+test("every shadow root Clotr makes is closed, so a site's own script can never read into it", () => {
+  const calls = scripts.flatMap((f) =>
+    code(f)
+      .split("\n")
+      .map((line, i) => (/\.attachShadow\(/.test(line) ? `${f}:${i + 1}: ${line.trim()}` : null))
+      .filter(Boolean),
+  );
+  assert.ok(calls.length > 0, "expected at least one attachShadow call to check");
+  assert.deepEqual(
+    calls.filter((l) => !/mode:\s*"closed"/.test(l)),
+    [],
+  );
+});
+
+// A rival's "restore on copy" feature patched the page's own Clipboard methods to catch the site's native Copy
+// button, and needed two bugfixes in three weeks for it (a double-paste bug and a NotAllowedError). Bandage's
+// "Copy with real names" never takes that risk: it's Clotr's own button, calling the clipboard directly, once,
+// from its own click. Patching Clipboard.prototype or reassigning navigator.clipboard would reopen that bug class.
+test("nothing patches the page's clipboard: Bandage calls navigator.clipboard directly, never intercepts it", () => {
+  assert.deepEqual(offenders(/Clipboard\.prototype|navigator\.clipboard\s*\.\s*(?:writeText|write)\s*=(?!=)/), []);
 });

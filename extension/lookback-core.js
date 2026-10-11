@@ -18,6 +18,8 @@
     entryStream,
     entryBytes,
     fromFile,
+    parseCsv,
+    csvRecords,
   } = globalThis.Clotr;
 
   const CHAT_CAP = 32 * 1024 * 1024; // one chat over this is "too big to read"
@@ -46,6 +48,7 @@
     claude: { tool: "Claude", company: "Anthropic" },
     gemini: { tool: "Gemini", company: "Google" },
     "gemini-html": { tool: "Gemini", company: "Google" },
+    copilot: { tool: "Copilot", company: "Microsoft" },
   };
 
   const tidy = (kinds) => Object.fromEntries(Object.entries(kinds).sort(([a], [b]) => a.localeCompare(b)));
@@ -184,6 +187,35 @@
     return /class="outer-cell/.test(text) && /header-cell[^>]*>[\s\S]{0,200}(?:Gemini|Bard)/i.test(text);
   }
 
+  // ---------- Copilot: Microsoft's privacy dashboard export, a single CSV with no published schema ----------
+  // Microsoft's own help page only says "a comma-separated values (CSV) file is downloaded to your device" and
+  // calls what's inside "the record of those prompts and responses"; it names no column. So this looks for a
+  // header that can tell a date from a prompt and nothing more specific, rather than one fixed set of names,
+  // and a CSV whose header doesn't say which column is which reads as an unknown export, not a guess.
+  const CSV_TIMESTAMP_RE = /^(timestamp|date\s*\/?\s*time|datetime)$/i;
+  const CSV_DATE_RE = /^date$/i;
+  const CSV_TIME_RE = /^time$/i;
+  const CSV_PROMPT_RE = /^(prompt|content|message)$/i;
+
+  function csvColumn(header, re) {
+    return header.find((h) => re.test((h || "").trim()));
+  }
+
+  function copilotShape(header) {
+    const timestamp = csvColumn(header, CSV_TIMESTAMP_RE);
+    const date = timestamp ? null : csvColumn(header, CSV_DATE_RE);
+    const time = date ? csvColumn(header, CSV_TIME_RE) : null;
+    const prompt = csvColumn(header, CSV_PROMPT_RE);
+    if (!prompt || !(timestamp || date)) return null;
+    return { timestamp, date, time, prompt };
+  }
+
+  async function copilotHeaderOf(entry) {
+    const bytes = await entry.head(Math.min(entry.size, PEEK_CAP));
+    const text = new TextDecoder().decode(bytes);
+    return parseCsv(text)[0] || null;
+  }
+
   async function detectFormat(fileEntries) {
     const convEntries = fileEntries
       .filter((f) => /(?:^|\/)conversations(-\d+)?\.(?:json|jsonl)$/i.test(f.name))
@@ -208,6 +240,22 @@
     if (chatgpt.length) return { format: "chatgpt", dataEntries: convEntries.length ? convEntries : chatgpt };
     const claude = jsonEntries.filter((e) => shapeOf.get(e) === "claude");
     if (claude.length) return { format: "claude", dataEntries: claude };
+    // Microsoft exports each activity category (Copilot apps, Copilot in Microsoft 365 apps, Copilot Chat) as
+    // its own CSV, so choosing several at once (the same "parts" idea as Claude's split export) reads every one
+    // that matches Copilot's shape, each by its own header, as one combined export.
+    const csvEntries = fileEntries.filter((f) => /\.csv$/i.test(f.name));
+    const csvMatches = [];
+    for (const entry of csvEntries) {
+      const header = await copilotHeaderOf(entry);
+      const shape = header && copilotShape(header);
+      if (shape) csvMatches.push({ entry, shape });
+    }
+    if (csvMatches.length)
+      return {
+        format: "copilot",
+        dataEntries: csvMatches.map((m) => m.entry),
+        csvShapes: csvMatches.map((m) => m.shape),
+      };
     const htmlEntries = fileEntries.filter((f) => /\.html?$/i.test(f.name));
     for (const entry of htmlEntries)
       if (await looksLikeGeminiHtml(entry)) return { format: "gemini-html", dataEntries: [] };
@@ -276,9 +324,14 @@
 
   const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
   const GEMINI_URL = "https://myactivity.google.com/product/gemini";
+  // Microsoft's support pages confirm this path but no `?view=` value for Copilot specifically (unlike the
+  // `?view=media` one they show for another category), so this lands on the dashboard itself rather than
+  // guessing a deep link that might be wrong.
+  const COPILOT_URL = "https://account.microsoft.com/privacy/activity-history";
 
   function chatLink(format, id) {
     if (format === "gemini") return GEMINI_URL;
+    if (format === "copilot") return COPILOT_URL;
     if (format === "chatgpt" && UUID_RE.test(id)) return `https://chatgpt.com/c/${id}`;
     if (format === "claude" && UUID_RE.test(id)) return `https://claude.ai/chat/${id}`;
     return null;
@@ -286,7 +339,7 @@
 
   function chatLinkOk(url) {
     if (typeof url !== "string") return false;
-    if (url === GEMINI_URL) return true;
+    if (url === GEMINI_URL || url === COPILOT_URL) return true;
     if (new RegExp(`^https://chatgpt\\.com/c/${UUID_RE.source.slice(1, -1)}$`, "i").test(url)) return true;
     if (new RegExp(`^https://claude\\.ai/chat/${UUID_RE.source.slice(1, -1)}$`, "i").test(url)) return true;
     return false;
@@ -646,6 +699,69 @@
     return { chats, records, prompts };
   }
 
+  // ---------- Copilot: one CSV row per prompt, grouped by day (no chat id, the same as Gemini) ----------
+  // Only the column found to hold the prompt is ever scanned; whatever column might hold Copilot's own reply
+  // (unconfirmed: Microsoft's pages don't name one) is never read, the same "never the AI's answer" rule as
+  // every other format here.
+
+  function copilotDay(rec, shape) {
+    const raw = shape.timestamp ? rec[shape.timestamp] : rec[shape.date];
+    if (typeof raw !== "string" || !raw) return null;
+    const iso = /^\d{4}-\d{2}-\d{2}/.exec(raw);
+    if (iso) return iso[0];
+    const t = Date.parse(raw);
+    return Number.isFinite(t) ? new Date(t).toISOString().slice(0, 10) : null;
+  }
+
+  async function readCopilotFiles(entries, shapes, ctx) {
+    const days = new Map();
+    const order = [];
+    for (let i = 0; i < entries.length; i++) {
+      const entry = entries[i];
+      const shape = shapes[i];
+      if (entry.size > CHAT_CAP) {
+        ctx.notRead.tooBig++;
+        continue;
+      }
+      const text = new TextDecoder().decode(await entry.head(entry.size));
+      const { records } = csvRecords(text);
+      ctx.read.bytes += entry.size;
+      for (const rec of records) {
+        const raw = rec[shape.prompt];
+        if (typeof raw !== "string" || !raw.trim()) continue;
+        const day = copilotDay(rec, shape);
+        if (!day) continue;
+        ctx.read.messages++;
+        if (!days.has(day)) {
+          days.set(day, []);
+          order.push(day);
+        }
+        days.get(day).push(raw);
+      }
+    }
+    const chats = [];
+    for (const day of order) {
+      const texts = days.get(day);
+      const { kinds, finds } = scanTexts(
+        texts.map((t) => ({ text: t, where: WHERE.message })),
+        ctx,
+        day,
+      );
+      const chat = {
+        id: day,
+        link: chatLink("copilot", day),
+        title: maskedTitle(texts[0]),
+        date: day,
+        kinds: tidy(kinds),
+        finds,
+      };
+      ctx.read.chats++;
+      tick(ctx, chat);
+      chats.push(chat);
+    }
+    return chats;
+  }
+
   // ---------- Putting it together: the one results shape ----------
 
   function randomSalt() {
@@ -665,7 +781,7 @@
       onProgress: opts.onProgress || null,
       liveBytes: 0,
     };
-    const { format, dataEntries } = await detectFormat(fileEntries);
+    const { format, dataEntries, csvShapes } = await detectFormat(fileEntries);
     let chats = [];
     let instructions = null;
     let grouping = "chat";
@@ -681,6 +797,9 @@
       chats = r.chats;
       grouping = "day";
       extra = { records: r.records, prompts: r.prompts };
+    } else if (format === "copilot") {
+      chats = await readCopilotFiles(dataEntries, csvShapes, ctx);
+      grouping = "day";
     }
     const totals = {};
     for (const [id, t] of Object.entries(ctx.totals))

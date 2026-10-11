@@ -41,6 +41,7 @@
   --good-ink: var(--good);
   --serious: #ec835a;
   --critical: #b3261e;
+  --alarm: #9c2b4a; /* a detail that went through as typed: always with a cross and bold, never colour alone */
 
   --high-bg: #fce8e6;
   --high-fg: #b3261e;
@@ -86,6 +87,7 @@
     --good: #8edcaa;
     --good-ink: var(--good);
     --critical: #ffb4ab;
+    --alarm: #f2a0b8;
 
     --high-bg: #4a1f1c;
     --high-fg: #ffb4ab;
@@ -219,6 +221,16 @@ a {
   padding: 0;
   font-size: 11px;
   color: var(--on-steel);
+}
+/* Quick exit: a chip that's also a button, at the top right of the popup. */
+.quick-exit-btn {
+  border: none;
+  font: inherit;
+  cursor: pointer;
+}
+.quick-exit-btn:hover,
+.quick-exit-btn:focus-visible {
+  background: color-mix(in srgb, var(--signal) 22%, var(--surface));
 }
 /* Site status card: the header field continues down through it, so the two read as one steel block. */
 .site {
@@ -423,6 +435,41 @@ a {
   font-weight: 600;
   color: var(--ink-2);
   margin-bottom: 6px;
+}
+
+/* What Clotr caught on this tab's site: covered with a dash, went through with a cross (bold, alarm colour,
+   never colour alone). */
+.caught-list {
+  list-style: none;
+  margin: 0 0 6px;
+  padding: 0;
+  display: grid;
+  gap: 4px;
+}
+.caught-row {
+  display: flex;
+  gap: 6px;
+  align-items: baseline;
+  font-size: 13px;
+}
+.caught-row .mark {
+  flex: none;
+  width: 1.1em;
+  text-align: center;
+}
+.caught-row.through {
+  font-weight: 700;
+  color: var(--alarm);
+}
+.caught-sum {
+  margin: 4px 0 8px;
+  color: var(--ink-2);
+  font-size: 12px;
+}
+.caught-links {
+  display: flex;
+  gap: 12px;
+  margin: 0;
 }
 .empty-card {
   display: grid;
@@ -683,6 +730,24 @@ h2 {
 }
 h2:first-child {
   margin-top: 0;
+}
+h3 {
+  font-size: 12px;
+  color: var(--ink-2);
+  margin: 10px 0 4px;
+}
+/* "Pick sites one by one instead": closed by default, so the headings and switches it folds away don't
+   compete with the always-visible switches above for the eye. */
+#pick-sites {
+  margin-top: 8px;
+}
+#pick-sites summary {
+  cursor: pointer;
+  color: var(--ink-2);
+  font-size: 12px;
+}
+#pick-sites summary + h3 {
+  margin-top: 10px;
 }
 .list {
   list-style: none;
@@ -1152,17 +1217,38 @@ body:not(.advanced) .advanced-only {
   font-size: 13px;
 }
 
-/* "Report a problem": a small control on every Clotr page. */
+/* "Report a problem" and "Rate Clotr": small controls at the bottom of the popup. */
 .app-footer {
   margin-top: 14px;
   padding-top: 8px;
   border-top: 1px solid var(--grid);
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 8px;
+}
+#report-root {
+  flex: 1;
+  min-width: 0;
 }
 .report summary {
   cursor: pointer;
   color: var(--ink-2);
   font-size: 12px;
   list-style: none;
+}
+.rate-link {
+  flex: none;
+  padding: 2px 0;
+  color: var(--ink-2);
+  font-size: 12px;
+  text-decoration: underline;
+}
+.rate-link:hover {
+  color: var(--ink);
+}
+.whats-new-rate {
+  margin: 6px 0 0;
 }
 .report-menu {
   display: flex;
@@ -1532,16 +1618,31 @@ body:not(.advanced) .advanced-only {
   margin-top: 8px;
 }
 
-/* Settings' section: the heading carries the shield, like Tourniquet's card; the three pages as buttons that wrap. */
-.ss-settings h2 {
-  display: flex;
-  align-items: center;
-  gap: 6px;
+/* Settings' section: closed by default, so its shield and name sit on the summary row someone taps to open it;
+   everything it holds opens as buttons or a switch, the same way Tourniquet's card reads. */
+#ss-help {
   margin-top: 14px;
 }
-.ss-settings h2 .tq-shield {
+#ss-help summary {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 4px 6px;
+  cursor: pointer;
+}
+#ss-help summary .tq-shield {
   width: 14px;
   height: 14px;
+  align-self: center;
+}
+#ss-help summary:focus-visible {
+  outline: 2px solid var(--brand);
+  outline-offset: 2px;
+}
+.ss-help-lead {
+  font-size: 12px;
+  font-weight: 400;
+  color: var(--ink-2);
 }
 .ss-buttons {
   display: flex;
@@ -1552,6 +1653,16 @@ body:not(.advanced) .advanced-only {
 .ss-tq30 {
   margin: 8px 0 0;
   color: var(--ink-2);
+}
+/* The Overview's quiet nudge for the rest of the day a card-code or gift-card warning showed: one line, no card. */
+.ss-today-link {
+  margin: 0 0 10px;
+  font-size: 12px;
+  color: var(--ink-2);
+}
+.ss-today-link .linkish {
+  font-size: 12px;
+  color: var(--brand);
 }
 /* The feature's tag on Clotr's pages (the setup page's third tile, the Share page's card): the shield and the name. */
 .ss-tag {

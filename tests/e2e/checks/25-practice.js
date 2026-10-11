@@ -20,7 +20,10 @@ module.exports = async function (env) {
             return p;
           })();
     await page.setViewport({ width, height: 900 });
-    await page.evaluate(() => document.fonts.ready);
+    // A tab left in the background can hang waiting for a frame that never arrives on a busy computer, so bring
+    // it forward and give fonts.ready a backstop rather than trust it to settle on its own.
+    await page.bringToFront();
+    await page.evaluate(() => Promise.race([document.fonts.ready, new Promise((r) => setTimeout(r, 2000))]));
     await sleep(200);
     return page;
   }
@@ -75,6 +78,20 @@ module.exports = async function (env) {
     for (const theme of ["light", "dark"]) {
       await page.emulateMediaFeatures([{ name: "prefers-color-scheme", value: theme }]);
       await sleep(150);
+      // The reveal fades in (220 ms); a busy computer can still be mid-fade here, and a half-faded label reads as
+      // low contrast. Wait for the animations that end (never a looping one, which vault.css has: its `finished`
+      // never comes), and at most 2 s.
+      await page.evaluate(() =>
+        Promise.race([
+          Promise.all(
+            document
+              .getAnimations()
+              .filter((a) => a.effect?.getComputedTiming().iterations !== Infinity)
+              .map((a) => a.finished.catch(() => {})),
+          ),
+          new Promise((r) => setTimeout(r, 2000)),
+        ]),
+      );
       if (!(await page.evaluate(() => typeof axe === "object"))) await page.evaluate(AXE);
       const found = await page.evaluate(async () =>
         (await axe.run(document, { resultTypes: ["violations"] })).violations
@@ -101,7 +118,7 @@ module.exports = async function (env) {
         const s = await useMadeUpAndCheck(page);
         expect(s.reply === "ok, the code they texted me is 482913", `reply: ${s.reply}`);
         // The notice should match the real one: name what it found, mask the code, and ask who really needs it.
-        expect(/Heads up/.test(s.notice), `notice: ${s.notice}`);
+        expect(/Before you send this/.test(s.notice), `notice: ${s.notice}`);
         expect(/Sign-in Code \(••••••\)/.test(s.notice), `notice: ${s.notice}`);
         expect(/Who asks for a code that was sent to you\?/.test(s.notice), `no who-asks line: ${s.notice}`);
         expect(/the people who read it here get it/.test(s.notice), `notice: ${s.notice}`);
@@ -375,7 +392,7 @@ module.exports = async function (env) {
       expect(/código de 6 cifras/.test(start.message), `message: ${start.message}`);
       const s = await useMadeUpAndCheck(page);
       expect(s.reply === "vale, el código que me mandaron es 482913", `reply: ${s.reply}`);
-      expect(/Atención/.test(s.notice) && /••••••/.test(s.notice), `notice: ${s.notice}`);
+      expect(/Antes de enviar esto/.test(s.notice) && /••••••/.test(s.notice), `notice: ${s.notice}`);
       expect(/quienes lo lean aquí lo reciben/.test(s.notice), `notice: ${s.notice}`);
       expect(/Llamaré yo al número/.test(s.safer), `safer: ${s.safer}`);
       expect(s.next === "Siguiente ejercicio: «tu nieto»", `next: ${s.next}`);

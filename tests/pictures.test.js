@@ -298,6 +298,31 @@ test("nameClues: words and pairs from the name; never 'id', 'card', 'visa' or 's
   for (const odd of [null, undefined, 5, {}]) assert.deepEqual(nameClues(odd), []);
 });
 
+test("nameClues: a seed phrase or backup-code screenshot is flagged by its name; a garden or a physical wallet isn't", () => {
+  const { nameClues } = globalThis.Clotr;
+  for (const n of [
+    "seed phrase.png",
+    "Seed_Phrase_Backup.HEIC",
+    "recovery phrase.png",
+    "mnemonic.png",
+    "crypto wallet.png",
+    "backup codes.png",
+    "Backup_Codes_Google.png",
+    "recovery codes.png",
+    "my passwords.jpg",
+  ])
+    assert.ok(nameClues(n).length, n);
+  // "seed" and "wallet" alone catch too much everyday life to be a clue on their own.
+  for (const n of [
+    "seed catalog.png",
+    "vegetable seeds.jpg",
+    "bird seed.png",
+    "wallet-sized photo.jpg",
+    "new wallet.jpg",
+  ])
+    assert.deepEqual(nameClues(n), [], n);
+});
+
 test("readPicture: a picture named like an ID or a document is an ID or Document Picture, its value the name", async () => {
   const { readPicture, PATTERNS } = globalThis.Clotr;
   assert.ok(PATTERNS.find((p) => p.id === "id_picture")?.picture, "id_picture is a picture-only kind");

@@ -129,12 +129,13 @@ module.exports = async function (env) {
   // host behaves the same either way it was granted.
   async function withGrantedCopy(fn) {
     const copy = fs.mkdtempSync(path.join(os.tmpdir(), "clotr-ext-"));
-    fs.cpSync(EXT, copy, { recursive: true });
-    const m = JSON.parse(fs.readFileSync(path.join(copy, "manifest.json"), "utf8"));
-    m.host_permissions = [...m.host_permissions, "https://mail.google.com/*", "https://discord.com/*"];
-    fs.writeFileSync(path.join(copy, "manifest.json"), JSON.stringify(m, null, 2));
-    const other = await launch(copy);
+    let other;
     try {
+      fs.cpSync(EXT, copy, { recursive: true });
+      const m = JSON.parse(fs.readFileSync(path.join(copy, "manifest.json"), "utf8"));
+      m.host_permissions = [...m.host_permissions, "https://mail.google.com/*", "https://discord.com/*"];
+      fs.writeFileSync(path.join(copy, "manifest.json"), JSON.stringify(m, null, 2));
+      other = await launch(copy);
       await waitFor(
         () =>
           other.worker.evaluate(async () => {
@@ -147,8 +148,10 @@ module.exports = async function (env) {
       await resetState(other, {}); // the person's own settings: every kind just warns
       return await fn(other);
     } finally {
-      await other.browser.close();
-      fs.rmSync(other.profile, { recursive: true, force: true });
+      if (other) {
+        await other.browser.close();
+        fs.rmSync(other.profile, { recursive: true, force: true });
+      }
       fs.rmSync(copy, { recursive: true, force: true });
     }
   }
@@ -212,7 +215,7 @@ module.exports = async function (env) {
             expect(n, `no notice #${i}`);
             const choices = n.buttons.map((b) => b.text);
             expect(!choices.some((t) => LOOSENING.test(t)), `notice #${i}: ${choices.join(" | ")}`);
-            await clickDialogButton(page, "Leave it in", readNotice);
+            await clickDialogButton(page, "Send as is", readNotice);
             await sleep(300);
           }
           await sleep(1500);
@@ -1011,7 +1014,7 @@ module.exports = async function (env) {
 
   await check(
     "TQ13",
-    "Welcome page: one Tourniquet line right after the email and chat card; its link opens the setup at Who is it for?; hidden while locked",
+    "Welcome page: one Tourniquet line right after the where-Clotr-checks card; its link opens the setup at Who is it for?; hidden while locked",
     async () => {
       await store.set(ctx, { everydayOffer: "welcome" });
       const page = await openSetup("vault.html?welcome=1");
@@ -1035,14 +1038,14 @@ module.exports = async function (env) {
             "Setting Clotr up for someone else? Tourniquet gives a child or a grown-up stronger settings in one step.",
           `line: ${line.text}`,
         );
-        expect(line.after === "everyday-offer", `the line comes after ${line.after}, not the email and chat card`);
+        expect(line.after === "where-offer", `the line comes after ${line.after}, not the where-Clotr-checks card`);
         expect(line.href === "helper.html#who", `link: ${line.href}`);
         await page.setViewport({ width: 700, height: 900 });
         for (const theme of ["dark", "light"]) {
           await page.emulateMediaFeatures([{ name: "prefers-color-scheme", value: theme }]);
           await sleep(150);
           // Crops to the card and the line under it, with a little of the page around them for context.
-          const card = await (await page.$("#everyday-offer")).boundingBox();
+          const card = await (await page.$("#where-offer")).boundingBox();
           const below = await (await page.$("#tq-offer")).boundingBox();
           await page.screenshot({
             path: path.join(OUT, `tourniquet-welcome-${theme}.png`),

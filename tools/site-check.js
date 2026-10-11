@@ -186,98 +186,101 @@ async function main() {
   const puppeteer = require("puppeteer-core");
   const browserPath = option("--browser") || findBrowser();
   const profile = fs.mkdtempSync(path.join(os.tmpdir(), "clotr-sitecheck-"));
-  fs.mkdirSync(path.join(profile, "Default"), { recursive: true });
-  fs.writeFileSync(
-    path.join(profile, "Default", "Preferences"),
-    JSON.stringify({ extensions: { ui: { developer_mode: true } } }),
-  );
-  const browser = await puppeteer.launch({
-    executablePath: browserPath,
-    headless: !flag("--headed"),
-    pipe: true,
-    enableExtensions: [EXT],
-    userDataDir: profile,
-    defaultViewport: { width: 1280, height: 850 },
-    args: ["--no-first-run", "--no-default-browser-check", "--enable-unsafe-extension-debugging"],
-  });
-  const swTarget = await browser.waitForTarget(
-    (t) => t.type() === "service_worker" && t.url().endsWith("/background.js"),
-    { timeout: 15000 },
-  );
-  const sw = await swTarget.createCDPSession();
-  const inWorker = async (fn, ...a) => {
-    const r = await sw.send("Runtime.evaluate", {
-      expression: `(${fn})(...${JSON.stringify(a)})`,
-      awaitPromise: true,
-      returnByValue: true,
-    });
-    if (r.exceptionDetails) throw new Error(r.exceptionDetails.exception?.description || r.exceptionDetails.text);
-    return r.result.value;
-  };
-  const ua = (await browser.userAgent()).replace("HeadlessChrome", "Chrome"); // look like the browser it is
-
   const results = [];
-  for (const site of sitesToCheck()) {
-    const page = await browser.newPage();
-    await page.setUserAgent(ua);
-    const row = { name: site.name, url: site.url };
-    try {
-      const response = await page.goto(site.url, { waitUntil: "domcontentloaded", timeout: 30000 });
-      row.status = response?.status() ?? 0;
-      await sleep(7000); // let the app render and Clotr's self-check look (it checks every 2 s)
-      const finalUrl = page.url();
-      row.finalHost = new URL(finalUrl).hostname;
-      row.covered = Sites.urlMatchesAny(finalUrl, BUILT_IN);
-      // Some sites send you to a sign-in page on a different host when you're logged out; that's not a move.
-      row.signInRedirect = !row.covered && looksLikeSignIn(finalUrl);
-      Object.assign(row, await page.evaluate(editorKind));
-      row.clotrSees = await inWorker(async (url) => {
-        const tabs = await chrome.tabs.query({});
-        const tab = tabs.find((t) => t.url === url);
-        const { protectedTabs = {} } = await chrome.storage.session.get("protectedTabs");
-        const h = tab && protectedTabs[tab.id];
-        return h ? (h.editor ? "yes" : "no chat box") : "not running";
-      }, finalUrl);
-    } catch (err) {
-      row.error = String(err.message || err).slice(0, 120);
-    }
-    await page.close();
-    results.push(row);
-    console.log(
-      `${site.name.padEnd(22)} ${row.error ? `error: ${row.error}` : `${row.finalHost} · editor ${row.editor} · Clotr ${row.clotrSees}${row.botCheck ? " · bot check" : ""}`}`,
-    );
-  }
-
-  // Everyday email and chat apps aren't run by background.js's self-check, so there's no "Clotr sees it"
-  // signal here. I just record where the page lands, whether its own per-site permission would still
-  // cover that host, and whether it hit a sign-in wall, which is expected while logged out.
   const everydayResults = [];
-  for (const site of everydaySitesToCheck()) {
-    const page = await browser.newPage();
-    await page.setUserAgent(ua);
-    const row = { name: site.name, url: site.url };
-    try {
-      const response = await page.goto(site.url, { waitUntil: "domcontentloaded", timeout: 30000 });
-      row.status = response?.status() ?? 0;
-      await sleep(4000); // just needs to settle; there's no self-check to wait for here
-      const finalUrl = page.url();
-      row.finalHost = new URL(finalUrl).hostname;
-      row.covered = Sites.urlMatchesAny(finalUrl, site.matches);
-      row.signInRedirect = !row.covered && looksLikeSignIn(finalUrl);
-      const evaluated = await page.evaluate(editorKind);
-      row.signInWall = row.signInRedirect || evaluated.signIn;
-    } catch (err) {
-      row.error = String(err.message || err).slice(0, 120);
-    }
-    await page.close();
-    everydayResults.push(row);
-    console.log(
-      `${site.name.padEnd(22)} ${row.error ? `error: ${row.error}` : `${row.finalHost} · covered ${row.covered} · sign-in wall ${row.signInWall}`}`,
+  let browser;
+  try {
+    fs.mkdirSync(path.join(profile, "Default"), { recursive: true });
+    fs.writeFileSync(
+      path.join(profile, "Default", "Preferences"),
+      JSON.stringify({ extensions: { ui: { developer_mode: true } } }),
     );
-  }
+    browser = await puppeteer.launch({
+      executablePath: browserPath,
+      headless: !flag("--headed"),
+      pipe: true,
+      enableExtensions: [EXT],
+      userDataDir: profile,
+      defaultViewport: { width: 1280, height: 850 },
+      args: ["--no-first-run", "--no-default-browser-check", "--enable-unsafe-extension-debugging"],
+    });
+    const swTarget = await browser.waitForTarget(
+      (t) => t.type() === "service_worker" && t.url().endsWith("/background.js"),
+      { timeout: 15000 },
+    );
+    const sw = await swTarget.createCDPSession();
+    const inWorker = async (fn, ...a) => {
+      const r = await sw.send("Runtime.evaluate", {
+        expression: `(${fn})(...${JSON.stringify(a)})`,
+        awaitPromise: true,
+        returnByValue: true,
+      });
+      if (r.exceptionDetails) throw new Error(r.exceptionDetails.exception?.description || r.exceptionDetails.text);
+      return r.result.value;
+    };
+    const ua = (await browser.userAgent()).replace("HeadlessChrome", "Chrome"); // look like the browser it is
 
-  await browser.close();
-  fs.rmSync(profile, { recursive: true, force: true });
+    for (const site of sitesToCheck()) {
+      const page = await browser.newPage();
+      await page.setUserAgent(ua);
+      const row = { name: site.name, url: site.url };
+      try {
+        const response = await page.goto(site.url, { waitUntil: "domcontentloaded", timeout: 30000 });
+        row.status = response?.status() ?? 0;
+        await sleep(7000); // let the app render and Clotr's self-check look (it checks every 2 s)
+        const finalUrl = page.url();
+        row.finalHost = new URL(finalUrl).hostname;
+        row.covered = Sites.urlMatchesAny(finalUrl, BUILT_IN);
+        // Some sites send you to a sign-in page on a different host when you're logged out; that's not a move.
+        row.signInRedirect = !row.covered && looksLikeSignIn(finalUrl);
+        Object.assign(row, await page.evaluate(editorKind));
+        row.clotrSees = await inWorker(async (url) => {
+          const tabs = await chrome.tabs.query({});
+          const tab = tabs.find((t) => t.url === url);
+          const { protectedTabs = {} } = await chrome.storage.session.get("protectedTabs");
+          const h = tab && protectedTabs[tab.id];
+          return h ? (h.editor ? "yes" : "no chat box") : "not running";
+        }, finalUrl);
+      } catch (err) {
+        row.error = String(err.message || err).slice(0, 120);
+      }
+      await page.close();
+      results.push(row);
+      console.log(
+        `${site.name.padEnd(22)} ${row.error ? `error: ${row.error}` : `${row.finalHost} · editor ${row.editor} · Clotr ${row.clotrSees}${row.botCheck ? " · bot check" : ""}`}`,
+      );
+    }
+
+    // Everyday email and chat apps aren't run by background.js's self-check, so there's no "Clotr sees it"
+    // signal here. I just record where the page lands, whether its own per-site permission would still
+    // cover that host, and whether it hit a sign-in wall, which is expected while logged out.
+    for (const site of everydaySitesToCheck()) {
+      const page = await browser.newPage();
+      await page.setUserAgent(ua);
+      const row = { name: site.name, url: site.url };
+      try {
+        const response = await page.goto(site.url, { waitUntil: "domcontentloaded", timeout: 30000 });
+        row.status = response?.status() ?? 0;
+        await sleep(4000); // just needs to settle; there's no self-check to wait for here
+        const finalUrl = page.url();
+        row.finalHost = new URL(finalUrl).hostname;
+        row.covered = Sites.urlMatchesAny(finalUrl, site.matches);
+        row.signInRedirect = !row.covered && looksLikeSignIn(finalUrl);
+        const evaluated = await page.evaluate(editorKind);
+        row.signInWall = row.signInRedirect || evaluated.signIn;
+      } catch (err) {
+        row.error = String(err.message || err).slice(0, 120);
+      }
+      await page.close();
+      everydayResults.push(row);
+      console.log(
+        `${site.name.padEnd(22)} ${row.error ? `error: ${row.error}` : `${row.finalHost} · covered ${row.covered} · sign-in wall ${row.signInWall}`}`,
+      );
+    }
+  } finally {
+    if (browser) await browser.close().catch(() => {});
+    fs.rmSync(profile, { recursive: true, force: true });
+  }
 
   const baselineData = fs.existsSync(BASELINE) ? JSON.parse(fs.readFileSync(BASELINE, "utf8")) : {};
   const findings = compareToBaseline(results, baselineData.sites || {}, {

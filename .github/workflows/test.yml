@@ -1,4 +1,8 @@
-# Unit, rule and end-to-end tests, in headless Chrome and Firefox against the fake AI pages (no real sites).
+# Unit, rule and end-to-end tests, in headless Chrome (split across three parallel shards, tests/e2e/shards.js, so
+# the slowest one takes about a third of running it as one job) and Firefox, against the fake AI pages (no real
+# sites). The unit, browser and Firefox jobs run at once, each with its own checkout. The final "test" job needs
+# them all and is the one branch protection watches by that name: it runs even if an earlier job failed, and fails
+# only if one of them actually did.
 name: Tests
 
 on:
@@ -17,9 +21,9 @@ permissions:
   contents: read
 
 jobs:
-  test:
+  unit:
     runs-on: ubuntu-latest
-    timeout-minutes: 40 # the browser checks alone now take more than 15 minutes on GitHub's runners
+    timeout-minutes: 15
     steps:
       # Actions pinned to exact commits (a moved tag can't change what runs); the tag is in the comment.
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -35,20 +39,114 @@ jobs:
       - run: npm test
       - name: Formatting and lint
         run: npm run lint
+
+  browser:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false # one shard's failure shouldn't hide what the other shards found
+      matrix:
+        shard: [1, 2, 3] # tests/e2e/shards.js; tests/e2e-shards.test.js fails if a check is missing or doubled
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
       - name: End-to-end (headless Chrome)
-        run: npm run test:e2e -- --browser /usr/bin/google-chrome
+        run: npm run test:e2e -- --browser /usr/bin/google-chrome --shard ${{ matrix.shard }}
         env:
           # Ubuntu 24.04 runners block Chrome's user-namespace sandbox.
           PUPPETEER_DANGEROUS_NO_SANDBOX: "true"
-      - name: Firefox smoke test
+      - name: Add this shard's result to the run summary
+        if: always()
         run: |
-          FF="$(npx -y @puppeteer/browsers install firefox@stable --path "$RUNNER_TEMP/browsers" --format '{{path}}' | tail -n 1)"
-          npm run test:firefox -- --browser "$FF"
+          echo "### Browser suite, shard ${{ matrix.shard }}" >> "$GITHUB_STEP_SUMMARY"
+          { grep -m1 '^- Result:' tests/e2e/output/report.md || echo "- no report written"; } >> "$GITHUB_STEP_SUMMARY"
       - name: Upload e2e report and screenshots
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
-          name: e2e-output
+          name: e2e-output-shard-${{ matrix.shard }}
           path: tests/e2e/output/
           if-no-files-found: ignore
           retention-days: 7 # screenshots and reports: a week is enough to look
+
+  firefox:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: Firefox smoke test
+        run: |
+          FF="$(npx -y @puppeteer/browsers install firefox@stable --path "$RUNNER_TEMP/browsers" --format '{{path}}' | tail -n 1)"
+          npm run test:firefox -- --browser "$FF"
+      - name: Add Firefox's result to the run summary
+        if: always()
+        run: |
+          echo "### Firefox smoke test" >> "$GITHUB_STEP_SUMMARY"
+          { grep -m1 '^- Result:' tests/e2e/output/report.md || echo "- no report written"; } >> "$GITHUB_STEP_SUMMARY"
+      - name: Upload e2e report and screenshots
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: e2e-output-firefox
+          path: tests/e2e/output/
+          if-no-files-found: ignore
+          retention-days: 7
+
+  packaged:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60 # the full suite, unsharded, against a built zip instead of extension/ straight (30-40 min, 9 Oct)
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: End-to-end against the packaged build (headless Chrome)
+        run: npm run test:e2e:packaged -- --browser /usr/bin/google-chrome
+        env:
+          # Ubuntu 24.04 runners block Chrome's user-namespace sandbox.
+          PUPPETEER_DANGEROUS_NO_SANDBOX: "true"
+      - name: Add the packaged suite's result to the run summary
+        if: always()
+        run: |
+          echo "### Browser suite, packaged build" >> "$GITHUB_STEP_SUMMARY"
+          { grep -m1 '^- Result:' tests/e2e/output/report.md || echo "- no report written"; } >> "$GITHUB_STEP_SUMMARY"
+      - name: Upload e2e report and screenshots
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: e2e-output-packaged
+          path: tests/e2e/output/
+          if-no-files-found: ignore
+          retention-days: 7 # screenshots and reports: a week is enough to look
+
+  test:
+    needs: [unit, browser, firefox, packaged]
+    if: always()
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Every job that ran has to have succeeded
+        run: |
+          for r in "${{ needs.unit.result }}" "${{ needs.browser.result }}" "${{ needs.firefox.result }}" "${{ needs.packaged.result }}"; do
+            if [ "$r" != "success" ] && [ "$r" != "skipped" ]; then
+              echo "a required job's result was $r"
+              exit 1
+            fi
+          done

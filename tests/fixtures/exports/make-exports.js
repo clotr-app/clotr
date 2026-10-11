@@ -642,6 +642,50 @@ const ARCHIVE_HTML =
   '<html><head><meta charset="UTF-8"><title>Archive Overview</title></head><body><h1>Archive Overview</h1>' +
   "<p>My Activity: 1 file</p></body></html>\n";
 
+// ---------- Copilot, through the Microsoft privacy dashboard's export ----------
+// Microsoft's own page (support.microsoft.com, "Manage your Copilot activity history in the privacy dashboard",
+// checked 7 October 2026) says only that choosing Export all activity history downloads "a comma-separated
+// values (CSV) file" of "the record of those prompts and responses"; it names no column. No published schema
+// exists, so this fixture's column names (Date, Time, Application, Prompt, Response) are this project's own
+// best guess, not a real export's header, and the reader below matches a header by what each column plainly
+// means (a date, a prompt) rather than this exact wording. No real Copilot export was read to build this.
+const csvCell = (v) => (/[",\r\n]/.test(v) ? `"${v.replace(/"/g, '""')}"` : v);
+const csvFile = (header, rows) => `${[header, ...rows].map((r) => r.map(csvCell).join(",")).join("\n")}\n`;
+
+const COPILOT_HEADER = ["Date", "Time", "Application", "Prompt", "Response"];
+const COPILOT_ROWS = [
+  [
+    "2025-06-11",
+    "09:14:00",
+    "Copilot",
+    "My AWS key is AKIA4HPQ7XZ2R6TWLJ3N, is this still valid?",
+    "I can't verify AWS keys. Rotate it if you're unsure. Contact support at sam.lee@example.org for help.",
+  ],
+  [
+    "2025-06-11",
+    "09:20:00",
+    "Copilot",
+    "Also my card is 4111 1111 1111 1111, can you remember it",
+    "I can't store payment details.",
+  ],
+  [
+    "2025-09-02",
+    "14:05:00",
+    "Word",
+    "Email me a draft, my number is 219-09-9999 for the background check",
+    "Here's a draft. Reach HR at 555-555-0199.",
+  ],
+  ["2025-09-02", "14:40:00", "Word", "What's the weather like for the trip", "Sunny today."],
+];
+const COPILOT_CSV = csvFile(COPILOT_HEADER, COPILOT_ROWS);
+
+// Stands in for a real export whose column names turned out to say the same things differently; Clotr should
+// say it can't read this rather than guess at which column is the date and which is the prompt.
+const COPILOT_UNKNOWN_HEADER_CSV = csvFile(
+  ["When", "Activity", "UserInput"],
+  [["2025-06-11T09:14:00Z", "chat", "My AWS key is AKIA4HPQ7XZ2R6TWLJ3N"]],
+);
+
 // ---------- What each export holds, as files ----------
 const json = (value, pretty) => `${JSON.stringify(value, null, pretty ? 2 : 0)}\n`;
 // Writes one JSON document per line, the way Claude's newer conversations-NNN.zip holds its records. Each line
@@ -702,6 +746,12 @@ const EXPORTS = {
       GEMINI.map((r) => ({ ...r, header: "Apps de Gemini", products: ["Apps de Gemini"] })),
       true,
     ),
+  },
+  copilot: {
+    "CopilotActivity.csv": COPILOT_CSV,
+  },
+  "copilot-unknown-header": {
+    "CopilotActivity.csv": COPILOT_UNKNOWN_HEADER_CSV,
   },
   // Not an AI export at all. The reader should say it can't read this, rather than guessing.
   unknown: {

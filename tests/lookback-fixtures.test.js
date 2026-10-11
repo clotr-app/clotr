@@ -18,6 +18,7 @@ require("../extension/detector.js");
 require("../extension/decide.js");
 require("../extension/attachments.js");
 require("../extension/pictures.js");
+require("../extension/csv.js");
 const C = globalThis.Clotr;
 
 const DIR = path.join(__dirname, "fixtures", "exports");
@@ -80,6 +81,11 @@ test("each export is a folder and a zip holding exactly the same files", () => {
   assert.equal(chatgpt.after.length, Object.keys(chatgpt.files).length);
 });
 
+test("Copilot CSV fixtures use LF line endings, as required by the repository", () => {
+  for (const name of ["copilot", "copilot-unknown-header"])
+    assert.ok(!EXPORTS[name]["CopilotActivity.csv"].includes("\r"), name);
+});
+
 // These are the made-up values for each kind. Finding anything else of that kind in a fixture would be a mistake.
 const MADE_UP = {
   credit_card: /^(4111 1111 1111 1111|5555 5555 5555 4444)$/,
@@ -95,6 +101,7 @@ const ID_KEY = /(^|_)(id|uuid)$|^(parent|children|current_node|asset_pointer)$/;
 function words(rel, content) {
   const text = content.toString("utf8");
   if (rel.endsWith(".html")) return [text.replace(/<[^>]*>/g, " ")];
+  if (rel.endsWith(".csv")) return C.csvRecords(text).records.flatMap((r) => Object.values(r));
   const out = [];
   const walk = (v, key) => {
     if (typeof v === "string") {
@@ -112,7 +119,7 @@ function words(rel, content) {
 test("every value in the fixtures is made up", () => {
   for (const name of Object.keys(EXPORTS)) {
     for (const [rel, content] of Object.entries(folder(name))) {
-      if (!/\.(json|jsonl|html)$/.test(rel)) continue;
+      if (!/\.(json|jsonl|html|csv)$/.test(rel)) continue;
       for (const w of words(rel, content))
         for (const r of C.detect(w))
           for (const m of r.matches) if (MADE_UP[r.id]) assert.match(m, MADE_UP[r.id], `${name}/${rel}: ${r.id}`);
@@ -249,6 +256,27 @@ function walkGemini(files) {
   };
 }
 
+// Walks Copilot's CSV export. There's no published schema for it, so this plain walk uses the same column
+// names the fixture was built with (Date, Prompt) rather than the flexible header-matching the real reader
+// does; grouped by day, same as Gemini, since a CSV row carries no chat id either.
+function walkCopilot(files) {
+  const { records } = C.csvRecords(Object.values(files)[0].toString("utf8"));
+  const days = new Map();
+  for (const r of records) {
+    if (!r.Prompt || !r.Prompt.trim()) continue;
+    const day = r.Date;
+    if (!days.has(day)) days.set(day, { title: r.Prompt, prompts: [] });
+    days.get(day).prompts.push(r.Prompt);
+  }
+  return [...days].map(([day, d]) => ({
+    id: day,
+    title: d.title,
+    date: day,
+    link: "https://account.microsoft.com/privacy/activity-history",
+    kinds: tidy(count({}, d.prompts)),
+  }));
+}
+
 const withFinds = (chats) => chats.filter((c) => Object.keys(c.kinds).length);
 const shape = (found) =>
   found.map(({ id, title, date, link, kinds }) => ({ id, title, date, link, kinds: tidy(kinds) }));
@@ -295,8 +323,19 @@ test("Gemini: the prompts hold exactly what expected.json lists, wherever the fi
   }
 });
 
+test("Copilot: the Prompt column holds exactly what expected.json lists, and the Response column is never read", () => {
+  const got = walkCopilot(folder("copilot"));
+  assert.equal(got.length, expected.copilot.chats);
+  assert.deepEqual(shape(withFinds(got)), shape(expected.copilot.found));
+  for (const f of expected.copilot.found) {
+    let shown = f.title;
+    for (const r of C.detect(f.title)) for (const m of r.matches) shown = shown.split(m).join(C.mask(m));
+    assert.equal(shown, f.shownTitle);
+  }
+});
+
 test("the values that aren't the person's are really in the AI's answers, a tool's output or the account files", () => {
-  for (const name of ["chatgpt", "claude", "gemini"]) {
+  for (const name of ["chatgpt", "claude", "gemini", "copilot"]) {
     const all = Object.values(folder(name))
       .map((b) => b.toString("utf8"))
       .join("\n");

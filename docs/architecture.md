@@ -34,7 +34,10 @@ also uses that same list to start Clotr on a site someone adds themselves.
 A content script never touches `chrome.storage` directly; it asks the background for everything through messages.
 
 - A tab sends `clotr:getSettings` when Clotr starts there, and gets back its responses, the vault's fingerprints,
-  the salt, and anything a team's policy adds.
+  the salt, and anything a team's policy adds: `teamHold`, when the policy requires *Ask before sending* for at
+  least one kind, so an attached file's hold never ends on its own, and `holdFiles`, when the policy widens that
+  hold to any finding in a file, not just one set to block. The policy itself, and the organization's name, never
+  reach a tab.
 - `clotr:setResponses` carries a choice to warn less (or more) about one kind of detail.
 - The background sends `clotr:settingsChanged` to every open tab when a setting they rely on changes.
 - `clotr:vaultAdd` and `clotr:vaultUpdate` are the only way anything reaches the vault, sent only from Clotr's own
@@ -48,7 +51,9 @@ A content script never touches `chrome.storage` directly; it asks the background
 ### The rest
 
 - `background.js` is the service worker. It's the only writer of history and the fingerprint salt, and that
-  includes clearing history, which goes through the same queue as everything else it writes.
+  includes clearing history, which goes through the same queue as everything else it writes. A page's settings
+  and salt are answered outside that queue, since they only read (making the salt has its own lock): a page
+  uses the defaults until its settings come, so they must never wait behind a slow write.
 - `sites.js` holds what the background and Clotr's own pages share: the built-in site list, the email and chat apps
   people switch on themselves, and how a team's browser policy is applied.
 - Clotr's own pages (the popup, the vault, the full report, Settings, the guided setup, and a handful of
@@ -63,7 +68,7 @@ of its own.
 
 ## Storage
 
-Everything Clotr stores stays on the device: settings, the vault as one-way fingerprints, and history as metadata
+Everything Clotr stores stays on the device: settings, the vault as scrambled fingerprints, and history as metadata
 only (time, site, kind, severity and what happened), never a detected value. The background is the only writer, and
 cleans every record against the same rules on the way in, whether it came from a chat page or from loading a backup.
 

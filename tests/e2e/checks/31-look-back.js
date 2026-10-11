@@ -9,7 +9,8 @@
 const { EXPORTS, zip, zipOf } = require("../../fixtures/exports/make-exports.js");
 
 module.exports = async function (env) {
-  const { EXT, Skip, check, ctx, expect, fs, launch, openExtPage, os, path, settle, shotAt, sleep, waitFor } = env;
+  const { EXT, Skip, check, ctx, expect, fs, launch, openExtPage, os, path, patience, settle, shotAt, sleep, waitFor } =
+    env;
 
   function tmpZip(name, bytes) {
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), "clotr-lb-"));
@@ -74,6 +75,7 @@ module.exports = async function (env) {
         date: d.querySelector(".lb-card-date")?.textContent,
         tags: [...d.querySelectorAll(".lb-card-head .lb-tag")].map((t) => t.textContent),
         openHref: d.querySelector(".lb-card-actions a")?.href || null,
+        serious: d.classList.contains("serious"),
       });
       return {
         resultsShown: !document.getElementById("results").hidden,
@@ -97,7 +99,7 @@ module.exports = async function (env) {
   // ---------- LK1: each company's own zip ----------
 
   await check("LK1", "Look back: picking each company's own zip finds exactly what expected.json lists", async () => {
-    for (const name of ["chatgpt", "claude", "gemini"]) {
+    for (const name of ["chatgpt", "claude", "gemini", "copilot"]) {
       const page = await openExtPage(ctx, "lookback.html");
       try {
         await pickZip(page, zipOf(name), `${name}.zip`);
@@ -150,6 +152,31 @@ module.exports = async function (env) {
       await page.close();
     }
   });
+
+  // ---------- LK3B: a lone CSV file ----------
+
+  await check(
+    "LK3B",
+    "Look back: a lone Copilot CSV, picked by itself (not zipped), is read and grouped by day",
+    async () => {
+      const page = await openExtPage(ctx, "lookback.html");
+      try {
+        await page.click('.lb-tab[data-tool="copilot"]');
+        const csv = EXPORTS.copilot["CopilotActivity.csv"];
+        const dir = fs.mkdtempSync(path.join(os.tmpdir(), "clotr-lb-csv-"));
+        const p = path.join(dir, "CopilotActivity.csv");
+        fs.writeFileSync(p, csv);
+        const input = await page.$("#file-input");
+        await input.uploadFile(p);
+        await waitSettled(page);
+        const r = await readResults(page);
+        expect(r.resultsShown, `lone CSV: results never showed: ${JSON.stringify(r)}`);
+        expect(r.cards.length === 2, `lone CSV: expected 2 day-groups, got ${r.cards.length}`);
+      } finally {
+        await page.close();
+      }
+    },
+  );
 
   // ---------- LK4: Stop keeps nothing ----------
 
@@ -233,6 +260,19 @@ module.exports = async function (env) {
             : document.getElementById("unsupported").textContent,
         }));
         expect(/JSON for My Activity/.test(shown.unsupported || ""), `gemini-html export text: ${shown.unsupported}`);
+
+        await page.click("#try-again");
+        await pickZip(page, zipOf("copilot-unknown-header"), "copilot-unknown-header.zip");
+        await waitSettled(page);
+        shown = await page.evaluate(() => ({
+          unsupported: document.getElementById("unsupported").hidden
+            ? null
+            : document.getElementById("unsupported").textContent,
+        }));
+        expect(
+          /can't read this export yet/.test(shown.unsupported || ""),
+          `copilot-unknown-header export text: ${shown.unsupported}`,
+        );
       } finally {
         await page.close();
       }
@@ -261,6 +301,12 @@ module.exports = async function (env) {
       expect(
         hostileChecks[0] === false && hostileChecks[1] === false && hostileChecks[2] === true,
         `chatLinkOk on this page: ${JSON.stringify(hostileChecks)}`,
+      );
+      // A key or an ID number gets the page's red edge (design 4.3); a chat with neither doesn't, so the
+      // edge actually marks something rather than decorating every card the same way.
+      expect(
+        r.cards.some((c) => c.serious) && r.cards.some((c) => !c.serious),
+        `some cards should carry the red edge and some shouldn't: ${JSON.stringify(r.cards.map((c) => c.serious))}`,
       );
     } finally {
       await page.close();
@@ -328,6 +374,38 @@ module.exports = async function (env) {
     return { bytes: zip({ "conversations.json": JSON.stringify(convos) }), records: i };
   }
 
+  // The 300 MB stress runs read for minutes, long enough that a deadline fixed at the start can go stale
+  // if the shared machine gets busier or quieter while it runs. So instead of a wall clock, this follows
+  // the worker's own progress bar and only gives up once that percentage stops moving, the same stall a
+  // person watching the bar would notice; a generous outer bound still catches a genuine hang.
+  async function waitForReading(page, label) {
+    const stallBudget = 30000;
+    const ceiling = 15 * 60 * 1000;
+    const started = Date.now();
+    let lastPct = -1;
+    let lastProgressAt = started;
+    for (;;) {
+      const done = await page.evaluate(
+        () => !document.getElementById("results").hidden || !document.getElementById("unsupported").hidden,
+      );
+      if (done) return (Date.now() - started) / 1000;
+      const pct = await page.evaluate(() =>
+        Number(document.getElementById("progress-bar")?.getAttribute("aria-valuenow") || 0),
+      );
+      const now = Date.now();
+      if (pct > lastPct) {
+        lastPct = pct;
+        lastProgressAt = now;
+      } else if (now - lastProgressAt > stallBudget * patience()) {
+        throw new Error(`${label}: stuck at ${pct}% for over ${((now - lastProgressAt) / 1000).toFixed(0)}s`);
+      }
+      if (now - started > ceiling) {
+        throw new Error(`${label}: still reading after ${(ceiling / 60000).toFixed(0)} minutes, stuck at ${pct}%`);
+      }
+      await sleep(500);
+    }
+  }
+
   await check(
     "LK8",
     "Look back: a 300 MB synthetic export reads to the end, still finding what's in it, under the worker's memory budget",
@@ -359,16 +437,7 @@ module.exports = async function (env) {
           }
         }, 150);
 
-        const started = Date.now();
-        await waitFor(
-          () =>
-            page.evaluate(
-              () => !document.getElementById("results").hidden || !document.getElementById("unsupported").hidden,
-            ),
-          220000,
-          500,
-        );
-        const seconds = (Date.now() - started) / 1000;
+        const seconds = await waitForReading(page, "300 MB export");
         clearInterval(poll);
         await sleep(200);
 
@@ -453,16 +522,7 @@ module.exports = async function (env) {
           }
         }, 150);
 
-        const started = Date.now();
-        await waitFor(
-          () =>
-            page.evaluate(
-              () => !document.getElementById("results").hidden || !document.getElementById("unsupported").hidden,
-            ),
-          220000,
-          500,
-        );
-        const seconds = (Date.now() - started) / 1000;
+        const seconds = await waitForReading(page, "300 MB Gemini export");
         clearInterval(poll);
         await sleep(200);
 

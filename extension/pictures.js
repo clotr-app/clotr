@@ -397,6 +397,26 @@
     "insurancecard",
     "medicare",
     "medicaid",
+    // Crypto wallet seed words and 2FA backup codes: stealers and careless screenshots target these by name.
+    // "seed" and "wallet" alone catch too much (garden seeds, a photo of a physical wallet), so they're only
+    // clues paired with the word that actually says it's a crypto secret.
+    "seed phrase",
+    "seedphrase",
+    "recovery phrase",
+    "recoveryphrase",
+    "mnemonic",
+    "crypto wallet",
+    "cryptowallet",
+    "wallet seed",
+    "backup codes",
+    "backupcodes",
+    "recovery codes",
+    "recoverycodes",
+    "passwords",
+    "frase semilla",
+    "codigos de respaldo",
+    "codigos de recuperacion",
+    "contrasenas",
   ].map((c) => c.split(" "));
   // A name about the subject, not a picture of someone's document: a template, a sample, a logo, a comparison.
   const ABOUT = new Set([

@@ -8,14 +8,6 @@
   <link rel="stylesheet" href="vault.css">
   <link rel="stylesheet" href="lookback.css">
 </head>
-<!-- Look back: you pick the export ChatGPT, Claude or Gemini sent you, a worker reads it on this computer, and
-     this page shows which chats hold a password, a key, a card or ID number, an address or a photo's place.
-     Nothing is uploaded, and nothing is kept once this page closes, since it never writes to storage. Only what
-     you wrote or sent is ever read. Every byte of that reading happens in lookback-worker.js, and this page loads
-     lookback-core.js only for its plain string checks chatLink() and chatLinkOk(), so "Open the chat" trusts only
-     the company's own checked address; detector.js, decide.js and zip.js stay worker-only. letter.js is the other
-     page-side script, and its letterFor() turns the result already on screen into the deletion letter, text in
-     and text out, without reading the export again. -->
 <body class="vault-page lookback-page">
   <header class="lookback-top">
     <img src="icons/icon-on-32.png" alt="" width="24" height="24">
@@ -33,6 +25,7 @@
         <button type="button" role="tab" class="lb-tab" data-tool="chatgpt">ChatGPT</button>
         <button type="button" role="tab" class="lb-tab" data-tool="claude">Claude</button>
         <button type="button" role="tab" class="lb-tab" data-tool="gemini">Gemini</button>
+        <button type="button" role="tab" class="lb-tab" data-tool="copilot">Copilot</button>
       </div>
       <div id="tool-panel" role="tabpanel">
         <ol id="tool-steps" class="lb-tool-steps"></ol>
@@ -53,7 +46,7 @@
         <button id="choose-file" class="btn primary" type="button" data-i18n="lb_choose">Choose my export</button>
         <button id="choose-folder" class="btn" type="button" data-i18n="lb_folder">It's a folder</button>
       </div>
-      <input id="file-input" type="file" accept=".zip,.json,.jsonl,application/zip,application/json" multiple hidden>
+      <input id="file-input" type="file" accept=".zip,.json,.jsonl,.csv,application/zip,application/json,text/csv" multiple hidden>
       <input id="folder-input" type="file" webkitdirectory multiple hidden>
       <p class="note muted" data-i18n="lb_local">Clotr reads it here, on this computer. It never uploads it, and it forgets it when you close this page. It works with the internet off.</p>
       <p class="note muted" data-i18n="lb_parts">Choosing several files at once (such as conversations-000.zip and conversations-001.zip) reads them all as one export.</p>
@@ -180,6 +173,7 @@
   <script src="insights.js"></script>
   <script src="scan-words.js"></script>
   <script src="report.js"></script>
+  <script src="quick-exit.js"></script>
   <script src="lookback.js"></script>
 </body>
 </html>

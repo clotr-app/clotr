@@ -1,0 +1,21 @@
+<!doctype html>
+<!-- Stand-in for DuckDuckGo's search box: a plain text input with no [type] attribute, Enter or the button submits. -->
+<html lang="en">
+<head><meta charset="utf-8"><title>DuckDuckGo (Clotr test page)</title></head>
+<body>
+  <form id="search_form_homepage" action="/" method="GET">
+    <input id="searchbox_input" name="q" aria-label="Search with DuckDuckGo">
+    <button type="submit" id="search_button_homepage" aria-label="Search">Search</button>
+  </form>
+  <script>
+    window.__sent = [];
+    document.getElementById("search_form_homepage").addEventListener("submit", (e) => {
+      e.preventDefault();
+      const box = document.getElementById("searchbox_input");
+      if (!box.value) return;
+      window.__sent.push(box.value);
+      box.value = "";
+    });
+  </script>
+</body>
+</html>

@@ -22,6 +22,7 @@ const RESPONSE_LABELS = {
 const GROUPS = [
   { id: "credentials", name: msg("pp_gCredentials", "Passwords, keys & servers") },
   { id: "personal", name: msg("pp_gPersonal", "Personal info") },
+  { id: "links", name: msg("pp_gLinks", "Links") },
   { id: "custom", name: msg("pp_gCustom", "Your watch list") },
 ];
 const Sites = globalThis.ClotrSites;
@@ -29,6 +30,8 @@ const Sites = globalThis.ClotrSites;
 const weight = Sites.weight;
 const sum = (list) => list.reduce((n, e) => n + weight(e), 0);
 const PATTERN_NAMES = Object.fromEntries(PATTERNS.map((p) => [p.id, p.name]));
+// "A credit card number", "An email address": the article a kind's name takes, lowercased to sit mid-sentence.
+const aKind = (name) => `${/^[AEIOU]/i.test(name) ? "An" : "A"} ${name.charAt(0).toLowerCase()}${name.slice(1)}`;
 const BUILT_IN = Sites.builtInMatches();
 
 const SERIES = [
@@ -175,7 +178,18 @@ async function detectSite() {
     } catch {
       /* unknown: treat as not reported */
     }
-    site = { ...base, kind: "protected", source: builtIn ? "built-in" : "added by you", health };
+    // A built-in site can still be missing its host access (Firefox at every install, Chrome by hand through
+    // its per-site "On click" setting), which looks just like Clotr not running yet but a reload never fixes it.
+    let access = true;
+    if (builtIn) {
+      const matches = Sites.builtInMatchesFor(url.href);
+      try {
+        access = matches.length ? await chrome.permissions.contains({ origins: matches }) : true;
+      } catch {
+        access = true;
+      }
+    }
+    site = { ...base, kind: "protected", source: builtIn ? "built-in" : "added by you", health, access };
     return;
   }
   if (url.protocol !== "https:") {
@@ -227,6 +241,15 @@ async function protectSite(url, kind = "ai") {
   if (granted) await refreshSites();
 }
 
+// Asks for exactly this built-in site's access, when the browser withheld it: Firefox does that at every install,
+// and Chrome's own per-site "On click" setting does the same by hand. The ask has to come first, in the click's
+// own turn, like protectSite above, since Firefox refuses it once anything has been awaited.
+async function allowBuiltInHere(url) {
+  const granted = await chrome.permissions.request({ origins: Sites.builtInMatchesFor(url) }).catch(() => false);
+  if (granted) await detectSite();
+  return granted;
+}
+
 async function setSiteKinds(hosts, kind) {
   const { siteKinds = {} } = await chrome.storage.local.get("siteKinds");
   for (const h of hosts) {
@@ -239,6 +262,7 @@ async function setSiteKinds(hosts, kind) {
 
 async function refreshSites() {
   state.userSites = await Sites.userSitePatterns();
+  state.everywhereOn = Sites.everywhereGranted((await chrome.permissions.getAll()).origins);
   await detectSite();
   renderSite();
   renderSettings();
@@ -310,6 +334,36 @@ function renderSite() {
   if (site.kind === "none") {
     box.replaceChildren(
       el("div", { className: "grow" }, [stateLine("", msg("pp_noPage", "No web page in this tab.")), coverageLine()]),
+    );
+    return;
+  }
+
+  if (site.kind === "protected" && site.access === false) {
+    const status = el("div", { className: "why", role: "status" });
+    const allow = el("button", {
+      className: "btn primary",
+      type: "button",
+      textContent: msg("pp_allowHere", "Allow Clotr on this site"),
+    });
+    allow.addEventListener("click", async () => {
+      const granted = await allowBuiltInHere(site.url);
+      if (granted) renderSite();
+      else
+        status.textContent = msg(
+          "pp_allowNo",
+          "Your browser didn't allow it, so Clotr still can't warn you here. Use the button to ask again.",
+        );
+    });
+    box.replaceChildren(
+      el("div", { className: "grow" }, [
+        el("div", { className: "host", textContent: site.host }),
+        stateLine(
+          "warn",
+          msg("pp_noAccess", "Your browser hasn't let Clotr into this site, so it can't warn you here."),
+        ),
+        allow,
+        status,
+      ]),
     );
     return;
   }
@@ -475,11 +529,57 @@ function countBy(list, keyFn) {
   return [...out.entries()].sort((a, b) => b[1] - a[1]);
 }
 
+// What Clotr caught on this tab's own site (not the Overview's site filter), in the current range:
+// covered with a dash, went through with a cross. Only while Clotr protects this site.
+function renderCaught() {
+  const card = $("caught-card");
+  if (site.kind !== "protected") {
+    card.hidden = true;
+    return;
+  }
+  card.hidden = false;
+  const since = lastNDays(rangeDays)[0].getTime();
+  const items = state.events.filter(
+    (e) => e.site === site.host && e.t >= since && (e.action === "redacted" || e.action === "allowed"),
+  );
+  const covered = sum(items.filter((e) => e.action === "redacted"));
+  const sent = sum(items.filter((e) => e.action === "allowed"));
+  $("caught-list").replaceChildren(
+    ...items
+      .slice(-4)
+      .reverse()
+      .map((e) => {
+        const name = PATTERN_NAMES[e.type] || e.name || e.type;
+        const isCovered = e.action === "redacted";
+        return el("li", { className: `caught-row ${isCovered ? "covered" : "through"}` }, [
+          el("span", { className: "mark", "aria-hidden": "true", textContent: isCovered ? "–" : "✕" }),
+          el("span", {
+            textContent: isCovered
+              ? msg("pp_itemCovered", "$1 was covered.", aKind(name))
+              : msg("pp_itemSent", "$1 went through as it was.", aKind(name)),
+          }),
+        ]);
+      }),
+  );
+  $("caught-sum").textContent =
+    covered + sent > 0
+      ? msg(
+          "pp_caughtSum",
+          "$1 caught in the last $2 days. $3 covered, $4 went through.",
+          covered + sent,
+          rangeDays,
+          covered,
+          sent,
+        )
+      : msg("pp_caughtNone", "Nothing caught here in the last $1 days.", rangeDays);
+}
+
 function renderOverview() {
   const days = lastNDays(rangeDays);
   const since = days[0].getTime();
   const events = viewEvents().filter((e) => e.t >= since);
 
+  renderCaught();
   for (const b of document.querySelectorAll(".range button")) {
     b.setAttribute("aria-checked", String(Number(b.dataset.days) === rangeDays));
   }
@@ -488,6 +588,7 @@ function renderOverview() {
   renderMiniMap();
   renderDigest();
   renderLookBackCard(); // all history too: it's about what's out there, not this range
+  renderScamHelpToday(); // today only, regardless of range
   const empty = events.length === 0;
   const quiet = empty && viewEvents().length > 0; // history exists, just not in this range
   $("empty-title").textContent = quiet
@@ -891,6 +992,14 @@ function groupValue(ids) {
   return values.size === 1 ? [...values][0] : "custom";
 }
 
+// Quick exit (Privacy Check-up): tells every other open Clotr page to close itself, then closes the popup, the
+// one page that isn't a tab (closeThisTab() no-ops there). window.close() waits a tick so the click itself
+// finishes first: closing the popup's execution context mid-click can leave the broadcast half-sent.
+$("quick-exit").addEventListener("click", () => {
+  globalThis.Clotr.broadcastQuickExit();
+  setTimeout(() => window.close(), 0);
+});
+$("quick-exit").hidden = !FEATURES.checkup;
 $("open-vault").addEventListener("click", () => chrome.tabs.create({ url: chrome.runtime.getURL("vault.html") }));
 $("open-watch").addEventListener("click", () => chrome.tabs.create({ url: chrome.runtime.getURL("vault.html#watch") }));
 $("open-stored").addEventListener("click", () => chrome.tabs.create({ url: chrome.runtime.getURL("stored.html") }));
@@ -947,7 +1056,7 @@ function renderHelper() {
   $("history-mine").hidden = !locked;
   $("large-text").checked = state.largeText;
   $("reply-check").checked = state.replyCheck;
-  $("command-check").checked = state.commandCheck;
+  if ($("command-check")) $("command-check").checked = state.commandCheck;
   $("strict-personal").checked = Helper.asksBeforePersonal(state.responses);
   $("lock-remove").hidden = !state.lock;
   $("lock-set").textContent = state.lock
@@ -956,15 +1065,17 @@ function renderHelper() {
 }
 
 $("managed-see").addEventListener("click", () => chrome.tabs.create({ url: chrome.runtime.getURL("policy.html") }));
-$("managed-training").addEventListener("click", () =>
+$("managed-training")?.addEventListener("click", () =>
   chrome.tabs.create({ url: chrome.runtime.getURL("training.html") }),
 );
-$("managed-training").hidden = !FEATURES.training;
+// A held-back feature's own element isn't in the shipped build at all, so every door to it and
+// every line that hides or shows it is guarded the same way: nothing to find, nothing to touch.
+if ($("managed-training")) $("managed-training").hidden = !FEATURES.training;
 $("large-text").addEventListener("change", (e) => chrome.storage.local.set({ largeText: e.target.checked }));
 $("reply-check").addEventListener("change", (e) => chrome.storage.local.set({ replyCheck: e.target.checked }));
-$("command-check").addEventListener("change", (e) => chrome.storage.local.set({ commandCheck: e.target.checked }));
-$("command-check-row").hidden = !FEATURES.commandcheck;
-$("command-check-hint").hidden = !FEATURES.commandcheck;
+$("command-check")?.addEventListener("change", (e) => chrome.storage.local.set({ commandCheck: e.target.checked }));
+if ($("command-check-row")) $("command-check-row").hidden = !FEATURES.commandcheck;
+if ($("command-check-hint")) $("command-check-hint").hidden = !FEATURES.commandcheck;
 
 // ---------- Clotr Antibody: the Overview row and Settings' section open its pages ----------
 // Each door opens a page in a new tab; none changes a setting, so the Overview row works while settings are locked.
@@ -972,18 +1083,28 @@ $("command-check-hint").hidden = !FEATURES.commandcheck;
 for (const [id, page] of [
   ["ss-row-check", "check.html"],
   ["ss-row-practice", "practice.html"],
+  ["ss-settings-check", "check.html"],
+  ["ss-settings-practice", "practice.html"],
   ["ss-open-card", "share.html#card"],
   ["ss-tq30-open", "helper.html?for=after_scam#who"],
 ])
-  $(id).addEventListener("click", () => chrome.tabs.create({ url: chrome.runtime.getURL(page) }));
-// Held back features get no door here: the Overview row only has "Is this a scam?" and
-// Practice, so it hides when both are off; Settings' section also holds the command check and Tourniquet's
-// 30-day line, so it only hides when nothing in it is on (Tourniquet's own ss-tq30 is gated in renderTourniquet()).
-$("ss-row-check").hidden = !FEATURES.scamcheck;
-$("ss-row-practice").hidden = !FEATURES.practice;
-$("ss-open-card").hidden = !FEATURES.scamcheck;
-$("ss-row").hidden = !FEATURES.scamcheck && !FEATURES.practice;
-$("ss-settings").hidden = !FEATURES.scamcheck && !FEATURES.commandcheck && !FEATURES.tourniquet;
+  $(id)?.addEventListener("click", () => chrome.tabs.create({ url: chrome.runtime.getURL(page) }));
+// The Overview row's own doors, folded into Scam help in Settings too, so someone who meets the row under
+// Tourniquet and someone who opens the folded section both land in the same two places.
+if ($("ss-row-check")) $("ss-row-check").hidden = !FEATURES.scamcheck;
+if ($("ss-row-practice")) $("ss-row-practice").hidden = !FEATURES.practice;
+if ($("ss-settings-check")) $("ss-settings-check").hidden = !FEATURES.scamcheck;
+if ($("ss-settings-practice")) $("ss-settings-practice").hidden = !FEATURES.practice;
+if ($("ss-open-card")) $("ss-open-card").hidden = !FEATURES.scamcheck;
+// The Overview row's own visibility (shown only while Tourniquet's on) is decided in renderTourniquet(); Scam
+// help's whole section hides only once nothing it holds is on (its own ss-tq30 line is gated there too).
+$("ss-settings").hidden = !FEATURES.scamcheck && !FEATURES.practice && !FEATURES.commandcheck && !FEATURES.tourniquet;
+$("ss-today-open")?.addEventListener("click", () => {
+  selectTab("settings");
+  const details = $("ss-help");
+  if (details) details.open = true;
+  details?.scrollIntoView({ block: "start" });
+});
 
 // ---------- Look back and Extension check: the Overview card and Settings' section open them ----------
 // Neither door changes a setting or touches storage, so both work while settings are locked.
@@ -993,13 +1114,13 @@ for (const [id, page] of [
   ["lb-settings-open", "lookback.html"],
   ["lb-settings-check", "extcheck.html"],
 ])
-  $(id).addEventListener("click", () => chrome.tabs.create({ url: chrome.runtime.getURL(page) }));
+  $(id)?.addEventListener("click", () => chrome.tabs.create({ url: chrome.runtime.getURL(page) }));
 // Look back and Extension check are both held back, gated independently; Safari also has
 // no management API, so its build hides Extension check's doors even when the feature is on.
-$("lb-card-row").hidden = !FEATURES.lookback;
-$("lb-settings-row").hidden = !FEATURES.lookback;
-$("lb-card-ec-row").hidden = IS_SAFARI || !FEATURES.extcheck;
-$("lb-settings-ec-row").hidden = IS_SAFARI || !FEATURES.extcheck;
+if ($("lb-card-row")) $("lb-card-row").hidden = !FEATURES.lookback;
+if ($("lb-settings-row")) $("lb-settings-row").hidden = !FEATURES.lookback;
+if ($("lb-card-ec-row")) $("lb-card-ec-row").hidden = IS_SAFARI || !FEATURES.extcheck;
+if ($("lb-settings-ec-row")) $("lb-settings-ec-row").hidden = IS_SAFARI || !FEATURES.extcheck;
 $("lb-card").hidden = !FEATURES.lookback && (IS_SAFARI || !FEATURES.extcheck);
 $("lb-settings").hidden = !FEATURES.lookback && (IS_SAFARI || !FEATURES.extcheck);
 
@@ -1008,6 +1129,22 @@ $("lb-settings").hidden = !FEATURES.lookback && (IS_SAFARI || !FEATURES.extcheck
 // the Antibody row above it: an empty history invites people in, a full one stays out of the way.
 function renderLookBackCard() {
   $("lb-card").classList.toggle("compact", state.events.length > 0);
+}
+
+// A quiet nudge for the rest of the day a card-code or gift-card warning showed, so Scam help isn't fully out of
+// sight right when it might matter. A code tucked inside a plain password (a login code, a backup code…) never
+// shows up here: the engine deliberately never stores why a password matched, only that it did, so only these
+// two kinds can be told apart from history after the fact. Tourniquet already keeps its own row up, so this
+// skips while that's on.
+function renderScamHelpToday() {
+  const link = $("ss-today-link");
+  if (!link) return;
+  const startOfDay = new Date().setHours(0, 0, 0, 0);
+  const shown =
+    FEATURES.scamcheck &&
+    !tourniquetOn() &&
+    state.events.some((e) => e.t >= startOfDay && (e.type === "card_code" || e.type === "gift_card"));
+  link.hidden = !shown;
 }
 
 // ---------- Bandage: per-site on/off, and turning it on for this tab ----------
@@ -1044,6 +1181,7 @@ $("open-share").addEventListener("click", () => chrome.tabs.create({ url: chrome
 $("open-welcome").addEventListener("click", () =>
   chrome.tabs.create({ url: chrome.runtime.getURL("vault.html?welcome=1") }),
 );
+$("everywhere-switch").addEventListener("click", () => setEverywhere(!state.everywhereOn));
 $("lock-set").addEventListener("click", async () => {
   const pin = $("pin").value.trim();
   if (!Helper.validPin(pin)) return say("lock-msg", msg("pp_pinDigits", "Use 4 to 8 digits."), true);
@@ -1078,6 +1216,76 @@ $("unlock-go").addEventListener("click", tryUnlock);
 $("unlock-pin").addEventListener("keydown", (e) => {
   if (e.key === "Enter") tryUnlock();
 });
+
+// Settings' "Also on search engines" and "Also on support chats on websites": the same one-switch-per-site
+// shape as renderEverydaySites, for the search and support lists, which only ever hold one kind each so the
+// section heading says what they are instead of a per-row label.
+function renderMoreSites(listId, statusId, sites, granted) {
+  const rows = sites.map((s) => {
+    const on = s.matches.some((p) => granted.includes(p));
+    const btn = el("button", {
+      className: on ? "btn switch on" : "btn switch",
+      textContent: on ? msg("pp_on", "On") : msg("pp_turnOn", "Turn on"),
+      disabled: isLocked(),
+    });
+    btn.setAttribute("aria-pressed", String(on));
+    btn.setAttribute("aria-label", msg("pp_everydayFor", "Clotr on $1", s.name));
+    btn.addEventListener("click", () => setMoreSite(s, !on, statusId));
+    return el("li", {}, [el("span", { className: "grow" }, [el("b", { textContent: s.name })]), btn]);
+  });
+  $(listId).replaceChildren(...rows);
+}
+
+// Same idea as setEverydaySite, for one search or support site: the ask comes first, in the same click, and
+// nothing about it is stored beyond what the browser already remembers as a grant.
+async function setMoreSite(s, on, statusId) {
+  if (on) {
+    say(statusId, "");
+    const yes = await Sites.requestMoreSites([s.name]);
+    if (!yes)
+      say(
+        statusId,
+        msg(
+          "ev_refused",
+          "Nothing was switched on: the browser's question was closed or answered No. Tick and try again, or switch them on later in Settings.",
+        ),
+      );
+  } else {
+    say(statusId, "");
+    await chrome.permissions.remove({ origins: s.matches });
+  }
+  await refreshSites();
+}
+
+// "Everywhere I type": one switch for the broad permission itself, not a list, so it reads the browser's own
+// grant (passed in, since userSitePatterns() excludes the broad origin) rather than anything stored.
+function renderEverywhereSwitch(on) {
+  const btn = $("everywhere-switch");
+  btn.className = on ? "btn switch on" : "btn switch";
+  btn.textContent = on ? msg("pp_on", "On") : msg("pp_turnOn", "Turn on");
+  btn.setAttribute("aria-pressed", String(on));
+  btn.disabled = isLocked();
+}
+
+// Same shape as setMoreSite, for the one broad origin: the ask comes first, in the same click, and switching off
+// just removes the grant Clotr asked for.
+async function setEverywhere(on) {
+  say("everywhere-status", "");
+  if (on) {
+    const yes = await Sites.requestEverywhere();
+    if (!yes)
+      say(
+        "everywhere-status",
+        msg(
+          "ev_refused",
+          "Nothing was switched on: the browser's question was closed or answered No. Tick and try again, or switch them on later in Settings.",
+        ),
+      );
+  } else {
+    await chrome.permissions.remove({ origins: [Sites.EVERYWHERE_ORIGIN] });
+  }
+  await refreshSites();
+}
 
 // Email and chat apps: a switch per app on the list, then any other site you switched on as "not an AI".
 function renderEverydaySites(granted) {
@@ -1117,9 +1325,12 @@ function renderSettings() {
   renderHelper();
   renderTourniquet();
   renderBandage();
-  const everydayHost = (p) => Sites.isEveryday(new URL(p.replace(/\*$/, "")).hostname, state.siteKinds);
+  const hostOf = (p) => new URL(p.replace(/\*$/, "")).hostname;
+  const everydayHost = (p) => Sites.isEveryday(hostOf(p), state.siteKinds);
+  const searchHost = (p) => Sites.isSearchSite(hostOf(p));
+  const supportHost = (p) => Sites.isSupportSite(hostOf(p));
   const userItems = state.userSites
-    .filter((p) => !everydayHost(p))
+    .filter((p) => !everydayHost(p) && !searchHost(p) && !supportHost(p))
     .map((p) => {
       const btn = el("button", { className: "btn", textContent: msg("pp_remove", "Remove") });
       btn.addEventListener("click", () => removeUserSite(p));
@@ -1140,6 +1351,12 @@ function renderSettings() {
   $("user-sites").replaceChildren(...userItems);
   $("user-sites-empty").hidden = userItems.length > 0;
   renderEverydaySites(state.userSites.filter(everydayHost));
+  renderMoreSites("search-sites", "search-status", Sites.SEARCH_SITES, state.userSites.filter(searchHost));
+  renderMoreSites("support-sites", "support-status", Sites.SUPPORT_SITES, state.userSites.filter(supportHost));
+  renderEverywhereSwitch(state.everywhereOn);
+  // "Pick sites one by one instead" opens itself once an email, chat or support site inside it is already
+  // on, so a switch someone already flipped is never left hidden behind the fold.
+  if (state.userSites.some((p) => everydayHost(p) || supportHost(p))) $("pick-sites").open = true;
 
   // Named list from ai-sites.json; falls back to the raw manifest patterns.
   const tools = state.builtInTools.length
@@ -1325,8 +1542,11 @@ function renderTourniquet() {
   const t = tourniquetOn();
   // Clotr Antibody's 30-day line offers Tourniquet to someone on their own: not while it's on, settings are
   // locked, or Tourniquet is held back in this build.
-  $("ss-tq30").hidden = Boolean(t) || isLocked() || !FEATURES.tourniquet;
-  for (const id of ["tq-chip", "tq-line", "tq-card", "tq-keeps-note"]) $(id).hidden = !t;
+  if ($("ss-tq30")) $("ss-tq30").hidden = Boolean(t) || isLocked() || !FEATURES.tourniquet;
+  // The Overview row only earns its place once Tourniquet is protecting someone; otherwise Scam help stays
+  // folded in Settings and the quiet day-link (renderScamHelpToday) covers the rest.
+  if ($("ss-row")) $("ss-row").hidden = !t || (!FEATURES.scamcheck && !FEATURES.practice);
+  for (const id of ["tq-chip", "tq-line", "tq-card", "tq-keeps-note"]) if ($(id)) $(id).hidden = !t;
   if (!t) return disarmTourniquetOff();
   const child = t.for === "child";
   const scam = t.for === "after_scam"; // the grown-up's rules, for 30 days (Scam Shield)
@@ -1429,19 +1649,23 @@ function showTourniquetCard() {
   selectTab("settings");
   $("tq-title").focus();
 }
-$("tq-chip").addEventListener("click", showTourniquetCard);
-$("tq-line-open").addEventListener("click", showTourniquetCard);
+$("tq-chip")?.addEventListener("click", showTourniquetCard);
+$("tq-line-open")?.addEventListener("click", showTourniquetCard);
 
 let tourniquetOffArmed = null;
+// Tourniquet held back: there's no switch left to disarm, and renderTourniquet() calls this on every
+// render (it's always "off" with nothing to turn off), so this has to be the quiet no-op it looks like.
 function disarmTourniquetOff() {
   clearTimeout(tourniquetOffArmed);
   tourniquetOffArmed = null;
-  const off = $("tq-switch").querySelector('[data-for="off"]');
-  off.textContent = msg("pp_tqOff", "Off");
-  off.classList.remove("confirm");
-  $("tq-off-msg").textContent = "";
+  const off = $("tq-switch")?.querySelector('[data-for="off"]');
+  if (off) {
+    off.textContent = msg("pp_tqOff", "Off");
+    off.classList.remove("confirm");
+  }
+  if ($("tq-off-msg")) $("tq-off-msg").textContent = "";
 }
-$("tq-switch").addEventListener("click", async (e) => {
+$("tq-switch")?.addEventListener("click", async (e) => {
   const b = e.target.closest("button");
   const t = tourniquetOn();
   if (!b || !t || isLocked()) return;
@@ -1481,6 +1705,11 @@ function selectTab(name) {
   if (name === "overview") renderOverview(); // chart needs a visible panel to measure its width
 }
 for (const t of TABS) $(`tab-${t}`).addEventListener("click", () => selectTab(t));
+$("caught-what").addEventListener("click", () => {
+  selectTab("settings");
+  $("responses-heading")?.scrollIntoView({ block: "start" });
+});
+$("caught-settings").addEventListener("click", () => selectTab("settings"));
 
 for (const b of document.querySelectorAll(".range button")) {
   b.addEventListener("click", () => {
@@ -1577,7 +1806,7 @@ function tourniquetEndedNow() {
 }
 function showTourniquetEnd() {
   const show = Boolean(tourniquetEndedNow());
-  $("tq-end").hidden = !show;
+  if ($("tq-end")) $("tq-end").hidden = !show;
   if (show) $("everyday-offer").hidden = $("whats-new").hidden = true;
   return show;
 }
@@ -1604,9 +1833,9 @@ async function answerTourniquetEnd(next) {
       ].find((n) => n?.checkVisibility()) || $("tab-overview")
     ).focus();
 }
-$("tq-end-more").addEventListener("click", () => answerTourniquetEnd(Sites.afterScam(Date.now())));
-$("tq-end-adult").addEventListener("click", () => answerTourniquetEnd({ for: "adult", since: Date.now() }));
-$("tq-end-ok").addEventListener("click", () => answerTourniquetEnd(null));
+$("tq-end-more")?.addEventListener("click", () => answerTourniquetEnd(Sites.afterScam(Date.now())));
+$("tq-end-adult")?.addEventListener("click", () => answerTourniquetEnd({ for: "adult", since: Date.now() }));
+$("tq-end-ok")?.addEventListener("click", () => answerTourniquetEnd(null));
 
 let offerMounted = false;
 async function showEverydayOffer() {
@@ -1695,6 +1924,7 @@ async function init() {
     spotted: stored.spotted || {},
     bandage: stored.bandage || {},
     userSites: await Sites.userSitePatterns(),
+    everywhereOn: Sites.everywhereGranted((await chrome.permissions.getAll()).origins),
     builtInTools: await loadBuiltInTools(),
     siteKinds: stored.siteKinds || {},
     siteScopes: stored.siteScopes || {},

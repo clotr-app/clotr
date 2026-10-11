@@ -5,6 +5,7 @@
 "use strict";
 
 const { detect, redact, fingerprint, addressCore, msg, practiceNotice } = globalThis.Clotr;
+const Sites = globalThis.ClotrSites;
 const $ = (id) => document.getElementById(id);
 // Which held-back features this build ships (`clotr_features` in manifest.json).
 const FEATURES = chrome.runtime.getManifest().clotr_features || {};
@@ -292,16 +293,6 @@ if (new URLSearchParams(location.search).has("welcome")) {
       if (await checkPinned()) clearInterval(poll);
     }, 1500);
   });
-  // Clotr Antibody's two pages, each in a new tab beside this one.
-  for (const [id, page] of [
-    ["ss-welcome-check", "check.html"],
-    ["ss-welcome-practice", "practice.html"],
-  ])
-    $(id).addEventListener("click", () => chrome.tabs.create({ url: chrome.runtime.getURL(page) }));
-  // Held back features get no door here.
-  $("ss-welcome-check").hidden = !FEATURES.scamcheck;
-  $("ss-welcome-practice").hidden = !FEATURES.practice;
-  $("ss-welcome").hidden = !FEATURES.scamcheck && !FEATURES.practice;
   $("skip").addEventListener("click", async () => {
     const tab = await chrome.tabs.getCurrent();
     if (tab?.id) chrome.tabs.remove(tab.id);
@@ -313,8 +304,128 @@ if (new URLSearchParams(location.search).has("welcome")) {
     if (FEATURES.tourniquet) $("tq-offer").hidden = false; // Tourniquet's one line, right after the card
     if (FEATURES.lookback) $("lb-offer").hidden = false; // Look back's one line, after Try it
     await globalThis.ClotrEverydayOffer.mount($("everyday-offer"));
-    $("everyday-offer").hidden = false;
+    await mountMoreSitesOffer($("more-sites-offer"));
+    // Something in the fold is already on (the welcome page reopened by someone who'd already picked a
+    // site or two): open it, so nothing someone turned on is hidden.
+    const { origins = [] } = await chrome.permissions.getAll();
+    if (Sites.grantedEverydayApps(origins).length || Sites.grantedMoreSites(origins).length)
+      $("where-pick-sites").open = true;
+    mountWhereOffer();
+    $("where-offer").hidden = false;
   });
+}
+
+// "Where should Clotr check?": either button settles the question, so both close the card. "AI chats only"
+// does nothing else; the other asks for the broad permission in the same click, the same flow Settings'
+// own "Everywhere I type" switch uses, and only closes the card once the browser says yes.
+function mountWhereOffer() {
+  $("where-ai-only").addEventListener("click", () => {
+    $("where-offer").hidden = true;
+  });
+  $("where-everywhere").addEventListener("click", async () => {
+    const status = $("where-status");
+    status.textContent = "";
+    const yes = await Sites.requestEverywhere();
+    if (yes) $("where-offer").hidden = true;
+    else
+      status.textContent = msg(
+        "ev_refused",
+        "Nothing was switched on: the browser's question was closed or answered No. Tick and try again, or switch them on later in Settings.",
+      );
+  });
+}
+
+// The offer to use Clotr on search engines and support chats too, right after the email/chat-apps card.
+// Simpler than that one: nothing here is ever already off-to-be-removed, since the popup's Settings is where
+// an already-on site gets switched off again.
+async function mountMoreSitesOffer(card) {
+  const groups = card.querySelector("#ms-groups");
+  const go = card.querySelector("#ms-go");
+  const status = card.querySelector("#ms-status");
+  const rows = new Map(); // site name → { box, tag }
+  let on = new Set();
+  let asking = false;
+
+  groups.replaceChildren(
+    ...[
+      [Sites.SEARCH_SITES, msg("ms_search", "Search engines")],
+      [Sites.SUPPORT_SITES, msg("ms_support", "Support chats on websites")],
+    ].map(([list, legend]) =>
+      el("fieldset", { className: "ev-group" }, [
+        el("legend", { textContent: legend }),
+        ...list.map((s) => {
+          const box = el("input", { type: "checkbox", value: s.name });
+          const tag = el("span", { className: "ev-tag", textContent: msg("ev_on", "On"), hidden: true });
+          rows.set(s.name, { box, tag });
+          box.addEventListener("change", update);
+          return el("label", { className: "ev-app" }, [box, el("span", { textContent: s.name }), tag]);
+        }),
+      ]),
+    ),
+  );
+
+  const added = () => [...rows].filter(([name, r]) => r.box.checked && !on.has(name)).map(([name]) => name);
+  function update() {
+    const toAdd = added();
+    go.hidden = on.size === rows.size;
+    go.setAttribute("aria-disabled", String(!toAdd.length || asking));
+    go.textContent =
+      toAdd.length <= 2 && toAdd.length
+        ? msg("ev_switchOnNames", "Switch on $1", globalThis.ClotrEverydayOffer.listOf(toAdd))
+        : toAdd.length
+          ? msg("ev_switchOnCount", "Switch on $1 apps", toAdd.length)
+          : msg("ev_switchOn", "Switch on");
+  }
+  function setOn(names) {
+    const now = new Set(names);
+    for (const [name, { box, tag }] of rows) {
+      const isOn = now.has(name);
+      box.checked = isOn;
+      box.disabled = isOn; // already on: switched off again in Settings, not here
+      box.parentElement.classList.toggle("on", isOn);
+      tag.hidden = !isOn;
+    }
+    on = now;
+    update();
+  }
+  async function refresh() {
+    const { origins = [] } = await chrome.permissions.getAll();
+    setOn(Sites.grantedMoreSites(origins));
+  }
+
+  go.addEventListener("click", () => {
+    if (asking) return;
+    const toAdd = added();
+    if (!toAdd.length) return;
+    chrome.storage.local.set({ moreSitesOffer: "done" }).catch(() => {});
+    asking = true;
+    status.textContent = "";
+    Sites.requestMoreSites(toAdd).then(async (yes) => {
+      asking = false;
+      if (!yes) {
+        await refresh().catch(() => {});
+        status.textContent = msg(
+          "ev_refused",
+          "Nothing was switched on: the browser's question was closed or answered No. Tick and try again, or switch them on later in Settings.",
+        );
+      } else {
+        const next = new Set(on);
+        for (const name of toAdd) next.add(name);
+        setOn([...next]);
+        status.textContent = msg(
+          "ev_onFor",
+          "✓ On for $1, in tabs you already have open too.",
+          globalThis.ClotrEverydayOffer.listOf(toAdd),
+        );
+      }
+      status.classList.toggle("done", yes);
+    });
+  });
+
+  chrome.permissions.onAdded?.addListener(() => refresh().catch(() => {}));
+  chrome.permissions.onRemoved?.addListener(() => refresh().catch(() => {}));
+  update();
+  await refresh().catch(() => {});
 }
 
 // Browsers restore form fields on Back/Forward and after a crash. Details typed here but not

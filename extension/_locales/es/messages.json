@@ -23,6 +23,9 @@
   "type_openai_key": {
     "message": "Clave de API de OpenAI"
   },
+  "type_xai_key": {
+    "message": "Clave de API de xAI"
+  },
   "type_google_api_key": {
     "message": "Clave de API de Google"
   },
@@ -143,6 +146,15 @@
   "coverIt": {
     "message": "Ocultarlo"
   },
+  "pc_exit": {
+    "message": "Salida rápida"
+  },
+  "pc_exitLabel": {
+    "message": "Salida rápida: cierra todas las páginas de Clotr abiertas"
+  },
+  "pc_exitHint": {
+    "message": "Cierra todas las páginas de Clotr abiertas, incluida esta"
+  },
   "leaveIt": {
     "message": "Dejarlo"
   },
@@ -151,6 +163,15 @@
   },
   "leaveItSend": {
     "message": "Dejarlo y enviar"
+  },
+  "noticeCover": {
+    "message": "Cubrirlo"
+  },
+  "noticeSendAsIs": {
+    "message": "Enviarlo tal cual"
+  },
+  "noticeWhy": {
+    "message": "¿Por qué?"
   },
   "ok": {
     "message": "Vale"
@@ -181,11 +202,17 @@
   "backToMessage": {
     "message": "Volver a mi mensaje (Esc)"
   },
+  "backToSearch": {
+    "message": "Volver a mi búsqueda (Esc)"
+  },
   "dialogTitle": {
     "message": "⚠️ Esto parece privado"
   },
   "dialogLead": {
     "message": "Si lo envías, el servicio de IA verá:"
+  },
+  "dialogLeadSearch": {
+    "message": "Si buscas esto, sale como parte de tu búsqueda:"
   },
   "dialogNote": {
     "message": "Clotr lo revisó en tu ordenador y todavía no se ha enviado nada. «Ocultarlo» lo cambia por una etiqueta como $p1$.",
@@ -202,16 +229,25 @@
     "message": "Teclado: Alt+Mayús+C salta aquí, Intro elige, Esc vuelve a tu mensaje."
   },
   "noticeTitle": {
-    "message": "⚠️ Atención"
+    "message": "⚠️ Antes de enviar esto"
   },
   "noticeContains": {
     "message": "Tu mensaje contiene "
   },
+  "noticeContainsSearch": {
+    "message": "Tu búsqueda contiene "
+  },
   "noticeShared": {
     "message": ". Si lo envías, esta IA lo recibe."
   },
+  "noticeSharedSearch": {
+    "message": ". Si lo envías, sale como parte de tu búsqueda."
+  },
   "noticeSharedBulk": {
     "message": " Si lo envías, esta IA lo recibe."
+  },
+  "noticeSharedBulkSearch": {
+    "message": " Si lo envías, sale como parte de tu búsqueda."
   },
   "noticeFileHint": {
     "message": "Para que siga siendo privado, quita el archivo antes de enviar."
@@ -234,6 +270,15 @@
   },
   "teamKindAnon": {
     "message": "Un tipo que añadió tu organización"
+  },
+  "truncatedLine": {
+    "message": "Este mensaje era demasiado largo para revisarlo del todo, así que una parte no se revisó."
+  },
+  "truncatedTitle": {
+    "message": "ℹ️ Una parte no se revisó"
+  },
+  "truncatedText": {
+    "message": "Este mensaje era demasiado largo para revisarlo del todo, así que una parte no se revisó. No se encontró nada en la parte que Clotr sí revisó, así que échale un vistazo tú al resto antes de enviarlo."
   },
   "noticeUpdated": {
     "message": "Clotr se acaba de actualizar. Recarga esta página para que pueda guardar tus decisiones."
@@ -261,6 +306,9 @@
   },
   "rpt_includeThisSite": {
     "message": "Incluir este sitio ($1)"
+  },
+  "rate_rateClotr": {
+    "message": "Valorar Clotr"
   },
   "whyFound": {
     "message": "Clotr encontró lo que parece: $p1$. ",
@@ -328,6 +376,14 @@
       }
     }
   },
+  "bulkSearch": {
+    "message": "Esta búsqueda tiene $p1$.",
+    "placeholders": {
+      "p1": {
+        "content": "$1"
+      }
+    }
+  },
   "tipNew": {
     "message": "Nuevo: "
   },
@@ -388,14 +444,6 @@
   },
   "tipMineDone": {
     "message": "Guardado en tu caja fuerte. Clotr vigilará siempre este dato ($p1$), se escriba como se escriba.",
-    "placeholders": {
-      "p1": {
-        "content": "$1"
-      }
-    }
-  },
-  "tipShareDone": {
-    "message": "Guardado. Este dato ($p1$) se puede compartir, así que Clotr solo lo contará.",
     "placeholders": {
       "p1": {
         "content": "$1"
@@ -643,6 +691,18 @@
   "popup_aiToolsYouAdded": {
     "message": "Chats de IA que añadiste"
   },
+  "popup_whereClotrChecks": {
+    "message": "Dónde revisa Clotr"
+  },
+  "popup_aiChats": {
+    "message": "Chats de IA"
+  },
+  "popup_builtinAlwaysOn": {
+    "message": "Tus chats de IA incluidos están siempre activos"
+  },
+  "popup_pickSitesOneByOne": {
+    "message": "Elegir sitios uno por uno en su lugar"
+  },
   "popup_noneYetWhenAPage": {
     "message": "Ninguna todavía. Cuando una página parece un chat de IA, el icono de Clotr muestra un punto ámbar. Abre esta ventana allí para añadirla."
   },
@@ -828,6 +888,15 @@
   "pp_addedSite": {
     "message": "Sitio de IA que añadiste"
   },
+  "pp_noAccess": {
+    "message": "Tu navegador no ha dejado entrar a Clotr en este sitio, así que no puede avisarte aquí."
+  },
+  "pp_allowHere": {
+    "message": "Permitir Clotr en este sitio"
+  },
+  "pp_allowNo": {
+    "message": "Tu navegador no lo permitió, así que Clotr todavía no puede avisarte aquí. Usa el botón para pedirlo de nuevo."
+  },
   "pp_willProtect": {
     "message": "Protegerá: $p1$",
     "placeholders": {
@@ -891,6 +960,50 @@
       },
       "p3": {
         "content": "$3"
+      }
+    }
+  },
+  "pp_whatClotrChecks": {
+    "message": "Lo que Clotr revisa"
+  },
+  "pp_itemCovered": {
+    "message": "$p1$ se cubrió.",
+    "placeholders": {
+      "p1": {
+        "content": "$1"
+      }
+    }
+  },
+  "pp_itemSent": {
+    "message": "$p1$ se envió tal cual.",
+    "placeholders": {
+      "p1": {
+        "content": "$1"
+      }
+    }
+  },
+  "pp_caughtSum": {
+    "message": "$p1$ detectados en los últimos $p2$ días. $p3$ cubiertos, $p4$ enviados tal cual.",
+    "placeholders": {
+      "p1": {
+        "content": "$1"
+      },
+      "p2": {
+        "content": "$2"
+      },
+      "p3": {
+        "content": "$3"
+      },
+      "p4": {
+        "content": "$4"
+      }
+    }
+  },
+  "pp_caughtNone": {
+    "message": "Nada detectado aquí en los últimos $p1$ días.",
+    "placeholders": {
+      "p1": {
+        "content": "$1"
       }
     }
   },
@@ -1224,10 +1337,10 @@
     "message": "Cuéntale a Clotr un poco sobre ti y vigilará estos datos en los chats de IA, se escriban como se escriban. Guarda una"
   },
   "vault_oneWayFingerprint": {
-    "message": "huella de un solo sentido"
+    "message": "huella cifrada"
   },
   "vault_leadEnd": {
-    "message": "de cada dato, nunca el dato, así que quien abriera el almacenamiento de esta extensión no encontraría nada legible. Son unos dos minutos. Un dato por línea, y sáltate lo que quieras."
+    "message": "de cada dato, nunca el dato, así que quien abriera el almacenamiento de esta extensión no vería lo que escribiste. Son unos dos minutos. Un dato por línea, y sáltate lo que quieras."
   },
   "vault_yourName": {
     "message": "Tu nombre"
@@ -1299,7 +1412,7 @@
     "message": "Aquí no hay nada todavía."
   },
   "vault_savedAsOneWayFingerprints": {
-    "message": "Guardado como huellas de un solo sentido en este dispositivo"
+    "message": "Guardado como huellas cifradas en este dispositivo"
   },
   "vault_janeDoe10Janie": {
     "message": "María García\nMari"
@@ -1804,7 +1917,7 @@
     "message": "Tu caja fuerte"
   },
   "st_t14": {
-    "message": "Cada dato es una huella de un solo sentido (o, para números de documentos, solo un formato como"
+    "message": "Cada dato es una huella cifrada (o, para números de documentos, solo un formato como"
   },
   "st_t1": {
     "message": "). Los datos que escribiste no se guardan."
@@ -2431,7 +2544,7 @@
     "message": "Dile a Clotr qué proteger"
   },
   "hp_step1Text": {
-    "message": "Su nombre, sus teléfonos, su dirección, su correo y los nombres de su familia. Clotr solo guarda huellas de un solo sentido, nunca los datos."
+    "message": "Su nombre, sus teléfonos, su dirección, su correo y los nombres de su familia. Clotr solo guarda huellas cifradas, nunca los datos."
   },
   "hp_addTheirDetails": {
     "message": "Añadir sus datos"
@@ -2518,7 +2631,7 @@
     "message": "Un ayudante en tu navegador. Cuando escribes a un chat de IA como ChatGPT, Gemini o Copilot, o en un correo o una app de chat donde lo activaste, se da cuenta de las cosas privadas antes de que las envíes, como una contraseña, tu teléfono, tu dirección o una tarjeta."
   },
   "sh_whatYoullSeeText": {
-    "message": "Aparece una nota en la esquina del chat, como \"Atención, tu mensaje contiene un número de teléfono.\""
+    "message": "Aparece una nota en la esquina del chat, diciendo que tu mensaje contiene un número de teléfono."
   },
   "sh_hideItText": {
     "message": "lo quita de tu mensaje."
@@ -3005,6 +3118,14 @@
       }
     }
   },
+  "justSentTextSearch": {
+    "message": "Tu búsqueda llevaba $p1$. Si fue un error, bórrala de tu historial de búsqueda si puedes. La próxima vez Clotr puede preguntarte antes.",
+    "placeholders": {
+      "p1": {
+        "content": "$1"
+      }
+    }
+  },
   "pp_addedEveryday": {
     "message": "Correo o chat que activaste"
   },
@@ -3047,6 +3168,24 @@
   },
   "popup_everydaySitesWhy": {
     "message": "Apagado hasta que actives uno. Tu navegador te pregunta antes, solo por ese sitio. Allí Clotr avisa y oculta como en un chat de IA, y nunca lee las respuestas de nadie."
+  },
+  "popup_searchSites": {
+    "message": "Buscadores"
+  },
+  "popup_searchSitesWhy": {
+    "message": "Un buscador no es un chat, así que tiene su propio interruptor. Apagado hasta que actives uno, y tu navegador te pregunta antes, solo por ese sitio."
+  },
+  "popup_supportSites": {
+    "message": "También en los chats de ayuda de los sitios web"
+  },
+  "popup_supportSitesWhy": {
+    "message": "Apagado hasta que actives uno. Tu navegador te pregunta antes, solo por la dirección propia de ese widget, en cualquier sitio donde una empresa lo use. Allí Clotr avisa y oculta como en un chat de IA."
+  },
+  "popup_everywhere": {
+    "message": "En todas partes donde escribo"
+  },
+  "popup_everywhereWhy": {
+    "message": "Apagado hasta que lo actives. Tu navegador te pregunta una vez, por todos los sitios. Allí Clotr solo revisa un cuadro que parezca un chat: nunca un campo normal para tu nombre, tu dirección, tu tarjeta o tu contraseña."
   },
   "sj_everydaySites": {
     "message": "Correos y chats que activaste"
@@ -3344,11 +3483,38 @@
   "pp_hideList": {
     "message": "Ocultar la lista"
   },
+  "vt_whereTitle": {
+    "message": "¿Dónde debería revisar Clotr?"
+  },
+  "vt_whereLead": {
+    "message": "Clotr ya revisa tus chats de IA. También puede llegar a un cuadro de chat en cualquier otra página web, nunca a un formulario de compra o de inicio de sesión."
+  },
+  "vt_aiChatsOnly": {
+    "message": "Solo chats de IA"
+  },
+  "vt_aiChatsAndEverywhere": {
+    "message": "Chats de IA y en todas partes donde escribo"
+  },
   "ev_title": {
     "message": "¿Usar Clotr también en tu correo y tus apps de chat?"
   },
   "ev_welcomeAsk": {
     "message": "Marca las que usas. Luego tu navegador te pregunta una sola vez, solo por esos sitios."
+  },
+  "ms_title": {
+    "message": "¿Usar Clotr también en buscadores y chats de ayuda?"
+  },
+  "ms_welcomeAsk": {
+    "message": "Marca los que usas. Luego tu navegador te pregunta una sola vez, solo por esos sitios."
+  },
+  "ms_hint": {
+    "message": "Cámbialo cuando quieras: el botón de Clotr en la barra de herramientas → Ajustes."
+  },
+  "ms_search": {
+    "message": "Buscadores"
+  },
+  "ms_support": {
+    "message": "Chats de ayuda de los sitios web"
   },
   "ev_welcomeThere": {
     "message": "Allí, Clotr avisa y oculta como en un chat de IA, y nunca lee las respuestas de nadie."
@@ -3572,6 +3738,12 @@
   "ad_otp": {
     "message": "Desactiva y vuelve a activar la verificación en dos pasos en esa cuenta. Así se crea una clave nueva y la antigua deja de servir."
   },
+  "type_backup_codes": {
+    "message": "Códigos de respaldo"
+  },
+  "ad_backup_codes": {
+    "message": "Genera unos códigos de respaldo nuevos para esa cuenta ahora mismo. La lista antigua deja de servir en cuanto lo hagas."
+  },
   "mv_holdsTourniquet": {
     "message": "Tourniquet"
   },
@@ -3680,6 +3852,15 @@
   "ss_settingsLead": {
     "message": "Cuando alguien te pide algo, Clotr te ayuda. Sus avisos dicen quién pide de verdad códigos, números de tarjeta y tarjetas regalo."
   },
+  "ss_helpTitle": {
+    "message": "Ayuda con estafas"
+  },
+  "ss_helpLead": {
+    "message": "Detecta una estafa, practica con seis casos inventados o imprime una guía de seguridad."
+  },
+  "ss_todayAsk": {
+    "message": "¿Acabas de ver uno de esos avisos?"
+  },
   "ss_practiceSpotting": {
     "message": "Practicar con estafas"
   },
@@ -3691,9 +3872,6 @@
   },
   "ss_tq30Open": {
     "message": "Tourniquet puede preguntar primero durante 30 días."
-  },
-  "ss_welcomeText": {
-    "message": "Cuando alguien te pide un código, los números de tu tarjeta o tarjetas regalo, el aviso de Clotr dice quién los pide de verdad. ¿Te preocupa un mensaje? Clotr te da una segunda opinión."
   },
   "ss_practiceSix": {
     "message": "Practicar con seis estafas inventadas"
@@ -3887,7 +4065,7 @@
     "message": "Tourniquet está desactivado, y sus propios ajustes están como estaban. Las apps de correo y chat siguen activadas hasta que las desactives en Ajustes."
   },
   "hp_tqDetailsChild": {
-    "message": "Su nombre, su dirección, su teléfono y su correo, los nombres de su familia, y palabras como su colegio o su equipo. Clotr solo guarda huellas de un solo sentido, nunca los datos."
+    "message": "Su nombre, su dirección, su teléfono y su correo, los nombres de su familia, y palabras como su colegio o su equipo. Clotr solo guarda huellas cifradas, nunca los datos."
   },
   "hp_tqShareOne": {
     "message": "1 dato está marcado como «Se puede compartir», así que Clotr no avisa de él."
@@ -4138,6 +4316,9 @@
   "pa_filesHeld": {
     "message": "retenidos hasta que la persona responde, cuando contienen un tipo de dato marcado como Preguntar antes de enviar"
   },
+  "pa_filesHeldAll": {
+    "message": "retenidos hasta que confirmes, con cualquier cosa que Clotr encuentre dentro"
+  },
   "vault_findClotrPhone": {
     "message": "Busca Clotr"
   },
@@ -4148,7 +4329,7 @@
     "message": "Este cuadro es solo para practicar y nada de lo que escribas aquí sale de tu equipo. En un chat de IA de verdad, el aviso aparece arriba de la pantalla y sigue a la vista mientras te desplazas."
   },
   "cmdTitle": {
-    "message": "⚠️ Atención: copiaste un comando"
+    "message": "⚠️ Copiaste un comando"
   },
   "cmdDownload": {
     "message": "Descarga algo y lo ejecuta en tu ordenador."
@@ -4633,6 +4814,15 @@
   },
   "sc_tourniquet": {
     "message": "Tourniquet puede preguntar antes durante 30 días"
+  },
+  "sc_askSomeoneTitle": {
+    "message": "Pedir primero a alguien"
+  },
+  "sc_askSomeoneCopy": {
+    "message": "Copiar la nota"
+  },
+  "sc_askSomeoneCopied": {
+    "message": "Copiada. Pégala donde quieras mostrarla."
   },
   "sc_again": {
     "message": "Revisar otro mensaje"
@@ -5153,7 +5343,7 @@
     "message": "Mira lo que ya le contaste a la IA"
   },
   "lb_lead": {
-    "message": "Tu historial de ChatGPT, Claude o Gemini, leído en este ordenador a partir de tu propia exportación. Clotr te muestra qué chats contienen una contraseña, una clave, un número de tarjeta o de documento, una dirección o el lugar de una foto, para que puedas borrarlos."
+    "message": "Tu historial de ChatGPT, Claude, Gemini o Copilot, leído en este ordenador a partir de tu propia exportación. Clotr te muestra qué chats contienen una contraseña, una clave, un número de tarjeta o de documento, una dirección o el lugar de una foto, para que puedas borrarlos."
   },
   "lb_promises": {
     "message": "Se lee aquí, nunca se sube\nSolo lo que escribiste tú, nunca las respuestas de la IA\nNo se guarda nada salvo los recuentos"
@@ -5172,6 +5362,9 @@
   },
   "lb_geminiSteps": {
     "message": "Ve a Google Takeout y haz clic en Deselect all.\nMarca My Activity, haz clic en All activity data included, luego en Deselect all y marca solo Gemini Apps.\nEn Multiple formats, elige JSON para My Activity, y elige un archivo .zip.\nGoogle te envía un enlace por correo. Puede tardar unas horas o unos días."
+  },
+  "lb_copilotSteps": {
+    "message": "Ve a tu panel de privacidad e inicia sesión con la cuenta con la que usas Copilot.\nBusca el historial de actividad de Copilot (o el del chat de Copilot, o el de Copilot en las aplicaciones de Microsoft 365), y elige Export.\nMicrosoft descarga un archivo CSV al instante, sin esperar un correo."
   },
   "lb_menuNames": {
     "message": "Los nombres de los menús están en inglés, como los escribe cada empresa."
@@ -5195,7 +5388,7 @@
     "message": "Es una carpeta"
   },
   "lb_kinds": {
-    "message": "El archivo .zip tal como llegó, la carpeta que descomprimiste o el archivo conversations.json o MyActivity.json que contiene."
+    "message": "El archivo .zip tal como llegó, la carpeta que descomprimiste, el archivo conversations.json o MyActivity.json que contiene, o un archivo CSV de la exportación de Copilot."
   },
   "lb_parts": {
     "message": "Si eliges varios archivos a la vez (como conversations-000.zip y conversations-001.zip), Clotr los lee todos como una sola exportación."
@@ -5285,7 +5478,7 @@
     "message": "Abrir el chat"
   },
   "lb_openActivity": {
-    "message": "Abrir tu actividad de Gemini"
+    "message": "Abrir tu actividad de $1"
   },
   "lb_askDelete": {
     "message": "Pedir a $1 que lo borre"
@@ -5298,6 +5491,9 @@
   },
   "lb_geminiDays": {
     "message": "Google guarda Gemini como una lista de peticiones, no de chats, así que Clotr las agrupa por día."
+  },
+  "lb_copilotDays": {
+    "message": "Microsoft guarda la actividad de Copilot como una lista de peticiones, no de chats, así que Clotr las agrupa por día."
   },
   "lb_notRead": {
     "message": "Lo que Clotr no pudo leer"
@@ -5327,7 +5523,7 @@
     "message": "Olvidar estos resultados"
   },
   "lb_unknown": {
-    "message": "Clotr aún no puede leer esta exportación. Lee exportaciones de ChatGPT, Claude y Gemini (Google Takeout)."
+    "message": "Clotr aún no puede leer esta exportación. Lee exportaciones de ChatGPT, Claude, Gemini (Google Takeout) y Copilot."
   },
   "lb_manifestTitle": {
     "message": "Esto es una lista de enlaces, no tu exportación"
@@ -5542,6 +5738,9 @@
   "vt_lookBackOffer": {
     "message": "¿Ya has usado ChatGPT, Claude o Gemini? Mirar atrás te muestra lo que ya les contaste."
   },
+  "vt_everywhereOffer": {
+    "message": "¿También en los cuadros de chat de otras páginas web? Tu navegador te pregunta una vez, por todos los sitios; allí Clotr solo revisa un cuadro que parezca un chat."
+  },
   "hp_extCheckLine": {
     "message": "Ya que estás, Revisión de extensiones muestra qué extensiones suyas pueden leer chats con IA."
   },
@@ -5553,5 +5752,134 @@
   },
   "tw_accDecoyFlagged": {
     "message": "“$1” estaba bien tal cual."
+  },
+  "tipAskedThere": {
+    "message": "Para cambiarlo en todos los sitios, di que sí en la página de Clotr que se acaba de abrir."
+  },
+  "cf_title": {
+    "message": "¿Avisarte menos en todos los sitios?"
+  },
+  "cf_why": {
+    "message": "Elegiste esto en un aviso de Clotr dentro de un sitio web. Un sitio web puede disfrazar ese aviso y llevar tu clic hasta él, así que Clotr te lo vuelve a preguntar aquí, en su propia página, adonde ningún sitio web puede llegar."
+  },
+  "cf_no": {
+    "message": "No, seguir avisándome"
+  },
+  "cf_yes": {
+    "message": "Sí, cambiarlo"
+  },
+  "cf_allow": {
+    "message": "¿Dejar de avisarte en todos los sitios del dato que elegiste en el aviso ($p1$)? Clotr lo sigue contando en tu historial.",
+    "placeholders": {
+      "p1": {
+        "content": "$1"
+      }
+    }
+  },
+  "cf_log": {
+    "message": "¿Dejar de avisarte en todos los sitios de: $p1$? Clotr lo sigue contando en tu historial.",
+    "placeholders": {
+      "p1": {
+        "content": "$1"
+      }
+    }
+  },
+  "cf_warn": {
+    "message": "¿Solo avisarte en todos los sitios de: $p1$, en vez de preguntarte antes de enviarlo?",
+    "placeholders": {
+      "p1": {
+        "content": "$1"
+      }
+    }
+  },
+  "cf_change": {
+    "message": "¿Cambiar en todos los sitios lo que hace Clotr con: $p1$?",
+    "placeholders": {
+      "p1": {
+        "content": "$1"
+      }
+    }
+  },
+  "cf_done": {
+    "message": "Hecho. Puedes volver a cambiarlo en Ajustes."
+  },
+  "cf_kept": {
+    "message": "No se cambió nada."
+  },
+  "cf_gone": {
+    "message": "Esta pregunta ya se respondió o es demasiado antigua. No se cambió nada."
+  },
+  "type_share_link": {
+    "message": "Código de compartir en un enlace"
+  },
+  "pp_gLinks": {
+    "message": "Enlaces"
+  },
+  "cl_remove": {
+    "message": "Quitar el código de compartir"
+  },
+  "cl_lineTitle": {
+    "message": "Solo se va el código"
+  },
+  "cl_lineText": {
+    "message": "Clotr quita el código de compartir y las partes de rastreo publicitario que conoce. El resto del enlace se queda igual."
+  },
+  "cl_leadPeople": {
+    "message": "Tu mensaje tiene un enlace con un código de compartir ($p1$) que la aplicación añadió al copiarlo. Puede decirle a la aplicación, y a veces a quien abra el enlace, que lo compartiste tú.",
+    "placeholders": {
+      "p1": {
+        "content": "$1"
+      }
+    }
+  },
+  "cl_leadAi": {
+    "message": "Tu mensaje tiene un enlace con un código de compartir ($p1$) que la aplicación añadió al copiarlo. Puede decirle a la aplicación que el enlace salió de ti.",
+    "placeholders": {
+      "p1": {
+        "content": "$1"
+      }
+    }
+  },
+  "cl_learnMore": {
+    "message": "Cómo te siguen los anuncios"
+  },
+  "tr_title": {
+    "message": "Cómo te siguen los anuncios"
+  },
+  "tr_lead": {
+    "message": "Buscaste algo una vez, y después aparecieron anuncios de eso durante días, a veces incluso en el teléfono de otra persona. Esta es la parte de eso que Clotr puede hacer algo con, y la parte que no puede."
+  },
+  "tr_step1Title": {
+    "message": "Buscarlo es lo que lo empieza"
+  },
+  "tr_step1Text": {
+    "message": "Un motor de búsqueda, una web de entradas o una aerolínea guarda lo que miraste, igual que cualquier sitio recuerda una visita. La mayoría de esas webs también llevan un pequeño script de una red publicitaria, y ese script se activa en el momento en que carga la página, avisando a la red de que estuviste ahí."
+  },
+  "tr_step2Title": {
+    "message": "La red publicitaria conecta los datos"
+  },
+  "tr_step2Text": {
+    "message": "Si tienes la misma cuenta abierta en más de un dispositivo, o dos dispositivos comparten el wifi de casa, la red publicitaria puede suponer que son la misma persona y mostrar el mismo anuncio en ambos. Nada de eso pasa dentro de un navegador, así que Clotr, o cualquier extensión, nunca lo ve."
+  },
+  "tr_stopTitle": {
+    "message": "Lo que Clotr detiene"
+  },
+  "tr_stopText": {
+    "message": "Un enlace copiado de una de estas webs suele llevar un código de rastreo metido en su dirección, algo como «fbclid=» o «gclid=», que le dice a la red que el enlace vino de ti en concreto. Clotr quita esa parte antes de que el enlace salga de tu mensaje, así que el resto de la dirección sigue funcionando y nada sobre quién lo compartió va con él."
+  },
+  "tr_cantTitle": {
+    "message": "Lo que no puede detener"
+  },
+  "tr_cantText": {
+    "message": "El script que se activa cuando una página carga por primera vez, el cruce entre tus dispositivos, y lo que una web envía directamente desde su propio servidor a la red publicitaria pasan todos antes de que un enlace se llegue a copiar, en un sitio al que Clotr no puede llegar. Un bloqueador de rastreadores, el tipo que algunos navegadores ya traen integrado y otros añaden como extensión aparte, está hecho justo para ese trabajo y se actualiza contra rastreadores nuevos todos los días. Clotr no intenta sustituirlo."
+  },
+  "tr_phoneTitle": {
+    "message": "En tu teléfono"
+  },
+  "tr_phoneText": {
+    "message": "Android ya tiene un ajuste que hace esto, que envía las búsquedas de cada app a un servicio de DNS que filtra rastreadores en vez de ser una app nueva que instalar. Abre Ajustes, luego Redes e Internet, luego DNS privado, elige «Nombre de host del proveedor de DNS privado» y escribe el nombre de host de uno de esos servicios (busca un proveedor de DNS con filtrado para encontrar un nombre de host que escribir). En un teléfono Samsung el mismo ajuste está en Conexiones, luego Más ajustes de conexión, luego DNS privado."
+  },
+  "tr_phoneLimitText": {
+    "message": "Llega a cualquier app del teléfono, al mismo dominio de una red publicitaria que bloquearía un bloqueador de navegador desde una sola pestaña. Sigue sin poder ver el registro propio de una web, ni el cruce entre cuenta y wifi que conecta tus dispositivos, el mismo límite que tocaron las secciones de arriba. Un iPhone puede hacer algo parecido con un perfil de configuración para DNS cifrado, que lleva más pasos que escribir un solo nombre de host en Android."
   }
 }

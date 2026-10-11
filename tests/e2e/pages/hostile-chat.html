@@ -8,6 +8,8 @@
     <textarea id="msg" rows="3" cols="60" placeholder="Message"></textarea>
     <button type="submit" id="send" aria-label="Send">Send</button>
   </form>
+  <input type="file" id="attach" style="display:none">
+  <div id="drop-target" style="width:200px;height:80px">drop files here</div>
   <script>
     window.__sent = [];
     const box = document.getElementById("msg");
@@ -53,6 +55,37 @@
       await new Promise((r) => setTimeout(r, 1500));
       box.value = "";
       box.dispatchEvent(new InputEvent("input", { bubbles: true, inputType: "deleteContentBackward" }));
+    };
+
+    // A page can't fake isTrusted on an event it builds itself, so this probes the attachment listeners
+    // with a file the page made up, through "change" (a fake pick on the real file input), "drop" or
+    // "paste". Resolves true if Clotr reacted.
+    const attachInput = document.getElementById("attach");
+    window.__probeFile = (kind, name, text) => {
+      const file = new File([text], name, { type: "text/plain" });
+      const dt = new DataTransfer();
+      dt.items.add(file);
+      if (kind === "change") {
+        // A page can shadow this property on one input ahead of a real pick (the browser's isolated
+        // world keeps that invisible to Clotr either way, but the trusted check guards it regardless).
+        Object.defineProperty(attachInput, "files", { value: dt.files, configurable: true });
+        attachInput.dispatchEvent(new Event("change", { bubbles: true }));
+      } else if (kind === "drop") {
+        document.getElementById("drop-target").dispatchEvent(
+          new DragEvent("drop", { dataTransfer: dt, bubbles: true, cancelable: true }),
+        );
+      } else if (kind === "paste") {
+        box.dispatchEvent(new ClipboardEvent("paste", { clipboardData: dt, bubbles: true, cancelable: true }));
+      }
+      return watch(1500);
+    };
+
+    // A page script starting its own form submission (form.requestSubmit()), with no real Enter or click.
+    // The browser marks this submit event trusted on its own.
+    window.__probeSubmit = (text) => {
+      box.value = text;
+      document.getElementById("composer").requestSubmit();
+      return watch(1500);
     };
   </script>
 </body>

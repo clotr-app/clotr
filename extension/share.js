@@ -21,13 +21,15 @@ $("copy-link").addEventListener("click", async () => {
 });
 $("open-helper").addEventListener("click", () => chrome.tabs.create({ url: chrome.runtime.getURL("helper.html") }));
 // Clotr Antibody's two pages: practice together, and a second opinion on a message they got.
-$("open-practice").addEventListener("click", () => chrome.tabs.create({ url: chrome.runtime.getURL("practice.html") }));
-$("open-check").addEventListener("click", () => chrome.tabs.create({ url: chrome.runtime.getURL("check.html") }));
-// Held back features get no door here.
-$("card-section").hidden = !FEATURES.scamcheck;
-$("card-sheet").hidden = !FEATURES.scamcheck;
-$("practice-row").hidden = !FEATURES.practice;
-$("check-row").hidden = !FEATURES.scamcheck;
+$("open-practice")?.addEventListener("click", () =>
+  chrome.tabs.create({ url: chrome.runtime.getURL("practice.html") }),
+);
+$("open-check")?.addEventListener("click", () => chrome.tabs.create({ url: chrome.runtime.getURL("check.html") }));
+// Held back features get no door here, and no element in the shipped build to hide either.
+if ($("card-section")) $("card-section").hidden = !FEATURES.scamcheck;
+if ($("card-sheet")) $("card-sheet").hidden = !FEATURES.scamcheck;
+if ($("practice-row")) $("practice-row").hidden = !FEATURES.practice;
+if ($("check-row")) $("check-row").hidden = !FEATURES.scamcheck;
 $("practice-check-heading").hidden = !FEATURES.practice && !FEATURES.scamcheck;
 
 // Tourniquet: while it's on, the guide says so and what it does, in the words its own screens use. Nothing
@@ -37,6 +39,7 @@ $("practice-check-heading").hidden = !FEATURES.practice && !FEATURES.scamcheck;
 async function showTourniquet() {
   const { tourniquet } = await chrome.storage.local.get("tourniquet");
   const t = globalThis.ClotrSites.cleanTourniquet(tourniquet);
+  if (!$("guide-tq")) return;
   $("guide-tq").hidden = !t;
   $("guide-tq-text").textContent = !t
     ? ""
@@ -75,12 +78,13 @@ $("print").addEventListener("click", () => {
   delete document.body.dataset.print;
   window.print();
 });
-$("print-card").addEventListener("click", () => {
+$("print-card")?.addEventListener("click", () => {
   document.body.dataset.print = "card";
   window.print();
 });
 window.addEventListener("afterprint", () => delete document.body.dataset.print);
-$("card-from").textContent = msg(
-  "sh_cardFrom",
-  "This card is from Clotr. It warns before most of these go out on your computer, and it's for phone calls and texts.",
-);
+if ($("card-from"))
+  $("card-from").textContent = msg(
+    "sh_cardFrom",
+    "This card is from Clotr. It warns before most of these go out on your computer, and it's for phone calls and texts.",
+  );

@@ -1,0 +1,21 @@
+<!doctype html>
+<!-- Stand-in for Brave Search's box: input[type=search] in a form, Enter or the Search button submits. -->
+<html lang="en">
+<head><meta charset="utf-8"><title>Brave Search (Clotr test page)</title></head>
+<body>
+  <form id="searchform" action="/search" method="GET">
+    <input type="search" id="q" name="q" aria-label="Search">
+    <button type="submit" id="submit-button" aria-label="Submit search">Search</button>
+  </form>
+  <script>
+    window.__sent = [];
+    document.getElementById("searchform").addEventListener("submit", (e) => {
+      e.preventDefault();
+      const box = document.getElementById("q");
+      if (!box.value) return;
+      window.__sent.push(box.value);
+      box.value = "";
+    });
+  </script>
+</body>
+</html>

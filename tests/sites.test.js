@@ -60,6 +60,12 @@ test("Protect this site on a shared host (huggingface.co) covers only that secti
   assert.notEqual(Sites.protectScope("https://huggingface.co/spaces/a/b"), "https://huggingface.co/*");
 });
 
+test("Built-in match patterns for a page: exactly the manifest pattern(s) that cover it, never the whole list", () => {
+  assert.deepEqual(Sites.builtInMatchesFor("https://chatgpt.com/c/123"), ["https://chatgpt.com/*"]);
+  assert.deepEqual(Sites.builtInMatchesFor("https://huggingface.co/chat/abc"), ["https://huggingface.co/chat/*"]);
+  assert.deepEqual(Sites.builtInMatchesFor("https://example.com/"), []);
+});
+
 test("the permission asked for is always just that one host", () => {
   assert.equal(Sites.permissionFor("https://huggingface.co/spaces/owner/my-app/*"), "https://huggingface.co/*");
   assert.equal(Sites.permissionFor("https://chat.newtool.ai/*"), "https://chat.newtool.ai/*");
@@ -253,14 +259,64 @@ test("teamHoldOf: an organization's policy that asks before sending for at least
     assert.equal(Sites.teamHoldOf(bad), false, JSON.stringify(bad));
 });
 
-test("teamHoldOf adds nothing to the policy: no holdFiles field, the same fingerprint", () => {
+test("teamHoldOf still adds nothing to the policy on its own: an admin can't set teamHold directly", () => {
   const clinic = Sites.mergePolicy({ preset: "clinic" });
-  const tried = Sites.mergePolicy({ preset: "clinic", holdFiles: false, teamHold: false });
-  assert.ok(!("holdFiles" in tried) && !("teamHold" in tried), "an admin can't set the hold");
+  const tried = Sites.mergePolicy({ preset: "clinic", teamHold: false });
+  assert.ok(!("teamHold" in tried), "an admin can't set teamHold directly");
   assert.equal(Sites.teamHoldOf(tried), true);
   assert.equal(Sites.policyFingerprint(tried), Sites.policyFingerprint(clinic));
+});
+
+// holdFiles widens the file hold past kinds set to block, to anything a file holds. Unlike teamHold, it's a real
+// field: an admin can see and set it, and it has its own entry in managed_schema.json.
+test("holdFiles: on by itself once any other setting is in force, each preset sets it, and an admin can opt out", () => {
+  for (const preset of Object.keys(Sites.PRESETS)) assert.equal(Sites.mergePolicy({ preset }).holdFiles, true, preset);
+  assert.equal(
+    Sites.mergePolicy({ requiredResponses: { email: "warn" } }).holdFiles,
+    true,
+    "a bare policy defaults on",
+  );
+  assert.equal(Sites.mergePolicy({ lockSettings: true }).holdFiles, true, "settings-only still counts as a policy");
+  assert.equal(
+    Sites.mergePolicy({ kinds: [{ name: "Matter number", formats: ["MAT-######"] }] }).holdFiles,
+    true,
+    "a team's own kind alone still counts",
+  );
+  assert.equal(
+    Sites.mergePolicy({}).holdFiles,
+    undefined,
+    "no policy at all: no field, same as before holdFiles existed",
+  );
+  assert.ok(!("holdFiles" in Sites.mergePolicy({})), "no policy at all: the field itself is absent");
+  const optedOut = Sites.mergePolicy({ preset: "clinic", holdFiles: false });
+  assert.equal(optedOut.holdFiles, false, "an admin's explicit false beats the preset's true");
+  assert.equal(
+    Sites.teamHoldOf(optedOut),
+    true,
+    "opting out of holdFiles doesn't touch teamHold's own floor-only hold",
+  );
+  // A policy that only sets holdFiles, with nothing else, is still a policy either way it's set, the same
+  // as lockSettings or allowPause alone.
+  assert.equal(Sites.mergePolicy({ holdFiles: true }).holdFiles, true);
+  assert.ok(Sites.hasPolicy(Sites.mergePolicy({ holdFiles: true })), "holdFiles alone counts as a policy");
+  assert.ok(
+    Sites.hasPolicy(Sites.mergePolicy({ holdFiles: false })),
+    "an explicit false alone still counts as a policy",
+  );
+});
+
+test("holdFiles: changing it changes the policy fingerprint, same as any other rule", () => {
+  const off = Sites.mergePolicy({ preset: "clinic", holdFiles: false });
+  const on = Sites.mergePolicy({ preset: "clinic" });
+  assert.notEqual(Sites.policyFingerprint(off), Sites.policyFingerprint(on));
+  const noFieldAtAll = Sites.mergePolicy({});
+  assert.equal(Sites.policyFingerprint(noFieldAtAll), "E2D0F7E264AD1BD8", "unchanged from before holdFiles existed");
+});
+
+test("holdFiles has its own entry in managed_schema.json, a plain boolean", () => {
   const schema = JSON.parse(fs.readFileSync(path.join(__dirname, "..", "extension", "managed_schema.json"), "utf8"));
-  assert.ok(!JSON.stringify(schema).includes("holdFiles"), "no holdFiles in the managed schema");
+  assert.equal(schema.properties.holdFiles.type, "boolean");
+  assert.ok(schema.properties.holdFiles.description.length > 0);
 });
 
 test("Team pack docs: the expanded JSON block for each preset in docs/team-rollout.md matches sites.js's PRESETS exactly (drift guard)", () => {
@@ -273,6 +329,64 @@ test("Team pack docs: the expanded JSON block for each preset in docs/team-rollo
     "docs/team-rollout.md should show one expanded block per preset in sites.js",
   );
   for (const [id, expanded] of found) assert.deepEqual(expanded, Sites.PRESETS[id], `preset ${id}`);
+});
+
+// A small, hand-rolled JSON Schema check: object/string/boolean/array, enum, properties, additionalProperties,
+// items. Enough to prove a policy fits extension/managed_schema.json without a new dependency. Returns a list of
+// problems; empty means it fits.
+function schemaProblems(schema, value, where = "policy") {
+  const type = Array.isArray(value) ? "array" : value === null ? "null" : typeof value;
+  if (schema.type && schema.type !== type) return [`${where}: expected ${schema.type}, got ${type}`];
+  const problems = [];
+  if (schema.enum && !schema.enum.includes(value)) problems.push(`${where}: "${value}" isn't one of ${schema.enum}`);
+  if (type === "object") {
+    for (const [key, v] of Object.entries(value)) {
+      const sub =
+        schema.properties?.[key] ?? (schema.additionalProperties !== true ? schema.additionalProperties : null);
+      if (!sub) problems.push(`${where}.${key}: not in the schema`);
+      else problems.push(...schemaProblems(sub, v, `${where}.${key}`));
+    }
+  }
+  if (type === "array" && schema.items)
+    value.forEach((v, i) => problems.push(...schemaProblems(schema.items, v, `${where}[${i}]`)));
+  return problems;
+}
+
+test("Team pack: the ready-made policy files in docs/team-rollout.md fit managed_schema.json", () => {
+  const schema = JSON.parse(fs.readFileSync(path.join(__dirname, "..", "extension", "managed_schema.json"), "utf8"));
+  const doc = fs.readFileSync(path.join(__dirname, "..", "docs", "team-rollout.md"), "utf8");
+  const blocks = [...doc.matchAll(/```json\n([\s\S]*?)\n```/g)].map((m) => JSON.parse(m[1]));
+
+  const chromeId = "gkgpgejhhmmhklaghdnbjbalkmpjnmab";
+  const edgeId = "hbangnmofjeaieaeamlncpcfmhbclbkj";
+  const ffId = "clotr@billiambash";
+  const chromeStyle = blocks.filter((b) => b["3rdparty"]?.extensions);
+  const firefoxStyle = blocks.filter((b) => b.policies?.["3rdparty"]?.Extensions);
+  assert.deepEqual(
+    chromeStyle.map((b) => Object.keys(b["3rdparty"].extensions)[0]).sort(),
+    [chromeId, edgeId].sort(),
+    "one ready-made block per Chromium browser id",
+  );
+  assert.equal(firefoxStyle.length, 1, "one ready-made Firefox block");
+  assert.deepEqual(Object.keys(firefoxStyle[0].policies["3rdparty"].Extensions), [ffId]);
+
+  const policies = [
+    ...chromeStyle.map((b) => Object.values(b["3rdparty"].extensions)[0]),
+    Object.values(firefoxStyle[0].policies["3rdparty"].Extensions)[0],
+  ];
+  for (const policy of policies) assert.deepEqual(schemaProblems(schema, policy), []);
+  // Every ready-made file carries the same policy (the doc's own "Example policy" above), so none of them drifts
+  // from another as the doc is edited.
+  for (const policy of policies) assert.deepEqual(policy, policies[0]);
+});
+
+test("Team pack: the Windows registry template writes the right extension ids under the right registry path", () => {
+  const doc = fs.readFileSync(path.join(__dirname, "..", "docs", "team-rollout.md"), "utf8");
+  const script = doc.match(/```powershell\n(\$policy = @\{[\s\S]*?)\n```/)[1];
+  assert.match(script, /gkgpgejhhmmhklaghdnbjbalkmpjnmab/);
+  assert.match(script, /hbangnmofjeaieaeamlncpcfmhbclbkj/);
+  assert.match(script, /Software\\Policies\\\$\(\$t\.Key\)\\3rdparty\\extensions\\\$\(\$t\.Value\)\\policy/);
+  assert.doesNotMatch(script, /Invoke-WebRequest|Invoke-RestMethod|curl|wget|http:\/\/|https:\/\//i);
 });
 
 test("Team pack: a watch format (# digit, @ letter) needs 4+ marks and no digits, up to 40 characters", () => {
@@ -450,24 +564,23 @@ test("Team kinds: policyFingerprint keeps every code printed before, and changes
   // written out here. Each preset is checked against this recipe rather than a fixed code, since a preset's own
   // code moves whenever the preset changes.
   const RESPONSES = new Set(["block", "warn", "log"]);
-  const recipe = (p) =>
-    Clotr.sha256(
-      JSON.stringify({
-        v: 1,
-        r: Object.entries(p.requiredResponses || {})
-          .filter(([id, v]) => /^[a-z0-9_]{1,64}$/.test(id) && RESPONSES.has(v))
-          .sort(([a], [b]) => a.localeCompare(b)),
-        w: Sites.policyWords(p).slice().sort(),
-        s: Sites.policyShapes(p)
-          .map((x) => x.toLowerCase())
-          .sort(),
-        p: p.allowPause !== false,
-        l: p.lockSettings === true,
-        t: p.largeText === true,
-      }),
-    )
-      .slice(0, 16)
-      .toUpperCase();
+  const recipe = (p) => {
+    const canon = {
+      v: 1,
+      r: Object.entries(p.requiredResponses || {})
+        .filter(([id, v]) => /^[a-z0-9_]{1,64}$/.test(id) && RESPONSES.has(v))
+        .sort(([a], [b]) => a.localeCompare(b)),
+      w: Sites.policyWords(p).slice().sort(),
+      s: Sites.policyShapes(p)
+        .map((x) => x.toLowerCase())
+        .sort(),
+      p: p.allowPause !== false,
+      l: p.lockSettings === true,
+      t: p.largeText === true,
+    };
+    if (typeof p.holdFiles === "boolean") canon.h = p.holdFiles;
+    return Clotr.sha256(JSON.stringify(canon)).slice(0, 16).toUpperCase();
+  };
   for (const preset of Object.keys(Sites.PRESETS)) {
     const merged = Sites.mergePolicy({ preset });
     assert.equal(Sites.policyFingerprint(merged), recipe(merged), preset);
@@ -480,8 +593,8 @@ test("Team kinds: policyFingerprint keeps every code printed before, and changes
     allowPause: false,
     largeText: true,
   };
-  assert.equal(Sites.policyFingerprint(Sites.mergePolicy(custom)), "BF4C884ED231D985");
-  assert.equal(Sites.policyFingerprint(Sites.mergePolicy({})), "E2D0F7E264AD1BD8");
+  assert.equal(Sites.policyFingerprint(Sites.mergePolicy(custom)), "2F5ED6C10F94EE74");
+  assert.equal(Sites.policyFingerprint(Sites.mergePolicy({})), "E2D0F7E264AD1BD8", "no policy: unchanged by holdFiles");
   const matter = { name: "Matter number", formats: ["MAT-######"], response: "block" };
   const code = (kind) => Sites.policyFingerprint(Sites.mergePolicy({ ...custom, kinds: [kind] }));
   assert.notEqual(code(matter), "BF4C884ED231D985");
@@ -519,6 +632,8 @@ const EVERYDAY_DETAILS = ["my_name", "family_name", "street_address", "phone_num
 const CAR = ["vin", "license_plate"];
 // A gamer tag is counted quietly by default, with a note for both ages.
 const GAMES = ["gamer_tag"];
+// A link's own tracking code gets a note for both ages, never a question.
+const LINKS = ["share_link"];
 
 test("Tourniquet's presets list every kind, each ask or warn (drift guard)", () => {
   const all = Clotr.PATTERNS.map((p) => p.id).sort();
@@ -527,16 +642,17 @@ test("Tourniquet's presets list every kind, each ask or warn (drift guard)", () 
     assert.deepEqual(Object.keys(rr).sort(), all, `${word}: a new kind needs a choice here (block or warn)`);
     for (const [id, v] of Object.entries(rr)) assert.ok(["block", "warn"].includes(v), `${word}.${id}: ${v}`);
   }
-  // For a child, every kind asks first, except the three that are public by design, a car's numbers, and a gamer tag.
+  // For a child, every kind asks first, except the three that are public by design, a car's numbers, a
+  // link's own tracking code, and a gamer tag.
   for (const [id, v] of Object.entries(Sites.TOURNIQUET.child.requiredResponses))
-    assert.equal(v, [...TECHNICAL, ...CAR, ...GAMES].includes(id) ? "warn" : "block", `child.${id}`);
+    assert.equal(v, [...TECHNICAL, ...CAR, ...LINKS, ...GAMES].includes(id) ? "warn" : "block", `child.${id}`);
   // For a grown-up, sign-in codes, keys, money and ID numbers, and the birthday all ask first, while everyday
   // details only get a note.
   const adult = Sites.TOURNIQUET.adult.requiredResponses;
   const codes = Clotr.PATTERNS.filter((p) => p.group === "credentials" && !TECHNICAL.includes(p.id)).map((p) => p.id);
-  assert.equal(codes.length, 14); // two-step sign-in keys (otp_secret) made it 14
+  assert.equal(codes.length, 16); // backup codes made it 16
   for (const id of [...codes, ...MONEY_AND_IDS, "date_of_birth"]) assert.equal(adult[id], "block", `adult.${id}`);
-  for (const id of [...EVERYDAY_DETAILS, "watch_list", ...TECHNICAL, ...CAR, "student_id", ...GAMES])
+  for (const id of [...EVERYDAY_DETAILS, "watch_list", ...TECHNICAL, ...CAR, ...LINKS, "student_id", ...GAMES])
     assert.equal(adult[id], "warn", `adult.${id}`);
   // Among details found only in a picture, where a photo was taken asks first for a child and only gets a note
   // for a grown-up, the same as an address would. A picture named like an ID or a document asks first for both.

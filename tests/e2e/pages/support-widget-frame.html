@@ -1,0 +1,24 @@
+<!doctype html>
+<!-- Stand-in for a support-chat widget's own conversation box: this is what loads inside the company's iframe,
+     at the widget maker's own address. Every one of these widgets shows the same shape here: a plain textarea
+     and a send button, the same as any other chat box Clotr already knows how to read. -->
+<html lang="en">
+<head><meta charset="utf-8"><title>Support chat (Clotr test page)</title></head>
+<body>
+  <form id="composer">
+    <textarea id="msg" placeholder="Type your message" rows="3" cols="40"></textarea>
+    <button type="submit" id="send">Send</button>
+  </form>
+  <script>
+    window.__sent = [];
+    window.__reply = (text) => { const d = document.createElement("div"); d.className = "reply"; d.textContent = text; document.body.append(d); };
+    document.getElementById("composer").addEventListener("submit", (e) => {
+      e.preventDefault();
+      const box = document.getElementById("msg");
+      if (!box.value) return;
+      window.__sent.push(box.value);
+      box.value = "";
+    });
+  </script>
+</body>
+</html>

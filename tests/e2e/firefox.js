@@ -109,6 +109,14 @@ const ONLY = arg("--only")
   ?.split(",")
   .map((id) => id.trim().toUpperCase());
 const wanted = (id) => !ONLY || ONLY.includes(id.toUpperCase());
+// Click the visible label, not the small checkbox inside it. Marionette can't reliably scroll
+// the checkbox into view, while a person can click the whole app row.
+const offerLabel = (app) => `#everyday-offer label.ev-app:has(input[value="${app}"])`;
+async function clickOfferApp(ff, app) {
+  const label = offerLabel(app);
+  await ff.exec(`document.querySelector(${JSON.stringify(label)})?.scrollIntoView({ block: "center" });`);
+  await ff.click(label);
+}
 
 async function main() {
   const t0 = Date.now();
@@ -129,13 +137,22 @@ async function main() {
   const { version } = JSON.parse(fs.readFileSync(path.join(ROOT, "extension", "manifest.json"), "utf8"));
   const zip = path.join(ROOT, "dist", `clotr-${version}-firefox.zip`);
   const ext = fs.mkdtempSync(path.join(os.tmpdir(), "clotr-ff-"));
-  const tar =
-    process.platform === "win32" ? path.join(process.env.SystemRoot || "C:\\Windows", "System32", "tar.exe") : "unzip";
-  execFileSync(tar, process.platform === "win32" ? ["-xf", zip, "-C", ext] : ["-q", zip, "-d", ext]);
-  fs.mkdirSync(OUT, { recursive: true });
   const files = fs.mkdtempSync(path.join(os.tmpdir(), "clotr-ff-files-"));
-
-  const browser = await puppeteer.launch({ browser: "firefox", executablePath: firefox, headless: true });
+  let browser;
+  try {
+    const tar =
+      process.platform === "win32"
+        ? path.join(process.env.SystemRoot || "C:\\Windows", "System32", "tar.exe")
+        : "unzip";
+    execFileSync(tar, process.platform === "win32" ? ["-xf", zip, "-C", ext] : ["-q", zip, "-d", ext]);
+    fs.mkdirSync(OUT, { recursive: true });
+    browser = await puppeteer.launch({ browser: "firefox", executablePath: firefox, headless: true });
+  } catch (err) {
+    // Nothing below gets a chance to remove these if setup itself fails partway through.
+    fs.rmSync(ext, { recursive: true, force: true });
+    fs.rmSync(files, { recursive: true, force: true });
+    throw err;
+  }
   const results = [];
   const check = async (id, name, fn) => {
     if (!wanted(id)) return;
@@ -217,18 +234,17 @@ async function main() {
       await page.screenshot({ path: path.join(OUT, "firefox-notice.png") });
       if (!host) throw new Error("no warning appeared");
     });
-    await check("FF1b", "Hide it replaces the key in the chat box (Firefox)", async () => {
-      // Reaches the warning by keyboard instead of a click, so the test doesn't depend on fonts or layout: Tab
-      // until focus lands inside it, which is Leave it in, Tab once more to reach Hide it, then Enter.
+    await check("FF1b", "Cover it replaces the key in the chat box (Firefox)", async () => {
+      // By keyboard, so it doesn't depend on fonts or layout: Tab until focus enters Clotr's
+      // warning, which lands on "Cover it", then Enter.
       let inside = false;
       for (let i = 0; i < 8 && !inside; i++) {
         await page.keyboard.press("Tab");
         inside = await page.evaluate(() => document.activeElement?.tagName === "CLOTR-NOTICE");
       }
       if (!inside) throw new Error("couldn't reach the warning with Tab");
-      await page.keyboard.press("Tab");
-      // Clotr ignores Enter for 0.6 s after focus lands in the warning, so this waits well past that: a busy
-      // computer can run the focus handler late, and npm run check runs this alongside other work.
+      // Enter is ignored for 0.6 s after focus lands in a warning: wait well past it (a busy computer
+      // runs the warning's focus handler late, and npm run check runs this while other work goes on).
       await sleep(1200);
       await page.keyboard.press("Enter");
       await sleep(500);
@@ -245,10 +261,10 @@ async function main() {
       const sent = await page.evaluate(() => window.__sent.length);
       if (sent !== 1) throw new Error(`sent ${sent} messages`);
     });
-    // A VIN with no label or vehicle word nearby is an easy case to miss, so this checks it on its own, pasting it
-    // the way a real paste would land. Firefox automation can't read the closed warning, so it clicks Hide it
-    // instead: the box then names the VIN's kind, which is how the test confirms what the warning was about.
-    await check("FFVIN1", "A VIN pasted on its own warns; Hide it covers it as a VIN (Firefox)", async () => {
+    // A VIN pasted on its own, with no label and no vehicle word, showed nothing in Firefox's practice chat until
+    // this was added. Inserted the way a paste is. Firefox automation can't read the closed warning, so
+    // Cover it tells what the warning was about: the box then names the VIN's kind.
+    await check("FFVIN1", "A VIN pasted on its own warns; Cover it covers it as a VIN (Firefox)", async () => {
       const tab = await openChat();
       try {
         await tab.focus("#prompt-textarea");
@@ -266,8 +282,7 @@ async function main() {
           inside = await tab.evaluate(() => document.activeElement?.tagName === "CLOTR-NOTICE");
         }
         if (!inside) throw new Error("couldn't reach the warning with Tab");
-        await tab.keyboard.press("Tab");
-        await sleep(1200); // waits past the 0.6 s guard on Enter, with extra room for a slow computer
+        await sleep(1200); // past the 0.6 s Enter guard, with room for a busy computer
         await tab.keyboard.press("Enter");
         let text = "";
         for (let t = 0; t < 3000 && !text.includes("[REDACTED"); t += 250) {
@@ -300,17 +315,16 @@ async function main() {
         same = now && now === size ? same + 1 : 0;
         size = now;
       }
-      // Tabs into the notice, which lands on Leave it in, then continues in DOM order through Hide it, More
-      // choices, Why am I seeing this, No thanks, and Yes, use cover names. This has to work blind, the same as
-      // FF1b, since there's no shadow-root access here.
+      // Tab into the notice (lands on "Cover it"), then in DOM order: Send as is, More choices,
+      // No thanks, Yes, use cover names (blind, like FF1b: no shadow access).
       let inside = false;
       for (let i = 0; i < 8 && !inside; i++) {
         await page.keyboard.press("Tab");
         inside = await page.evaluate(() => document.activeElement?.tagName === "CLOTR-NOTICE");
       }
       if (!inside) throw new Error("couldn't reach the notice with Tab");
-      for (let i = 0; i < 5; i++) await page.keyboard.press("Tab");
-      await sleep(1200); // waits past the 0.6 s guard on Enter, with extra room for a slow computer
+      for (let i = 0; i < 4; i++) await page.keyboard.press("Tab");
+      await sleep(1200); // past the 0.6 s Enter guard, with room for a busy computer
       await page.keyboard.press("Enter");
       // Waits for the cover name to land once the choice is saved, rather than a fixed delay: 0.5 s wasn't always
       // enough on a slow CI runner. It still fails if the cover name never shows up.
@@ -419,31 +433,39 @@ function freePort() {
 // with the 127.0.0.1 that FF16 builds into its own run.
 async function startHttpsFixture(html, host = "127.0.0.1") {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "clotr-ff-cert-"));
-  const key = path.join(dir, "key.pem");
-  const cert = path.join(dir, "cert.pem");
-  execFileSync("openssl", [
-    "req",
-    "-x509",
-    "-newkey",
-    "rsa:2048",
-    "-keyout",
-    key,
-    "-out",
-    cert,
-    "-days",
-    "1",
-    "-nodes",
-    "-subj",
-    `/CN=${host}`,
-    "-addext",
-    `subjectAltName=${host === "localhost" ? "DNS" : "IP"}:${host}`,
-  ]);
-  const server = https.createServer({ key: fs.readFileSync(key), cert: fs.readFileSync(cert) }, (_req, res) => {
-    res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" });
-    res.end(html);
-  });
-  const usePort = await freePort();
-  await new Promise((resolve) => server.listen(usePort, "127.0.0.1", resolve));
+  let server;
+  let usePort;
+  try {
+    const key = path.join(dir, "key.pem");
+    const cert = path.join(dir, "cert.pem");
+    execFileSync("openssl", [
+      "req",
+      "-x509",
+      "-newkey",
+      "rsa:2048",
+      "-keyout",
+      key,
+      "-out",
+      cert,
+      "-days",
+      "1",
+      "-nodes",
+      "-subj",
+      `/CN=${host}`,
+      "-addext",
+      `subjectAltName=${host === "localhost" ? "DNS" : "IP"}:${host}`,
+    ]);
+    server = https.createServer({ key: fs.readFileSync(key), cert: fs.readFileSync(cert) }, (_req, res) => {
+      res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" });
+      res.end(html);
+    });
+    usePort = await freePort();
+    await new Promise((resolve) => server.listen(usePort, "127.0.0.1", resolve));
+  } catch (err) {
+    // close() below never gets called if setup itself fails, so this has to remove its own cert folder here.
+    fs.rmSync(dir, { recursive: true, force: true });
+    throw err;
+  }
   return {
     url: `https://${host}:${usePort}/`,
     close: () =>
@@ -511,6 +533,13 @@ async function ownPageChecks(check, firefox, ext) {
     const onWelcome = async () => {
       if (!welcome) throw new Error("Clotr didn't open its welcome page when it was installed");
       await ff.switchTo(welcome);
+      const ready = await ff.waitFor(
+        'return document.querySelector("#where-offer") && !document.querySelector("#where-offer").hidden ? true : null;',
+      );
+      if (!ready) throw new Error("the welcome page's site choices didn't load");
+      // The app rows live under "Pick sites one by one instead" on the welcome page.
+      if (!(await ff.exec('return document.querySelector("#where-pick-sites").open;')))
+        await ff.click("#where-pick-sites summary");
     };
 
     await check(
@@ -540,7 +569,7 @@ async function ownPageChecks(check, firefox, ext) {
           'return !document.querySelector("#everyday-offer").hidden && Boolean(document.querySelector(\'#everyday-offer input[value="Gmail"]\'));',
         );
         if (!shown) throw new Error("the email and chat apps card didn't show");
-        await ff.click('#everyday-offer input[value="Gmail"]');
+        await clickOfferApp(ff, "Gmail");
         await ff.click("#ev-go");
         const said = await ff.waitFor(
           'return (await chrome.permissions.contains({ origins: ["https://mail.google.com/*"] })) ? document.querySelector("#ev-status").textContent : null;',
@@ -566,7 +595,8 @@ async function ownPageChecks(check, firefox, ext) {
         // already-on app would untick it, so this only ticks the ones that still need it.
         for (const app of ["Gmail", "Discord"]) {
           const box = `#everyday-offer input[value="${app}"]`;
-          if (!(await ff.exec(`return document.querySelector(${JSON.stringify(box)}).checked;`))) await ff.click(box);
+          if (!(await ff.exec(`return document.querySelector(${JSON.stringify(box)}).checked;`)))
+            await clickOfferApp(ff, app);
         }
         await ff.click("#ev-go");
         const on = await ff.waitFor(
@@ -579,8 +609,8 @@ async function ownPageChecks(check, firefox, ext) {
         await ff.exec(
           "chrome.permissions.realRequest ??= chrome.permissions.request; chrome.permissions.request = () => Promise.resolve(false);",
         );
-        await ff.click('#everyday-offer input[value="Slack"]');
-        await ff.click('#everyday-offer input[value="WhatsApp"]');
+        await clickOfferApp(ff, "Slack");
+        await clickOfferApp(ff, "WhatsApp");
         await ff.click("#ev-go");
         const status = await ff.waitFor(
           'const t = document.querySelector("#ev-status").textContent; return /Nothing was switched on/.test(t) ? t : null;',
@@ -593,8 +623,8 @@ async function ownPageChecks(check, firefox, ext) {
           'return [...document.querySelectorAll("#everyday-offer input[type=checkbox]")].filter((b) => b.checked && !b.parentElement.classList.contains("on")).map((b) => b.value);',
         );
         if (ticked.join() !== "Slack,WhatsApp") throw new Error(`ticks after No: ${JSON.stringify(ticked)}`);
-        await ff.click('#everyday-offer input[value="Slack"]');
-        await ff.click('#everyday-offer input[value="WhatsApp"]');
+        await clickOfferApp(ff, "Slack");
+        await clickOfferApp(ff, "WhatsApp");
         const unticked = await ff.exec(
           'return [...document.querySelectorAll("#everyday-offer input[type=checkbox]")].filter((b) => b.checked && !b.parentElement.classList.contains("on")).map((b) => b.value);',
         );
@@ -608,8 +638,8 @@ async function ownPageChecks(check, firefox, ext) {
       async () => {
         await onWelcome();
         // Slack and WhatsApp are unticked and off again after the check above.
-        await ff.click('#everyday-offer input[value="Slack"]');
-        await ff.click('#everyday-offer input[value="WhatsApp"]');
+        await clickOfferApp(ff, "Slack");
+        await clickOfferApp(ff, "WhatsApp");
         await ff.click("#ev-go");
         const status = await ff.waitFor(
           'const t = document.querySelector("#ev-status").textContent; return /Nothing was switched on/.test(t) ? t : null;',

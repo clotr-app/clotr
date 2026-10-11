@@ -12,13 +12,10 @@
     <img src="icons/icon-on-32.png" alt="" width="24" height="24">
     <span class="wordmark" data-i18n-skip>Clotr</span>
     <h1 id="page-title" data-i18n="vault_whatShouldIProtect">What should I protect?</h1>
-    <span class="chip" title="Saved as one-way fingerprints on this device" data-i18n-title="vault_savedAsOneWayFingerprints" data-i18n="vault_fingerprintsOnly">Fingerprints only</span>
+    <span class="chip" title="Saved as scrambled fingerprints on this device" data-i18n-title="vault_savedAsOneWayFingerprints" data-i18n="vault_fingerprintsOnly">Fingerprints only</span>
   </header>
 
-  <!-- Shown on first install (vault.html?welcome=1). -->
   <section id="welcome" hidden>
-    <!-- Some browsers (Safari, Firefox on some versions) don't let Clotr into its AI chats when it's installed. Then
-         this card comes first and asks for exactly the ones missing (vault.js). -->
     <div id="allow-card" class="allow-card" hidden>
       <h2 data-i18n="vault_allowTitle">Let Clotr check your AI chats</h2>
       <p id="allow-lead"></p>
@@ -27,7 +24,6 @@
       <p id="allow-status" class="allow-status" role="status"></p>
     </div>
 
- <!-- The author's note: a small mind map that draws itself, then the note. -->
     <div class="author-hero">
       <svg class="hero-map" viewBox="18 0 560 176" preserveAspectRatio="xMinYMid slice" aria-hidden="true" focusable="false">
         <circle class="hm-pulse" cx="58" cy="92" r="30"/>
@@ -79,18 +75,39 @@
     <p id="pin-step" class="pin-step" role="status"><span class="on-computer"><span data-i18n="vault_pinIntro">Browsers tuck new extensions away. To see Clotr's count and open its dashboard, click the</span>
       <b data-i18n="vault_puzzlePiece">puzzle piece</b> <span data-i18n="vault_pinMiddle">in your browser's toolbar, then the</span> <b data-i18n="vault_pin">pin</b> <span data-i18n="vault_pinEnd">next to Clotr.</span></span><span class="on-phone" data-i18n="vault_findClotrPhoneText">On a phone, Clotr lives in your browser's menu: tap ⋮, then Extensions (or Add-ons), then Clotr, to see its count and open its dashboard.</span></p>
 
- <!-- Email and chat apps: nothing ticked for you, one browser prompt for the ticked ones. Hidden while locked. -->
-    <section id="everyday-offer" class="everyday-offer" aria-labelledby="ev-title" hidden>
-      <h2 id="ev-title" data-i18n="ev_title">Use Clotr on your email and chat apps too?</h2>
-      <p class="lead"><span data-i18n="ev_welcomeAsk">Tick the ones you use. Your browser then asks you once, for just those sites.</span>
-        <span data-i18n="ev_welcomeThere">There, Clotr warns and hides like on an AI chat, and never reads anyone's replies.</span></p>
-      <div id="ev-groups" class="ev-groups"></div>
-      <p class="ev-actions"><button class="btn primary" type="button" id="ev-go" aria-describedby="ev-hint">Switch on</button></p>
-      <p class="ev-hint" id="ev-hint" data-hide-when-on data-i18n="ev_welcomeHint">Nothing is ticked for you. Change it any time: Clotr's toolbar button → Settings.</p>
-      <p class="ev-status" id="ev-status" role="status"></p>
+    <section id="where-offer" aria-labelledby="where-title" hidden>
+      <h2 id="where-title" data-i18n="vt_whereTitle">Where should Clotr check?</h2>
+      <p class="lead" data-i18n="vt_whereLead">Clotr already checks your AI chats. It can also reach a chat box on any other website, never a checkout or sign-in form.</p>
+      <p class="ev-actions">
+        <button class="btn" type="button" id="where-ai-only" data-i18n="vt_aiChatsOnly">AI chats only</button>
+        <button class="btn primary" type="button" id="where-everywhere" data-i18n="vt_aiChatsAndEverywhere">AI chats and everywhere I type</button>
+      </p>
+      <p class="ev-status" id="where-status" role="status"></p>
+
+      <details id="where-pick-sites">
+        <summary data-i18n="popup_pickSitesOneByOne">Pick sites one by one instead</summary>
+
+        <section id="everyday-offer" class="everyday-offer" aria-labelledby="ev-title">
+          <h2 id="ev-title" data-i18n="ev_title">Use Clotr on your email and chat apps too?</h2>
+          <p class="lead"><span data-i18n="ev_welcomeAsk">Tick the ones you use. Your browser then asks you once, for just those sites.</span>
+            <span data-i18n="ev_welcomeThere">There, Clotr warns and hides like on an AI chat, and never reads anyone's replies.</span></p>
+          <div id="ev-groups" class="ev-groups"></div>
+          <p class="ev-actions"><button class="btn primary" type="button" id="ev-go" aria-describedby="ev-hint">Switch on</button></p>
+          <p class="ev-hint" id="ev-hint" data-hide-when-on data-i18n="ev_welcomeHint">Nothing is ticked for you. Change it any time: Clotr's toolbar button → Settings.</p>
+          <p class="ev-status" id="ev-status" role="status"></p>
+        </section>
+
+        <section id="more-sites-offer" class="everyday-offer" aria-labelledby="ms-title">
+          <h2 id="ms-title" data-i18n="ms_title">Use Clotr on search engines and support chats too?</h2>
+          <p class="lead" data-i18n="ms_welcomeAsk">Tick the ones you use. Your browser then asks you once, for just those sites.</p>
+          <div id="ms-groups" class="ev-groups"></div>
+          <p class="ev-actions"><button class="btn primary" type="button" id="ms-go" data-i18n="ev_switchOn">Switch on</button></p>
+          <p class="ev-hint" id="ms-hint" data-i18n="ms_hint">Change it any time: Clotr's toolbar button → Settings.</p>
+          <p class="ev-status" id="ms-status" role="status"></p>
+        </section>
+      </details>
     </section>
- <!-- Tourniquet: one line for someone setting Clotr up for another person. Hidden while locked. -->
-    <p id="tq-offer" class="tq-offer" hidden><span data-i18n="vt_tqOfferStart">Setting Clotr up for someone else?</span>
+    <p id="tq-offer" class="tq-offer" hidden data-feature="tourniquet"><span data-i18n="vt_tqOfferStart">Setting Clotr up for someone else?</span>
       <a href="helper.html#who" target="_blank" data-i18n-skip>Tourniquet</a> <span data-i18n="vt_tqOfferEnd">gives a child or a grown-up stronger settings in one step.</span></p>
 
     <h2 data-i18n="vault_tryIt">Try it</h2>
@@ -102,20 +119,9 @@
       <p class="hint try-hint"><span class="on-computer" data-i18n="vault_thisPracticeBoxStaysOn">This box is just for practice, and nothing you type here goes anywhere. On a real AI chat, the warning shows up in the top-right corner.</span><span class="on-phone" data-i18n="vault_practicePhone">This box is just for practice, and nothing you type here goes anywhere. On a real AI chat, the warning shows up at the top of the screen and stays in view while you scroll.</span></p>
     </div>
 
- <!-- Look back: one quiet line after Try it, changes no setting, so like Tourniquet's own line
-         (check.html) the whole sentence is the link; opens lookback.html in a new tab. Hidden while locked. -->
-    <p id="lb-offer" class="tq-offer" hidden>
+    <p id="lb-offer" class="tq-offer" hidden data-feature="lookback">
       <a href="lookback.html" target="_blank" data-i18n="vt_lookBackOffer">Already used ChatGPT, Claude or Gemini? Look back shows what you've already told them.</a>
     </p>
-
- <!-- Clotr Antibody, under Try it: the second opinion is the part people need before they need it.
-         Both pages open in a new tab and change no setting, so the section shows while settings are locked too. -->
-    <section id="ss-welcome" class="ss-welcome" aria-labelledby="ss-welcome-title">
-      <h2 id="ss-welcome-title"><svg class="tq-shield" viewBox="0 0 16 16" aria-hidden="true" focusable="false"><path d="M8 1 14 3.4V8c0 3.4-2.5 6.1-6 7-3.5-.9-6-3.6-6-7V3.4Z"/></svg><span data-i18n="ss_name">Scam check</span></h2>
-      <p data-i18n="ss_welcomeText">When someone asks you for a code, your card's numbers or gift cards, Clotr's warning says who really asks for them. Got a message that worries you? Clotr can give a second opinion.</p>
-      <p class="ss-buttons"><button id="ss-welcome-check" class="btn primary" type="button" data-i18n="ss_check">Is this a scam?</button>
-        <button id="ss-welcome-practice" class="btn" type="button" data-i18n="ss_practiceSix">Practice with six made-up scams</button></p>
-    </section>
 
     <h2 data-i18n="vault_optionalTellClotrWhatTo">Tell Clotr what to look out for</h2>
     <p class="lead"><span data-i18n="vault_addLater">Add your own details below and Clotr will spot them however they're written. No rush, though. You can come back any time from Clotr's toolbar button → Settings →</span>
@@ -128,7 +134,7 @@
   </section>
 
   <p class="lead" id="vault-lead"><span data-i18n="vault_leadStart">Tell Clotr a little about yourself and it'll watch for these in AI chats, however they're written. It saves a</span>
-    <b data-i18n="vault_oneWayFingerprint">one-way fingerprint</b> <span data-i18n="vault_leadEnd">of each item, never the item itself, so anyone opening this extension's storage would find nothing readable. It takes about two minutes. One item per line, and skip anything you like.</span></p>
+    <b data-i18n="vault_oneWayFingerprint">scrambled fingerprint</b> <span data-i18n="vault_leadEnd">of each item, never the item itself, so opening this extension's storage shows no words you typed. It takes about two minutes. One item per line, and skip anything you like.</span></p>
 
   <form id="vault-form">
     <section class="field">
@@ -195,6 +201,7 @@
   <script src="page-notice.js"></script>
   <script src="sites.js"></script>
   <script src="everyday-offer.js"></script>
+  <script src="quick-exit.js"></script>
   <script src="vault.js"></script>
 </body>
 </html>

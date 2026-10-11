@@ -6,6 +6,7 @@ module.exports = async function (env) {
     KEY,
     KEY2,
     OUT,
+    answerOnClotrPage,
     check,
     chooseResponse,
     clearEditor,
@@ -21,6 +22,7 @@ module.exports = async function (env) {
     readDialog,
     resetState,
     sentMessages,
+    settle,
     sleep,
     store,
     typeText,
@@ -225,6 +227,12 @@ module.exports = async function (env) {
       await clickDialogButton(page, "More choices");
       await clickDialogButton(page, "Leave it in, and stop warning me about: AWS Access Key");
       expect(!(await readDialog(page)), "dialog still open");
+      // The chat page's click alone changes nothing on every site: Clotr's own page asks first, and says what.
+      await settle(300);
+      const before = (await store.get(ctx, "responses")).responses;
+      expect(before?.aws_access_key === "block", `changed from the chat page alone: ${JSON.stringify(before)}`);
+      const asked = await answerOnClotrPage(ctx, page);
+      expect(/AWS Access Key/.test(asked), `Clotr's page asked: ${asked}`);
       // Storage writes are asynchronous, so I wait for one instead of reading just once. Without the wait, A5
       // flaked about 1 run in 3.
       const responses = await waitFor(

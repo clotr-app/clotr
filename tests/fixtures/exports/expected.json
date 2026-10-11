@@ -149,6 +149,40 @@
     "read": false,
     "note": "recognized as Takeout's HTML kind: until the HTML reader exists, the page asks for the JSON kind (the steps say how). Once it reads it, the same finds as gemini, and nothing from the text after the date."
   },
+  "copilot": {
+    "format": "copilot",
+    "tool": "Copilot",
+    "company": "Microsoft",
+    "chats": 2,
+    "grouping": "by day (the CSV has no chat id, read the same way as Gemini's Takeout export)",
+    "found": [
+      {
+        "id": "2025-06-11",
+        "title": "My AWS key is AKIA4HPQ7XZ2R6TWLJ3N, is this still valid?",
+        "shownTitle": "My AWS key is AKIA…3N, is this still valid?",
+        "date": "2025-06-11",
+        "link": "https://account.microsoft.com/privacy/activity-history",
+        "kinds": { "aws_access_key": 1, "credit_card": 1 },
+        "why": "two prompts the same day, in the Prompt column only; the title is the day's first prompt, masked"
+      },
+      {
+        "id": "2025-09-02",
+        "title": "Email me a draft, my number is 219-09-9999 for the background check",
+        "shownTitle": "Email me a draft, my number is 219-…99 for the background check",
+        "date": "2025-09-02",
+        "link": "https://account.microsoft.com/privacy/activity-history",
+        "kinds": { "us_ssn": 1 },
+        "why": "the SSN in the first prompt that day; a second, harmless prompt that day ('What's the weather') holds nothing"
+      }
+    ],
+    "notTheirs": ["sam.lee@example.org", "555-555-0199"],
+    "ignored": [],
+    "note": "no published schema exists for this CSV (Microsoft names only 'a comma-separated values (CSV) file'); the column names here are this project's own guess, not a confirmed real header. notTheirs sits in the Response column, Copilot's own reply, which the reader never scans."
+  },
+  "copilot-unknown-header": {
+    "format": null,
+    "note": "the same two facts (a date, a prompt) under column names the reader doesn't recognize: 'Clotr can't read this export yet', not a guess at which column is which"
+  },
   "unknown": {
     "format": null,
     "note": "not an AI chat export: 'Clotr can't read this export yet', and nothing found or counted"

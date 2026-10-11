@@ -15,6 +15,7 @@ module.exports = async function (env) {
     evalInClotr,
     expect,
     fs,
+    hasPage,
     inClotrUI,
     openExtPage,
     openPopup,
@@ -25,6 +26,8 @@ module.exports = async function (env) {
     resetState,
     seedEvents,
     sentMessages,
+    settle,
+    shot,
     sleep,
     store,
     tapNode,
@@ -54,7 +57,7 @@ module.exports = async function (env) {
         await typeText(page, `key ${key} or call 555\u00a0555\u00a00123`);
         const n = await waitForNotice(page);
         expect(n?.text.includes("AWS Access Key") && n.text.includes("Phone Number"), `notice: ${n?.text}`);
-        await clickDialogButton(page, "Hide it", readNotice);
+        await clickDialogButton(page, "Cover it", readNotice);
         const text = await editorText(page);
         expect(
           !text.includes("AKIA4HPQ") && !text.includes("0123") && !/\u200b/.test(text),
@@ -250,7 +253,7 @@ module.exports = async function (env) {
             expect(await waitForNotice(page), "no notice");
             await phoneShots(page, `phone-notice-${width}`);
             // Open both folded parts with a finger, so every button is on screen to measure.
-            await tapLabels(page, readNotice, ["More choices", "Why am I seeing this?"]);
+            await tapLabels(page, readNotice, ["More choices", "Why?"]);
             const m = await inClotrUI(page, "CLOTR-NOTICE", measureUI);
             expect(m.targets.length >= 6, `the folded parts didn't open: ${JSON.stringify(m.targets)}`);
             expectPhoneFit(m, width, "the warning");
@@ -768,12 +771,67 @@ module.exports = async function (env) {
   });
 
   await check(
+    "PP2",
+    "Popup on a built-in AI chat the browser hasn't let Clotr into says so plainly, with a button that asks for exactly that site",
+    async () => {
+      const popup = await ctx.browser.newPage();
+      popup.on("pageerror", (err) => ctx.problems.push(`popup error: ${err.message}`));
+      await popup.setViewport({ width: 380, height: 700 });
+      // The real permissions API refuses to withhold a required host permission from script (it throws "You
+      // cannot remove required permissions"), so there's no way to put the browser itself into the state its
+      // own "On click" site access setting (or Firefox, at every install) can. This stands in for that state
+      // the same way the welcome page's own check for a withheld built-in site does: the active tab and the
+      // one host's access are both faked, everything else in the popup runs for real.
+      await popup.evaluateOnNewDocument(() => {
+        let granted = false;
+        window.__asked = [];
+        chrome.tabs.query = async () => [{ id: 999, url: "https://chatgpt.com/c/123" }];
+        chrome.permissions.contains = async (p) =>
+          (p.origins || []).includes("https://chatgpt.com/*") ? granted : true;
+        chrome.permissions.request = async (p) => {
+          window.__asked.push(p);
+          granted = window.__asked.length > 1; // first ask: no, second ask: yes
+          return granted;
+        };
+      });
+      await popup.goto(`chrome-extension://${new URL(ctx.swTarget.url()).host}/popup.html`);
+      await popup.waitForSelector("#hero-value");
+      await settle(400);
+      try {
+        const before = await waitFor(() => popup.$eval("#site", (n) => n.innerText), 2000);
+        expect(/hasn.t let Clotr into this site/.test(before), `before: ${JSON.stringify(before)}`);
+        await shot(popup, "popup-no-access-light.png");
+        await shot(popup, "popup-no-access-dark.png", "dark");
+        await popup.click("#site .btn.primary");
+        const no = await waitFor(() => popup.$eval("#site .why", (n) => n.textContent), 2000);
+        expect(/didn.t allow it/.test(no), `after a no: ${JSON.stringify(no)}`);
+        await popup.click("#site .btn.primary");
+        const after = await waitFor(() => popup.$eval("#site", (n) => n.innerText), 2000);
+        expect(
+          after && !/hasn.t let Clotr into this site/.test(after),
+          `still shows no access after a yes: ${JSON.stringify(after)}`,
+        );
+        const asked = await popup.evaluate(() => window.__asked);
+        expect(
+          asked.length === 2 &&
+            asked.every((p) => JSON.stringify(p.origins) === JSON.stringify(["https://chatgpt.com/*"])),
+          `asked for ${JSON.stringify(asked)}, not exactly chatgpt.com twice`,
+        );
+      } finally {
+        await popup.close();
+      }
+    },
+  );
+
+  await check(
     "CSP1",
     "Clotr's pages run under the strict policy with no violations (popup tabs, welcome, vault, What Clotr stores)",
     async () => {
       const pages = [];
       const popup = await openPopup(ctx);
       pages.push(["popup", popup]);
+      // check.html and practice.html drop out here when their features are held back and this build doesn't
+      // ship them.
       for (const f of [
         "vault.html?welcome=1",
         "vault.html",
@@ -782,7 +840,7 @@ module.exports = async function (env) {
         "policy.html",
         "check.html",
         "practice.html",
-      ])
+      ].filter(hasPage))
         pages.push([f, await openExtPage(ctx, f)]);
       const violations = [];
       try {

@@ -64,7 +64,13 @@ module.exports = async function (env) {
         DIALOG_WAIT,
       );
       expect(ui, "nothing shown for the disguised details");
-      await clickDialogButton(page, "Hide it", ui === "notice" ? readNotice : readDialog);
+      // A high-risk kind in the mix (SSN, bank account, …) asks before sending instead of showing the
+      // notice; that separate dialog wasn't renamed, so it still says "Hide it".
+      await clickDialogButton(
+        page,
+        ui === "notice" ? "Cover it" : "Hide it",
+        ui === "notice" ? readNotice : readDialog,
+      );
       const after = await editorText(page);
       const covered = (after.match(/\[REDACTED/g) || []).length;
       // Forms that hold the same value share one label, since "555-555-5636" is inside "(555)-555-5636".
@@ -119,7 +125,7 @@ module.exports = async function (env) {
       await typeText(page, text);
       const notice = await waitForNotice(page);
       expect(notice?.text.includes(name), `notice: ${notice?.text}`);
-      await clickDialogButton(page, "Hide it", readNotice);
+      await clickDialogButton(page, "Cover it", readNotice);
       const after = await waitFor(async () => {
         const t = await editorText(page);
         return t.includes("[REDACTED") ? t : null;
@@ -147,11 +153,11 @@ module.exports = async function (env) {
     ),
   );
 
-  // A VIN pasted on its own, with no label and no vehicle word, used to show nothing until the Heads up note
+  // A VIN pasted on its own, with no label and no vehicle word, used to show nothing until the generic note
   // was added to name it. The same code with its check digit wrong still shows nothing.
   await check(
     "VIN2",
-    "A VIN pasted on its own shows the Heads up note naming it; with a wrong check digit, nothing shows",
+    "A VIN pasted on its own names it in the note's title; with a wrong check digit, nothing shows",
     () =>
       withSite(ctx, "chatgpt", async (page) => {
         await resetState(ctx, {});
@@ -161,10 +167,7 @@ module.exports = async function (env) {
         await typeText(page, "1HGCM82633A004352");
         const notice = await waitForNotice(page);
         await page.screenshot({ path: path.join(OUT, "vin-alone.png") });
-        expect(
-          notice?.text.includes("Heads up") && notice.text.includes("Vehicle Identification Number"),
-          `notice: ${notice?.text}`,
-        );
+        expect(notice?.text.includes("Vehicle Identification Number"), `notice: ${notice?.text}`);
       }),
   );
 

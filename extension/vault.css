@@ -93,9 +93,7 @@ body.vault-page {
   background-size:
     16px 16px,
     100% 100%;
-  box-shadow:
-    var(--lift),
-    inset 0 0 0 1px var(--ring);
+  box-shadow: inset 0 0 0 1px var(--ring);
 }
 @media (prefers-color-scheme: dark) {
   .author-hero {
@@ -403,6 +401,21 @@ body.vault-page {
     min-height: 44px;
   }
 }
+/* "Where should Clotr check?": two buttons settle the common case; the email/chat and search/support cards
+   fold under one summary for anyone who'd rather pick sites one by one. */
+#where-offer h2 {
+  margin-bottom: 2px;
+}
+#where-pick-sites {
+  margin-top: 14px;
+}
+#where-pick-sites summary {
+  cursor: pointer;
+  color: var(--ink-2);
+}
+#where-pick-sites > section {
+  margin-top: 14px;
+}
 /* Tourniquet's one line, after the email and chat card: the page's quiet text, one link. */
 .tq-offer {
   margin: 14px 0 0;
@@ -416,6 +429,13 @@ body.vault-page {
   color: var(--good-ink);
   font-weight: 600;
 }
+/* The card's own buttons stay on its fixed light-steel colours in both themes, the way the real warning's do:
+   without this, the plain button fell back to the page's dark-mode surface colour, which failed contrast. */
+.try-notice .btn {
+  background: #fff;
+  color: #1f2226;
+  border-color: #9ea4ab;
+}
 .try-notice .btn.primary {
   background: var(--plum);
   color: var(--on-plum);
@@ -427,9 +447,7 @@ body.vault-page {
   padding: 12px 16px 14px;
   border-radius: 14px;
   background: var(--card-bg);
-  box-shadow:
-    var(--lift),
-    inset 0 0 0 1px var(--ring);
+  box-shadow: inset 0 0 0 1px var(--ring);
   border-left: 5px solid var(--signal);
 }
 #welcome .allow-card h2 {
@@ -454,41 +472,6 @@ body.vault-page {
   color: var(--good-ink);
 }
 
-/* Clotr Antibody under Try it: a warm card with an orange edge, the shield in its heading. On a narrow
-   screen its two buttons take the card's width, one under the other. */
-.ss-welcome {
-  margin: 22px 0 8px;
-  padding: 14px 16px 16px;
-  border-radius: 14px;
-  background: var(--brand-wash);
-  box-shadow:
-    var(--lift),
-    inset 0 0 0 1px var(--signal);
-}
-#welcome .ss-welcome h2 {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  margin: 0 0 6px;
-}
-.ss-welcome h2 .tq-shield {
-  width: 16px;
-  height: 16px;
-}
-.ss-welcome p {
-  margin: 0;
-  line-height: 1.5;
-}
-.ss-welcome .ss-buttons {
-  margin: 12px 0 0;
-  gap: 8px;
-}
-@media (max-width: 480px) {
-  .ss-welcome .ss-buttons .btn {
-    flex: 1 1 100%;
-  }
-}
-
 /* A phone says it the phone's way: no toolbar puzzle piece, no top-right corner. The same test as the popup's
    phone layout, so a touch laptop keeps the computer's words. */
 .on-phone {
@@ -501,4 +484,10 @@ body.vault-page {
   .on-phone {
     display: inline;
   }
+}
+
+/* "Warn you less on every site?" (confirm.html): Yes looks asleep until it wakes up. */
+.confirm-page .btn:disabled {
+  opacity: 0.5;
+  cursor: default;
 }

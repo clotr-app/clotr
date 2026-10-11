@@ -1,0 +1,29 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title data-i18n="cf_title">Warn you less on every site?</title>
+  <link rel="stylesheet" href="popup.css">
+  <link rel="stylesheet" href="vault.css">
+</head>
+<body class="vault-page confirm-page">
+  <header class="top">
+    <img src="icons/icon-on-32.png" alt="" width="24" height="24">
+    <span class="wordmark" data-i18n-skip>Clotr</span>
+    <h1 data-i18n="cf_title">Warn you less on every site?</h1>
+  </header>
+
+  <p id="cf-what" class="lead"></p>
+  <p data-i18n="cf_why">You chose this in Clotr's warning on a website. A website can disguise that warning and steer a click onto it, so Clotr asks again here, on its own page, which no website can reach.</p>
+  <div class="save-row">
+    <button id="cf-no" class="btn" type="button" data-i18n="cf_no">No, keep warning me</button>
+    <button id="cf-yes" class="btn primary" type="button" disabled data-i18n="cf_yes">Yes, change it</button>
+  </div>
+  <p id="cf-status" class="msg" role="status"></p>
+
+  <script src="page-i18n.js"></script>
+  <script src="patterns.js"></script>
+  <script src="confirm.js"></script>
+</body>
+</html>

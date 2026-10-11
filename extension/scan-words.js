@@ -16,7 +16,7 @@
     lb_lead: (...s) =>
       msg(
         "lb_lead",
-        "Your ChatGPT, Claude or Gemini history, read on this computer from your own export. Clotr shows which chats hold a password, a key, a card or ID number, an address or a photo's place, so you can delete them.",
+        "Your ChatGPT, Claude, Gemini or Copilot history, read on this computer from your own export. Clotr shows which chats hold a password, a key, a card or ID number, an address or a photo's place, so you can delete them.",
         ...s,
       ),
     lb_promises: (...s) =>
@@ -45,6 +45,12 @@
         "Go to Google Takeout and click Deselect all.\nTick My Activity, click All activity data included, then Deselect all and tick only Gemini Apps.\nUnder Multiple formats, choose JSON for My Activity, and choose a .zip file.\nGoogle emails you a link. It can take a few hours or a few days.",
         ...s,
       ),
+    lb_copilotSteps: (...s) =>
+      msg(
+        "lb_copilotSteps",
+        "Go to your privacy dashboard and sign in with the account you use Copilot with.\nFind Copilot activity history (or Copilot Chat activity history, or Copilot in Microsoft 365 apps activity history), then choose Export.\nMicrosoft downloads a CSV file straight away, no email wait.",
+        ...s,
+      ),
     lb_menuNames: (...s) => msg("lb_menuNames", "", ...s),
     lb_openTool: (...s) => msg("lb_openTool", "Open $1", ...s),
     lb_help: (...s) => msg("lb_help", "$1's help page", ...s),
@@ -56,7 +62,7 @@
     lb_kinds: (...s) =>
       msg(
         "lb_kinds",
-        "The .zip file as it came, the folder you unzipped, or the conversations.json or MyActivity.json file inside it.",
+        "The .zip file as it came, the folder you unzipped, the conversations.json or MyActivity.json file inside it, or a CSV file from Copilot's export.",
         ...s,
       ),
     lb_parts: (...s) =>
@@ -115,7 +121,7 @@
       msg("lb_whyPhoto", "The photo carries the spot it was taken, close enough to find a house.", ...s),
     lb_whatToDo: (...s) => msg("lb_whatToDo", "What to do", ...s),
     lb_openChat: (...s) => msg("lb_openChat", "Open the chat", ...s),
-    lb_openActivity: (...s) => msg("lb_openActivity", "Open your Gemini activity", ...s),
+    lb_openActivity: (...s) => msg("lb_openActivity", "Open your $1 activity", ...s),
     lb_askDelete: (...s) => msg("lb_askDelete", "Ask $1 to delete it", ...s),
     lb_instructions: (...s) => msg("lb_instructions", "Your custom instructions", ...s),
     lb_instructionsWhy: (...s) =>
@@ -126,6 +132,12 @@
       ),
     lb_geminiDays: (...s) =>
       msg("lb_geminiDays", "Google keeps Gemini as a list of prompts, not chats, so Clotr groups them by day.", ...s),
+    lb_copilotDays: (...s) =>
+      msg(
+        "lb_copilotDays",
+        "Microsoft keeps Copilot activity as a list of prompts, not chats, so Clotr groups them by day.",
+        ...s,
+      ),
     lb_notRead: (...s) => msg("lb_notRead", "What Clotr couldn't read", ...s),
     lb_tooBig: (...s) => msg("lb_tooBig", "$1 chats were too big to read (over 32 MB).", ...s),
     lb_photosNotRead: (...s) => msg("lb_photosNotRead", "$1 photos weren't read.", ...s),
@@ -143,7 +155,7 @@
     lb_unknown: (...s) =>
       msg(
         "lb_unknown",
-        "Clotr can't read this export yet. It reads ChatGPT, Claude and Gemini (Google Takeout) exports.",
+        "Clotr can't read this export yet. It reads ChatGPT, Claude, Gemini (Google Takeout) and Copilot exports.",
         ...s,
       ),
     lb_manifestTitle: (...s) => msg("lb_manifestTitle", "This is a list of links, not your export", ...s),

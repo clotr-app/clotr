@@ -8,6 +8,7 @@ module.exports = async function (env) {
     OUT,
     TYPED_VALUES,
     activeBadge,
+    answerOnClotrPage,
     auditShadow,
     check,
     chooseResponse,
@@ -30,8 +31,8 @@ module.exports = async function (env) {
     restoreBackgroundReads,
     seedEvents,
     sentMessages,
+    settle,
     shot,
-    shotAt,
     slowBackgroundReads,
     sleep,
     store,
@@ -40,6 +41,16 @@ module.exports = async function (env) {
     waitForDialog,
     waitForNotice,
     withSite,
+    docxXml,
+    makeZip,
+    MRN,
+    MRN_FILE,
+    holdDir,
+    dropDir,
+    attachMrn,
+    holdShots,
+    stubReader,
+    readStarted,
   } = env;
   await check("R0", "Out of the box nothing blocks: a key shows the notice and Enter sends", () =>
     withSite(ctx, "chatgpt", async (page) => {
@@ -69,6 +80,8 @@ module.exports = async function (env) {
       await clickDialogButton(page, "More choices", readNotice);
       await clickDialogButton(page, "Leave it in, and stop warning me about: Phone Number", readNotice);
       expect(!(await readNotice(page)), "notice still open");
+      const asked = await answerOnClotrPage(ctx, page);
+      expect(/Phone Number/.test(asked), `Clotr's page asked: ${asked}`);
       // Storage writes happen asynchronously, so I wait for the write to land instead of just reading once.
       const responses = await waitFor(
         async () => ((await store.get(ctx, "responses")).responses?.phone_number === "log" ? true : null),
@@ -78,6 +91,42 @@ module.exports = async function (env) {
       await clearEditor(page);
       await typeText(page, "or 555-555-1234");
       await expectNoUI(page, "phone numbers are now Log only");
+    }),
+  );
+
+  // Clotr's warning sits inside the chat page, which can disguise it and steer a click onto a lasting choice. So
+  // from the chat page, warning less on every site only asks: Clotr's own page opens beside the chat, and only its
+  // yes changes anything. A no leaves everything as it was. Something stricter still applies right away.
+  await check("R0c", "The chat page alone can't warn less everywhere: Clotr's own page asks, and No keeps it", () =>
+    withSite(ctx, "chatgpt", async (page) => {
+      await resetState(ctx, {});
+      const fp = await ctx.worker.evaluate(async () =>
+        globalThis.Clotr.fingerprint(await ensureSalt(), "phone_number", "555-555-0123"),
+      );
+      // A message the background won't answer comes back as nothing (or a rejection, which is the same here).
+      const send = (m) => evalInClotr(page, `chrome.runtime.sendMessage(${JSON.stringify(m)}).catch(() => null)`);
+      const log = await send({ type: "clotr:setResponses", ids: ["phone_number"], value: "log" });
+      expect(log?.asked, `the chat page's own ask: ${JSON.stringify(log)}`);
+      expect(!(await store.get(ctx, "responses")).responses?.phone_number, "changed from the chat page alone");
+      expect(/Phone Number/.test(await answerOnClotrPage(ctx, page, false)), "Clotr's page didn't name the kind");
+      const share = await send({
+        type: "clotr:vaultAdd",
+        entries: [{ kind: "value", type: "phone_number", fp, mode: "allow", added: Date.now() }],
+      });
+      expect(share?.asked, `the chat page's own fine to share: ${JSON.stringify(share)}`);
+      await answerOnClotrPage(ctx, page, false);
+      // Clotr's page can't be answered from the chat page, and a stricter choice goes through at once.
+      const reach = await send({ type: "clotr:askedAnswer", token: "0".repeat(32), yes: true });
+      expect(!reach, `the chat page reached Clotr's page: ${JSON.stringify(reach)}`);
+      expect((await send({ type: "clotr:setResponses", ids: ["email"], value: "block" }))?.ok, "stricter refused");
+      await settle(300);
+      const saved = await store.get(ctx, ["responses", "vault"]);
+      expect(
+        !saved.responses?.phone_number && saved.responses?.email === "block" && !(saved.vault || []).length,
+        `saved: ${JSON.stringify(saved)}`,
+      );
+      await typeText(page, "call me at 555-555-0123");
+      expect(await waitForNotice(page), "the phone number stopped warning after a no");
     }),
   );
 
@@ -113,7 +162,7 @@ module.exports = async function (env) {
       await resetState(ctx, {});
       await typeText(page, "I was born on 03/14/1948 and live at 123 Oak Street, Springfield, IL 62704");
       expect(await waitForNotice(page), "no notice");
-      await clickDialogButton(page, "Hide it", readNotice);
+      await clickDialogButton(page, "Cover it", readNotice);
       const text = await waitFor(async () => {
         const t = await editorText(page);
         return t.includes("[REDACTED") || t.includes("March") ? t : null;
@@ -157,6 +206,7 @@ module.exports = async function (env) {
         await page.screenshot({ path: path.join(OUT, "notice-more-open.png") });
         await clickDialogButton(page, "Leave it in, and don't warn me about this one again", readNotice);
         expect(!(await readNotice(page)), "notice still open");
+        await answerOnClotrPage(ctx, page);
         // The vault write goes through the background's queue, so I wait for it to land.
         let vault = await waitFor(async () => {
           const v = (await store.get(ctx, "vault")).vault;
@@ -221,7 +271,7 @@ module.exports = async function (env) {
       await resetState(ctx, {});
       await typeText(page, PHONE);
       expect(await waitForNotice(page), "no notice");
-      await clickDialogButton(page, "Leave it in", readNotice);
+      await clickDialogButton(page, "Send as is", readNotice);
       await typeText(page, " and more words");
       await expectNoUI(page, "same value, same message, already kept");
       await pressEnter(page);
@@ -238,7 +288,7 @@ module.exports = async function (env) {
       await resetState(ctx);
       await typeText(page, PHONE);
       expect(await waitForNotice(page), "no notice");
-      await clickDialogButton(page, "Hide it", readNotice);
+      await clickDialogButton(page, "Cover it", readNotice);
       const text = await editorText(page);
       expect(text.includes("[REDACTED PHONE NUMBER]") && !text.includes("5636"), `editor text: "${text}"`);
       expect(!(await readNotice(page)), "notice still open");
@@ -255,7 +305,7 @@ module.exports = async function (env) {
         await resetState(ctx, {}); // default Warn: a notice while typing
         await typeText(page, `my key ${KEY} ok`);
         expect(await waitForNotice(page), "no notice");
-        await clickDialogButton(page, "Hide it", readNotice);
+        await clickDialogButton(page, "Cover it", readNotice);
         const text =
           (await waitFor(async () => {
             const t = await editorText(page);
@@ -285,7 +335,7 @@ module.exports = async function (env) {
         await resetState(ctx, {});
         await typeText(page, `my key ${KEY} ok`);
         expect(await waitForNotice(page), "no notice");
-        await clickDialogButton(page, "Hide it", readNotice);
+        await clickDialogButton(page, "Cover it", readNotice);
         const hidden = await waitFor(async () => ((await editorText(page)).includes("[REDACTED") ? true : null), 3000);
         expect(hidden, `not hidden: "${await editorText(page)}"`);
         await sleep(500);
@@ -329,7 +379,7 @@ module.exports = async function (env) {
           expect(await waitForNotice(page), `${key}: no notice`);
           await evalInClotr(page, DROP_INSERT_TEXT);
           const inputsBefore = await page.evaluate(() => window.__inputs || 0);
-          await clickDialogButton(page, "Hide it", readNotice);
+          await clickDialogButton(page, "Cover it", readNotice);
           const text = await waitFor(async () => {
             const t = await editorText(page);
             return t.includes("[REDACTED") ? t : null;
@@ -367,7 +417,7 @@ module.exports = async function (env) {
         await typeText(page, `my key ${KEY} ok`);
         expect(await waitForNotice(page), "no notice");
         await evalInClotr(page, DROP_INSERT_TEXT);
-        await clickDialogButton(page, "Hide it", readNotice);
+        await clickDialogButton(page, "Cover it", readNotice);
         const told = await waitFor(async () => {
           const n = await readNotice(page);
           return n && /couldn't hide/i.test(n.text) ? n : null;
@@ -392,7 +442,7 @@ module.exports = async function (env) {
         await page.evaluate(() => {
           window.__rejectEdits = true;
         });
-        await clickDialogButton(page, "Hide it", readNotice);
+        await clickDialogButton(page, "Cover it", readNotice);
         const told = await waitFor(async () => {
           const n = await readNotice(page);
           return n && /couldn't hide/i.test(n.text) ? n : null;
@@ -590,10 +640,46 @@ module.exports = async function (env) {
 
   await check("SEC3", "A page can't trigger Ask before sending with a scripted Enter", () =>
     withSite(ctx, "hostile", async (page) => {
-      await resetState(ctx, { responses: { aws_access_key: "block" } });
+      await resetState(ctx, { aws_access_key: "block" });
       const reacted = await page.evaluate((k) => window.__probe(`key ${k}`, { enter: true }), KEY);
       expect(!reacted, "a scripted Enter opened Clotr's dialog");
     }),
+  );
+
+  for (const kind of ["change", "drop", "paste"])
+    await check(
+      `SEC4-${kind}`,
+      `A page can't test guesses against the vault with a script-made file ${kind} event`,
+      () =>
+        withSite(ctx, "hostile", async (page) => {
+          await resetState(ctx, {});
+          const reacted = await page.evaluate((k, kd) => window.__probeFile(kd, "guess.txt", `key ${k}`), KEY, kind);
+          expect(!reacted, `a script-made ${kind} event with a file got a reaction`);
+        }),
+    );
+
+  await check(
+    "SEC5",
+    "A page can't trigger Ask before sending with a script-started form submit (requestSubmit, no real Enter or click)",
+    () =>
+      withSite(ctx, "hostile", async (page) => {
+        await resetState(ctx, { aws_access_key: "block" });
+        await typeText(page, "hello"); // a real keystroke, so activeEditor is set, same as the exploit's own precondition
+        await sleep(600);
+        const reacted = await page.evaluate((k) => window.__probeSubmit(`key ${k}`), KEY);
+        expect(!reacted, "a script-started form submit opened Clotr's dialog");
+        const events = await store.events(ctx);
+        expect(
+          !events.some((e) => e.action === "allowed"),
+          `the probed message was recorded as sent: ${JSON.stringify(events)}`,
+        );
+        // A real click on the send button still asks first: the fix doesn't also swallow genuine sends.
+        await page.evaluate((k) => {
+          document.getElementById("msg").value = `key ${k}`;
+        }, KEY);
+        await clickSend(page);
+        expect(await waitForDialog(page), "a real click on Send stopped asking first");
+      }),
   );
 
   await check(
@@ -629,7 +715,7 @@ module.exports = async function (env) {
         await page.evaluate(() => {
           window.__rejectEdits = true;
         });
-        await clickDialogButton(page, "Hide it", readNotice);
+        await clickDialogButton(page, "Cover it", readNotice);
         const h = await waitFor(async () => {
           const x = await tabHealth();
           return x?.editFailed ? x : null;
@@ -653,7 +739,7 @@ module.exports = async function (env) {
         await clearEditor(page);
         await typeText(page, `again ${KEY2}`);
         expect(await waitForNotice(page), "no notice the second time");
-        await clickDialogButton(page, "Hide it", readNotice);
+        await clickDialogButton(page, "Cover it", readNotice);
         const cleared = await waitFor(async () => {
           const x = await tabHealth();
           return x && !x.editFailed ? x : null;
@@ -1064,7 +1150,7 @@ module.exports = async function (env) {
       );
       expect(/Email Address ×30/.test(notice.text) && /Phone Number ×30/.test(notice.text), `notice: ${notice.text}`);
       expect(!/@example/.test(notice.text), "notice lists values");
-      await clickDialogButton(page, "Hide it", readNotice);
+      await clickDialogButton(page, "Cover it", readNotice);
       const text = await editorText(page);
       expect(!/@example|555-555-1/.test(text), `not all redacted: ${text.slice(0, 120)}`);
     }),
@@ -1086,7 +1172,7 @@ module.exports = async function (env) {
         /customers\.csv/.test(notice?.text || "") && /Email Address ×3/.test(notice.text),
         `notice: ${notice?.text} LOGS: ${page.logs.slice(-6).join(" || ")}`,
       );
-      expect(!notice.buttons.some((b) => b.text === "Hide it"), "offers Remove it for a file");
+      expect(!notice.buttons.some((b) => b.text === "Cover it"), "offers Remove it for a file");
       await clickDialogButton(page, "OK", readNotice);
       const events = await waitFor(
         async () => ((await store.events(ctx)).length === 3 ? store.events(ctx) : null),
@@ -1098,51 +1184,6 @@ module.exports = async function (env) {
       );
     }),
   );
-
-  // Office documents are really zip files full of XML, so this is a minimal zip writer for test fixtures.
-  function makeZip(file, entries) {
-    const zlib = require("zlib");
-    const parts = [];
-    const central = [];
-    let offset = 0;
-    for (const [name, content, deflate = true] of entries) {
-      const data = Buffer.from(content);
-      const body = deflate ? zlib.deflateRawSync(data) : data;
-      const nameBuf = Buffer.from(name);
-      const crc = zlib.crc32(data);
-      const local = Buffer.alloc(30);
-      local.writeUInt32LE(0x04034b50, 0);
-      local.writeUInt16LE(20, 4);
-      local.writeUInt16LE(deflate ? 8 : 0, 8);
-      local.writeUInt32LE(crc, 14);
-      local.writeUInt32LE(body.length, 18);
-      local.writeUInt32LE(data.length, 22);
-      local.writeUInt16LE(nameBuf.length, 26);
-      const cd = Buffer.alloc(46);
-      cd.writeUInt32LE(0x02014b50, 0);
-      cd.writeUInt16LE(20, 4);
-      cd.writeUInt16LE(20, 6);
-      cd.writeUInt16LE(deflate ? 8 : 0, 10);
-      cd.writeUInt32LE(crc, 16);
-      cd.writeUInt32LE(body.length, 20);
-      cd.writeUInt32LE(data.length, 24);
-      cd.writeUInt16LE(nameBuf.length, 28);
-      cd.writeUInt32LE(offset, 42);
-      parts.push(local, nameBuf, body);
-      central.push(cd, nameBuf);
-      offset += 30 + nameBuf.length + body.length;
-    }
-    const cdBuf = Buffer.concat(central);
-    const end = Buffer.alloc(22);
-    end.writeUInt32LE(0x06054b50, 0);
-    end.writeUInt16LE(entries.length, 8);
-    end.writeUInt16LE(entries.length, 10);
-    end.writeUInt32LE(cdBuf.length, 12);
-    end.writeUInt32LE(offset, 16);
-    fs.writeFileSync(file, Buffer.concat([...parts, cdBuf, end]));
-  }
-  const docxXml = (paras) =>
-    `<?xml version="1.0"?><w:document xmlns:w="w"><w:body>${paras.map((p) => `<w:p><w:r><w:t>${p}</w:t></w:r></w:p>`).join("")}</w:body></w:document>`;
 
   await check("R8d", "Attached Word document: the text inside is scanned (key and phone found)", () =>
     withSite(ctx, "chatgpt", async (page) => {
@@ -1363,55 +1404,7 @@ module.exports = async function (env) {
   );
 
   // ---------- Ask before sending, for an attached file: the send waits for an answer ----------
-  // A made-up medical record number in a made-up file. Neither one may ever end up in storage.
-  const MRN = "447182093";
-  const MRN_FILE = "lab-results.txt";
-  TYPED_VALUES.add(MRN);
-  TYPED_VALUES.add(MRN_FILE);
-  // Each check writes its files into its own folder. I remove that folder without waiting afterwards, since on
-  // Windows the browser keeps an uploaded file open for a while.
-  const holdDir = (name) => {
-    const dir = path.join(OUT, `file-hold-${name}`);
-    fs.mkdirSync(dir, { recursive: true });
-    return dir;
-  };
-  const dropDir = (dir) => fs.rm(dir, { recursive: true, force: true, maxRetries: 10, retryDelay: 500 }, () => {});
-  async function attachText(page, dir, name, text) {
-    const file = path.join(dir, name);
-    fs.writeFileSync(file, text);
-    await (await page.$("#attach")).uploadFile(file);
-  }
-  const attachMrn = (page, dir) => attachText(page, dir, MRN_FILE, `Patient notes\nMRN: ${MRN}\n`);
-  // Shoots the dialog or corner note the way people actually see it, at a phone size and a desktop size, in
-  // both themes.
-  async function holdShots(page, name) {
-    for (const [width, height] of [
-      [380, 700],
-      [1280, 800],
-    ])
-      for (const theme of ["light", "dark"])
-        await shotAt(page, `${name}-${width}-${theme}.png`, { width, height, theme });
-    await page.emulateMediaFeatures([{ name: "prefers-color-scheme", value: "light" }]);
-    await page.setViewport({ width: 1000, height: 700 });
-  }
   const buttonsOf = (ui) => (ui?.buttons || []).map((b) => b.text).join("/");
-  // Stands in for Clotr's own file reader so a check can force it to be slow, to hang forever, or to throw.
-  // Each read is counted too, so a check can wait until Clotr has actually started reading the file.
-  const READS = {
-    slow: (ms) => `new Promise((r) => setTimeout(r, ${ms})).then(() => real(f))`,
-    never: () => "new Promise(() => {})",
-    broken: () => 'Promise.reject(new Error("test: the reader broke"))',
-  };
-  const stubReader = (page, kind, ms = 0) =>
-    evalInClotr(
-      page,
-      `(() => { const real = globalThis.Clotr.readAttachment; globalThis.__clotrReads = 0; globalThis.Clotr.readAttachment = (f) => { globalThis.__clotrReads++; return ${READS[kind](ms)}; }; return true; })()`,
-    );
-  const readStarted = async (page) =>
-    expect(
-      await waitFor(() => evalInClotr(page, "globalThis.__clotrReads > 0"), 3000),
-      "Clotr never started reading the file",
-    );
 
   await check(
     "R9",
@@ -1667,18 +1660,17 @@ module.exports = async function (env) {
   };
   const attach = async (page, file) => (await page.$("#attach")).uploadFile(file);
   // Drops a picture onto the page, the way a drag from the desktop would, for pages that have no file input.
-  const dropPicture = (page, name) => {
-    TYPED_VALUES.add(name);
-    return page.evaluate(
-      (b64, n) => {
-        const bytes = Uint8Array.from(atob(b64), (c) => c.charCodeAt(0));
-        const dt = new DataTransfer();
-        dt.items.add(new File([bytes], n, { type: "image/png" }));
-        document.body.dispatchEvent(new DragEvent("drop", { dataTransfer: dt, bubbles: true, cancelable: true }));
-      },
-      PNG.toString("base64"),
-      name,
-    );
+  // This goes through the browser's own input pipeline (CDP), carrying the file by its path, so the "drop"
+  // Clotr sees is genuinely trusted, the same as a real drag: a script in the page can build a DragEvent of
+  // its own, but can't make the browser mark it trusted (SEC-FILE-DROP covers that).
+  const dropPicture = async (page, name) => {
+    const file = picture(name);
+    await page.setDragInterception(true);
+    const data = { items: [], files: [file], dragOperationsMask: 1 };
+    const at = { x: 50, y: 50 };
+    await page.mouse.dragEnter(at, data);
+    await page.mouse.dragOver(at, data);
+    await page.mouse.drop(at, data);
   };
   const pictureNote = async (page) => {
     const n = await readNotice(page);
@@ -1761,7 +1753,7 @@ module.exports = async function (env) {
           await sleep(1200);
           expect((await readNotice(page))?.text.includes("Phone Number"), "the note replaced the warning");
           expect(!Object.keys(await noted()).length, "marked as shown while it waited");
-          await clickDialogButton(page, "Leave it in", readNotice);
+          await clickDialogButton(page, "Send as is", readNotice);
           await attach(page, picture("PIC2 after the warning.png"));
           expect(await waitForPictureNote(page), "no note once the warning was closed");
         });
@@ -1916,7 +1908,7 @@ module.exports = async function (env) {
           await attach(page, pictureFile("IMG_PIC5.jpg", fx.jpegWithGps(fx.PLACES.liberty)));
           const n = await waitForNotice(page);
           expect(
-            n?.text.startsWith(`⚠️ Heads up | ${PLACE_LEAD("IMG_PIC5.jpg")} | ${PLACE_HINT} | ${HONEST} | OK`),
+            n?.text.startsWith(`Before you send this | ${PLACE_LEAD("IMG_PIC5.jpg")} | ${PLACE_HINT} | ${HONEST} | OK`),
             `notice: ${n?.text}`,
           );
           // The only digits anywhere in the notice should be the ones in the file's own name.
@@ -2124,7 +2116,7 @@ module.exports = async function (env) {
           const n = await waitForNotice(page);
           expect(
             n?.text.startsWith(
-              "⚠️ Heads up | The picture “passport-scan.jpg” looks like a photo of an ID or document, going by its name. | " +
+              "Before you send this | The picture “passport-scan.jpg” looks like a photo of an ID or document, going by its name. | " +
                 "If you send it, this AI gets it. | To keep it private, take the picture off before you send. | " +
                 `${HONEST} | OK`,
             ),
@@ -2161,7 +2153,7 @@ module.exports = async function (env) {
           const scan = await waitForNotice(page);
           expect(
             scan?.text.startsWith(
-              "⚠️ Heads up | The file “w2-2025.pdf” looks like a scan of an ID or document, going by its name. | " +
+              "Before you send this | The file “w2-2025.pdf” looks like a scan of an ID or document, going by its name. | " +
                 "If you send it, this AI gets it. | To keep it private, take the file off before you send. | " +
                 "Clotr can't read the words in a scan, so look it over yourself. | OK",
             ),
@@ -2244,18 +2236,4 @@ module.exports = async function (env) {
       }
     },
   );
-
-  Object.assign(env, {
-    docxXml,
-    makeZip,
-    MRN,
-    MRN_FILE,
-    holdDir,
-    dropDir,
-    attachText,
-    attachMrn,
-    holdShots,
-    stubReader,
-    readStarted,
-  }); // used by later sections
 };

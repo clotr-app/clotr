@@ -12,6 +12,7 @@ module.exports = async function (env) {
     editorText,
     expect,
     fs,
+    hasPage,
     openExtPage,
     openPopup,
     path,
@@ -100,9 +101,14 @@ module.exports = async function (env) {
           await sleep(200);
           await audit(popup, `popup ${tab}`);
         }
+        // Scam help is closed by default: audit it open too, the same way "what's new" is checked both ways above.
+        await popup.$eval("#ss-help", (d) => d && (d.open = true));
+        await audit(popup, "popup settings, Scam help open");
       } finally {
         await popup.close();
       }
+      // check.html, practice.html and extcheck.html drop out here when their features are held back and this
+      // build doesn't ship them.
       for (const file of [
         "vault.html?welcome=1",
         "vault.html",
@@ -114,7 +120,7 @@ module.exports = async function (env) {
         "check.html",
         "practice.html",
         "extcheck.html",
-      ]) {
+      ].filter(hasPage)) {
         const page = await openExtPage(ctx, file);
         try {
           await audit(page, file);

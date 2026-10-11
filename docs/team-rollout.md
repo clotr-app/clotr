@@ -13,11 +13,12 @@ into something looser. Nothing about any of this is reported to the admin either
 | `preset` | string: `"keys_never"` \| `"client_names"` \| `"clinic"` \| `"tax_office"` | A ready-made policy (below) instead of writing out `requiredResponses` by hand. Your other settings are added on top; an explicit `requiredResponses` entry beats the preset's for that kind. |
 | `orgName` | string, up to 80 characters | Shown to your people in Clotr's Settings and on the printed policy page (below). |
 | `requiredResponses` | object: kind → `"block"` \| `"warn"` \| `"log"` | A floor for those kinds. `block` = *Ask before sending*. Kind names are the ids in `extension/patterns.js` (e.g. `aws_access_key`, `github_token`, `password`, `phone_number`, `us_ssn`). |
-| `watchWords` | array of strings | Words or phrases (up to 4 words each) to warn about, such as project code names or client names. A word with `#` for a digit and `@` for a letter (at least 4 marks, no digits, e.g. `EMP-#####`) is watched as a **format** instead of a literal phrase, so any employee number in that shape is caught, not just ones you list. Clotr turns the words themselves into one-way fingerprints on each computer before its checker ever sees them; formats travel as typed (they aren't secret). Together with the words and formats in `kinds`: **500 words and 50 formats** in all. |
+| `watchWords` | array of strings | Words or phrases (up to 4 words each) to warn about, such as project code names or client names. A word with `#` for a digit and `@` for a letter (at least 4 marks, no digits, e.g. `EMP-#####`) is watched as a **format** instead of a literal phrase, so any employee number in that shape is caught, not just ones you list. Clotr turns the words themselves into a scrambled code, never the words, on each computer, before its checker ever sees them; formats travel as typed (they aren't secret). Together with the words and formats in `kinds`: **500 words and 50 formats** in all. |
 | `kinds` | array of objects, up to 20 | Kinds of detail your organization names itself, like a matter number or a client name: Clotr warns about each one by its name. See "Your own kinds", below. |
 | `lockSettings` | boolean | People can see but not change Clotr's settings or vault. |
 | `allowPause` | boolean | `false` removes the per-site Pause. |
 | `largeText` | boolean | Larger warnings for everyone. |
+| `holdFiles` | boolean | A file waits for the person to answer about anything Clotr finds inside it, not just a kind set to `block`. On by itself once anything else here is set; set it to `false` to hold a file only for a kind set to `block`. |
 
 ## Ready-made presets
 Instead of writing out every kind by hand, one word sets a whole policy. Each is the same as pasting the
@@ -38,6 +39,7 @@ is the same as:
     "stripe_secret_key": "block",
     "anthropic_key": "block",
     "openai_key": "block",
+    "xai_key": "block",
     "google_api_key": "block",
     "slack_token": "block",
     "crypto_secret": "block",
@@ -47,10 +49,12 @@ is the same as:
     "internal_ip": "block",
     "internal_host": "block",
     "otp_secret": "block",
+    "backup_codes": "block",
     "password": "block",
     "stripe_publishable_key": "block"
   },
-  "allowPause": false
+  "allowPause": false,
+  "holdFiles": true
 }
 ```
 
@@ -91,7 +95,8 @@ is the same as:
     "my_id": "warn",
     "email": "warn"
   },
-  "allowPause": false
+  "allowPause": false,
+  "holdFiles": true
 }
 ```
 
@@ -115,7 +120,8 @@ is the same as:
     "id_picture": "warn"
   },
   "largeText": true,
-  "allowPause": false
+  "allowPause": false,
+  "holdFiles": true
 }
 ```
 
@@ -134,7 +140,8 @@ is the same as:
     "bank_account": "block",
     "date_of_birth": "block"
   },
-  "allowPause": false
+  "allowPause": false,
+  "holdFiles": true
 }
 ```
 
@@ -164,8 +171,8 @@ becomes a label like `[Matter 1]`.
 ```
 Each kind has:
 - `name` (needed, up to 40 characters): shown in warnings, so pick words your people will recognize.
-- `words`: words or phrases of this kind (up to 4 words each). Like watch words, they become one-way fingerprints on
-  each computer and are never stored.
+- `words`: words or phrases of this kind (up to 4 words each). Like watch words, they become a scrambled code, never
+  the words themselves, on each computer, and are never stored.
 - `formats`: `#` for a digit and `@` for a letter (at least 4 marks, no digits, up to 40 characters), like `MAT-######`.
 - `near` (optional, up to 10 words): a format then counts only when one of these words is within 40 characters
   before it, so `MAT-######` in a part number stays quiet.
@@ -194,12 +201,14 @@ attached, so Clotr can only hold the message, never the file, and the question s
 copy. If a file is still being read a few seconds after the person presses send, Clotr asks whether to wait for
 the check or send now. It never sends without asking.
 
-There is nothing extra to set. Files follow the kinds you set to `block`, your own kinds included. A policy with
-only `warn` kinds, or only `lockSettings`, shows the usual note for a file and holds nothing, and the policy
-fingerprint doesn't change. The question never shows your organization's name, and nothing about the file or the
-person's answer is reported to anyone. A file Clotr can't read is never held, and the person sees that it wasn't
-checked. Pictures are never held either, since Clotr can't read the words in them, and a photo's saved location
-or a picture named like an ID only warns.
+By default, once any other setting here is in force, a file holds for *anything* Clotr finds inside it, not just
+a kind set to `block`: the same question, the same two ways through, just reached for a `warn`-level kind too.
+Set `holdFiles` to `false` to go back to holding a file only for a kind set to `block`, the same as for someone
+with no policy. A policy with nothing else set, and `holdFiles` left out, shows the usual note for a file and
+holds nothing, and the policy fingerprint only changes when `holdFiles` itself does. The question never shows
+your organization's name, and nothing about the file or the person's answer is reported to anyone. A file Clotr
+can't read is never held, and the person sees that it wasn't checked. Pictures are never held either, since
+Clotr can't read the words in them, and a photo's saved location or a picture named like an ID only warns.
 
 ## What the policy page shows
 Clotr's Settings shows "Managed by your organization", naming it when `orgName` is set, with a **See what's
@@ -207,8 +216,9 @@ applied** button that opens an on-screen, printable page. That page lists the or
 date, and the preset, shown as "Custom" or as "$1 with organization changes" once an admin adjusts a preset. It
 also shows a **policy fingerprint**, a short code that's the same on every computer running the exact same
 policy, so you can compare it with a test machine instead of reading a long JSON file aloud, plus counts of kinds
-by response, watch words and watch formats, with a line saying attached files are held until the person answers
-when the policy sets a kind to *Ask before sending*. It's an unsigned self-attestation the person makes on their
+by response, watch words and watch formats, with a line saying attached files are held until the person confirms
+anything Clotr finds (or, with `holdFiles` set to `false`, only when the policy sets a kind to *Ask before
+sending*). It's an unsigned self-attestation the person makes on their
 own computer, useful for an insurer's checklist or your own file but not audit evidence, and it's never worded as
 "prevents", "certified" or "compliant". Nothing on the page is sent or saved anywhere, since it only reads the
 policy already on that computer.
@@ -225,6 +235,93 @@ Store), `hbangnmofjeaieaeamlncpcfmhbclbkj` in Edge, and `clotr@billiambash` in F
 
 After a change, open `chrome://policy` (or `edge://policy`, `brave://policy`) and click *Reload policies*. In Clotr's
 popup, Settings shows "Managed by your organization" when a policy is active.
+
+## Ready-made policy files
+Each block below is the "Example policy" above, wrapped the way that browser reads it. Paste one in, replacing
+`Acme Corp` and the credential list with your own; the other settings are in "What you can set", above.
+
+**Chrome or Brave** (they share one extension), for Linux's policy file or macOS's configuration profile:
+```json
+{
+  "3rdparty": {
+    "extensions": {
+      "gkgpgejhhmmhklaghdnbjbalkmpjnmab": {
+        "orgName": "Acme Corp",
+        "requiredResponses": { "aws_access_key": "block", "github_token": "block", "password": "block", "private_key": "block" },
+        "watchWords": ["project falcon", "acme internal"],
+        "lockSettings": true,
+        "allowPause": false
+      }
+    }
+  }
+}
+```
+
+**Edge**, the same policy:
+```json
+{
+  "3rdparty": {
+    "extensions": {
+      "hbangnmofjeaieaeamlncpcfmhbclbkj": {
+        "orgName": "Acme Corp",
+        "requiredResponses": { "aws_access_key": "block", "github_token": "block", "password": "block", "private_key": "block" },
+        "watchWords": ["project falcon", "acme internal"],
+        "lockSettings": true,
+        "allowPause": false
+      }
+    }
+  }
+}
+```
+
+**Firefox's `policies.json`:**
+```json
+{
+  "policies": {
+    "3rdparty": {
+      "Extensions": {
+        "clotr@billiambash": {
+          "orgName": "Acme Corp",
+          "requiredResponses": { "aws_access_key": "block", "github_token": "block", "password": "block", "private_key": "block" },
+          "watchWords": ["project falcon", "acme internal"],
+          "lockSettings": true,
+          "allowPause": false
+        }
+      }
+    }
+  }
+}
+```
+
+**Windows, by registry instead of Group Policy:** the same policy, written straight into the registry for Chrome,
+Edge and Brave. Run as administrator, after the force-install above:
+```powershell
+$policy = @{
+  orgName           = "Acme Corp"
+  requiredResponses = @{ aws_access_key = "block"; github_token = "block"; password = "block"; private_key = "block" }
+  watchWords        = @("project falcon", "acme internal")
+  lockSettings      = $true
+  allowPause        = $false
+}
+$targets = @{
+  "Google\Chrome"       = "gkgpgejhhmmhklaghdnbjbalkmpjnmab"
+  "BraveSoftware\Brave" = "gkgpgejhhmmhklaghdnbjbalkmpjnmab"
+  "Microsoft\Edge"      = "hbangnmofjeaieaeamlncpcfmhbclbkj"
+}
+foreach ($t in $targets.GetEnumerator()) {
+  $key = "HKLM:\Software\Policies\$($t.Key)\3rdparty\extensions\$($t.Value)\policy"
+  New-Item -Path $key -Force | Out-Null
+  foreach ($field in $policy.Keys) {
+    $value = $policy[$field]
+    if ($value -is [bool]) { Set-ItemProperty -Path $key -Name $field -Value ([int]$value) -Type DWord }
+    elseif ($value -is [string]) { Set-ItemProperty -Path $key -Name $field -Value $value -Type String }
+    else { Set-ItemProperty -Path $key -Name $field -Value ($value | ConvertTo-Json -Compress) -Type String }
+  }
+}
+```
+A setting that's a list or an object (`requiredResponses`, `watchWords`, `kinds`) goes in as one JSON-encoded string
+value, the way Chrome, Edge and Brave all read a 3rd-party extension's policy from the registry; a plain word or a
+yes/no goes in as its own type. Reload policies afterward and check Clotr's Settings.
 
 ## Every browser on one computer (a family member's PC, too)
 Forcing the install puts Clotr in each browser for every account on the computer, turned on, with no *Remove*

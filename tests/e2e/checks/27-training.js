@@ -163,7 +163,7 @@ module.exports = async function (env) {
         await page.click("#tw-try-send");
         await sleep(150);
         s = await shellState(page);
-        expect(/Heads up/.test(s.resultText), `notice: ${s.resultText}`);
+        expect(/Before you send this/.test(s.resultText), `notice: ${s.resultText}`);
         expect(/219-…99/.test(s.resultText) || /•{9,11}/.test(s.resultText), `masked SSN: ${s.resultText}`);
         // The instructional bubble above always shows the made-up number, so it can be copied. Only the notice itself has to mask it.
         expect(!s.resultText.includes("219-09-9999"), `the full number shown in the notice: ${s.resultText}`);

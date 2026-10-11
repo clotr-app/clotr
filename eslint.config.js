@@ -26,9 +26,11 @@ const insideExtension = Object.fromEntries(
     "runMigrations",
     "settingsFor",
     "setResponses",
+    "syncEverywhere",
     "syncUserSites",
   ].map((name) => [name, "readonly"]),
 );
+insideExtension.policyRead = "writable"; // the harness forgets the kept team policy when a check swaps it
 
 module.exports = [
   {

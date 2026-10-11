@@ -598,7 +598,7 @@ module.exports = async function (env) {
             const n = await waitForNotice(page);
             expect(n, `no notice #${i}`);
             expect(!choicesOf(n).some((t) => LOOSENING.test(t)), `notice #${i}: ${choicesOf(n).join(" | ")}`);
-            await clickDialogButton(page, "Leave it in", readNotice);
+            await clickDialogButton(page, "Send as is", readNotice);
             await sleep(300);
           }
           await sleep(1500);
@@ -1077,7 +1077,7 @@ module.exports = async function (env) {
             page,
             "globalThis.__opened = []; window.open = (u) => { globalThis.__opened.push(u); return null; }, true",
           );
-          await clickDialogButton(page, "Why am I seeing this?", readNotice);
+          await clickDialogButton(page, "Why?", readNotice);
           await clickDialogButton(page, "Wrong? Report a false alarm", readNotice);
           const [url] = await evalInClotr(page, "globalThis.__opened");
           const decoded = decodeURIComponent(url || "");
@@ -1262,7 +1262,7 @@ module.exports = async function (env) {
             );
             expect(TEAM_LINE.test(dialog.text) && /Sending is still your choice/.test(dialog.text), dialog.text);
             await holdShots(page, "file-hold-team");
-            await sleep(10000);
+            await sleep(6000); // twice the file-read wait elsewhere, long enough to show this one never times out
             expect(await readDialog(page), "the dialog went away by itself");
             expect((await sentCount(page)) === 0, "sent without an answer");
             await clickDialogButton(page, "Send with the file");
@@ -1467,11 +1467,13 @@ module.exports = async function (env) {
       }),
   );
 
-  // TM4 is the same check as TF1: a policy's Ask kind inside a file waits for an answer. TM5 checks the opposite
-  // case, where a policy leaves a kind at Warn, or has no Ask kinds at all, and only the corner note should show.
+  // TM4 is the same check as TF1: a policy's Ask kind inside a file waits for an answer. holdFiles is on by
+  // itself under any policy, so TM5 now checks the opposite case too: a file with only what the policy leaves
+  // at Warn still holds, naming the organization, the same as an Ask-level kind would. TM6 checks that an
+  // admin's explicit holdFiles: false goes back to the old behavior: only an Ask-level kind holds a file.
   await check(
     "TM5",
-    "Team file hold: a file with only what the policy leaves at Warn gets the corner note and Enter sends; a policy with no Ask kinds never holds a file",
+    "Team file hold, holdFiles on by default: a file with only what the policy leaves at Warn still holds for an answer, naming the organization; Send with the file sends it once",
     () =>
       withTeamPolicy({ preset: "clinic" }, async () => {
         await resetState(ctx, {});
@@ -1479,21 +1481,50 @@ module.exports = async function (env) {
           const dir = holdDir("tm5");
           try {
             await attachText(page, dir, "contacts.txt", "Front desk: ann.lee@gmail.com\n");
+            await typeText(page, "tidy up this list");
+            await pressEnter(page);
+            const dialog = await waitForDialog(page);
+            expect(
+              /This file looks private/.test(dialog?.text || "") &&
+                /Email/.test(dialog.text) &&
+                TEAM_LINE.test(dialog.text),
+              `dialog: ${dialog?.text}`,
+            );
+            expect((await sentCount(page)) === 0, "sent without an answer");
+            await clickDialogButton(page, "Send with the file");
+            expect(await sentWithin(page, 1, 2000), "Send with the file didn't send");
+          } finally {
+            dropDir(dir);
+          }
+        });
+      }),
+  );
+
+  await check(
+    "TM6",
+    "Team file hold, holdFiles set to false: a Warn-level file only gets the corner note and Enter sends; a policy with no Ask kinds and holdFiles off never holds a file",
+    () =>
+      withTeamPolicy({ preset: "clinic", holdFiles: false }, async () => {
+        await resetState(ctx, {});
+        await withSite(ctx, "chatgpt", async (page) => {
+          const dir = holdDir("tm6");
+          try {
+            await attachText(page, dir, "contacts.txt", "Front desk: ann.lee@gmail.com\n");
             const notice = await waitForNotice(page);
             expect(/contacts\.txt/.test(notice?.text || "") && /Email/.test(notice.text), `notice: ${notice?.text}`);
             await typeText(page, "tidy up this list");
             await pressEnter(page);
             expect(await sentWithin(page, 1, 1500), "a Warn-level file held the message");
-            expect(!(await readDialog(page)), "a dialog for a Warn-level file");
+            expect(!(await readDialog(page)), "a dialog for a Warn-level file with holdFiles off");
           } finally {
             dropDir(dir);
           }
         });
       }).then(() =>
-        withTeamPolicy({ requiredResponses: { email: "warn" } }, async () => {
+        withTeamPolicy({ requiredResponses: { email: "warn" }, holdFiles: false }, async () => {
           await resetState(ctx, {});
           await withSite(ctx, "chatgpt", async (page) => {
-            const dir = holdDir("tm5b");
+            const dir = holdDir("tm6b");
             try {
               await stubReader(page, "never");
               await typeText(page, "tidy up this list");
@@ -1501,13 +1532,47 @@ module.exports = async function (env) {
               await attachText(page, dir, "contacts.txt", "Front desk: ann.lee@gmail.com\n");
               await readStarted(page);
               await pressEnter(page);
-              expect(await sentWithin(page, 1, 1000), "a policy with no Ask kinds waited for a file");
+              expect(await sentWithin(page, 1, 1000), "a policy with no Ask kinds and holdFiles off waited for a file");
             } finally {
               dropDir(dir);
             }
           });
         }),
       ),
+  );
+
+  await check(
+    "TM7",
+    "Team file hold, holdFiles on with no Ask-level kind at all: a file still being read turns into the organization's question too, never a silent send",
+    () =>
+      withTeamPolicy({ requiredResponses: { email: "warn" } }, async () => {
+        await resetState(ctx, {});
+        await withSite(ctx, "chatgpt", async (page) => {
+          const dir = holdDir("tm7");
+          try {
+            await stubReader(page, "slow", 6000);
+            await typeText(page, "tidy up this list");
+            await sleep(600);
+            await attachText(page, dir, "contacts.txt", "Front desk: ann.lee@gmail.com\n");
+            await readStarted(page);
+            await pressEnter(page);
+            const question = await waitFor(async () => {
+              const d = await readDialog(page);
+              return d && /still checking your file/.test(d.text) ? d : null;
+            }, 4500);
+            expect(question, "no question without a block-level kind");
+            expect((await sentCount(page)) === 0, "sent without the check");
+            const held = await waitFor(async () => {
+              const d = await readDialog(page);
+              return d && /This file looks private/.test(d.text) ? d : null;
+            }, 5000);
+            expect(held && /Email/.test(held.text) && TEAM_LINE.test(held.text), `after: ${held?.text}`);
+            expect((await sentCount(page)) === 0, "sent with an email in the file");
+          } finally {
+            dropDir(dir);
+          }
+        });
+      }),
   );
 
   // TM2 used to fail now and then on the very first message after a page loads, so these checks cover that case
@@ -1695,8 +1760,9 @@ module.exports = async function (env) {
         await changed.close();
       }
 
-      // A policy that asks before sending should hold attached files with those kinds, and the page should say
-      // so. A policy that only warns shouldn't show that line at all.
+      // holdFiles is on by itself under any policy, so the page should say every file finding holds. An admin's
+      // explicit holdFiles: false on a policy that still asks before sending for a kind falls back to the older
+      // line, naming only that hold; with holdFiles off and nothing to ask before sending, the line disappears.
       const filesLine = (page) =>
         page.evaluate(() =>
           [...document.querySelectorAll("#pa-counts li")]
@@ -1706,15 +1772,29 @@ module.exports = async function (env) {
       const clinic = await openPolicyPage({ preset: "clinic" });
       try {
         const line = await filesLine(clinic);
-        expect(/held until the person answers/.test(line || ""), `files line: ${line}`);
+        expect(/held until you confirm/.test(line || ""), `files line: ${line}`);
       } finally {
         await clinic.close();
       }
       const warnOnly = await openPolicyPage({ requiredResponses: { email: "warn" } });
       try {
-        expect(!(await filesLine(warnOnly)), "a files line for a policy that never asks");
+        const line = await filesLine(warnOnly);
+        expect(/held until you confirm/.test(line || ""), `files line for a bare policy: ${line}`);
       } finally {
         await warnOnly.close();
+      }
+      const clinicOptedOut = await openPolicyPage({ preset: "clinic", holdFiles: false });
+      try {
+        const line = await filesLine(clinicOptedOut);
+        expect(/held until the person answers/.test(line || ""), `files line with holdFiles off: ${line}`);
+      } finally {
+        await clinicOptedOut.close();
+      }
+      const noAskNoHold = await openPolicyPage({ requiredResponses: { email: "warn" }, holdFiles: false });
+      try {
+        expect(!(await filesLine(noAskNoHold)), "a files line for a policy with no Ask kinds and holdFiles off");
+      } finally {
+        await noAskNoHold.close();
       }
     },
   );
@@ -2143,8 +2223,9 @@ module.exports = async function (env) {
       const n = await waitFor(() => readNotice(page), 5000);
       const buttons = (n?.buttons || []).map((b) => b.text);
       await shot(page, "notice-es.png");
-      expect(n && /Atención/.test(n.text) && /Clave de acceso de AWS/.test(n.text), `notice: ${n?.text}`);
-      expect(buttons.includes("Ocultarlo") && buttons.includes("Dejarlo"), `buttons: ${buttons.join(" | ")}`);
+      // One kind found, so the label strip names it ("Clave de acceso de AWS") instead of a general heading.
+      expect(n && /Clave de acceso de AWS/.test(n.text), `notice: ${n?.text}`);
+      expect(buttons.includes("Cubrirlo") && buttons.includes("Enviarlo tal cual"), `buttons: ${buttons.join(" | ")}`);
       await page.close();
     } finally {
       await es.browser.close();
@@ -2782,7 +2863,7 @@ module.exports = async function (env) {
           await typeText(page, `Please sort these by surname: ${listOf(300, 0).join(", ")}`);
           const notice = await waitFor(() => readNotice(page), 8000);
           expect(/Email Address/.test(notice?.text || ""), `notice: ${notice?.text}`);
-          await clickDialogButton(page, "Leave it in", readNotice);
+          await clickDialogButton(page, "Send as is", readNotice);
           await pressEnter(page);
           const events = await waitFor(async () => {
             const ev = await store.events(ctx);

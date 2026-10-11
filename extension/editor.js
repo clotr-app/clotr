@@ -21,10 +21,13 @@
     return Boolean(input.form?.querySelector("input[type='password']"));
   }
 
-  // Returns the textarea/input or contenteditable root (ProseMirror, Quill) for a node.
+  // Returns the textarea/input or contenteditable root (ProseMirror, Quill) for a node. type="search" is a
+  // search box's own input type (Google, Bing and DuckDuckGo all use it, or plain text); it behaves like
+  // type="text" for everything Clotr does here, so it's treated the same way.
   function findEditor(node) {
     if (!(node instanceof Element)) return null;
-    if (node.matches("input[type='text'], input:not([type])")) return isSignInField(node) ? null : node;
+    if (node.matches("input[type='text'], input[type='search'], input:not([type])"))
+      return isSignInField(node) ? null : node;
     if (node.matches("textarea")) return node;
     if (!node.isContentEditable) return null;
     let root = node;
@@ -34,6 +37,62 @@
 
   function getText(editor) {
     return editor.isContentEditable ? editor.innerText : editor.value;
+  }
+
+  // ---------- "Everywhere I type": is this really a chat-style composer? ----------
+  // Only matters on a page covered by the broad switch, with no dedicated setup of its own: there, Clotr has
+  // to tell a message box from an ordinary form field by itself, since nothing names the page in advance.
+  // autocomplete values that mark an address, a payment card, a name, an email, a phone number, a username or
+  // a password: a box sitting in the same form as one of these is a form field, however many lines it has.
+  const FORM_FIELD_AUTOCOMPLETE =
+    /^(street-address|address-line[1-3]|address-level[1-4]|postal-code|country(-name)?|organization|cc-[a-z-]+|name|given-name|additional-name|family-name|honorific-(prefix|suffix)|nickname|email|tel(-[a-z-]+)?|username|current-password|new-password)$/i;
+  // A nearby control whose label reads like it sends the message, the same wording a built-in AI site's own
+  // send button uses, never "post" or "submit" alone on a page that never says "send": comment forms and
+  // other ordinary submit buttons don't use this wording, so they're left for the autocomplete check instead.
+  const SEND_LIKE = /\b(send|enviar)\b/i; // English and Spanish, Clotr's two languages
+
+  // A pure decision, so it can be tested without a real page: true only for a multi-line box (never a plain
+  // input) that looks like it sends a message and isn't sitting in a form built for someone's name, address,
+  // payment details or sign-in.
+  function isChatComposer({
+    tag,
+    hasSendButton = false,
+    enterSends = false,
+    formAutocompletes = [],
+    hasPasswordField = false,
+  } = {}) {
+    if (tag !== "textarea" && tag !== "contenteditable") return false;
+    if (hasPasswordField) return false;
+    if ((formAutocompletes || []).some((ac) => FORM_FIELD_AUTOCOMPLETE.test(String(ac || "").trim()))) return false;
+    return Boolean(hasSendButton || enterSends);
+  }
+
+  // Reads what isChatComposer needs off the real page: the box's own kind, whether its enclosing form (if
+  // any) holds a password or one of the form-field autocomplete values, whether a send-labeled control sits
+  // within a few levels of it, and whether it's set to send on Enter itself (enterkeyhint, the same attribute
+  // phone keyboards read to show a send icon instead of a return arrow).
+  function composerInfo(editor) {
+    const tag = editor.isContentEditable ? "contenteditable" : editor.matches?.("textarea") ? "textarea" : "input";
+    const form = typeof editor.closest === "function" ? editor.closest("form") : null;
+    const formAutocompletes = form
+      ? [...form.querySelectorAll("[autocomplete]")].map((f) => f.getAttribute("autocomplete") || "")
+      : [];
+    const hasPasswordField = Boolean(form?.querySelector("input[type='password']"));
+    const enterSends = (editor.getAttribute?.("enterkeyhint") || "").toLowerCase() === "send";
+    let hasSendButton = false;
+    let area = editor;
+    for (let i = 0; i < 4 && area?.parentElement && !hasSendButton; i++) {
+      area = area.parentElement;
+      for (const btn of area.querySelectorAll('button, [role="button"], input[type="submit"]')) {
+        if (btn === editor || btn.contains(editor)) continue;
+        const label = `${btn.getAttribute("aria-label") || ""} ${btn.getAttribute("title") || ""} ${btn.textContent || ""}`;
+        if (SEND_LIKE.test(label)) {
+          hasSendButton = true;
+          break;
+        }
+      }
+    }
+    return { tag, formAutocompletes, hasPasswordField, enterSends, hasSendButton };
   }
 
   // execCommand is deprecated: if a browser drops it (or a command), this returns false instead of throwing.
@@ -151,5 +210,13 @@
     return false;
   }
 
-  globalThis.Clotr.editor = { realTarget, findEditor, getText, replaceText, isEditing: () => editing };
+  globalThis.Clotr.editor = {
+    realTarget,
+    findEditor,
+    getText,
+    replaceText,
+    isEditing: () => editing,
+    isChatComposer,
+    composerInfo,
+  };
 })();

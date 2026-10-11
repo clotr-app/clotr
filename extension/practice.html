@@ -16,8 +16,6 @@
     <h1 id="title" data-i18n="pd_title">What would you reply?</h1>
   </header>
 
-  <!-- Round 1: six made-up scam messages, one at a time. Every reveal is the real engine's detect() answering on
-       the reply, run on this computer, and nothing typed here in practice.js is kept, counted or sent. -->
   <section id="drill" aria-labelledby="drill-step">
     <p class="lead" data-i18n="pd_lead">Six made-up messages, like the ones scammers send. Type the reply you'd give and see what Clotr does. Nothing you type leaves this page or is kept, so use made-up numbers.</p>
     <h2 id="drill-step" class="step"></h2>
@@ -45,15 +43,12 @@
     </p>
   </section>
 
-  <!-- Round 2: Spot the leak. Made-up messages typed into an AI chat; the person says what they'd do, then sees what
-       Clotr finds in it. -->
   <section id="leak" aria-labelledby="leak-title" hidden>
     <div class="leak-head">
       <h2 id="leak-title" class="step" tabindex="-1" data-i18n="pd_leakTitle">Would you send this to a chatbot?</h2>
       <span id="leak-count" class="leak-count"></span>
     </div>
     <div id="leak-body"></div>
-    <!-- The end: how many of the private ones the person would have changed. Shown, never kept. -->
     <div id="leak-end" class="leak-end" hidden>
       <p id="leak-score" class="leak-score" tabindex="-1"></p>
       <p id="leak-cheer" class="leak-cheer"></p>
@@ -78,6 +73,7 @@
   <script src="decide.js"></script>
   <script src="page-notice.js"></script>
   <script src="practice-data.js"></script>
+  <script src="quick-exit.js"></script>
   <script src="practice.js"></script>
 </body>
 </html>
