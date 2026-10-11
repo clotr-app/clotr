@@ -1,10 +1,11 @@
 # Privacy policy
 
-Last updated 2026-10-05, for Clotr 1.2.0.
+Last updated 2026-10-11, for Clotr 1.3.0.
 
-Clotr checks what you type into AI chats, on your computer, and warns you before a private detail goes out. Nothing it
-reads leaves your computer, and it never stores what you type. This covers the browser extension below, then Clotr
-for Windows, the desktop app, further down.
+Clotr checks what you type into AI chats on your computer and warns you before a private detail goes out. Clotr
+processes that information on your device, does not send it to Clotr, and never stores what you type. If you choose
+to send a message, the AI chat service receives it as usual. This covers the browser extension below, then Clotr for
+Windows, the desktop app, further down.
 
 ## What it reads
 
@@ -64,7 +65,9 @@ while settings are locked. Removing Clotr deletes all of it.
 
 ## What it sends
 
-Nothing. Clotr has no servers, analytics or third-party services, and it makes no network requests.
+Clotr itself sends nothing. It has no servers, analytics or third-party services, and it makes no network requests.
+When you choose to send a message in an AI chat, that service receives the message in the usual way; Clotr does not
+send it there.
 
 *Report a problem* and the false-alarm link in a warning only open a GitHub page in a new tab. Its address carries the
 kind of report, Clotr's version, your browser and, for a false alarm, the kind of detail and the site if you tick it,
@@ -74,7 +77,7 @@ only, and you copy them in yourself.
 *Move to a new computer* makes one file with your settings, your list's fingerprints and the secret, encrypted with
 AES-256 and a password you choose. Your browser saves it where you say, and Clotr sends it nowhere.
 
-Since nothing leaves your computer, there's nothing for Clotr to share or sell.
+Clotr does not send your content anywhere, so it has no content to share or sell.
 
 ## Known limits
 
@@ -86,7 +89,9 @@ computer.
 ## Clotr for Windows
 
 Clotr for Windows watches beside the AI apps on your computer instead of in a browser tab: ChatGPT, Claude, Gemini
-and Copilot's own windows, once you've opened one. Like the extension, nothing it reads leaves your computer.
+and Copilot's own windows, once you've opened one. Like the extension, Clotr for Windows processes what it reads on
+your computer and does not send it to Clotr. When you choose to send a message in an AI app, that service receives it
+as usual.
 
 ### What it reads
 

@@ -109,6 +109,14 @@ const ONLY = arg("--only")
   ?.split(",")
   .map((id) => id.trim().toUpperCase());
 const wanted = (id) => !ONLY || ONLY.includes(id.toUpperCase());
+// Click the visible label, not the small checkbox inside it. Marionette can't reliably scroll
+// the checkbox into view, while a person can click the whole app row.
+const offerLabel = (app) => `#everyday-offer label.ev-app:has(input[value="${app}"])`;
+async function clickOfferApp(ff, app) {
+  const label = offerLabel(app);
+  await ff.exec(`document.querySelector(${JSON.stringify(label)})?.scrollIntoView({ block: "center" });`);
+  await ff.click(label);
+}
 
 async function main() {
   const t0 = Date.now();
@@ -525,6 +533,13 @@ async function ownPageChecks(check, firefox, ext) {
     const onWelcome = async () => {
       if (!welcome) throw new Error("Clotr didn't open its welcome page when it was installed");
       await ff.switchTo(welcome);
+      const ready = await ff.waitFor(
+        'return document.querySelector("#where-offer") && !document.querySelector("#where-offer").hidden ? true : null;',
+      );
+      if (!ready) throw new Error("the welcome page's site choices didn't load");
+      // The app rows live under "Pick sites one by one instead" on the welcome page.
+      if (!(await ff.exec('return document.querySelector("#where-pick-sites").open;')))
+        await ff.click("#where-pick-sites summary");
     };
 
     await check(
@@ -554,7 +569,7 @@ async function ownPageChecks(check, firefox, ext) {
           'return !document.querySelector("#everyday-offer").hidden && Boolean(document.querySelector(\'#everyday-offer input[value="Gmail"]\'));',
         );
         if (!shown) throw new Error("the email and chat apps card didn't show");
-        await ff.click('#everyday-offer input[value="Gmail"]');
+        await clickOfferApp(ff, "Gmail");
         await ff.click("#ev-go");
         const said = await ff.waitFor(
           'return (await chrome.permissions.contains({ origins: ["https://mail.google.com/*"] })) ? document.querySelector("#ev-status").textContent : null;',
@@ -580,7 +595,8 @@ async function ownPageChecks(check, firefox, ext) {
         // already-on app would untick it, so this only ticks the ones that still need it.
         for (const app of ["Gmail", "Discord"]) {
           const box = `#everyday-offer input[value="${app}"]`;
-          if (!(await ff.exec(`return document.querySelector(${JSON.stringify(box)}).checked;`))) await ff.click(box);
+          if (!(await ff.exec(`return document.querySelector(${JSON.stringify(box)}).checked;`)))
+            await clickOfferApp(ff, app);
         }
         await ff.click("#ev-go");
         const on = await ff.waitFor(
@@ -593,8 +609,8 @@ async function ownPageChecks(check, firefox, ext) {
         await ff.exec(
           "chrome.permissions.realRequest ??= chrome.permissions.request; chrome.permissions.request = () => Promise.resolve(false);",
         );
-        await ff.click('#everyday-offer input[value="Slack"]');
-        await ff.click('#everyday-offer input[value="WhatsApp"]');
+        await clickOfferApp(ff, "Slack");
+        await clickOfferApp(ff, "WhatsApp");
         await ff.click("#ev-go");
         const status = await ff.waitFor(
           'const t = document.querySelector("#ev-status").textContent; return /Nothing was switched on/.test(t) ? t : null;',
@@ -607,8 +623,8 @@ async function ownPageChecks(check, firefox, ext) {
           'return [...document.querySelectorAll("#everyday-offer input[type=checkbox]")].filter((b) => b.checked && !b.parentElement.classList.contains("on")).map((b) => b.value);',
         );
         if (ticked.join() !== "Slack,WhatsApp") throw new Error(`ticks after No: ${JSON.stringify(ticked)}`);
-        await ff.click('#everyday-offer input[value="Slack"]');
-        await ff.click('#everyday-offer input[value="WhatsApp"]');
+        await clickOfferApp(ff, "Slack");
+        await clickOfferApp(ff, "WhatsApp");
         const unticked = await ff.exec(
           'return [...document.querySelectorAll("#everyday-offer input[type=checkbox]")].filter((b) => b.checked && !b.parentElement.classList.contains("on")).map((b) => b.value);',
         );
@@ -622,8 +638,8 @@ async function ownPageChecks(check, firefox, ext) {
       async () => {
         await onWelcome();
         // Slack and WhatsApp are unticked and off again after the check above.
-        await ff.click('#everyday-offer input[value="Slack"]');
-        await ff.click('#everyday-offer input[value="WhatsApp"]');
+        await clickOfferApp(ff, "Slack");
+        await clickOfferApp(ff, "WhatsApp");
         await ff.click("#ev-go");
         const status = await ff.waitFor(
           'const t = document.querySelector("#ev-status").textContent; return /Nothing was switched on/.test(t) ? t : null;',

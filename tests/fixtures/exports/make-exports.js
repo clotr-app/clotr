@@ -650,7 +650,7 @@ const ARCHIVE_HTML =
 // best guess, not a real export's header, and the reader below matches a header by what each column plainly
 // means (a date, a prompt) rather than this exact wording. No real Copilot export was read to build this.
 const csvCell = (v) => (/[",\r\n]/.test(v) ? `"${v.replace(/"/g, '""')}"` : v);
-const csvFile = (header, rows) => `${[header, ...rows].map((r) => r.map(csvCell).join(",")).join("\r\n")}\r\n`;
+const csvFile = (header, rows) => `${[header, ...rows].map((r) => r.map(csvCell).join(",")).join("\n")}\n`;
 
 const COPILOT_HEADER = ["Date", "Time", "Application", "Prompt", "Response"];
 const COPILOT_ROWS = [

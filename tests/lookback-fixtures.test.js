@@ -81,6 +81,11 @@ test("each export is a folder and a zip holding exactly the same files", () => {
   assert.equal(chatgpt.after.length, Object.keys(chatgpt.files).length);
 });
 
+test("Copilot CSV fixtures use LF line endings, as required by the repository", () => {
+  for (const name of ["copilot", "copilot-unknown-header"])
+    assert.ok(!EXPORTS[name]["CopilotActivity.csv"].includes("\r"), name);
+});
+
 // These are the made-up values for each kind. Finding anything else of that kind in a fixture would be a mistake.
 const MADE_UP = {
   credit_card: /^(4111 1111 1111 1111|5555 5555 5555 4444)$/,

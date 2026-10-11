@@ -6,6 +6,7 @@
   "scripts": {
     "test": "node --test --test-reporter=dot \"tests/*.test.js\"",
     "test:e2e": "node tests/e2e/run.js",
+    "test:e2e:packaged": "node tools/package.js --no-zip --folder dist/e2e-packaged && node tests/e2e/run.js --ext dist/e2e-packaged",
     "test:firefox": "node tests/e2e/firefox.js",
     "test:stress": "node tests/e2e/run.js --stress --only STS",
     "lint": "prettier --check . && eslint .",
