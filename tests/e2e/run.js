@@ -8,6 +8,7 @@
 //   npm run test:e2e -- --shard 1        the sections tests/e2e/shards.js assigns to CI's shard 1 (then 2, 3)
 //   npm run test:e2e -- --browser "C:/path/to/chrome.exe"
 //   npm run test:e2e:all-on              every held-back feature's own checks too, against an all-on build (sections.js)
+//   npm run test:e2e -- --coverage       also save which lines of extension/ ran (./coverage.js, npm run coverage:all)
 //
 // This also runs in a Linux container, so CI and cloud sessions fall back to the Playwright Chromium build and add
 // --no-sandbox when running as root.
@@ -32,7 +33,7 @@ const lib = require("./lib.js");
 const { sections } = require("./sections.js");
 const { sectionsForShard } = require("./shards.js");
 
-const { EXT, OUT, ONLY, BROWSER, HEADED, argValue, launch, check, expect, writeReport } = lib;
+const { EXT, OUT, ONLY, BROWSER, HEADED, COVERAGE_FILE, coverage, argValue, launch, check, expect, writeReport } = lib;
 // A held-back feature's section only runs once its flag is actually on in the build under test, read from
 // manifest.json in whichever folder --ext points at. npm run test:e2e:all-on builds that folder with every flag
 // on, so it runs every section; any other run picks up whatever the manifest already ships.
@@ -45,7 +46,7 @@ const SECTIONS = sections(undefined, manifestFeatures);
 const PART = (() => {
   const i = process.argv.indexOf("--part");
   const m = /^(\d+)\/(\d+)$/.exec(i > 0 ? process.argv[i + 1] || "" : "");
-  return m && +m[1] >= 1 && +m[1] <= +m[2] ? { k: +m[1], n: +m[2] } : { k: 1, n: 1 };
+  return m && Number(m[1]) >= 1 && Number(m[1]) <= Number(m[2]) ? { k: Number(m[1]), n: Number(m[2]) } : { k: 1, n: 1 };
 })();
 const SHARD = argValue("--shard");
 const RUN_SECTIONS = SHARD
@@ -56,8 +57,9 @@ async function main() {
   fs.mkdirSync(OUT, { recursive: true });
   // A full run starts with no screenshots left over, so a stale one from a check that no longer takes any can't be
   // mistaken for today's UI.
-  if (!ONLY.length && PART.k === 1)
+  if (!ONLY.length && PART.k === 1) {
     for (const f of fs.readdirSync(OUT)) if (f.endsWith(".png")) fs.rmSync(path.join(OUT, f));
+  }
   console.log(`Clotr end-to-end tests\n  browser: ${BROWSER}`);
   const ctx = await launch();
   console.log(`  engine:  ${ctx.version}${HEADED ? " (headed)" : " (headless)"}\n`);
@@ -77,6 +79,7 @@ async function main() {
     fs.rmSync(ctx.profile, { recursive: true, force: true });
   }
   writeReport(ctx);
+  if (coverage) await coverage.save(COVERAGE_FILE);
 }
 
 main()

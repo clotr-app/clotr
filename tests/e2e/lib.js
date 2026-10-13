@@ -64,6 +64,11 @@ const ONLY = (argValue("--only") || "")
   .map((s) => s.trim())
   .filter(Boolean);
 const BROWSER = argValue("--browser") || process.env.CLOTR_BROWSER || findBrowser();
+// Where --coverage saves which lines of extension/ the run went through (./coverage.js), or null when it's off. Off,
+// that file never loads, so nothing about an ordinary run changes.
+const COVERAGE_FILE =
+  process.env.CLOTR_E2E_COVERAGE || (argv.includes("--coverage") ? path.join(OUT, "coverage.json") : null);
+const coverage = COVERAGE_FILE ? require("./coverage.js") : null;
 
 // Both keys are random-looking fakes. AWS's own docs use a well-known example key that Clotr deliberately ignores,
 // so these aren't it.
@@ -472,14 +477,16 @@ async function launch(ext = EXT, extraArgs = [], extraEnv = null) {
       { timeout: 15000 * patience() },
     );
     const swSession = await swTarget.createCDPSession();
+    if (coverage) coverage.watch(browser, swTarget, swSession, ext);
     // Runs fn(...args) in the service worker. I use raw CDP here instead of puppeteer's own WebWorker wrapper, because
     // that wrapper's evaluate() hangs on some Chromium builds.
     const worker = {
       async evaluate(fn, ...args) {
         const expression = `(${fn})(...${JSON.stringify(args)})`;
         const r = await swSession.send("Runtime.evaluate", { expression, awaitPromise: true, returnByValue: true });
-        if (r.exceptionDetails)
+        if (r.exceptionDetails) {
           throw new Error(`service worker: ${r.exceptionDetails.exception?.description || r.exceptionDetails.text}`);
+        }
         return r.result.value;
       },
     };
@@ -541,8 +548,9 @@ const store = {
       ["responses", "paused", "vault", "siteModes", "guided", "largeText", "bandage", "commandCheck"].some(
         (k) => k in obj,
       )
-    )
+    ) {
       await settle(300);
+    }
   },
   events: async (ctx) => (await store.get(ctx, "events")).events || [],
 };
@@ -745,8 +753,9 @@ async function readUI(page, tag) {
   (function walk(n) {
     if (n.nodeName === "STYLE") return;
     if (n.nodeType === 3 && n.nodeValue.trim()) texts.push(n.nodeValue.trim());
-    if (n.nodeName === "BUTTON" || n.nodeName === "SUMMARY")
+    if (n.nodeName === "BUTTON" || n.nodeName === "SUMMARY") {
       buttons.push({ text: textOf(n).trim(), nodeId: n.nodeId, hidden: isHidden(n) });
+    }
     if (n.nodeName === "INPUT") checkbox = n.nodeId;
     for (const c of [...(n.children || []), ...(n.shadowRoots || [])]) walk(c);
   })(host);
@@ -1116,9 +1125,11 @@ async function holdShots(page, name) {
   for (const [width, height] of [
     [380, 700],
     [1280, 800],
-  ])
-    for (const theme of ["light", "dark"])
+  ]) {
+    for (const theme of ["light", "dark"]) {
       await shotAt(page, `${name}-${width}-${theme}.png`, { width, height, theme });
+    }
+  }
   await page.emulateMediaFeatures([{ name: "prefers-color-scheme", value: "light" }]);
   await page.setViewport({ width: 1000, height: 700 });
 }
@@ -1154,6 +1165,7 @@ module.exports = {
   readStarted,
   ALL_GUIDED,
   BROWSER,
+  COVERAGE_FILE,
   DIALOG_WAIT,
   EXT,
   FEATURES,
@@ -1183,6 +1195,7 @@ module.exports = {
   clickNode,
   clickSend,
   clotrActive,
+  coverage,
   describeConsole,
   editorText,
   evalInClotr,

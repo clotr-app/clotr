@@ -10,6 +10,8 @@
     "test:firefox": "node tests/e2e/firefox.js",
     "test:stress": "node tests/e2e/run.js --stress --only STS",
     "lint": "prettier --check . && eslint .",
+    "coverage": "node tools/coverage.js",
+    "coverage:all": "node tools/coverage.js --e2e",
     "format": "prettier --write .",
     "icons": "node tools/make-icons.js",
     "sites": "node tools/sync-sites.js",

@@ -26,6 +26,31 @@ type, and you're credited in the advisory unless you'd rather not be.
 Only the latest release is supported. Store installs update on their own; a downloaded copy should be replaced with
 the newest one from Releases.
 
+## What happens to a report
+1. I reply within 7 days to say I've got it, and ask anything I need to reproduce it.
+2. I reproduce it on the newest release and decide how serious it is, mainly whether it could expose what someone
+   typed, and I tell you what I found.
+3. I write a test that fails because of the problem, then the fix, in a private fork attached to the advisory, so
+   nothing about it is public before the fix is.
+4. The fix ships in a release, sooner than the usual two weeks when it's serious, to GitHub and all three stores.
+5. I publish the advisory with the affected and fixed versions, ask GitHub for a CVE when it warrants one, and credit
+   you unless you'd rather stay anonymous. The release notes point to it.
+
+## Checking a release
+Each release on GitHub comes with `SHA256SUMS.txt` and a build provenance record that GitHub signs through Sigstore
+when the release workflow builds the zips. The signing key is made fresh for that one run and never stored, so
+there's no private key sitting anywhere that serves the downloads. To check a zip you downloaded, install the
+[GitHub CLI](https://cli.github.com/) and run
+
+```
+gh attestation verify clotr-1.3.0.zip -R clotr-app/clotr
+```
+
+It confirms the zip was built by this repo's release workflow from the tagged commit. `sha256sum -c SHA256SUMS.txt`
+checks the zip against the published sums, and `npm ci && npm run package` on the same tag rebuilds the same bytes.
+The Chrome, Edge and Firefox stores sign what they serve themselves, and the browser checks that signature on
+install.
+
 ## Known limits
 - A hostile AI site controls its own page: it can hide Clotr's warnings (Clotr then says so and stops holding
   messages there), imitate them, or cover their buttons. It can't learn anything it wasn't about to receive.
