@@ -3,6 +3,7 @@
 [![Tests](https://github.com/clotr-app/clotr/actions/workflows/test.yml/badge.svg)](https://github.com/clotr-app/clotr/actions/workflows/test.yml)
 [![License](https://img.shields.io/badge/license-AGPL--3.0-lightgrey)](LICENSE)
 [![OpenSSF Scorecard](https://api.scorecard.dev/projects/github.com/clotr-app/clotr/badge)](https://scorecard.dev/viewer/?uri=github.com/clotr-app/clotr)
+[![OpenSSF Best Practices](https://www.bestpractices.dev/projects/15419/badge)](https://www.bestpractices.dev/projects/15419)
 
 Gemini was helping me with some odd networking questions while I worked on a Google IT certification. I thought I'd
 been careful about what I fed it, until the day it brought my medical status into a tech lesson, and I had a sinking

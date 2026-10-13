@@ -30,6 +30,37 @@ npm run package     # the release zip (reproducible) and its SHA-256
 - Content scripts are classic scripts sharing code through `globalThis.Clotr` (no `import`/`export`).
 - Every bug fix comes with a test that failed before the fix.
 
+## Code style
+The JavaScript follows Prettier's style, with the settings in `.prettierrc.json` (120 columns), and ESLint's
+recommended rules from `@eslint/js`. Code in `extension/` also has to pass about thirty stricter rules listed in
+`eslint.config.js`, which refuse things like `eval`, `==` and HTML written as a string. `npm run format` fixes the
+formatting, and `npm run lint` has to pass before a pull request is merged, since CI runs it on every one. If a line
+really needs an exception, it gets an `eslint-disable-next-line` comment naming the rule and saying why, and there's
+one of those in the whole extension today.
+
+## Tests for new features
+A new feature comes with automated tests in the same pull request, unit tests in `tests/` and a browser check in
+`tests/e2e/checks/` when it changes what you see on a page. A pull request that adds a feature without tests won't be
+merged. `npm run coverage` shows how much of `extension/` the unit tests run, file by file.
+
+## Dependencies
+The extension itself has no dependencies, so nothing outside this repo ships inside it. The dev tools (ESLint,
+Prettier, puppeteer-core and axe-core) are listed in `package.json` with exact versions locked in
+`package-lock.json`, and `npm ci` installs exactly those. Dependabot checks them and the GitHub Actions once a month
+and opens a pull request when something needs updating, and GitHub's security alerts flag a known vulnerability in
+between.
+
+## Accessibility and languages
+Clotr's pages and the on-page warning are checked with axe-core in the browser suite, in light and dark themes, and
+a serious problem fails the build. Charts and the Activity table don't rely on color alone. Clotr's own words are
+looked up through the browser's translation system, `chrome.i18n`, with English as the default and a full Spanish
+translation in `extension/_locales/es/`, so another language starts as one more messages file.
+
+## How the project is run
+[GOVERNANCE.md](GOVERNANCE.md) explains who decides what, [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md) how everyone is
+expected to treat each other, and [docs/plans.md](docs/plans.md) what's planned for the next year.
+[docs/assurance-case.md](docs/assurance-case.md) explains why Clotr's security promises hold.
+
 ## How Clotr is built
 I started Clotr in November 2025, first on my own, then with LM Studio's local models from around March 2026. In
 September I began questioning the difference in application and deployment of Claude Code and Cline. One of my biggest
