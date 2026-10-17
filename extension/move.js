@@ -47,12 +47,13 @@
         : msg("mv_holdsChoices", "your choices for $1 kinds of detail", choices),
     );
     const covered = Object.values(s.bandage || {}).filter(Boolean).length;
-    if (covered)
+    if (covered) {
       parts.push(
         covered === 1
           ? msg("mv_holdsBandage1", "cover names on 1 site")
           : msg("mv_holdsBandage", "cover names on $1 sites", covered),
       );
+    }
     if (s.lock) parts.push(msg("mv_holdsPin", "a PIN"));
     // Tourniquet by name only, and only one that loading would keep.
     if (Backup.clean({ tourniquet: s.tourniquet }).tourniquet) parts.push(msg("mv_holdsTourniquet", "Tourniquet"));
@@ -61,9 +62,14 @@
 
   mv("mv-save").addEventListener("click", async () => {
     const pass = mv("mv-pass").value;
-    if (pass.length < 8) return tell("mv-save-msg", msg("mv_tooShort", "Use at least 8 characters."), true);
-    if (pass !== mv("mv-pass2").value)
-      return tell("mv-save-msg", msg("mv_noMatch", "The two passwords don't match."), true);
+    if (pass.length < 8) {
+      tell("mv-save-msg", msg("mv_tooShort", "Use at least 8 characters."), true);
+      return;
+    }
+    if (pass !== mv("mv-pass2").value) {
+      tell("mv-save-msg", msg("mv_noMatch", "The two passwords don't match."), true);
+      return;
+    }
     tell("mv-save-msg", msg("mv_working", "Working…"));
     const text = await Backup.seal(Backup.pick(await chrome.storage.local.get(Backup.KEYS)), pass);
     const url = URL.createObjectURL(new Blob([text], { type: "application/json" }));
@@ -87,27 +93,34 @@
 
   mv("mv-load").addEventListener("click", async () => {
     const file = mv("mv-file").files[0];
-    if (!file) return tell("mv-load-msg", msg("mv_pickFile", "Choose the file first."), true);
+    if (!file) {
+      tell("mv-load-msg", msg("mv_pickFile", "Choose the file first."), true);
+      return;
+    }
     // A PIN guards the settings, and loading a file replaces them: the PIN comes first (popup → Settings).
     const { lock } = await chrome.storage.local.get("lock");
     const policy = (await chrome.storage.managed?.get(null).catch(() => ({}))) || {};
-    if (policy.lockSettings === true || (lock && Date.now() >= (await Helper.unlockedUntil())))
-      return tell(
+    if (policy.lockSettings === true || (lock && Date.now() >= (await Helper.unlockedUntil()))) {
+      tell(
         "mv-load-msg",
         msg("mv_locked", "Settings are locked. Unlock them with the PIN in Clotr's popup first."),
         true,
       );
+      return;
+    }
     let settings;
     try {
+      if (file.size > Backup.MAX_FILE_BYTES) throw new Error("not-a-backup");
       settings = await Backup.open(await file.text(), mv("mv-open").value);
     } catch (err) {
-      return tell(
+      tell(
         "mv-load-msg",
         err.message === "wrong-password"
           ? msg("mv_wrongPassword", "That password doesn't open this file.")
           : msg("mv_notABackup", "That isn't a Clotr file."),
         true,
       );
+      return;
     }
     const holds = describe(settings);
     const ask = msg(
@@ -118,7 +131,10 @@
     if (!confirm(ask)) return;
     const res = await chrome.runtime.sendMessage({ type: "clotr:importBackup", settings }).catch(() => null);
     mv("mv-open").value = "";
-    if (!res?.ok) return tell("mv-load-msg", msg("mv_failed", "Couldn't load it."), true);
+    if (!res?.ok) {
+      tell("mv-load-msg", msg("mv_failed", "Couldn't load it."), true);
+      return;
+    }
     // Read back what's on this computer now, so "Done" is checked, not assumed.
     const now = await chrome.storage.local.get(Backup.KEYS);
     tell(

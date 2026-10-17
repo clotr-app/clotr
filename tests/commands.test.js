@@ -48,8 +48,9 @@ test("the two corpora are well formed: labels, a copied line and its message, ma
   for (const e of lures) {
     assert.match(e.label, /^lure: (download|hidden)$/, e.copied);
     assert.ok(e.copied && e.around, e.copied);
-    for (const [, host] of `${e.copied} ${e.around}`.matchAll(/https?:\/\/([^/\s'"]+)/g))
+    for (const [, host] of `${e.copied} ${e.around}`.matchAll(/https?:\/\/([^/\s'"]+)/g)) {
       assert.match(host, /\.example\.invalid$/, `a real address in a trick: ${host}`);
+    }
   }
   for (const e of honest) {
     assert.equal(e.label, "honest", e.copied);
@@ -80,9 +81,9 @@ test("the copied text alone vs with its message", () => {
   for (const e of lures) {
     const alone = commandTrick(e.copied, "");
     const namesTheCheck = /captcha|robot|human/i.test(e.copied);
-    if (e.label === "lure: download")
+    if (e.label === "lure: download") {
       assert.deepEqual(alone, namesTheCheck ? { shape: "download" } : null, `without its message: ${e.copied}`);
-    else if (alone) assert.equal(alone.shape, "hidden", e.copied);
+    } else if (alone) assert.equal(alone.shape, "hidden", e.copied);
   }
   const needMessage = lures.filter((e) => e.label === "lure: download" && !commandTrick(e.copied, ""));
   assert.ok(needMessage.length >= 8, `${needMessage.length} downloads found only with their message`);
@@ -124,10 +125,12 @@ test("shapes: downloads, hidden windows and encoded commands are told apart", ()
     "certutil -hashfile",
     "rundll32.exe sysdm.cpl",
     "wget https://example.com",
-  ])
+  ]) {
     assert.deepEqual(commandShapes(byStart(start)), { download: false, hidden: false, hiddenWindow: false }, start);
-  for (const e of lures.filter((l) => l.label === "lure: download"))
+  }
+  for (const e of lures.filter((l) => l.label === "lure: download")) {
     assert.equal(commandShapes(e.copied).download, true, e.copied);
+  }
 });
 
 // Backup and logon scripts hide their window too, so a hidden window alone is never a trick. It only counts
@@ -162,8 +165,9 @@ test("never throws: empty, missing or odd input gives null", () => {
     [42, {}],
     [["x"], ["y"]],
     ["   \n\t ", "Press Win+R"],
-  ])
+  ]) {
     assert.equal(commandTrick(a, b), null, `${JSON.stringify(a)}, ${JSON.stringify(b)}`);
+  }
 });
 
 // Anything that reads text a page controls has to run in linear time. This builds 20,000 lines out of the
@@ -198,9 +202,10 @@ test("linear time on 20,000 lines of hostile text", () => {
       );
       const grew = t.wall >= 50 && grewMoreThan(quick, t, 10);
       const growth = `${name}: ${quick.wall.toFixed(1)} → ${t.wall.toFixed(1)} ms for 4× the text`;
-      if (t.over(400))
+      if (t.over(400)) {
         return `${name}: ${t.wall.toFixed(0)} ms (${t.cpu.toFixed(0)} of processor, ${t.allowed.toFixed(0)} allowed on this computer now)`;
-      if (grew) return growth;
+      }
+      return grew ? growth : undefined;
     });
     assert.equal(commandTrick(big, big.slice(0, 4000)), null, name);
   }

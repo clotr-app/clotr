@@ -197,7 +197,9 @@
       {
         tgz: scanWord("lb_tgz"),
         unknown: scanWord("lb_unknown"),
+        unknownJson: scanWord("lb_unknown_json"),
         html: scanWord("lb_html"),
+        geminiNoChats: scanWord("lb_gemini_no_chats"),
         damaged: scanWord("lb_damaged"),
       }[kind] || scanWord("lb_damaged");
     const p = $("unsupported");
@@ -232,7 +234,6 @@
   $("folder-input").addEventListener("change", (e) => {
     const files = [...(e.target.files || [])];
     e.target.value = "";
-    if (!files.length) return;
     beginRead(
       "folder",
       files.map((file) => ({ name: file.webkitRelativePath || file.name, file })),
@@ -281,7 +282,7 @@
     if (dirEntry) {
       const out = [];
       await collectFolder(dirEntry, "", out);
-      if (out.length) beginRead("folder", out);
+      beginRead("folder", out);
       return;
     }
     const fileEntries = entries.filter((en) => en.isFile);
@@ -536,8 +537,36 @@
       instructions.chats === 1
         ? (count) => scanWord("lb_countInOne", count)
         : (count) => scanWord("lb_countIn", count, instructions.chats);
-    for (const [id, count] of Object.entries(instructions.kinds))
+    for (const [id, count] of Object.entries(instructions.kinds)) {
       kindsBox.append(tagChip(id, `${kindName(id)} – ${countText(count)}`));
+    }
+  }
+
+  function renderWhatNow(result) {
+    const advice = $("what-now-advice");
+    advice.textContent = "";
+    const seen = new Set();
+    for (const chat of result.chats) {
+      for (const kind of Object.keys(chat.kinds)) {
+        const text = adviceFor?.(kind);
+        if (text && !seen.has(text)) {
+          seen.add(text);
+          advice.append(el("li", { textContent: text }));
+        }
+      }
+    }
+    advice.append(el("li", { textContent: scanWord("lb_deleteNote") }));
+
+    const actions = $("what-now-actions");
+    actions.textContent = "";
+    if (result.format === "gemini") {
+      const href = globalThis.Clotr.chatLink("gemini", "");
+      if (href && chatLinkOk(href)) {
+        const link = el("a", { href, target: "_blank", rel: "noopener noreferrer" });
+        link.textContent = scanWord("lb_openActivity", result.tool);
+        actions.append(link);
+      }
+    }
   }
 
   function findRow(find) {
@@ -582,7 +611,10 @@
     const actions = el("div", { className: "lb-card-actions" });
     if (chat.link && chatLinkOk(chat.link)) {
       const a = el("a", { href: chat.link, target: "_blank", rel: "noopener noreferrer" });
-      a.textContent = grouping === "day" ? scanWord("lb_openActivity", result.tool) : scanWord("lb_openChat");
+      a.textContent =
+        grouping === "day" || result.format === "gemini"
+          ? scanWord("lb_openActivity", result.tool)
+          : scanWord("lb_openChat");
       actions.append(a);
     }
     const askButton = el("button", {
@@ -620,7 +652,6 @@
     list.append(el("li", { textContent: scanWord("lb_noOcr") }));
     list.append(el("li", { textContent: scanWord("lb_deletedGone") }));
     list.append(el("li", { textContent: scanWord("lb_nothingKnown") }));
-    list.append(el("li", { textContent: scanWord("lb_deleteNote") }));
   }
 
   function showResults(result) {
@@ -645,6 +676,7 @@
 
     renderSharedRows(result.totals);
     renderInstructions(result.instructions);
+    renderWhatNow(result);
     renderChatCards(result);
     renderNotRead(result.notRead);
 
@@ -678,7 +710,7 @@
       input.dataset.chatId = String(chat.id);
       input.addEventListener("change", regenerateLetter);
       label.append(input);
-      if (result.grouping === "day") {
+      if (result.grouping === "day" || result.format === "gemini") {
         label.append(el("span", { textContent: chat.date }));
       } else {
         label.append(el("span", { textContent: chat.title }));
@@ -709,7 +741,7 @@
       .filter(Boolean)
       .sort();
     const links =
-      result.grouping === "day"
+      result.grouping === "day" || result.format === "gemini"
         ? chats.map((c) => c.date)
         : chats.map((c) => (c.link && chatLinkOk(c.link) ? c.link : c.title));
     const { text, blanks } = letterFor({
@@ -760,8 +792,9 @@
     $("letter-heading").focus();
   }
 
-  for (const r of document.querySelectorAll('input[name="letter-place"]'))
+  for (const r of document.querySelectorAll('input[name="letter-place"]')) {
     r.addEventListener("change", regenerateLetter);
+  }
 
   $("letter-box").addEventListener("input", () => {
     letterUserEdited = true;

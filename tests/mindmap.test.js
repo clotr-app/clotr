@@ -124,7 +124,7 @@ test("tree, compact (popup): only branches with something, no leaves, no can't-s
 });
 
 test("never a value: the tree holds kinds, sites and counts only", () => {
-  const text = JSON.stringify(buildMindMapTree(model()), (k, v) => (v instanceof Map ? [...v] : v));
+  const text = JSON.stringify(buildMindMapTree(model()), (_k, v) => (v instanceof Map ? [...v] : v));
   for (const fp of ["a000000000000001", "c000000000000001", "b000000000000001"]) assert.ok(!text.includes(fp));
 });
 
@@ -189,7 +189,7 @@ const ROOM = { width: 960, height: 690 };
 const nodesOf = (n) => [n, ...n.children.flatMap(nodesOf)];
 const byId = (items) => new Map(items.map((i) => [i.node.id, i]));
 // Builds a hand-made radial tree: You, one branch, and AI services placed at chosen angles.
-const handMade = (services, { branch = "has" } = {}) => ({
+const handMade = (services, { branch: branchKey = "has" } = {}) => ({
   id: "you",
   type: "you",
   label: "You",
@@ -199,18 +199,18 @@ const handMade = (services, { branch = "has" } = {}) => ({
   angle: 0,
   children: [
     {
-      id: branch,
+      id: branchKey,
       type: "branch",
-      branch,
-      key: branch,
+      branch: branchKey,
+      key: branchKey,
       label: "Already has",
       count: services.length,
       depth: 1,
       angle: 0,
       children: services.map(([label, angle, extra = {}]) => ({
-        id: `${branch}/${label}`,
+        id: `${branchKey}/${label}`,
         type: "service",
-        branch,
+        branch: branchKey,
         key: label,
         label,
         count: 1,
@@ -331,8 +331,9 @@ test("drawing layout: long names are cut short with …; www. is dropped; a repl
   assert.ok(text.endsWith("…") && long.startsWith(text.slice(0, -1)), text);
   assert.equal(at.get("has/www.short.ai").label.text, "short.ai 💬");
   const leafy = layoutRadial(buildMindMapTree(model()));
-  for (const i of mindMapLayout(leafy, ROOM).items)
+  for (const i of mindMapLayout(leafy, ROOM).items) {
     if (i.label) assert.ok(i.label.text.length <= (i.shape.type === "dot" ? 36 : 26), i.label.text);
+  }
 });
 
 test("drawing layout: the frame holds every node and label, and widens for a long name", () => {
@@ -364,7 +365,7 @@ test("drawing layout, outline (narrow windows): places from the outline, lines d
 
 test("drawing layout is pure: the tree is left as it was, and the same tree gives the same layout", () => {
   const tree = layoutRadial(buildMindMapTree(model()));
-  const text = (t) => JSON.stringify(t, (k, v) => (v instanceof Map ? [...v] : v));
+  const text = (t) => JSON.stringify(t, (_k, v) => (v instanceof Map ? [...v] : v));
   const before = text(tree);
   const a = mindMapLayout(tree, ROOM);
   assert.equal(text(tree), before);
@@ -400,10 +401,10 @@ test("exposureModel: a record that stands for a long list counts as its n", () =
     one("", { n: 290 }),
     one("", { n: 40, action: "redacted" }),
   ];
-  const model = exposureModel({ events });
-  assert.equal(model.has.bySite[0].count, 300);
-  assert.equal(model.has.byType[0].count, 300);
-  assert.equal(model.has.bySite[0].parts.get("Email Address"), 300);
-  assert.equal(model.has.byType[0].parts.get("chatgpt.com"), 300);
-  assert.equal(model.near.bySite[0].count, 40);
+  const m = exposureModel({ events });
+  assert.equal(m.has.bySite[0].count, 300);
+  assert.equal(m.has.byType[0].count, 300);
+  assert.equal(m.has.bySite[0].parts.get("Email Address"), 300);
+  assert.equal(m.has.byType[0].parts.get("chatgpt.com"), 300);
+  assert.equal(m.near.bySite[0].count, 40);
 });

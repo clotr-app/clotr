@@ -5,6 +5,7 @@ const test = require("node:test");
 const assert = require("node:assert/strict");
 const fs = require("fs");
 const path = require("path");
+const { schemaProblems } = require("./schema-problems.js");
 
 // sites.js reads the built-in list from the manifest and grants from chrome.permissions.
 const manifest = JSON.parse(fs.readFileSync(path.join(__dirname, "..", "extension", "manifest.json"), "utf8"));
@@ -92,8 +93,9 @@ test("AI sites that moved stay protected at their new address", () => {
   // lmarena.ai now redirects to arena.ai, where Clotr wasn't running.
   const hosts = manifest.content_scripts.flatMap((c) => c.matches);
   // Copilot's main address is now copilot.com. The older copilot.microsoft.com still works too.
-  for (const moved of ["https://arena.ai/*", "https://copilot.com/*", "https://www.copilot.com/*"])
+  for (const moved of ["https://arena.ai/*", "https://copilot.com/*", "https://www.copilot.com/*"]) {
     assert.ok(hosts.includes(moved), `${moved} isn't protected`);
+  }
 });
 
 test("Self-check wording: the popup says plainly whether Clotr can see the chat box here", () => {
@@ -107,6 +109,18 @@ test("Self-check wording: the popup says plainly whether Clotr can see the chat 
   const failed = h({ running: true, editor: true, editFailed: true });
   assert.equal(failed.level, "warn");
   assert.match(failed.text, /couldn't edit the chat box.*by hand/i);
+});
+
+test("Self-check wording: a built-in site with no chat box found says copy and paste is still checked", () => {
+  const h = Sites.healthText({ running: true, editor: false, builtIn: true });
+  assert.equal(h.key, "hc_noBoxBuiltIn");
+  assert.match(h.text, /can't find the chat box.*copy and paste is still checked/i);
+  // A site you added yourself keeps the plain wording, unchanged.
+  assert.match(
+    Sites.healthText({ running: true, editor: false, builtIn: false }).text,
+    /no chat box on this page yet/i,
+  );
+  assert.match(Sites.healthText({ running: true, editor: false }).text, /no chat box on this page yet/i);
 });
 
 test("Self-check wording: a page that removes Clotr's warnings is called out", () => {
@@ -159,8 +173,9 @@ test("Team pack preset: tax_office asks before sending for Social Security, tax 
     "us_ssn",
     "watch_list",
   ]);
-  for (const [id, response] of Object.entries(preset.requiredResponses))
+  for (const [id, response] of Object.entries(preset.requiredResponses)) {
     assert.equal(response, "block", `${id}: tax_office asks before sending, it doesn't just warn`);
+  }
   assert.equal(preset.allowPause, false);
 });
 
@@ -255,8 +270,9 @@ test("teamHoldOf: an organization's policy that asks before sending for at least
     true,
     "a team's own kind that asks",
   );
-  for (const bad of [null, undefined, "clinic", [], { requiredResponses: null }, { requiredResponses: "block" }])
+  for (const bad of [null, undefined, "clinic", [], { requiredResponses: null }, { requiredResponses: "block" }]) {
     assert.equal(Sites.teamHoldOf(bad), false, JSON.stringify(bad));
+  }
 });
 
 test("teamHoldOf still adds nothing to the policy on its own: an admin can't set teamHold directly", () => {
@@ -330,27 +346,6 @@ test("Team pack docs: the expanded JSON block for each preset in docs/team-rollo
   );
   for (const [id, expanded] of found) assert.deepEqual(expanded, Sites.PRESETS[id], `preset ${id}`);
 });
-
-// A small, hand-rolled JSON Schema check: object/string/boolean/array, enum, properties, additionalProperties,
-// items. Enough to prove a policy fits extension/managed_schema.json without a new dependency. Returns a list of
-// problems; empty means it fits.
-function schemaProblems(schema, value, where = "policy") {
-  const type = Array.isArray(value) ? "array" : value === null ? "null" : typeof value;
-  if (schema.type && schema.type !== type) return [`${where}: expected ${schema.type}, got ${type}`];
-  const problems = [];
-  if (schema.enum && !schema.enum.includes(value)) problems.push(`${where}: "${value}" isn't one of ${schema.enum}`);
-  if (type === "object") {
-    for (const [key, v] of Object.entries(value)) {
-      const sub =
-        schema.properties?.[key] ?? (schema.additionalProperties !== true ? schema.additionalProperties : null);
-      if (!sub) problems.push(`${where}.${key}: not in the schema`);
-      else problems.push(...schemaProblems(sub, v, `${where}.${key}`));
-    }
-  }
-  if (type === "array" && schema.items)
-    value.forEach((v, i) => problems.push(...schemaProblems(schema.items, v, `${where}[${i}]`)));
-  return problems;
-}
 
 test("Team pack: the ready-made policy files in docs/team-rollout.md fit managed_schema.json", () => {
   const schema = JSON.parse(fs.readFileSync(path.join(__dirname, "..", "extension", "managed_schema.json"), "utf8"));
@@ -606,8 +601,9 @@ test("Team kinds: policyFingerprint keeps every code printed before, and changes
     { cover: "File" },
     { near: ["matter"] },
     { words: ["globex"] },
-  ])
+  ]) {
     assert.notEqual(code({ ...matter, ...change }), code(matter), JSON.stringify(change));
+  }
 });
 
 // ---------- Tourniquet, the stronger setup for someone you help, whether a child or a grown-up ----------
@@ -644,16 +640,18 @@ test("Tourniquet's presets list every kind, each ask or warn (drift guard)", () 
   }
   // For a child, every kind asks first, except the three that are public by design, a car's numbers, a
   // link's own tracking code, and a gamer tag.
-  for (const [id, v] of Object.entries(Sites.TOURNIQUET.child.requiredResponses))
+  for (const [id, v] of Object.entries(Sites.TOURNIQUET.child.requiredResponses)) {
     assert.equal(v, [...TECHNICAL, ...CAR, ...LINKS, ...GAMES].includes(id) ? "warn" : "block", `child.${id}`);
+  }
   // For a grown-up, sign-in codes, keys, money and ID numbers, and the birthday all ask first, while everyday
   // details only get a note.
   const adult = Sites.TOURNIQUET.adult.requiredResponses;
   const codes = Clotr.PATTERNS.filter((p) => p.group === "credentials" && !TECHNICAL.includes(p.id)).map((p) => p.id);
   assert.equal(codes.length, 16); // backup codes made it 16
   for (const id of [...codes, ...MONEY_AND_IDS, "date_of_birth"]) assert.equal(adult[id], "block", `adult.${id}`);
-  for (const id of [...EVERYDAY_DETAILS, "watch_list", ...TECHNICAL, ...CAR, ...LINKS, "student_id", ...GAMES])
+  for (const id of [...EVERYDAY_DETAILS, "watch_list", ...TECHNICAL, ...CAR, ...LINKS, "student_id", ...GAMES]) {
     assert.equal(adult[id], "warn", `adult.${id}`);
+  }
   // Among details found only in a picture, where a photo was taken asks first for a child and only gets a note
   // for a grown-up, the same as an address would. A picture named like an ID or a document asks first for both.
   assert.equal(Sites.TOURNIQUET.child.requiredResponses.photo_location, "block");
@@ -695,8 +693,9 @@ test("Tourniquet: larger warnings for a grown-up only; its email and chat apps a
   assert.deepEqual(Sites.TOURNIQUET.child.apps, ["Discord", "WhatsApp", "Messenger"]);
   assert.deepEqual(Sites.TOURNIQUET.adult.apps, ["Gmail", "Outlook", "Yahoo Mail", "WhatsApp", "Messenger"]);
   const listed = new Set(Sites.EVERYDAY_SITES.map((s) => s.name));
-  for (const name of [...Sites.TOURNIQUET.child.apps, ...Sites.TOURNIQUET.adult.apps])
+  for (const name of [...Sites.TOURNIQUET.child.apps, ...Sites.TOURNIQUET.adult.apps]) {
     assert.ok(listed.has(name), name);
+  }
 });
 
 test("cleanTourniquet: only { for: child | adult, since: a time } counts; anything else is off", () => {
@@ -719,8 +718,9 @@ test("cleanTourniquet: only { for: child | adult, since: a time } counts; anythi
     { for: "adult", since: 1, note: "extra" },
     { for: "__proto__", since: 1 },
     Object.assign(Object.create({ for: "adult", since: 1 })),
-  ])
+  ]) {
     assert.equal(Sites.cleanTourniquet(bad), null, JSON.stringify(bad));
+  }
 });
 
 // After a scam, the grown-up's rules apply for 30 days and then switch off by themselves. The record carries
@@ -772,11 +772,13 @@ test("cleanTourniquet with an end: kept until its end on this computer's clock, 
     { ...afterScam, note: "extra" },
     { for: "adult", since: SINCE, until: SINCE + 30 * DAY },
     { for: "child", since: SINCE, until: SINCE + 30 * DAY },
-  ])
+  ]) {
     assert.equal(Sites.cleanTourniquet(bad, SINCE + DAY), null, JSON.stringify(bad));
+  }
   // The other two presets have no end at all, so any clock keeps them on.
-  for (const now of [0, SINCE, SINCE + 400 * DAY])
+  for (const now of [0, SINCE, SINCE + 400 * DAY]) {
     assert.deepEqual(Sites.cleanTourniquet({ for: "adult", since: SINCE }, now), { for: "adult", since: SINCE });
+  }
   // tourniquetRecord only checks the record's shape, whether it's over or not, so an ended one isn't mistaken
   // for a bad value.
   assert.deepEqual(Sites.tourniquetRecord(afterScam), afterScam);
@@ -855,8 +857,9 @@ test("tourniquetStep: a clock moved forward past the end and back again: on agai
   const adult = { tourniquet: { for: "adult", since: SINCE }, ...ended };
   assert.deepEqual(Sites.tourniquetStep(adult, now), { set: {}, remove: ["tourniquetEnded"], alarm: null });
   // A bad end record never brings Tourniquet back on.
-  for (const bad of [{ at: afterScam.until }, { since: SINCE, at: SINCE }, { since: SINCE, at: "x" }, "x"])
+  for (const bad of [{ at: afterScam.until }, { since: SINCE, at: SINCE }, { since: SINCE, at: "x" }, "x"]) {
     assert.deepEqual(Sites.tourniquetStep({ tourniquetEnded: bad }, now).set, {}, JSON.stringify(bad));
+  }
 });
 
 test("tourniquetStep: turned off, or another preset, while the 30 days ran: no alarm, no mark, nothing back", () => {
@@ -962,10 +965,12 @@ test("Email and chat apps: everydayOrigins gives only the listed addresses of th
     ["__proto__"],
     ["constructor"],
     [{ name: "Gmail" }],
-  ])
+  ]) {
     assert.deepEqual(Sites.everydayOrigins(junk), [], `asked for ${JSON.stringify(junk)}`);
-  for (const notAList of [undefined, null, "Gmail", 42, { 0: "Gmail", length: 1 }])
+  }
+  for (const notAList of [undefined, null, "Gmail", 42, { 0: "Gmail", length: 1 }]) {
     assert.deepEqual(Sites.everydayOrigins(notAList), [], `asked for ${JSON.stringify(notAList)}`);
+  }
   assert.deepEqual(Sites.everydayOrigins(["Gmail", "https://*/*", "Slack"]), [
     "https://mail.google.com/*",
     "https://app.slack.com/*",
@@ -1034,6 +1039,49 @@ test("Email and chat apps: if the browser can't ask, requestEverydayApps answers
     assert.match(line, /^\[Clotr\] could not ask for email and chat apps/);
     assert.doesNotMatch(line, /https?:|google|discord/i, `an address in the log: ${line}`);
   }
+});
+
+// Turning an app off in the popup has no prompt to refuse, so a failed removal just leaves the app on; the
+// next refresh of granted origins notices it's still there.
+test("Email and chat apps: removeEverydayApps hands a permission back for only the listed addresses", async () => {
+  const removed = [];
+  let answer = true;
+  const realRemove = globalThis.chrome.permissions.remove;
+  globalThis.chrome.permissions.remove = (p) => {
+    removed.push(p);
+    return Promise.resolve(answer);
+  };
+  try {
+    assert.equal(await Sites.removeEverydayApps(["Gmail", "Discord", "https://*/*"]), true);
+    assert.deepEqual(removed[0], { origins: ["https://mail.google.com/*", "https://discord.com/*"] });
+
+    answer = false;
+    assert.equal(await Sites.removeEverydayApps(["Slack"]), false);
+    assert.deepEqual(removed[1], { origins: ["https://app.slack.com/*"] });
+
+    assert.equal(await Sites.removeEverydayApps([]), false, "nothing to remove is not a success");
+    assert.equal(removed.length, 2, "asked the browser to remove something that isn't on the list");
+  } finally {
+    globalThis.chrome.permissions.remove = realRemove;
+  }
+});
+
+test("Email and chat apps: if the browser can't remove a permission, removeEverydayApps answers No and logs no address", async () => {
+  const realRemove = globalThis.chrome.permissions.remove;
+  const realWarn = console.warn;
+  const logged = [];
+  console.warn = (...args) => logged.push(args.map(String).join(" "));
+  try {
+    globalThis.chrome.permissions.remove = () =>
+      Promise.reject(new Error("blocked by policy for https://discord.com/*"));
+    assert.equal(await Sites.removeEverydayApps(["Discord"]), false);
+  } finally {
+    globalThis.chrome.permissions.remove = realRemove;
+    console.warn = realWarn;
+  }
+  assert.equal(logged.length, 1, `logged: ${JSON.stringify(logged)}`);
+  assert.match(logged[0], /^\[Clotr\] could not switch off email and chat apps/);
+  assert.doesNotMatch(logged[0], /https?:|discord/i, `an address in the log: ${logged[0]}`);
 });
 
 // The one-time offer to connect email and chat apps goes to new installs on the welcome page, and to people
@@ -1154,8 +1202,9 @@ test("weight: a folded record counts as its n, anything else as one", () => {
   const { weight } = Sites;
   assert.equal(weight({ n: 290 }), 290);
   assert.equal(weight({ n: 2 }), 2);
-  for (const n of [undefined, null, 1, 0, -4, 2.5, "50", NaN, Infinity, true, {}])
+  for (const n of [undefined, null, 1, 0, -4, 2.5, "50", NaN, Infinity, true, {}]) {
     assert.equal(weight({ n }), 1, `n: ${String(n)}`);
+  }
   assert.equal(weight({}), 1);
   assert.equal(weight(null), 1);
   assert.equal(weight(undefined), 1);
@@ -1192,4 +1241,18 @@ test("the shipped script list matches on file names, whatever form the browser g
   context.globalThis = context;
   vm.runInContext(fs.readFileSync(path.join(__dirname, "..", "extension", "sites.js"), "utf8"), context);
   assert.deepEqual([...context.ClotrSites.CONTENT_JS], shipped.content_scripts[0].js);
+});
+
+// An email or chat app has its own switch, where the warning talks about people and Bandage and the reply check
+// stay off. A chat-shaped box (Gmail's compose, WhatsApp's message box, each with a Send button) must never get
+// it offered as an AI tool instead, nor listed among the AI tools Clotr spotted.
+test("spotKind: an email or chat app is never spotted as an AI tool, however chat-shaped its box", () => {
+  const { spotKind } = globalThis.ClotrSites;
+  const shaped = { looksLikeAI: true, signals: ["a chat-shaped box"] };
+  for (const host of ["mail.google.com", "web.whatsapp.com", "app.slack.com", "teams.microsoft.com"]) {
+    assert.equal(spotKind(host, shaped), "not-ai", host);
+  }
+  assert.equal(spotKind("chat.example-assistant.com", shaped), "spotted");
+  assert.equal(spotKind("chat.example-assistant.com", { looksLikeAI: false }), "not-ai");
+  assert.equal(spotKind("chat.example-assistant.com", null), "not-ai");
 });

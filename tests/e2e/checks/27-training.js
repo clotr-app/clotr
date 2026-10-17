@@ -62,8 +62,9 @@ module.exports = async function (env) {
       [380, "light"],
       [1280, "dark"],
       [1280, "light"],
-    ])
+    ]) {
       await shotFull(page, `${base}-${width}-${theme}.png`, width, theme);
+    }
     await page.emulateMediaFeatures([{ name: "prefers-color-scheme", value: "light" }]);
   }
 
@@ -226,7 +227,7 @@ module.exports = async function (env) {
         await next(none);
         await next(none);
         const s = await shellState(none);
-        expect(/Your office hasn't added any of its own words yet/.test(s.bodyText), `no policy: ${s.bodyText}`);
+        expect(/Your office hasn't added any custom words yet/.test(s.bodyText), `no policy: ${s.bodyText}`);
       } finally {
         await none.close();
       }
@@ -236,7 +237,7 @@ module.exports = async function (env) {
         await next(page);
         await next(page);
         const s = await shellState(page);
-        expect(/Your office has added 4 of its own/.test(s.bodyText), `with policy: ${s.bodyText}`);
+        expect(/Your office has configured its own kinds/.test(s.bodyText), `with policy: ${s.bodyText}`);
         expect(/Client file numbers: Ask before sending/.test(s.bodyText), `kind 1: ${s.bodyText}`);
         expect(/Matter codes: Warn/.test(s.bodyText), `kind 2: ${s.bodyText}`);
         expect(/Extra kind: Just count/.test(s.bodyText), `kind 3: ${s.bodyText}`);

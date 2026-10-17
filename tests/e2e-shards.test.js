@@ -35,8 +35,9 @@ test("e2e shards: every shard names a section this build actually runs", () => {
 test("e2e shards: every check in a default-build section is covered by exactly one shard", () => {
   const defaultSections = sections(CHECKS_DIR, MANIFEST_FEATURES).filter((s) => !FLAG_GATED.includes(s));
   const shardOf = new Map(); // section name -> the shard keys that claim it
-  for (const [shard, names] of Object.entries(SHARDS))
+  for (const [shard, names] of Object.entries(SHARDS)) {
     for (const name of names) shardOf.set(name, [...(shardOf.get(name) || []), shard]);
+  }
 
   for (const section of defaultSections) {
     const claimedBy = shardOf.get(section) || [];

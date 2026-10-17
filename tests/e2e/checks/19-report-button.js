@@ -167,8 +167,8 @@ module.exports = async function (env) {
         await popup.click("#report-root summary");
         await popup.click("#report-root .report-site input");
         await popup.click("#report-root .report-menu .report-choice");
-        const withSite = await popup.evaluate(() => window.__opened.at(-1));
-        expect(/[?&]site=chatgpt\.com/.test(withSite || ""), `site missing once ticked: ${withSite}`);
+        const withSiteUrl = await popup.evaluate(() => window.__opened.at(-1));
+        expect(/[?&]site=chatgpt\.com/.test(withSiteUrl || ""), `site missing once ticked: ${withSiteUrl}`);
       } finally {
         await popup.close();
       }
@@ -320,8 +320,9 @@ module.exports = async function (env) {
               "AI replies that brought up your details: 1",
               "Kinds set to Ask before sending: 1",
               "AI sites with Bandage on: 2",
-            ])
+            ]) {
               expect(lines.includes(line), `missing "${line}" in:\n${got.copied}`);
+            }
             expect(lines.length === 8, `expected 8 lines, got:\n${got.copied}`);
             const lower = got.copied.toLowerCase();
             for (const planted of [
@@ -339,8 +340,9 @@ module.exports = async function (env) {
               "claude.ai",
               "credit",
               fp,
-            ])
+            ]) {
               expect(!lower.includes(planted), `"${planted}" reached the summary:\n${got.copied}`);
+            }
             expect(!/[0-9a-f]{16}/i.test(got.copied), "a fingerprint or code reached the summary");
             expect(!/\b\d{1,2}:\d{2}\b/.test(got.copied), "a clock time reached the summary");
             expect(/copied/i.test(got.status), `status after copying: "${got.status}"`);
@@ -356,8 +358,9 @@ module.exports = async function (env) {
             const params = [...new URL(url).searchParams.keys()].sort().join(",");
             expect(params === "browser,site,template,version", `form address parameters: ${params}`);
             const decoded = decodeURIComponent(url);
-            for (const bit of ["phone_number", "found", "Bandage", "Counts only", "organization"])
+            for (const bit of ["phone_number", "found", "Bandage", "Counts only", "organization"]) {
               expect(!decoded.includes(bit), `the form's address carries the summary ("${bit}"): ${decoded}`);
+            }
 
             // The person should see the whole summary before copying it, so this takes screenshots at the
             // popup's width, at full height and at its real 600px height, light and dark, and checks for no
@@ -382,8 +385,9 @@ module.exports = async function (env) {
               const dark = await popup.evaluate(() => matchMedia("(prefers-color-scheme: dark)").matches);
               expect(dark === (theme === "dark"), `${theme}: the page didn't take the theme`);
               await popup.screenshot({ path: `${OUT}/report-summary-600-${theme}.png` });
-              if (!(await popup.evaluate(() => typeof axe === "object")))
+              if (!(await popup.evaluate(() => typeof axe === "object"))) {
                 await popup.evaluate(env.fs.readFileSync(require.resolve("axe-core/axe.min.js"), "utf8"));
+              }
               const problems = await popup.evaluate(async () =>
                 (await axe.run(document.querySelector("#report-root"), { resultTypes: ["violations"] })).violations
                   .filter((v) => v.impact === "serious" || v.impact === "critical")

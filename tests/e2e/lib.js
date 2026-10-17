@@ -209,6 +209,14 @@ const SITES = {
     page: "unknown-ai-chat.html",
     editor: `document.querySelector("textarea")`,
   },
+  // A built-in site after a redesign swapped its box for a contenteditable value Clotr's plain pre-scan
+  // selector doesn't list; the shape fallback (isChatComposer) should still find it.
+  redesigned: {
+    url: "https://chatgpt.com/",
+    page: "redesigned-chat.html",
+    editor: `document.querySelector("#prompt-textarea")`,
+    send: `document.querySelector("#send")`,
+  },
   // An AI chat showing two answers to the command check: a lure asking the person to paste a "verify you're human"
   // command, and an honest installer beside it. The lure's command is defanged so it does nothing if it's ever run.
   command: {
@@ -217,10 +225,40 @@ const SITES = {
     editor: `document.querySelector("#msg")`,
     send: `document.querySelector("#send")`,
   },
+  // A React-style composer: picking a file remounts the input as a new node a moment later, so "Remove the
+  // place, keep the photo" can't verify a swap and has to offer the cleaned photo as a download instead (PIC15).
+  reactLike: {
+    url: "https://copilot.com/",
+    page: "react-like-chat.html",
+    editor: `document.querySelector("#prompt-textarea")`,
+    send: `document.querySelector("#send")`,
+  },
+  // A composer that uploads a file the moment it's picked, dropped or pasted, as the big AI sites most likely do:
+  // whatever reaches its handlers is what the site has (PIC16-PIC18).
+  uploadNow: {
+    url: "https://chat.openai.com/",
+    page: "upload-chat.html",
+    editor: `document.querySelector("#prompt-textarea")`,
+    send: `document.querySelector("#send")`,
+  },
+  // The same page, whose drop handler only takes the person's own drop (PIC19).
+  uploadStrict: {
+    url: "https://chat.openai.com/?strict",
+    page: "upload-chat.html",
+    editor: `document.querySelector("#prompt-textarea")`,
+    send: `document.querySelector("#send")`,
+  },
   ordinary: {
     url: "https://github.com/example/project/issues/42",
     page: "ordinary-site.html",
     editor: `document.querySelector("textarea")`,
+  },
+  // A white-labeled AI chat with no "ai" wording anywhere and no "ask"/"message"/"prompt" placeholder either:
+  // only its shape (a multi-line box with a send-like control) gives it away.
+  shapeOnly: {
+    url: "https://helpdesk-example.test/chat",
+    page: "shape-chat.html",
+    editor: `document.querySelector("#box")`,
   },
   // Email and chat apps only get Clotr once you switch the site on yourself.
   gmail: {
@@ -380,6 +418,7 @@ function piece() {
 }
 let patienceAt = 0;
 let patienceNow = 1;
+const MAX_PATIENCE = 8; // patience()'s own ceiling: the most times slower a busy computer gets to count as.
 function patience() {
   if (Date.now() - patienceAt < 2000) return patienceNow;
   const times = [];
@@ -389,7 +428,7 @@ function patience() {
     times.push(performance.now() - s);
   }
   times.sort((a, b) => a - b);
-  patienceNow = Math.min(8, Math.max(1, times[1] / QUIET_PIECE_MS));
+  patienceNow = Math.min(MAX_PATIENCE, Math.max(1, times[1] / QUIET_PIECE_MS));
   patienceAt = Date.now();
   return patienceNow;
 }
@@ -461,9 +500,16 @@ async function launch(ext = EXT, extraArgs = [], extraEnv = null) {
       // sharing: a run that otherwise grew only 1.4x (a loaded machine, 380s to 532s) still had one
       // `Runtime.callFunctionOn` round trip cross 180000ms alone, and later a fixed 360000 was crossed too, in a run
       // whose total time (840s against an ordinary ~450s) said the machine was that busy, not that anything had
-      // hung. Scaling this the same way every wait below already does keeps the margin tied to how busy the
-      // computer measurably is right now, instead of a second guess at a number that the next busier day beats.
-      protocolTimeout: 180000 * patience(),
+      // hung. Scaling this by patience() once seemed to copy what every wait below already does, but it isn't the
+      // same thing: a wait calls patience() again right before it waits, so it reads the computer's load at that
+      // moment, while this is read once, at the top of the whole run, and then stays fixed on a single connection
+      // for however long the run takes (every section shares one browser). A quiet instant at launch, followed by
+      // another job starting up, or a CI runner's shared neighbor getting busier, minutes later when a later
+      // section's own check (EV4 among them) runs its evaluate calls, is exactly the gap this missed: the margin
+      // was tied to how busy the computer measured at launch, not to how busy it could still get before the run
+      // ends. Since there's no way to re-read patience() into an already-open connection, this takes patience()'s
+      // own worst case up front instead of a sample that can go stale the moment load shows up after it's taken.
+      protocolTimeout: 180000 * MAX_PATIENCE,
       args: [
         "--no-first-run",
         "--no-default-browser-check",

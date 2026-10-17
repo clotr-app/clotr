@@ -66,6 +66,21 @@ jobs:
         uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
         with:
           subject-path: dist/*.zip
+      # The attestation above is stored on the repo, not the release; a security scanner (OpenSSF Scorecard among
+      # them) that checks a release's own assets for a provenance file never sees it there. This downloads the same
+      # attestation as a Sigstore bundle (gh's own `.jsonl` naming) and adds it to the release under each zip's own
+      # name, so both ways of checking a release (asking GitHub for the attestation, or looking at what's attached
+      # to it) land on the same signed record.
+      - name: Attach each zip's provenance to the release
+        if: ${{ !github.event.repository.private }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          for f in dist/*.zip; do
+            gh attestation download "$f" -R "$GITHUB_REPOSITORY"
+            mv sha256-*.jsonl "$(basename "$f" .zip).intoto.jsonl"
+          done
+          gh release upload "$GITHUB_REF_NAME" ./*.intoto.jsonl
 
   # Rebuilds the same tag on a different operating system and checks the zips still hash the same, so
   # "rebuild it yourself and compare" is true on any computer, not just a second run of the same runner image.

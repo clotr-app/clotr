@@ -15,34 +15,49 @@ module.exports = async function (env) {
   function tmpZip(name, bytes) {
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), "clotr-lb-"));
     const p = path.join(dir, name);
-    fs.writeFileSync(p, bytes);
-    return p;
+    try {
+      fs.writeFileSync(p, bytes);
+      return p;
+    } catch (err) {
+      fs.rmSync(dir, { recursive: true, force: true, maxRetries: 3 });
+      throw err;
+    }
+  }
+
+  function removeTempFile(file) {
+    fs.rmSync(path.dirname(file), { recursive: true, force: true, maxRetries: 3 });
   }
 
   async function pickZip(page, bytes, fileName = "export.zip") {
     const input = await page.$("#file-input");
-    await input.uploadFile(tmpZip(fileName, bytes));
+    const file = tmpZip(fileName, bytes);
+    try {
+      await input.uploadFile(file);
+    } finally {
+      removeTempFile(file);
+    }
   }
   // Chrome's devtools protocol can't set files on a webkitdirectory input; a real folder pick only happens
   // through the OS's own dialog, and that leaves `.files` empty here. So instead I build real `File` objects
-  // in the page, assign them over the input's normally read-only `.files`, and dispatch a real `change` event,
-  // which runs the exact listener lookback.js would. The format is found by its shape, not its path, so this
-  // doesn't need webkitRelativePath set.
+  // in the page, keep their relative paths, assign them over the input's normally read-only `.files`, and dispatch
+  // a real `change` event, which runs the exact listener lookback.js would.
   async function pickFolder(page, files) {
     const entries = Object.entries(files).map(([name, content]) => [
-      path.basename(name),
+      name,
       Buffer.isBuffer(content) ? content.toString("base64") : Buffer.from(content, "utf8").toString("base64"),
     ]);
-    await page.evaluate((entries) => {
-      const toFile = (name, base64) => {
+    await page.evaluate((pairs) => {
+      const toFile = (relativePath, base64) => {
         const bin = atob(base64);
         const bytes = new Uint8Array(bin.length);
         for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
-        return new File([bytes], name);
+        const file = new File([bytes], relativePath.split("/").at(-1));
+        Object.defineProperty(file, "webkitRelativePath", { value: relativePath });
+        return file;
       };
       const input = document.getElementById("folder-input");
-      const files = entries.map(([name, base64]) => toFile(name, base64));
-      Object.defineProperty(input, "files", { value: files, configurable: true });
+      const fileList = pairs.map(([name, base64]) => toFile(name, base64));
+      Object.defineProperty(input, "files", { value: fileList, configurable: true });
       input.dispatchEvent(new Event("change", { bubbles: true }));
     }, entries);
   }
@@ -65,7 +80,13 @@ module.exports = async function (env) {
   // Picks several files at once, the way Claude's split export (conversations-000.zip, -001.zip…) arrives.
   async function pickFiles(page, files) {
     const input = await page.$("#file-input");
-    await input.uploadFile(...files.map(([name, bytes]) => tmpZip(name, bytes)));
+    const paths = [];
+    try {
+      for (const [name, bytes] of files) paths.push(tmpZip(name, bytes));
+      await input.uploadFile(...paths);
+    } finally {
+      for (const file of paths) removeTempFile(file);
+    }
   }
 
   const readResults = (page) =>
@@ -137,9 +158,9 @@ module.exports = async function (env) {
 
   await check("LK3", "Look back: a lone MyActivity.json, picked by itself, is read and grouped by day", async () => {
     const page = await openExtPage(ctx, "lookback.html");
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "clotr-lb-json-"));
     try {
       const geminiJson = EXPORTS.gemini["Takeout/My Activity/Gemini Apps/MyActivity.json"];
-      const dir = fs.mkdtempSync(path.join(os.tmpdir(), "clotr-lb-json-"));
       const p = path.join(dir, "MyActivity.json");
       fs.writeFileSync(p, geminiJson);
       const input = await page.$("#file-input");
@@ -149,7 +170,11 @@ module.exports = async function (env) {
       expect(r.resultsShown, `lone JSON: results never showed: ${JSON.stringify(r)}`);
       expect(r.cards.length === 2, `lone JSON: expected 2 day-groups, got ${r.cards.length}`);
     } finally {
-      await page.close();
+      try {
+        await page.close();
+      } finally {
+        fs.rmSync(dir, { recursive: true, force: true, maxRetries: 3 });
+      }
     }
   });
 
@@ -160,10 +185,10 @@ module.exports = async function (env) {
     "Look back: a lone Copilot CSV, picked by itself (not zipped), is read and grouped by day",
     async () => {
       const page = await openExtPage(ctx, "lookback.html");
+      const dir = fs.mkdtempSync(path.join(os.tmpdir(), "clotr-lb-csv-"));
       try {
         await page.click('.lb-tab[data-tool="copilot"]');
         const csv = EXPORTS.copilot["CopilotActivity.csv"];
-        const dir = fs.mkdtempSync(path.join(os.tmpdir(), "clotr-lb-csv-"));
         const p = path.join(dir, "CopilotActivity.csv");
         fs.writeFileSync(p, csv);
         const input = await page.$("#file-input");
@@ -173,7 +198,11 @@ module.exports = async function (env) {
         expect(r.resultsShown, `lone CSV: results never showed: ${JSON.stringify(r)}`);
         expect(r.cards.length === 2, `lone CSV: expected 2 day-groups, got ${r.cards.length}`);
       } finally {
-        await page.close();
+        try {
+          await page.close();
+        } finally {
+          fs.rmSync(dir, { recursive: true, force: true, maxRetries: 3 });
+        }
       }
     },
   );
@@ -273,6 +302,30 @@ module.exports = async function (env) {
           /can't read this export yet/.test(shown.unsupported || ""),
           `copilot-unknown-header export text: ${shown.unsupported}`,
         );
+      } finally {
+        await page.close();
+      }
+    },
+  );
+
+  // ---------- LK5B: a damaged or truncated zip ----------
+
+  await check(
+    "LK5B",
+    "Look back: a truncated or garbled zip reads as damaged, not as an unknown export or a stuck screen",
+    async () => {
+      const page = await openExtPage(ctx, "lookback.html");
+      try {
+        await pickZip(page, Buffer.from("not actually a zip file"), "export.zip");
+        await waitSettled(page);
+        const shown = await page.evaluate(() => ({
+          unsupported: document.getElementById("unsupported").hidden
+            ? null
+            : document.getElementById("unsupported").textContent,
+          startShown: !document.getElementById("start").hidden,
+        }));
+        expect(/damaged or incomplete/.test(shown.unsupported || ""), `damaged zip text: ${shown.unsupported}`);
+        expect(shown.startShown, "the start screen should come back so the person can try again");
       } finally {
         await page.close();
       }
@@ -446,8 +499,9 @@ module.exports = async function (env) {
         expect(r.cards.length > 0, "the planted email wasn't found in the 300 MB export");
 
         const budget = 200 * 1024 * 1024;
-        if (peakHeap === 0)
+        if (peakHeap === 0) {
           throw new Skip("heap usage never measured (worker may have finished before the first poll)");
+        }
         expect(
           peakHeap < budget,
           `worker heap peaked at ${(peakHeap / 1024 / 1024).toFixed(0)} MB, over the 200 MB budget`,
@@ -462,11 +516,10 @@ module.exports = async function (env) {
 
   // ---------- LK9: the Gemini memory fix ----------
 
-  // Gemini's reader used to hold every record in memory before grouping them by day, which peaked near 400 MB
-  // on a 300 MB export against the 200 MB budget. Now it groups by day as records stream in, flushing each day's
-  // buffer as soon as the next day starts, so at most one day's prompts sit in memory at once. Forty prompts a
-  // day is already a heavy Gemini habit, but it still gives enough days at this size to prove the flush runs
-  // thousands of times rather than once.
+  // Gemini used to hold every record in memory before grouping by day, which peaked near 400 MB on a 300 MB
+  // export against the 200 MB budget. It now reads one prompt record at a time and keeps only records with
+  // findings, so the reader doesn't retain the whole export or every ordinary prompt. Forty prompts a day is
+  // already a heavy Gemini habit, but it still gives enough records at this size to check the memory budget.
   function geminiStress(approxBytes) {
     const filler = "lorem ipsum dolor sit amet consectetur adipiscing elit ".repeat(40); // ~2.3 KB per record
     const perDay = 40;
@@ -531,8 +584,9 @@ module.exports = async function (env) {
         expect(r.cards.length > 0, "the planted email wasn't found in the 300 MB Gemini export");
 
         const budget = 200 * 1024 * 1024;
-        if (peakHeap === 0)
+        if (peakHeap === 0) {
           throw new Skip("heap usage never measured (worker may have finished before the first poll)");
+        }
         expect(
           peakHeap < budget,
           `Gemini worker heap peaked at ${(peakHeap / 1024 / 1024).toFixed(0)} MB, over the 200 MB budget`,
@@ -627,11 +681,12 @@ module.exports = async function (env) {
             text.sharedRows.some((r) => / en \d+ chats?(\D|$)/.test(r)),
             `no shared row read like Spanish's singular/plural: ${JSON.stringify(text.sharedRows)}`,
           );
-          if (text.differentNoteShown)
+          if (text.differentNoteShown) {
             expect(
               text.sharedRows.some((r) => /distintos\)$/.test(r)),
               "the 'different' note showed without any row actually having a different count",
             );
+          }
           await shotAt(page, "lookback-results-es-light.png", { width: 380, height: 1100, theme: "light" });
           await shotAt(page, "lookback-results-es-dark.png", { width: 1280, height: 1000, theme: "dark" });
 
@@ -794,4 +849,53 @@ module.exports = async function (env) {
       expect(!problems.length, problems.slice(0, 8).join(" | "));
     },
   );
+
+  await check("LK14", "Look back: Gemini product-only Takeout and empty folders explain what happened", async () => {
+    const files = {
+      "Takeout/Gemini/gemini_scheduled_actions_data.html": "12345678901",
+      "Takeout/Gemini/gemini_gems_data.html": "12345678901",
+    };
+    const expectedMessage =
+      "This Takeout doesn't have your Gemini chats. In Google Takeout, choose My Activity, then Gemini Apps, and pick JSON as the format.";
+    const chats = await openExtPage(ctx, "lookback.html");
+    try {
+      await pickFolder(chats, {
+        "Takeout/My Activity/Gemini Apps/MyActivity.json":
+          EXPORTS.gemini["Takeout/My Activity/Gemini Apps/MyActivity.json"],
+      });
+      await waitFor(() => chats.$eval("#results", (el) => !el.hidden), 10000);
+      expect((await readResults(chats)).cards.length === 2, "Gemini Apps folder didn't show its chats");
+    } finally {
+      await chats.close();
+    }
+    for (const pick of [
+      async (page) => pickZip(page, zip(files), "takeout.zip"),
+      async (page) => pickFolder(page, files),
+    ]) {
+      const page = await openExtPage(ctx, "lookback.html");
+      try {
+        await pick(page);
+        await waitFor(() => page.$eval("#unsupported", (el) => !el.hidden), 10000);
+        expect((await page.$eval("#unsupported", (el) => el.textContent)) === expectedMessage, "wrong Takeout message");
+      } finally {
+        await page.close();
+      }
+    }
+    const empty = await openExtPage(ctx, "lookback.html");
+    try {
+      await empty.evaluate(() => {
+        const input = document.getElementById("folder-input");
+        Object.defineProperty(input, "files", { value: [], configurable: true });
+        input.dispatchEvent(new Event("change", { bubbles: true }));
+      });
+      await waitFor(() => empty.$eval("#unsupported", (el) => !el.hidden), 10000);
+      expect(
+        (await empty.$eval("#unsupported", (el) => el.textContent)) ===
+          "Clotr can't read this export yet. It reads ChatGPT, Claude, Gemini (Google Takeout) and Copilot exports.",
+        "empty folder didn't show the generic message",
+      );
+    } finally {
+      await empty.close();
+    }
+  });
 };

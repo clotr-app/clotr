@@ -93,8 +93,9 @@ function assertLinear(fn, makeInput, units, n = 50000, budget = 400) {
         big.wall >= 50 &&
         grewMoreThan(small, big, 10) &&
         `${JSON.stringify(unit)}: ${small.wall.toFixed(1)} → ${big.wall.toFixed(1)} ms for 4× the input`;
-      if (big.over(budget))
+      if (big.over(budget)) {
         return `${JSON.stringify(unit)}: ${big.wall.toFixed(1)} ms (${big.cpu.toFixed(0)} of processor, ${big.allowed.toFixed(0)} allowed on this computer now) for ${n * 4} repeats`;
+      }
       return grew || undefined;
     });
   }
@@ -383,8 +384,9 @@ test("phone numbers with sound-alikes at the edges and side by side", () => {
     "fiv fiv fiv too fore eigt zeero fore fiv won",
     "too zeero sicks eigt fiv nien fiv eigt thre fore",
     "too zeero sicks fore fore fore fore seve seve too",
-  ])
+  ]) {
     expectOnly(`number is ${phone} ok?`, "phone_number", phone);
+  }
   const fp = (m) => globalThis.Clotr.fingerprint("s", "phone_number", m);
   assert.equal(fp("fore won fiv too seve fiv sicks seve fiv thre"), fp("415-275-6753"));
   // A sound-alike in front of a whole number isn't part of it: "to" isn't a leading 2, even before nine digits
@@ -416,8 +418,9 @@ test("phone numbers with three sound-alikes at the edges, or mostly sound-alikes
     "thre won too fore eigt too fore too nien fiv",
     "too fore sicks fiv fiv seve thre eigt nien won",
     "eigt won fore too fore won too won fore thre",
-  ])
+  ]) {
     expectOnly(`number is ${phone} ok?`, "phone_number", phone);
+  }
   const fp = (m) => globalThis.Clotr.fingerprint("s", "phone_number", m);
   assert.equal(fp("thre won too fore eigt too fore too nien fiv"), fp("312-482-4295"));
   // Everyday sentences with sound-alikes and number words stay quiet
@@ -437,8 +440,9 @@ test("phone numbers with four sound-alikes at the edges, when number words outnu
     "fore won fiv thre won zeero nien eigt fore won",
     "too fore fiv sicks seve eigt nien zeero won fore",
     "fore won fiv thre seve too zeero nien too won",
-  ])
+  ]) {
     expectOnly(`number is ${phone} ok?`, "phone_number", phone);
+  }
   const fp = (m) => globalThis.Clotr.fingerprint("s", "phone_number", m);
   assert.equal(fp("fore won fiv thre won zeero nien eigt fore won"), fp("415-310-9841"));
   // Fewer number words than sound-alikes at the edges: still everyday words
@@ -455,8 +459,9 @@ test("phone numbers after a phone word, with sound-alikes at the edges however m
     ["number is ", "fore won fiv nien sicks eigt won won too fore"],
     ["call me on ", "too won fiv seve eigt won fore won too won"],
     ["my cell: ", "fore won fiv nien seve won won too fore won"],
-  ])
+  ]) {
     expectOnly(`${before}${phone} ok?`, "phone_number", phone);
+  }
   const fp = (m) => globalThis.Clotr.fingerprint("s", "phone_number", m);
   assert.equal(fp("fore won fiv nien sicks eigt won won too fore"), fp("415-968-1124"));
   // The same number without a phone word is still one. A phone word doesn't make a short run count as a number.
@@ -481,8 +486,9 @@ test("phone numbers spelled mostly or only with sound-alikes", () => {
     "fore fiv zeero fore seve eigt seve fore won fore",
     "fore too won seve zeero seve zeero thre too fiv",
     "too won too thre fore fiv sicks seve eigt nien",
-  ])
+  ]) {
     expectOnly(`number is ${phone} ok?`, "phone_number", phone);
+  }
   expectOnly("call me at too fore won, too fore won, fore too won too", "phone_number");
   const fp = (m) => globalThis.Clotr.fingerprint("s", "phone_number", m);
   assert.equal(fp("too fore won too fore won fore too won too"), fp("241-241-4212"));
@@ -633,7 +639,11 @@ test("phone numbers with a one-letter slip in a number word", () => {
 
 test("credit cards (Luhn)", () => {
   expectOnly("4111 1111 1111 1111", "credit_card");
+  expectNothing("0.5196377162000371");
+  expectNothing('href="#G1561364t0.5196377162000371" data-pptstepid="G2425071t0.6752873899776972"');
   expectNothing("4111 1111 1111 1112");
+  expectOnly("My card is 4111 1111 1111 1111.", "credit_card", "4111 1111 1111 1111");
+  expectOnly("card: 4111-1111-1111-1111", "credit_card", "4111-1111-1111-1111");
   // An Amex card's first 10 digits look like a phone number, but this should report only the card.
   expectOnly("Card 3782 822463 10005", "credit_card");
   // Book numbers (ISBN-13, with the 978/979 prefix no card network uses) pass the Luhn check about one time in
@@ -654,11 +664,39 @@ test("credit cards spelled out in words (not mistaken for a crypto seed phrase)"
     "credit_card",
   );
   expectNothing("four one one one, one one one one, one one one one, one one one two"); // fails the checksum
-  // A real seed phrase is still one
-  expectOnly(
-    "seed: abandon ability able about above absent absorb abstract absurd abuse access accident",
-    "crypto_secret",
+  // A real seed phrase is still one (this phrase carries a valid BIP-39 checksum, unlike the words above)
+  expectOnly("seed: abuse boss fly battle rubber wasp afraid hamster guide essence vibrant tattoo", "crypto_secret");
+});
+
+test("a crypto seed phrase needs its own checksum, not just twelve list words in a row", () => {
+  // A diary card's daily rating table: dozens of BIP-39 list words in a row (day, anger, joy, trust, calm,
+  // pride and hope are all on the list), but none of its 12/15/18/21/24-word windows carries a real checksum.
+  expectNone(
+    "Day 1 anger 2 joy 1 trust 4 calm 3 pride 2 hope 3\nDay 2 anger 1 joy 3 trust 2 calm 4 pride 1 hope 2\n" +
+      "Day 3 anger 3 joy 2 trust 1 calm 2 pride 4 hope 1\nDay 4 anger 2 joy 4 trust 3 calm 1 pride 2 hope 3\n" +
+      "Day 5 anger 1 joy 2 trust 4 calm 3 pride 1 hope 2\nDay 6 anger 4 joy 1 trust 2 calm 4 pride 3 hope 1",
   );
+  // Twelve list words in a row with a broken checksum (one word changed from the valid phrase above).
+  expectNone("abuse boss fly battle rubber wasp afraid hamster guide essence vibrant top");
+});
+
+test("seed checks continue after long list word prefixes", () => {
+  const seed12 = "abuse boss fly battle rubber wasp afraid hamster guide essence vibrant tattoo";
+  const seed24 =
+    "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon " +
+    "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon art";
+  for (const seed of [seed12, seed24]) {
+    expectOnly(`${"abandon ".repeat(500)}${seed}`, "crypto_secret");
+  }
+  const source = require("node:fs").readFileSync(
+    require("node:path").join(__dirname, "..", "extension", "patterns.js"),
+    "utf8",
+  );
+  const words = source
+    .match(/const BIP39 = new Set\(\s*`([\s\S]*?)`/)[1]
+    .trim()
+    .split(/\s+/);
+  expectOnly(`${words.slice(0, 500).join(" ")} ${seed12}`, "crypto_secret");
 });
 
 test("phone numbers: digit formats", () => {
@@ -695,6 +733,22 @@ test("phone numbers: UK and Australian local formats", () => {
   assert.equal(fp("07700 900123"), fp("07700-900-123"));
   expectNothing("order 07123456789 shipped");
   expectNothing("invoice 0412345678 paid");
+});
+
+test("movie release and file names aren't read as an ID or phone number", () => {
+  expectNone('{"filename": "Some.Movie.Part.Two.2023.2160p.WEB-DL.DDP5.1"}');
+  expectNone('{"filename": "Old.Film.451.1966.1080p.BluRay"}');
+  // the existing positive cases still find
+  expectOnly("555-555-5636", "phone_number", "555-555-5636");
+  expectOnly("ssn: 219099999", "us_ssn", "219099999");
+});
+
+test("letters glued to phone and SSN values do not make them filenames", () => {
+  expectOnly("x5551234567", "phone_number");
+  expectOnly("call me at a5551234567", "phone_number");
+  expectOnly("SSN a123-45-6789", "us_ssn");
+  expectOnly("ssn 123456789z", "us_ssn");
+  expectOnly("555-555-5636x12", "phone_number");
 });
 
 test("numbered lists: the item number isn't part of the detail", () => {
@@ -894,6 +948,17 @@ test("sha256 matches node's crypto", () => {
   }
 });
 
+// patterns.js's own byte-oriented SHA-256, used to check a crypto seed phrase's checksum, against the
+// standard FIPS 180-4 test vectors: the empty string, "abc" and the 448-bit two-block message.
+test("patterns.js's sha256Bytes matches the standard test vectors", () => {
+  const { createHash } = require("node:crypto");
+  const hex = (bytes) => Buffer.from(bytes).toString("hex");
+  for (const s of ["", "abc", "abcdbcdecdefdefgefghfghighijhijkijkljklmklmnlmnomnopnopq"]) {
+    const bytes = new TextEncoder().encode(s);
+    assert.equal(hex(globalThis.Clotr.sha256Bytes(bytes)), createHash("sha256").update(bytes).digest("hex"), s);
+  }
+});
+
 test("fingerprints: same value however it's written", () => {
   const fp = (id, m) => globalThis.Clotr.fingerprint("salt", id, m);
   const phone = fp("phone_number", "555-555-5636");
@@ -1034,8 +1099,9 @@ test("a card's security code is its own kind, beside the card's number, and neve
     "el código de seguridad de la tarjeta es 482",
     "card verification code: 4821",
     "the security code is four fifty-two",
-  ])
+  ]) {
     assert.deepEqual(findSecrets(text), [], text);
+  }
   // "verification code" is a label another password rule also reads, but the value is still one detail of one kind.
   expectOnly("card verification code: 4821", "card_code", "4821");
   expectOnly("the card verification code is 4821", "card_code", "4821");
@@ -1102,8 +1168,9 @@ test("card security codes: ordinary sentences stay quiet", () => {
     "the security code is 12/27",
     "the CVV is one",
     "the 4 digits on the front of the box are 2024",
-  ])
+  ]) {
     expectNothing(text);
+  }
   expectOnly("the numbers on the front of my card are 4111 1111 1111 1111", "credit_card");
   for (const text of [
     "los 3 números de atrás de la camiseta",
@@ -1113,8 +1180,9 @@ test("card security codes: ordinary sentences stay quiet", () => {
     "estamos en la habitación 123",
     "el CVV son 3 dígitos",
     "el código de atrás es once",
-  ])
+  ]) {
     expectNothing(text);
+  }
 });
 
 test("card security codes stay fast on hostile text", () => {
@@ -1208,8 +1276,9 @@ test("gift card codes: a gift, a balance, the last four, an order or a link stay
     // The company's own number, on the back of the card.
     "call the number on the back of the gift card, 1-888-280-4331",
     "call the number on the back of the gift card: +1 888 280 4331",
-  ])
+  ]) {
     expectNothing(text);
+  }
   // A person's phone number near a gift card is a phone number.
   expectOnly("the gift card came with a note: call me at (555) 555-0123", "phone_number", "(555) 555-0123");
   expectOnly("the gift card came with a note: call me at 555 555 0123", "phone_number", "555 555 0123");
@@ -1254,8 +1323,9 @@ test("password reasons: each scam code says which kind of code it is", () => {
     ["my ATM pin is 4821", "home_code"],
     ["el código del portal es 4821", "home_code"],
     ["el pin de la tarjeta 4821", "home_code"],
-  ])
+  ]) {
     assert.deepEqual(asksOf(text), [reason], text);
+  }
 });
 
 test("password reasons: none for a plain password, a key or a cookie; a mix lists only the codes, in order", () => {
@@ -1523,8 +1593,9 @@ test("a UK National Insurance number counts only with an NI word nearby, in ever
     "NI no AB123456C",
     "N.I. AB 12 34 56 C",
     "mi seguro nacional es AB123456C",
-  ])
+  ]) {
     expectOnly(text, "national_id");
+  }
   // Look-alikes of the same shape stay quiet without an NI word nearby, like product codes, flight and booking
   // references, and serial numbers.
   for (const text of [
@@ -1533,8 +1604,9 @@ test("a UK National Insurance number counts only with an NI word nearby, in ever
     "booking ref AB123456C",
     "serial number AB 12 34 56 C",
     "AB 12 34 56 C", // nothing around it at all
-  ])
+  ]) {
     expectNothing(text);
+  }
 });
 
 test("US tax and immigration numbers, VA file and Medicaid IDs", () => {
@@ -1626,6 +1698,12 @@ test("the UK, Canadian and Australian address and bank patterns stay fast on hos
   assertLinear(detectOnly, (u, n) => u.repeat(n), ["4/", "12-", "flat 9, ", "9 hill ", "9 park ", "9 view dr "], 5000);
   assertLinear(detectOnly, (u, n) => "sort code 12-34-56 account " + u.repeat(n), ["1", "11", "1 "], 5000);
   assertLinear(detectOnly, (u, n) => u.repeat(n) + "SM9IJ", ["A", "9", "1"], 5000);
+  // A street followed by a long dash-joined run that never reaches a province: the Canadian tail used to try
+  // every way of cutting the run into three town words, which froze the tab for minutes on a few thousand pairs.
+  assertLinear(detectOnly, (u, n) => "1 Oak St, " + u.repeat(n), ["a-", "ab-", "a'-"], 400);
+  // A labelled postcode, then a long gap before something that isn't a state: the Australian check used to try
+  // every way of splitting that gap between two whitespace runs.
+  assertLinear(detectOnly, (u, n) => "postcode 1234" + u.repeat(n) + "x", [" ", "\n"], 5000);
 });
 
 test("bank, Medicare, license, passport and insurance numbers", () => {
@@ -1768,8 +1846,9 @@ test("VIN on its own: tracking numbers, order codes, serials, keys, hashes, toke
     // Part numbers
     "Part # 04465-33450-01 fits?",
     "PN 8W0615301AA in stock?",
-  ])
+  ]) {
     expectNothing(text);
+  }
 });
 
 // This measures how often a random code passes every rule for a VIN on its own, using a seeded generator so the
@@ -1809,8 +1888,9 @@ test("VIN on its own: random 17-character codes almost never pass", () => {
 test("VIN: the fingerprint ignores case, spaces and dashes; Hide it covers all of it", () => {
   const { fingerprint, redact } = globalThis.Clotr;
   const fp = fingerprint("s4lt", "vin", "1HGCM82633A004352");
-  for (const m of ["1hgcm82633a004352", "1HG CM826 33A004352", "1HG-CM826-33A004352"])
+  for (const m of ["1hgcm82633a004352", "1HG CM826 33A004352", "1HG-CM826-33A004352"]) {
     assert.equal(fingerprint("s4lt", "vin", m), fp, m);
+  }
   assert.notEqual(fingerprint("s4lt", "vin", "1HGCM82633A004353"), fp);
   const text = "my VIN is 1HGCM82633A004352, can you check it?";
   const hidden = redact(text, globalThis.Clotr.detect(text));
@@ -1847,8 +1927,9 @@ test("student ID: quiet on 'student' in prose, course codes, class sizes, years 
   expectNothing("La matrícula de la universidad cuesta 1.200 euros");
   expectNothing("el plazo de matrícula termina el 15 de septiembre");
   // A plate after "matrícula" is never a student's number
-  for (const text of ["mi matrícula es 1234 BCD", "la matrícula del coche es 4821-KLM", "matrícula: ABC-123-D"])
+  for (const text of ["mi matrícula es 1234 BCD", "la matrícula del coche es 4821-KLM", "matrícula: ABC-123-D"]) {
     assert.equal(detect(text).student_id, undefined, text);
+  }
 });
 
 test("a student's number right after its label isn't a phone; a phone near student words still is", () => {
@@ -2466,14 +2547,18 @@ test("detection stays fast on long drafts and big pastes (no quadratic patterns)
     "number words and streets": "twenty one forty two main street and ninety nine ".repeat(800),
     "csv paste": Array.from({ length: 2000 }, (_, i) => `Person ${i},p${i}@example.com,555-555-${1000 + i}`).join("\n"),
     digits: "1234567890 ".repeat(4000),
+    // A long diary-card table of everyday BIP-39 list words: checking every possible 12/15/18/21/24-word window
+    // for a crypto seed's checksum must still stay linear, not blow up on this.
+    "diary table of everyday words": "Day 1 anger 2 joy 1 trust 4 calm 3 pride 2 hope 3 worry 1 guilt 2\n".repeat(300),
   };
   for (const [name, text] of Object.entries(inputs)) {
     // This takes the best of 3, like the other speed checks, so one garbage-collection pause on a busy CI runner
     // doesn't read as the detector being slow. A run that takes 80 ms locally once took 422 ms on CI.
     retrySlow(() => {
       const t = bestOfBoth(() => globalThis.Clotr.detect(text));
-      if (t.over(400))
-        return `${name} (${text.length} chars) took ${t.wall.toFixed(0)} ms (${t.cpu.toFixed(0)} of processor, ${t.allowed.toFixed(0)} allowed on this computer now)`;
+      return t.over(400)
+        ? `${name} (${text.length} chars) took ${t.wall.toFixed(0)} ms (${t.cpu.toFixed(0)} of processor, ${t.allowed.toFixed(0)} allowed on this computer now)`
+        : undefined;
     });
   }
 });
@@ -2573,13 +2658,15 @@ test("many details on separate lines are each found", () => {
     const all = detect((order === "forward" ? LINES : [...LINES].reverse()).join("\n"));
     each.forEach((found, i) => {
       for (const [id, matches] of Object.entries(found)) {
-        for (const m of matches)
+        for (const m of matches) {
           if (
             !Object.values(all)
               .flat()
               .some((x) => x.includes(m))
-          )
+          ) {
             missing.push(`${order}: ${LINES[i]} → ${id}: ${m}`);
+          }
+        }
       }
     });
   }
@@ -2669,8 +2756,9 @@ function ratchetProblems(msgs, accepted) {
   for (const a of accepted) {
     const named = msgs.filter((m) => a.message && m.startsWith(a.message));
     if (named.length !== 1) problems.push(`ACCEPTED must name one message (${named.length} start "${a.message}")`);
-    else if (!warned.some(([m]) => m === named[0]))
+    else if (!warned.some(([m]) => m === named[0])) {
       problems.push(`no longer warns, take it out of ACCEPTED: "${a.message}" (${a.issue})`);
+    }
     if (!/^#\d+$/.test(a.issue || "")) problems.push(`ACCEPTED needs an issue number: "${a.message}"`);
   }
   return problems;
@@ -2679,12 +2767,13 @@ function ratchetProblems(msgs, accepted) {
 for (const [file, min] of [
   ["normal-messages.txt", 150],
   ["normal-messages-es.txt", 60],
-])
+]) {
   test(`the ratchet: no wrong warnings in the everyday messages (${file})`, () => {
     const msgs = readCorpus(file);
     assert.ok(msgs.length >= min, `corpus has only ${msgs.length} messages`);
     assert.deepEqual(ratchetProblems(msgs, ACCEPTED[file]), []);
   });
+}
 
 test("the ratchet fails on a planted wrong warning, and on an ACCEPTED entry that passes", () => {
   const msgs = ["Explain quantum entanglement like I'm 10 years old.", `my key is ${FAKE.aws}, is it still live?`];
@@ -2792,17 +2881,19 @@ test("no pattern is slow on hostile text (ReDoS fuzz)", () => {
     for (const p of globalThis.Clotr.PATTERNS) {
       const check = () => {
         const mid = time(p, make(u, N));
-        if (mid.over(150))
+        if (mid.over(150)) {
           return `${p.id} on ${JSON.stringify(u)}: ${mid.wall.toFixed(0)} ms at ${N} (${mid.allowed.toFixed(0)} allowed on this computer now)`;
-        if (mid.wall < 4) return; // too fast to measure growth reliably
+        }
+        if (mid.wall < 4) return undefined; // too fast to measure growth reliably
         const [smallText, bigText] = [make(u, N / 2), make(u, N * 2)];
         const [small, big] = bestOfPair(
           () => (p.find ? p.find(smallText) : smallText.match(p.regex)),
           () => (p.find ? p.find(bigText) : bigText.match(p.regex)),
           4,
         );
-        if (grewMoreThan(small, big, 10, 0.5))
-          return `${p.id} on ${JSON.stringify(u)}: ${small.wall.toFixed(1)} → ${big.wall.toFixed(1)} ms for 4× the text (grows faster than linear)`;
+        return grewMoreThan(small, big, 10, 0.5)
+          ? `${p.id} on ${JSON.stringify(u)}: ${small.wall.toFixed(1)} → ${big.wall.toFixed(1)} ms for 4× the text (grows faster than linear)`
+          : undefined;
       };
       if (!check()) continue;
       try {
@@ -2856,6 +2947,11 @@ test("a label before a huge run of spaces with no value stays fast", () => {
     "RFC_,",
     "ITIN_,",
     "tax id number is_,",
+    "sort code_,",
+    "BSB_,",
+    "transit_,",
+    "transit 12345 institution_,",
+    "sort code 12-34-56 account_,",
   ];
   for (const gap of [" ", "\n"]) assertLinear(read, (label, n) => label.replace("_", gap.repeat(n)), labels, 3000);
 });
@@ -2974,8 +3070,9 @@ test("invisible and look-alike characters don't hide a leak (and matches are the
   for (const [id, text] of cases) {
     const found = detect(text)[id];
     // Each match has to be a real piece of the original text, so Hide it can actually remove it.
-    if (!found || !found.every((m) => text.includes(m)))
+    if (!found || !found.every((m) => text.includes(m))) {
       missed.push(`${id} ← ${JSON.stringify(text)} → ${JSON.stringify(found)}`);
+    }
   }
   assert.deepEqual(missed, []);
   // The zero-width space is part of what gets hidden, not left behind.
@@ -3106,8 +3203,9 @@ test("a sentence that ends on a label stays quiet", () => {
     "that's what my password was. honestly",
     "Olvidé mi contraseña. ¿Algún consejo?",
     "olvidé mi contraseña. carmesí es mi color favorito.",
-  ])
+  ]) {
     expectNone(text);
+  }
 });
 
 test("reading a phone keyboard's dots as spaces stays fast on hostile text", () => {
@@ -3128,8 +3226,9 @@ test("an accented word or a Spanish question after a password word isn't a passw
     "cambié la contraseña después de eso",
     "olvidé mi contraseña ¿algún consejo?",
     "Cambié la contraseña ¡por fin!",
-  ])
+  ]) {
     expectNone(text);
+  }
   expectOnly("mi contraseña Café2024", "password", "Café2024");
   expectOnly("contraseña: Ñandú!", "password", "Ñandú!");
   expectOnly("mi contraseña es corazón", "password", "corazón");
@@ -3152,8 +3251,9 @@ test("a full stop between a number and a street word isn't an address", () => {
     // No capitals: the dot after "minutes" ends the sentence just the same.
     "i'll be there in 5 minutes. drive safe",
     "we bought 2 tickets. elm street theater was packed",
-  ])
+  ]) {
     expectNone(text);
+  }
   // A house number in words stops at a line break: "twenty" is the line above's.
   assert.deepEqual(detect("It's twenty to twenty\nTwelve Oak Street was where I grew up").street_address, [
     "Twelve Oak Street",
@@ -3185,8 +3285,9 @@ test("numbers on both sides of a sentence end aren't one phone number", () => {
     "See you at nine thirty. Oh one two three is the end of it.",
     // Two spaces a phone keyboard made a dot, inside "twenty to twenty five".
     "Bake at three fifty for twenty to twenty. Five minutes",
-  ])
+  ]) {
     expectNone(text);
+  }
   // The number after the sentence end is found on its own (the year before it hid it).
   expectOnly(
     "It's 2024. Five five five five five five zero one two three is my cell",
@@ -3214,8 +3315,9 @@ test("a password word ending a line doesn't make the next line's first word a pa
     "Update the password\nThanks!",
     "I forgot my password\nSarah said hi.",
     "Olvidé mi contraseña\nGracias.",
-  ])
+  ]) {
     expectNone(text);
+  }
   expectOnly("I forgot my password\nSummer2024 didn't work either", "password", "Summer2024");
   expectOnly("Password:\nHunter2!", "password", "Hunter2!");
 });
@@ -3396,12 +3498,14 @@ test("fuzz: 3,000 random messages never break detection and each stays fast", ()
   }
   // Each message gets one run, so a single slow moment could make any of them look slow. The slowest one gets
   // timed again before the test fails on it.
-  if (slowest >= 250)
+  if (slowest >= 250) {
     retrySlow(() => {
       const t = bestOfBoth(() => globalThis.Clotr.detect(slowestText));
-      if (t.over(250))
-        return `slowest message took ${t.wall.toFixed(1)} ms (${t.cpu.toFixed(0)} of processor, ${t.allowed.toFixed(0)} allowed on this computer now): ${JSON.stringify(slowestText.slice(0, 80))}`;
+      return t.over(250)
+        ? `slowest message took ${t.wall.toFixed(1)} ms (${t.cpu.toFixed(0)} of processor, ${t.allowed.toFixed(0)} allowed on this computer now): ${JSON.stringify(slowestText.slice(0, 80))}`
+        : undefined;
     });
+  }
 });
 
 test("Spanish: phone numbers spelled out in Spanish, mixed with digits", () => {
@@ -3441,8 +3545,9 @@ test("Spanish: phone numbers read in pairs that include 'once'", () => {
     "seis nueve tres, once, once, treinta y cinco",
     "seis cuatro nueve, once, cincuenta y cuatro, setenta",
     "seis tres cinco, sesenta y cuatro, veintiuno, once",
-  ])
+  ]) {
     expectOnly(`mi número es ${phone}, llámame luego`, "phone_number", phone);
+  }
   const fp = (m) => globalThis.Clotr.fingerprint("s", "phone_number", m);
   assert.equal(fp("seis tres cinco, sesenta y cuatro, once, veintiuno"), fp("635 64 11 21"));
   // English "once" stays a word, even right after a number
@@ -3489,8 +3594,9 @@ test("counting aloud, up or down, in English or Spanish, isn't a phone number or
     for (let from = 0; from < words.length; from++) {
       for (let to = from + 2; to < words.length; to++) {
         const up = words.slice(from, to + 1);
-        for (const run of [up, [...up].reverse()])
+        for (const run of [up, [...up].reverse()]) {
           for (const sep of [" ", ", "]) expectNothing(`let's count: ${run.join(sep)}`);
+        }
       }
     }
   }
@@ -3549,6 +3655,11 @@ test("Spanish and Mexican ID numbers (checksum-validated)", () => {
   expectOnly("CURP: GODE561231HDFRRN00", "national_id", "GODE561231HDFRRN00");
   expectNothing("GODE561231HDFRRN04"); // wrong check digit
   expectNothing("12345678A"); // wrong DNI letter
+  expectNothing("12345678Z:\\");
+  expectNothing("X1234567L:/folder");
+  expectOnly("DNI: 12345678Z", "national_id", "12345678Z");
+  expectOnly("12345678-Z", "national_id", "12345678-Z");
+  expectOnly("12345678 Z", "national_id", "12345678 Z");
   expectNothing("referencia 87654321B del pedido"); // wrong letter too
   // Mexico's RFC and Spain's social security number: only after their label
   expectOnly("mi RFC es PEPJ800101AB3", "national_id", "PEPJ800101AB3");
@@ -3895,8 +4006,9 @@ test("sign-in codes: the code before its label, who sent it and how, the text it
     "I received a code 482913, what is it for?",
     "Your WhatsApp code: 482-913",
     "my Google code is 482913",
-  ])
+  ]) {
     assert.deepEqual(asksOf(text), ["login_code"], text);
+  }
   expectOnly("texted me 482913 as a verification code", "password", "482913");
   expectOnly("482913 is my code", "password", "482913");
 });
@@ -3926,8 +4038,9 @@ test("Spanish sign-in codes: 'me mandó', 'me ha llegado', a one-time key, the c
     "me mandaron 482913 como código de verificación",
     "mi código es 482913",
     "me están pidiendo el código 482913",
-  ])
+  ]) {
     assert.deepEqual(asksOf(text), ["login_code"], text);
+  }
   expectOnly("Mi banco me mandó un código por SMS: 482913", "password", "482913");
   expectOnly("clave de acceso de un solo uso 482913", "password", "482913");
 });
@@ -3964,8 +4077,9 @@ test("not sign-in codes: tracking, promo and error codes, zip codes, a medical c
     "mi código tiene 3000 líneas, ¿lo revisas?",
     "el código del mensaje de error es 5001",
     "me mandaron 3 códigos de descuento",
-  ])
+  ]) {
     expectNone(text);
+  }
 });
 
 test("bank accounts in Spanish: número de cuenta, cuenta bancaria, CLABE and CBU by their check digits, IBAN", () => {
@@ -3990,11 +4104,13 @@ test("bank accounts in Spanish: número de cuenta, cuenta bancaria, CLABE and CB
     // An IBAN after its name, in any case
     ["iban: es26 0000 1234 5612 3456 7890", "es26 0000 1234 5612 3456 7890"],
     ["mi IBAN es ES26 0000 1234 5612 3456 7890", "ES26 0000 1234 5612 3456 7890"],
-  ])
+  ]) {
     expectOnly(text, "bank_account", value);
+  }
   // A wrong check digit isn't a CLABE or a CBU.
-  for (const text of ["mi CLABE es 999180001234567890", "mi CBU es 9990001800001234567892"])
+  for (const text of ["mi CLABE es 999180001234567890", "mi CBU es 9990001800001234567892"]) {
     assert.equal(detect(text).bank_account, undefined, text);
+  }
 });
 
 test("sign-in codes and Spanish bank accounts stay fast on hostile text", () => {
@@ -4030,8 +4146,9 @@ test("not bank accounts: talk about accounts with no number, order and tracking 
     "Tengo en mi cuenta de ahorros 150000 pesos, ¿cómo los invierto?",
     "mi cuenta bancaria: 150000 pesos ahorrados, ¿es suficiente?",
     "Where do I find my account number on a check?",
-  ])
+  ]) {
     expectNone(text);
+  }
 });
 
 test("leak corpus: a school locker combination, with dashes or spaces", () => {
@@ -4109,8 +4226,9 @@ test("reading a long run of digits grows in step with its length (no freeze on a
   read(2000)(); // warm up
   retrySlow(() => {
     const [small, big] = bestOfPair(read(20000), read(80000), 4, 5);
-    if (grewMoreThan(small, big, 8))
-      return `20,000 digits: ${small.wall.toFixed(0)} ms, 80,000: ${big.wall.toFixed(0)} ms (four times the text should take about four times as long)`;
+    return grewMoreThan(small, big, 8)
+      ? `20,000 digits: ${small.wall.toFixed(0)} ms, 80,000: ${big.wall.toFixed(0)} ms (four times the text should take about four times as long)`
+      : undefined;
   });
 });
 
@@ -4286,7 +4404,277 @@ test("Clean link: detect() finds the link and redact()/generalize() clean it ins
 // indexOf()/split("&") rather than a backtracking regex.
 test("Clean link: a link with a huge query string still scans and cleans in linear time", () => {
   const { findShareLinks, cleanShareLink } = globalThis.Clotr;
-  const bigLink = (unit, n) => `https://example.com/page?gclid=abc&filler=${"x".repeat(n)}`;
+  const bigLink = (_unit, n) => `https://example.com/page?gclid=abc&filler=${"x".repeat(n)}`;
   assertLinear((link) => findShareLinks(`look at ${link} thanks`), bigLink, [null], 50000, 400);
   assertLinear((link) => cleanShareLink(link), bigLink, [null], 50000, 400);
+});
+
+// Hostile input: a long run of the punctuation a link, token or value gets trimmed of, with something else after
+// it, like "http://a", thousands of dots, then "a". Trimming with a /[.,;]+$/-style regex retried that run from
+// every start, which took quadratic time in each reader that cleans up the end of what it found (security-scan-130
+// F4 and the sibling trims it shares its shape with: otpauth links and their secret= padding, connection strings,
+// password values, gamer tags, recovery codes, and the words in a street name).
+test("trimming trailing punctuation off a link, key or value stays fast on a long run of it", () => {
+  const read = (text) => globalThis.Clotr.detect(text);
+  let runs = 0; // each run gets its own text, so no kept answer hides the work
+  const withGap = (text) => read(text + " ".repeat(++runs % 7));
+  const dotShapes = [
+    "see http://a_a ok", // findShareLinks
+    "see otpauth://a_a ok", // otpFinds' link trim
+    "see http://u:Pw9x@h_a ok", // findConnectionStrings
+    "my gamertag is a_a ok", // handleAt
+    "password=a_a ok", // secretValue
+    "12 a_a Street", // the street-name words in findAddresses
+  ];
+  assertLinear(withGap, (shape, n) => shape.replace("_", ".".repeat(n)), dotShapes, 5000);
+  assertLinear(withGap, (shape, n) => shape.replace("_", "=".repeat(n)), ["check otpauth://totp/x?secret=_A ok"], 5000);
+  assertLinear(withGap, (shape, n) => shape.replace("_", " ".repeat(n)), ["backup codes are abcd_efgh ok"], 5000);
+});
+
+test("trimming an ordinary ending stays the same match, every place it happens", () => {
+  const { findShareLinks } = globalThis.Clotr;
+  assert.deepEqual(findShareLinks("see https://x.com/a?utm_source=y). thanks"), ["https://x.com/a?utm_source=y"]);
+  expectOnly(
+    "DATABASE_URL is postgres://admin:S3cr3tPw@db.prod.internal:5432/app).",
+    "connection_string",
+    "postgres://admin:S3cr3tPw@db.prod.internal:5432/app",
+  );
+  expectOnly("my gamertag is Shadow-Fox-, add me", "gamer_tag", "Shadow-Fox");
+  expectOnly("my google backup codes are 1234 5678, 2345 6789, ", "password", "1234 5678, 2345 6789");
+  // A real base32 secret is padded out to a multiple of 8 characters with "=", and the padding is still a
+  // valid secret once it's stripped, not just an ordinary ending.
+  expectOnly("otpauth://totp/Acme:x?secret=N4XQ2ZK7PLM3RTY5===&issuer=Acme", "otp_secret");
+});
+
+// ---------- What people paste into AI chats: keys, passwords, IDs, written every way ----------
+
+test("an .env template's empty setting doesn't take the next line's setting as its password", () => {
+  for (const text of [
+    "PASSWORD=\nUSERNAME=admin",
+    "DB_PASSWORD=\nDB_USER=postgres",
+    "SECRET_KEY=\nALLOWED_HOSTS=localhost,example.com",
+    "pwd=\nport=5432",
+    "CLAVE=\nUSUARIO=admin",
+  ]) {
+    expectNone(text);
+  }
+  // A filled-in setting still warns, and so does a password written on the line under its label.
+  expectOnly("PASSWORD=Hunter2!Blue9\nUSERNAME=admin", "password", "Hunter2!Blue9");
+  expectOnly("DB_USER=postgres\nDB_PASSWORD=Tr0ub4dor&3", "password", "Tr0ub4dor&3");
+  expectOnly("Password:\nHunter2!", "password", "Hunter2!");
+});
+
+test("an API key, secret key or access token after its name written with a space, in English and Spanish", () => {
+  const key = "a8F3kL9mQ2xR7vT4pZ1nB6cY";
+  for (const text of [
+    `API key: ${key}`,
+    `Api Key = ${key}`,
+    `secret key: ${key}`,
+    `clave de API: ${key}`,
+    `Clave API: ${key}`,
+    `token de acceso: ${key}`,
+  ]) {
+    expectOnly(text, "password", key);
+  }
+  for (const text of [
+    "API key: see the dashboard",
+    "API key: required",
+    "API key: YOUR_API_KEY",
+    "API key: <your key>",
+    "Secret key: ********",
+    "clave de API: obligatoria",
+  ]) {
+    expectNone(text);
+  }
+});
+
+test("an API key or token told in a sentence, in English and Spanish, when it looks machine-made", () => {
+  const key = "a8F3kL9mQ2xR7vT4pZ1nB6cY";
+  for (const text of [
+    `my api key is ${key}, why doesn't it work`,
+    `the access token is ${key}`,
+    `my token is ${key}`,
+    `the client secret was ${key}.`,
+    `el token es ${key}, ayúdame con el error 401`,
+    `mi token de acceso es ${key}`,
+  ]) {
+    expectOnly(text, "password", key);
+  }
+  for (const text of [
+    "the API key is in the header",
+    "the token is expired",
+    "the token is JWT-based",
+    "my API key is not working",
+    "the token is generated by the server",
+    "the token is 2024-10-12T10:00:00Z in the logs",
+    "the token is abc123 in the tutorial",
+    "el token es inválido desde ayer",
+    "the token is 0x1f9840a85d5af5bf1d1762f925bdaddc4201f984 on the block explorer",
+  ]) {
+    expectNone(text);
+  }
+  // A key with its own kind is reported as that kind only.
+  expectOnly(`my github token is ghp_${key}Tq8vR2mXz4Lp`, "github_token");
+  expectOnly("the token is eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJ4In0.4pcPyMD09olPSyXnrXCjTwXyr4Bsez", "jwt");
+});
+
+test("a password told as “my password's …”, “my password, it's …” or “I changed my password to …”, in English and Spanish", () => {
+  for (const [text, value] of [
+    ["the password's Pumpkin_88", "Pumpkin_88"],
+    ["my password’s Marigold#7", "Marigold#7"],
+    ["I keep forgetting my password, it's Marigold#7", "Marigold#7"],
+    ["my wifi password, it is bluecat77", "bluecat77"],
+    ["I changed my password to bluecat77 yesterday", "bluecat77"],
+    ["I set the wifi password to bluecat77", "bluecat77"],
+    ["reset my email password to Rosebud1987", "Rosebud1987"],
+    ["olvidé mi contraseña, es Margarita#7", "Margarita#7"],
+    ["cambié mi contraseña a gatoazul77", "gatoazul77"],
+    ["cambié la clave del wifi por Gato2024", "Gato2024"],
+  ]) {
+    expectOnly(text, "password", value);
+  }
+  for (const text of [
+    "my password's been changed twice this week",
+    "my password's too short apparently",
+    "my password, it's too long to remember",
+    "my password, it's not working since Monday",
+    "I changed my password to something stronger",
+    "set the password to expire every 90 days",
+    "reset the password to the default and try again",
+    "set the pin to GPIO17 and the pin to HIGH",
+    "remember, the password's 8-16 characters",
+    "your password, it's case-sensitive",
+    "I changed my password to one-time use",
+    "cambié mi contraseña a una más segura",
+    "cambié la contraseña por otra",
+  ]) {
+    expectNone(text);
+  }
+});
+
+test("dates of birth written year first with slashes or dots, or as 12-Apr-1987, and Spanish “F. nac.”", () => {
+  for (const [text, value] of [
+    ["DOB: 1987/04/12", "1987/04/12"],
+    ["born on 1987.04.12", "1987.04.12"],
+    ["my date of birth is 12-Apr-1987", "12-Apr-1987"],
+    ["born 3-mar-1962 in Leeds", "3-mar-1962"],
+    ["DOB 12-APR-87", "12-APR-87"],
+    ["F. nac.: 12/04/1987", "12/04/1987"],
+    ["f. nac. 1987/04/12", "1987/04/12"],
+    ["fecha de nacimiento: 1987/04/12", "1987/04/12"],
+  ]) {
+    expectOnly(text, "date_of_birth", value);
+  }
+  for (const text of [
+    "born in the 1987/88 season",
+    "the release on 2024/03/15 was born out of a long sprint",
+    "DOB field takes 13-Foo-1987",
+    "born 45-Apr-1987",
+  ]) {
+    expectNone(text);
+  }
+  // Each one still shortens to its month and year.
+  const { detect: find, generalize } = globalThis.Clotr;
+  for (const [text, general] of [
+    ["DOB: 1987/04/12", "DOB: April 1987"],
+    ["born on 1987.04.12", "born on April 1987"],
+    ["born 12-Apr-1987", "born April 1987"],
+  ]) {
+    assert.equal(generalize(text, find(text), "en-US"), general);
+  }
+});
+
+test("an SSN with sound-alikes like “fore”, “won”, “too” or “ate” in it, when an SSN label names it", () => {
+  for (const text of [
+    "my ssn is fore five six seven eight nine one two three",
+    "my ssn is four five six seven eight nine won too three",
+    "my social security number is fore fiv sicks seve ate nien won too thre",
+    "my social security number is fore fiv sicks 78 nien won too three",
+    "SSN: 456 78 nien won too three",
+  ]) {
+    assert.ok(detect(text).us_ssn, `${text} → ${JSON.stringify(detect(text))}`);
+  }
+  // The label doesn't make just any run an SSN: it still needs an SSN's nine digits and shape.
+  for (const text of [
+    "my ssn is too long to type out, won't fit",
+    "my ssn is four five six seven eight won too",
+    "my ssn is nine ate seven six five four three too won",
+    // Without the label, sound-alikes read as loosely as before.
+    "the scores were four five six seven eight nine won too three",
+    "fore five six seven eight nine one two three",
+  ]) {
+    assert.equal(detect(text).us_ssn, undefined, `${text} → ${JSON.stringify(detect(text))}`);
+  }
+});
+
+test("Spanish insurance policy and health insurance numbers are insurance IDs, not phone numbers", () => {
+  for (const [text, value] of [
+    ["mi número de póliza es 4402-778-19", "4402-778-19"],
+    ["número de póliza 4402-778-19", "4402-778-19"],
+    ["Póliza: 88123456", "88123456"],
+    ["número de seguro médico: W482913765", "W482913765"],
+    ["mi número del seguro médico es 482913765", "482913765"],
+  ]) {
+    expectOnly(text, "insurance_id", value);
+  }
+  for (const text of [
+    "la póliza 2024-2025 cubre todo",
+    "mi seguro médico cubre 80000 pesos al año",
+    "¿qué número de póliza necesito para el seguro del coche?",
+  ]) {
+    expectNone(text);
+  }
+});
+
+// "º" is the ordinal sign of Spanish "n.º" and "nº" ("número"), and reading text the way Clotr does turns it
+// into a plain "o".
+test("a Spanish ID label followed by “n.º” or “nº” still reads its number", () => {
+  for (const [text, id, value] of [
+    ["Pasaporte n.º XDA123456", "passport", "XDA123456"],
+    ["Pasaporte nº XDA123456", "passport", "XDA123456"],
+    ["DNI n.º 30571264", "national_id", "30571264"],
+    ["historia clínica n.º 4829137", "medical_record", "4829137"],
+    ["número de afiliado n.º 15234987", "insurance_id", "15234987"],
+    ["Póliza n.º 88123456", "insurance_id", "88123456"],
+    ["Póliza nº 88123456", "insurance_id", "88123456"],
+  ]) {
+    expectOnly(text, id, value);
+  }
+  expectNone("el pasaporte no lo encuentro, ¿qué hago?");
+  expectNone("¿El DNI n.º es obligatorio en el formulario?");
+});
+
+test("a US routing number after its Spanish name is a bank number, not a phone number", () => {
+  expectOnly("número de ruta 021000021 y cuenta 778899001122", "bank_account");
+  assert.deepEqual(detect("mi número de ruta es 021000021").bank_account, ["021000021"]);
+  assert.deepEqual(detect("número de ruta bancaria: 011000015"), { bank_account: ["011000015"] });
+  // A wrong check digit isn't a routing number.
+  assert.equal(detect("número de ruta 021000022").bank_account, undefined);
+  expectNone("¿Dónde encuentro el número de ruta en un cheque?");
+});
+
+test("the key, password, birth date, SSN, policy and routing labels above stay fast on hostile text", () => {
+  const detectOnly = (text) => globalThis.Clotr.detect(text);
+  assertLinear(
+    detectOnly,
+    (u, n) => u.repeat(n),
+    [
+      "API key: ",
+      "api key is ",
+      "token de acceso es ",
+      "my password's ",
+      "my password, it's ",
+      "changed my password to ",
+      "cambié mi contraseña a ",
+      "PASSWORD=\n",
+      "born 12-Apr-",
+      "F. nac. 1987/",
+      "my ssn is fore ",
+      "won too ",
+      "número de póliza ",
+      "Póliza n.º ",
+      "número de ruta ",
+    ],
+    5000,
+  );
 });

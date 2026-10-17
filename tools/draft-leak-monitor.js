@@ -45,7 +45,7 @@
   };
   const open = XMLHttpRequest.prototype.open;
   const send = XMLHttpRequest.prototype.send;
-  XMLHttpRequest.prototype.open = function (m, u) {
+  XMLHttpRequest.prototype.open = function (_m, u) {
     this.__u = u;
     return open.apply(this, arguments);
   };

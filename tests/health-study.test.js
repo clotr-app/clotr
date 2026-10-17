@@ -138,8 +138,9 @@ function quietProblems(msgs, accepted) {
     const found = named.length === 1 && warned.find(([m]) => m === named[0]);
     if (named.length !== 1) problems.push(`ACCEPTED must name one message (${named.length} start "${a.message}")`);
     else if (!found) problems.push(`no longer warns, take it out of ACCEPTED: "${a.message}" (${a.issue})`);
-    else if (JSON.stringify(Object.keys(found[1]).sort()) !== JSON.stringify([...(a.kinds || [])].sort()))
+    else if (JSON.stringify(Object.keys(found[1]).sort()) !== JSON.stringify([...(a.kinds || [])].sort())) {
       problems.push(`warns as ${JSON.stringify(Object.keys(found[1]))}, not as listed: "${a.message}"`);
+    }
     if (!/^#\d+$/.test(a.issue || "")) problems.push(`ACCEPTED needs an issue number: "${a.message}"`);
   }
   return problems;
@@ -161,8 +162,9 @@ test("every quiet message has a known label, and each file has all four", () => 
       [],
       file,
     );
-    for (const label of QUIET_LABELS)
+    for (const label of QUIET_LABELS) {
       assert.ok(msgs.filter((m) => m.label === label).length >= 10, `${file}: too few ${label}`);
+    }
   }
 });
 
@@ -176,8 +178,9 @@ test("every warn label parses, its term is in the message near an anchor, and it
         continue;
       }
       if (!hasWord(text, l.term)) problems.push(`term "${l.term}" isn't in: ${text.slice(0, 60)}`);
-      else if (!termNearAnchor(text, l.term))
+      else if (!termNearAnchor(text, l.term)) {
         problems.push(`term "${l.term}" is far from an anchor: ${text.slice(0, 60)}`);
+      }
       const unknown = l.who.filter((w) => !WHO.includes(w));
       if (unknown.length || !l.who.length) problems.push(`unknown who ${JSON.stringify(unknown)}: ${label}`);
       if (new Set(l.who).size !== l.who.length) problems.push(`who repeats: ${label}`);
@@ -203,15 +206,17 @@ test("the warn messages spread who they are: every kind often, each kind alone, 
 
 test("no message repeats, within the health corpora or across them and the everyday corpora", () => {
   const seen = new Map();
-  for (const file of ["normal-messages.txt", "normal-messages-es.txt"])
+  for (const file of ["normal-messages.txt", "normal-messages-es.txt"]) {
     for (const m of readMessages(file)) seen.set(plain(m), file);
+  }
   const repeats = [];
-  for (const file of [...QUIET, ...WARN])
+  for (const file of [...QUIET, ...WARN]) {
     for (const { text } of readLabelled(file)) {
       const key = plain(text);
       if (seen.has(key)) repeats.push(`${file} repeats ${seen.get(key)}: ${text.slice(0, 60)}`);
       seen.set(key, file);
     }
+  }
   assert.deepEqual(repeats, []);
 });
 
@@ -222,7 +227,7 @@ test("there is no health kind yet (it ships in 1.5.0, only if these corpora pass
   );
 });
 
-for (const file of QUIET)
+for (const file of QUIET) {
   test(`today: no quiet health message warns at all (${file})`, () => {
     assert.deepEqual(
       quietProblems(
@@ -232,6 +237,7 @@ for (const file of QUIET)
       [],
     );
   });
+}
 
 test("the quiet check fails on a planted warning, on an ACCEPTED entry that passes, and on other kinds", () => {
   const msgs = ["What does an A1C of 7.2 mean?", "I have asthma, call me at 555-555-0142"];
@@ -251,7 +257,7 @@ test("the quiet check fails on a planted warning, on an ACCEPTED entry that pass
   assert.match(quietProblems(msgs, [{ message: "I have asthma", kinds: ["phone_number"] }]).join("\n"), /issue number/);
 });
 
-for (const file of WARN)
+for (const file of WARN) {
   test(`today: in every warn message, only who the person is warns (${file})`, () => {
     const problems = [];
     for (const { label, text } of readLabelled(file)) {
@@ -264,3 +270,4 @@ for (const file of WARN)
     }
     assert.deepEqual(problems, []);
   });
+}

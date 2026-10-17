@@ -1,7 +1,9 @@
 # Rolling Clotr out to a team (managed policy)
 
-IT admins can install Clotr for everyone and set rules through the browser's enterprise policy. Clotr still runs
-entirely on each computer: the policy only tells it how to respond. Nothing is reported back to anyone.
+IT admins can install Clotr for a managed browser and set rules through the browser's enterprise policy. Detection
+runs locally. Clotr does not report prompts, findings, or staff activity to the organization. The organization
+delivers its policy through its management system; literal custom values may remain readable to policy admins and
+on managed endpoints, as described below.
 
 A policy is a **floor, never a ceiling**. If someone already chose a stricter response for themselves than the
 policy asks, their stricter choice stays, so a required *Warn* can never turn someone's own *Ask before sending*
@@ -13,7 +15,7 @@ into something looser. Nothing about any of this is reported to the admin either
 | `preset` | string: `"keys_never"` \| `"client_names"` \| `"clinic"` \| `"tax_office"` | A ready-made policy (below) instead of writing out `requiredResponses` by hand. Your other settings are added on top; an explicit `requiredResponses` entry beats the preset's for that kind. |
 | `orgName` | string, up to 80 characters | Shown to your people in Clotr's Settings and on the printed policy page (below). |
 | `requiredResponses` | object: kind → `"block"` \| `"warn"` \| `"log"` | A floor for those kinds. `block` = *Ask before sending*. Kind names are the ids in `extension/patterns.js` (e.g. `aws_access_key`, `github_token`, `password`, `phone_number`, `us_ssn`). |
-| `watchWords` | array of strings | Words or phrases (up to 4 words each) to warn about, such as project code names or client names. A word with `#` for a digit and `@` for a letter (at least 4 marks, no digits, e.g. `EMP-#####`) is watched as a **format** instead of a literal phrase, so any employee number in that shape is caught, not just ones you list. Clotr turns the words themselves into a scrambled code, never the words, on each computer, before its checker ever sees them; formats travel as typed (they aren't secret). Together with the words and formats in `kinds`: **500 words and 50 formats** in all. |
+| `watchWords` | array of strings | Words or phrases (up to 4 words each) to add to the Watch List, such as project code names or client names. Their response follows the `watch_list` setting; to require at least a warning, set `requiredResponses.watch_list` to `warn` (or `block` to ask before sending). Without that floor, a person's Watch List response may be quieter. A word with `#` for a digit and `@` for a letter (at least 4 marks, no digits, e.g. `EMP-#####`) is watched as a **format** instead of a literal phrase. Browser/OS policy management receives the policy values: literal words and formats can remain readable in the management source and on managed endpoints. Clotr fingerprints literal words locally before matching and does not write the original words into its own settings/vault; formats are used as configured. Do not treat fingerprinting as encryption of the managed policy. Together with the words and formats in `kinds`: **500 words and 50 formats** in all. |
 | `kinds` | array of objects, up to 20 | Kinds of detail your organization names itself, like a matter number or a client name: Clotr warns about each one by its name. See "Your own kinds", below. |
 | `lockSettings` | boolean | People can see but not change Clotr's settings or vault. |
 | `allowPause` | boolean | `false` removes the per-site Pause. |
@@ -149,7 +151,7 @@ is the same as:
 ```json
 {
   "orgName": "Acme Corp",
-  "requiredResponses": { "aws_access_key": "block", "github_token": "block", "password": "block", "private_key": "block" },
+  "requiredResponses": { "aws_access_key": "block", "github_token": "block", "password": "block", "private_key": "block", "watch_list": "warn" },
   "watchWords": ["project falcon", "acme internal"],
   "lockSettings": true,
   "allowPause": false
@@ -170,9 +172,12 @@ becomes a label like `[Matter 1]`.
 }
 ```
 Each kind has:
-- `name` (needed, up to 40 characters): shown in warnings, so pick words your people will recognize.
-- `words`: words or phrases of this kind (up to 4 words each). Like watch words, they become a scrambled code, never
-  the words themselves, on each computer, and are never stored.
+- `name` (needed, up to 40 characters): shown in warnings, the local policy page and the optional training page. The label is carried in management policy and may be visible to policy administrators; use a general label such as "Client name," not a real client's name.
+- `words`: words or phrases of this kind (up to 4 words each). They are fingerprinted before matching and are not
+  written to Clotr's detector vault. The original values remain in the browser/OS policy source needed to deliver
+  the policy and may be visible to the customer's browser/MDM admins or retained by that management system. This
+  is not encryption or a way to hide names from the organization deploying the policy. Avoid real client names in
+  a policy unless the organization has reviewed and accepted that handling.
 - `formats`: `#` for a digit and `@` for a letter (at least 4 marks, no digits, up to 40 characters), like `MAT-######`.
 - `near` (optional, up to 10 words): a format then counts only when one of these words is within 40 characters
   before it, so `MAT-######` in a part number stays quiet.
@@ -186,8 +191,10 @@ and response but finds nothing new. A format describes one fixed shape, with no 
 stays quick, tested against 50 hostile formats.
 
 Your people see "Kinds your organization added" listed in Settings as rows they can't change, and the policy page
-shows each kind's name, response and how many words and formats it has, along with its cover name, never the
-words themselves. A false-alarm report and the optional counts in *Report a problem* say only "A kind your
+shows each kind's name, response and how many words and formats it has, along with its cover name, not the words
+themselves by default. The optional “Show watch words” control can display watch words on that computer. These
+interface choices do not remove raw values from the management-policy source described above. A false-alarm report
+and the optional counts in *Report a problem* say only "A kind your
 organization added", since a kind's name could name a client. Kind names can't replace or loosen one of Clotr's
 own kinds.
 
@@ -247,7 +254,7 @@ Each block below is the "Example policy" above, wrapped the way that browser rea
     "extensions": {
       "gkgpgejhhmmhklaghdnbjbalkmpjnmab": {
         "orgName": "Acme Corp",
-        "requiredResponses": { "aws_access_key": "block", "github_token": "block", "password": "block", "private_key": "block" },
+        "requiredResponses": { "aws_access_key": "block", "github_token": "block", "password": "block", "private_key": "block", "watch_list": "warn" },
         "watchWords": ["project falcon", "acme internal"],
         "lockSettings": true,
         "allowPause": false
@@ -264,7 +271,7 @@ Each block below is the "Example policy" above, wrapped the way that browser rea
     "extensions": {
       "hbangnmofjeaieaeamlncpcfmhbclbkj": {
         "orgName": "Acme Corp",
-        "requiredResponses": { "aws_access_key": "block", "github_token": "block", "password": "block", "private_key": "block" },
+        "requiredResponses": { "aws_access_key": "block", "github_token": "block", "password": "block", "private_key": "block", "watch_list": "warn" },
         "watchWords": ["project falcon", "acme internal"],
         "lockSettings": true,
         "allowPause": false
@@ -282,7 +289,7 @@ Each block below is the "Example policy" above, wrapped the way that browser rea
       "Extensions": {
         "clotr@billiambash": {
           "orgName": "Acme Corp",
-          "requiredResponses": { "aws_access_key": "block", "github_token": "block", "password": "block", "private_key": "block" },
+          "requiredResponses": { "aws_access_key": "block", "github_token": "block", "password": "block", "private_key": "block", "watch_list": "warn" },
           "watchWords": ["project falcon", "acme internal"],
           "lockSettings": true,
           "allowPause": false
@@ -294,11 +301,14 @@ Each block below is the "Example policy" above, wrapped the way that browser rea
 ```
 
 **Windows, by registry instead of Group Policy:** the same policy, written straight into the registry for Chrome,
-Edge and Brave. Run as administrator, after the force-install above:
+Edge and Brave. This sample is for a local-registry pilot only; if Group Policy or MDM owns these settings, change
+them in that management source instead. Run as administrator, after the force-install above. It checks all three
+targets first and writes nothing if one of the policy values already exists, so it cannot silently overwrite an
+existing Clotr policy:
 ```powershell
 $policy = @{
   orgName           = "Acme Corp"
-  requiredResponses = @{ aws_access_key = "block"; github_token = "block"; password = "block"; private_key = "block" }
+  requiredResponses = @{ aws_access_key = "block"; github_token = "block"; password = "block"; private_key = "block"; watch_list = "warn" }
   watchWords        = @("project falcon", "acme internal")
   lockSettings      = $true
   allowPause        = $false
@@ -308,20 +318,37 @@ $targets = @{
   "BraveSoftware\Brave" = "gkgpgejhhmmhklaghdnbjbalkmpjnmab"
   "Microsoft\Edge"      = "hbangnmofjeaieaeamlncpcfmhbclbkj"
 }
+$conflicts = @()
+foreach ($t in $targets.GetEnumerator()) {
+  $key = "HKLM:\Software\Policies\$($t.Key)\3rdparty\extensions\$($t.Value)\policy"
+  if (-not (Test-Path $key)) { continue }
+  $existing = Get-ItemProperty -Path $key
+  foreach ($field in $policy.Keys) {
+    if ($null -ne $existing.PSObject.Properties[$field]) { $conflicts += "$($t.Key)\$field" }
+  }
+}
+if ($conflicts.Count) {
+  throw ("No policy values were written. Existing Clotr policy values need an administrator's review: " + ($conflicts -join ", "))
+}
 foreach ($t in $targets.GetEnumerator()) {
   $key = "HKLM:\Software\Policies\$($t.Key)\3rdparty\extensions\$($t.Value)\policy"
   New-Item -Path $key -Force | Out-Null
   foreach ($field in $policy.Keys) {
     $value = $policy[$field]
-    if ($value -is [bool]) { Set-ItemProperty -Path $key -Name $field -Value ([int]$value) -Type DWord }
-    elseif ($value -is [string]) { Set-ItemProperty -Path $key -Name $field -Value $value -Type String }
-    else { Set-ItemProperty -Path $key -Name $field -Value ($value | ConvertTo-Json -Compress) -Type String }
+    if ($value -is [bool]) { $value = [int]$value; $type = "DWord" }
+    elseif ($value -is [string]) { $type = "String" }
+    else { $value = $value | ConvertTo-Json -Compress; $type = "String" }
+    New-ItemProperty -Path $key -Name $field -Value $value -PropertyType $type | Out-Null
+    Write-Host "Added: $($t.Key) Clotr policy value $field"
   }
 }
 ```
 A setting that's a list or an object (`requiredResponses`, `watchWords`, `kinds`) goes in as one JSON-encoded string
 value, the way Chrome, Edge and Brave all read a 3rd-party extension's policy from the registry; a plain word or a
-yes/no goes in as its own type. Reload policies afterward and check Clotr's Settings.
+yes/no goes in as its own type. Reload policies afterward and check Clotr's Settings. To roll this policy back,
+remove only the exact browser/property values printed as `Added`; do not delete the whole policy key or unrelated
+values. Refresh policy and verify the intended Clotr policy is gone. If a write fails partway through, use the
+printed `Added` lines to remove only values this run created.
 
 ## Every browser on one computer (a family member's PC, too)
 Forcing the install puts Clotr in each browser for every account on the computer, turned on, with no *Remove*
@@ -335,16 +362,33 @@ $edge = "hbangnmofjeaieaeamlncpcfmhbclbkj;https://edge.microsoft.com/extensionwe
 foreach ($p in @{ "Google\Chrome" = $cws; "BraveSoftware\Brave" = $cws; "Microsoft\Edge" = $edge }.GetEnumerator()) {
   $key = "HKLM:\Software\Policies\$($p.Key)\ExtensionInstallForcelist"
   New-Item -Path $key -Force | Out-Null
-  Set-ItemProperty -Path $key -Name "1" -Value $p.Value   # "1": the first entry; use the next free number if the list exists
+  $properties = Get-ItemProperty -Path $key
+  $numbered = @($properties.PSObject.Properties | Where-Object { $_.Name -match '^\d+$' })
+  $already = $numbered | Where-Object { $_.Value -eq $p.Value } | Select-Object -First 1
+  if ($null -ne $already) {
+    Write-Host "Already present: $($p.Key) ExtensionInstallForcelist value $($already.Name)"
+    continue
+  }
+  $used = @($numbered | ForEach-Object { [int]$_.Name })
+  $slot = 1
+  while ($used -contains $slot) { $slot++ }
+  New-ItemProperty -Path $key -Name "$slot" -Value $p.Value -PropertyType String | Out-Null
+  Write-Host "Added: $($p.Key) ExtensionInstallForcelist value $slot"
 }
 ```
 
-Restart the browsers (or *Reload policies* on `chrome://policy`). To undo, delete the `ExtensionInstallForcelist`
-entries. On macOS the same `ExtensionInstallForcelist` goes in a configuration profile. Firefox uses
+Restart the browsers (or *Reload policies* on `chrome://policy`). The script prints the numbered value it added or
+reports an identical Clotr entry that was already present. Record the added value names for rollback. To undo, remove
+only the exact numbered values this pilot added; do not clear the shared `ExtensionInstallForcelist` or remove
+pre-existing entries. If the list is controlled by Group Policy, remove the values in that policy instead of editing
+the local registry. Remove the pilot's Clotr policy values from the same management source and confirm the policy is
+gone after a refresh. On macOS remove only the Clotr entries this rollout added to the configuration profile.
+Firefox uses
 `policies.json`
 → `"ExtensionSettings": { "clotr@billiambash": { "installation_mode": "force_installed", "install_url": "<AMO download URL>" } }`,
 where the download URL is `https://addons.mozilla.org/firefox/downloads/latest/<slug>/latest.xpi` and `<slug>` is the
-last part of Clotr's Firefox Add-ons address.
+last part of Clotr's Firefox Add-ons address. To roll Firefox back, remove only the Clotr entries this pilot added,
+then restart Firefox and confirm the policy and extension state are clear.
 Add the policy above to also set larger warnings or lock the settings (helper mode can do the same without a policy).
 
 Apps outside the browser (the ChatGPT desktop or phone apps) aren't covered by any browser extension.

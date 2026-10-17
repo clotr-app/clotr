@@ -734,7 +734,7 @@
     "message": "Tu caja fuerte"
   },
   "popup_yourNameFamilyAddressesPhones": {
-    "message": "Tu nombre, tu familia, direcciones, teléfonos, correos, empresa y formatos de documentos. Clotr los vigila se escriban como se escriban y solo guarda un código cifrado, nunca los datos."
+    "message": "Tu nombre, tu familia, direcciones, teléfonos, correos, empresa y formatos de documentos. Clotr los vigila se escriban como se escriban y solo guarda una huella local, nunca los datos originales."
   },
   "popup_openYourVault": {
     "message": "Abrir tu caja fuerte"
@@ -1243,6 +1243,9 @@
   "hc_noBox": {
     "message": "Protegiendo este sitio: todavía no hay cuadro de chat en esta página"
   },
+  "hc_noBoxBuiltIn": {
+    "message": "Clotr no encuentra el cuadro de chat en esta página. Copiar y pegar se sigue revisando al enviar."
+  },
   "pp_sigAddress": {
     "message": "palabras de IA en la dirección"
   },
@@ -1255,6 +1258,9 @@
   "pp_sigSend": {
     "message": "un botón de enviar"
   },
+  "pp_sigShape": {
+    "message": "un cuadro con forma de chat"
+  },
   "vault_whatShouldIProtect": {
     "message": "¿Qué debo proteger?"
   },
@@ -1262,7 +1268,7 @@
     "message": "Solo huellas"
   },
   "vault_clotrChecksWhatYouType": {
-    "message": "Clotr funciona en chats de IA como ChatGPT, Claude y Gemini, y en tu correo o tus apps de chat si los activas abajo o en Ajustes. Te avisa antes de que salga una contraseña, una clave o un dato personal, y luego tú decides: quitarlo o enviarlo igualmente."
+    "message": "Clotr revisa lo que escribes en chats de IA y en las apps de correo o chat que tú actives."
   },
   "vault_onlyOnAiChats": {
     "message": "Solo donde tú eliges."
@@ -1379,7 +1385,7 @@
     "message": "Números de cuenta y de documentos"
   },
   "vault_idHint": {
-    "message": "Escribe tu número, como AB-123456: Clotr guarda su formato y un código cifrado (nunca el número), así detecta cualquier documento con ese formato y sabe cuál es el tuyo. Los números cortos se pueden adivinar a partir del código si alguien tiene acceso completo a este equipo; para guardar solo el formato, escríbelo con # para una cifra y @ para una letra, como AB-######."
+    "message": "Escribe tu número, como AB-123456: Clotr guarda su formato y una huella local del número (no el número en sí), así detecta cualquier documento con ese formato y sabe cuál es el tuyo. Los números cortos se pueden adivinar a partir de la huella si alguien tiene acceso completo a este equipo; para guardar solo el formato, escríbelo con # para una cifra y @ para una letra, como AB-######."
   },
   "vault_anythingElseToWatchFor": {
     "message": "Cualquier otra cosa que vigilar"
@@ -1392,6 +1398,9 @@
   },
   "vault_inYourVault": {
     "message": "En tu caja fuerte"
+  },
+  "vault_strengthenOffer": {
+    "message": "Algunos de los datos de abajo se guardaron con la primera huella de Clotr, más rápida. Escríbelo otra vez en el campo de arriba y guárdalo de nuevo para pasarlo a la huella más fuerte; nada de lo ya guardado desaparece hasta que lo hagas."
   },
   "vault_listIntro": {
     "message": "Los datos aparecen ocultos porque solo se guardan sus huellas."
@@ -2850,13 +2859,16 @@
     "message": "Hola, soy Alex."
   },
   "vault_noteBody": {
-    "message": "Hice Clotr cuando me di cuenta de todo lo que les contaba a los chats de IA sin pensarlo dos veces, y enseguida quise que existiera una «armadura alrededor del mundo» al estilo de Tony Stark. Así que aquí estamos. Lee lo que escribes en un chat de IA, aquí mismo en tu ordenador, y te avisa antes de que salga algo privado. Es gratis, no te rastrea y nunca envía nada a ningún sitio."
+    "message": "Creé Clotr después de darme cuenta de cuánto les contaba a los chats de IA sin pensarlo dos veces. Enseguida quise una «armadura para todo el mundo» al estilo de Tony Stark, pero hecha con una computadora. Lee lo que escribes en un chat de IA, aquí mismo en tu computadora, y avisa antes de que salga algo privado. Es gratis, no te rastrea y nunca envía nada a ningún sitio."
   },
   "vault_noteWhy": {
-    "message": "Mi objetivo principal es la privacidad frente a las grandes IA, para todo el mundo. Clotr también es mi jugada de ajedrez en 4D. Construirlo es mi forma de aprender ingeniería de software en su conjunto y de convertir lo que aprendo en la universidad en algo que la gente pueda usar de verdad."
+    "message": "Mi objetivo principal es la privacidad frente a las grandes tecnológicas, para todo el mundo. Construirlo es parte de cómo estoy aprendiendo ingeniería de software en general y cómo convierto lo que aprendo en la universidad en algo que la gente pueda usar de verdad."
   },
   "vault_noteNoAi": {
     "message": "Clotr no tiene absolutamente NADA de IA, eso iría en contra de su propósito."
+  },
+  "vault_noteCoding": {
+    "message": "Sin embargo, sí uso programación con agentes."
   },
   "vault_noteReport": {
     "message": "Cuanto más uses Clotr y más fallos reportes, mejor se vuelve. Gratis."
@@ -2934,7 +2946,7 @@
     "message": "Mostrar las palabras vigiladas en pantalla"
   },
   "pa_scope": {
-    "message": "Clotr revisa los chats de IA del navegador solo en este equipo. No envía ni guarda nada sobre esta página. Cuando un dato está en «Preguntar antes de enviar», la persona puede seguir enviándolo si quiere. Las apps fuera del navegador no están cubiertas."
+    "message": "Clotr revisa los chats de IA del navegador solo en este equipo. Esta página muestra la política configurada para este navegador; no envía un informe a tu organización. Cuando un tipo está en «Preguntar antes de enviar», la persona puede seguir eligiendo enviarlo. Las apps fuera del navegador no están cubiertas."
   },
   "pa_writtenPolicy": {
     "message": "Política escrita:"
@@ -2990,7 +3002,7 @@
     "message": "Tipos que añadió tu organización"
   },
   "pa_kindsLead": {
-    "message": "Clotr los nombra en sus avisos y los usa para los nombres de reemplazo de Bandage. Sus palabras no se muestran aquí: Clotr las convierte en códigos cifrados en cada equipo y nunca las guarda."
+    "message": "Las etiquetas de los tipos aparecen en los avisos y en esta página. Las palabras, los formatos y las etiquetas configurados se envían mediante la política de administración del navegador o del dispositivo y pueden seguir siendo legibles para quienes administran la política o en los equipos administrados. Clotr crea huellas locales de las palabras antes de compararlas; esto no cifra los valores originales de la política. Usa etiquetas generales, no nombres reales de clientes. El control «Mostrar palabras vigiladas» de abajo puede mostrar las palabras configuradas en este equipo."
   },
   "pa_kindsKind": {
     "message": "Tipo"
@@ -3678,6 +3690,73 @@
   },
   "picPlaceHint": {
     "message": "Para que el lugar siga siendo privado, quita la foto antes de enviar. Una captura de pantalla de la foto no lleva el lugar."
+  },
+  "picStripIt": {
+    "message": "Quita el lugar, conserva la foto"
+  },
+  "picStripping": {
+    "message": "Quitando el lugar…"
+  },
+  "picStripDoneTitle": {
+    "message": "🩹 Lugar eliminado"
+  },
+  "picStripFallbackTitle": {
+    "message": "🩹 Aquí tienes la foto limpia"
+  },
+  "picStripFallbackText": {
+    "message": "Puede que el sitio ya tenga la foto original con su lugar. Quita esa foto de tu mensaje y luego guarda esta copia y adjúntala en su lugar."
+  },
+  "picStripFallbackSave": {
+    "message": "Guardar una copia sin el lugar"
+  },
+  "picStripFailedTitle": {
+    "message": "⚠️ Clotr no pudo quitar el lugar"
+  },
+  "picStripFailedText": {
+    "message": "Esta foto no se pudo reconstruir como Clotr esperaba. Quítala antes de enviar, como harías de otra forma."
+  },
+  "picStripFirstText": {
+    "message": "La foto «$p1$» llevaba guardado dentro el lugar donde se tomó. Clotr quitó el lugar antes de que el sitio recibiera la foto, y la foto se ve igual.",
+    "placeholders": {
+      "p1": {
+        "content": "$1"
+      }
+    }
+  },
+  "picStripFirstMany": {
+    "message": "$p1$ fotos llevaban guardado dentro el lugar donde se tomaron. Clotr quitó los lugares antes de que el sitio las recibiera, y las fotos se ven igual.",
+    "placeholders": {
+      "p1": {
+        "content": "$1"
+      }
+    }
+  },
+  "picPutBack": {
+    "message": "Volver a poner el lugar"
+  },
+  "picPutBackTitle": {
+    "message": "ℹ️ El lugar volvió"
+  },
+  "picPutBackText": {
+    "message": "Clotr también le dio al sitio la foto con su lugar. Si la copia sin el lugar sigue en tu mensaje, puedes quitarla."
+  },
+  "picPutBackMany": {
+    "message": "Clotr también le dio al sitio las fotos con sus lugares. Si las copias sin ellos siguen en tu mensaje, puedes quitarlas."
+  },
+  "picPutBackFailedTitle": {
+    "message": "⚠️ Clotr no pudo volver a poner el lugar"
+  },
+  "picPutBackFailedText": {
+    "message": "El sitio no aceptó la foto original de Clotr. Adjúntala otra vez y entra con su lugar."
+  },
+  "picNotTakenTitle": {
+    "message": "⚠️ El sitio no aceptó tu foto"
+  },
+  "picNotTakenSave": {
+    "message": "Clotr quitó el lugar de tu foto, pero este sitio no aceptó la copia de Clotr. Guarda la copia sin el lugar y luego vuelve a añadirla."
+  },
+  "picNotTakenText": {
+    "message": "Este sitio no aceptó la foto cuando Clotr se la pasó. Añádela otra vez y entra directamente."
   },
   "picFoundOther": {
     "message": "La imagen «$p1$» lleva dentro: $p2$.",
@@ -5115,10 +5194,10 @@
     "message": "Empezar de nuevo"
   },
   "tw_wordsNone": {
-    "message": "Tu oficina aún no ha añadido palabras propias. Un administrador puede añadir el nombre de un cliente, un formato de número de expediente o cualquier otra cosa que valga la pena vigilar, desde los ajustes de tu organización. Nadie fuera de tu oficina ve nunca esa lista, y Clotr convierte cada palabra en un código cifrado antes de compararla con nada de lo que escribas."
+    "message": "Tu oficina aún no ha añadido palabras personalizadas. Un administrador puede añadir nombres de clientes o formatos de números de expediente mediante la política de administración del navegador o del dispositivo. Esos valores se envían a los equipos administrados y pueden seguir siendo legibles para quienes administran la política o en esos equipos. Clotr crea huellas locales de las palabras antes de compararlas, pero esto no cifra ni oculta los valores originales de la política."
   },
   "tw_wordsSome": {
-    "message": "Tu oficina ha añadido $1 palabras propias. Aquí tienes un ejemplo inventado, nunca las palabras reales: si un mensaje nombrara una de ellas, Clotr la detectaría igual que detecta un número de la Seguridad Social, sin que la lista de tu oficina salga nunca de este ordenador."
+    "message": "Tu oficina ha configurado tipos propios. Aquí tienes un ejemplo inventado, nunca los valores reales: si un mensaje coincidiera con una palabra o formato configurado, Clotr podría detectarlo. Las etiquetas de los tipos aparecen en este ejercicio; las palabras y los formatos no. Las palabras, los formatos y las etiquetas viajan en la política de administración y pueden seguir siendo legibles para quienes la administran o en los equipos administrados. Clotr crea huellas locales de las palabras, pero no cifra ni oculta los valores originales de la política."
   },
   "tw_leakDone": {
     "message": "Ver cómo te fue"
@@ -5525,6 +5604,12 @@
   "lb_unknown": {
     "message": "Clotr aún no puede leer esta exportación. Lee exportaciones de ChatGPT, Claude, Gemini (Google Takeout) y Copilot."
   },
+  "lb_unknown_json": {
+    "message": "Este archivo no es un historial de chat que Clotr conozca. Elige conversations.json de una exportación de ChatGPT o Claude, o MyActivity.json de la carpeta Gemini de Google Takeout."
+  },
+  "lb_gemini_no_chats": {
+    "message": "Este Takeout no tiene tus chats de Gemini. En Google Takeout, elige Mi actividad, luego Gemini Apps, y escoge JSON como formato."
+  },
   "lb_manifestTitle": {
     "message": "Esto es una lista de enlaces, no tu exportación"
   },
@@ -5878,6 +5963,9 @@
   },
   "tr_phoneText": {
     "message": "Android ya tiene un ajuste que hace esto, que envía las búsquedas de cada app a un servicio de DNS que filtra rastreadores en vez de ser una app nueva que instalar. Abre Ajustes, luego Redes e Internet, luego DNS privado, elige «Nombre de host del proveedor de DNS privado» y escribe el nombre de host de uno de esos servicios (busca un proveedor de DNS con filtrado para encontrar un nombre de host que escribir). En un teléfono Samsung el mismo ajuste está en Conexiones, luego Más ajustes de conexión, luego DNS privado."
+  },
+  "getClotrWindows": {
+    "message": "Consigue Clotr para Windows"
   },
   "tr_phoneLimitText": {
     "message": "Llega a cualquier app del teléfono, al mismo dominio de una red publicitaria que bloquearía un bloqueador de navegador desde una sola pestaña. Sigue sin poder ver el registro propio de una web, ni el cruce entre cuenta y wifi que conecta tus dispositivos, el mismo límite que tocaron las secciones de arriba. Un iPhone puede hacer algo parecido con un perfil de configuración para DNS cifrado, que lleva más pasos que escribir un solo nombre de host en Android."

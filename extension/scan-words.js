@@ -158,6 +158,18 @@
         "Clotr can't read this export yet. It reads ChatGPT, Claude, Gemini (Google Takeout) and Copilot exports.",
         ...s,
       ),
+    lb_unknown_json: (...s) =>
+      msg(
+        "lb_unknown_json",
+        "This file isn't a chat history Clotr knows. Choose conversations.json from a ChatGPT or Claude export, or MyActivity.json from Google Takeout's Gemini folder.",
+        ...s,
+      ),
+    lb_gemini_no_chats: (...s) =>
+      msg(
+        "lb_gemini_no_chats",
+        "This Takeout doesn't have your Gemini chats. In Google Takeout, choose My Activity, then Gemini Apps, and pick JSON as the format.",
+        ...s,
+      ),
     lb_manifestTitle: (...s) => msg("lb_manifestTitle", "This is a list of links, not your export", ...s),
     lb_manifestLead: (...s) =>
       msg(

@@ -163,9 +163,9 @@
       }
       if (/\/Subtype\s*\/XML|\/Type\s*\/XRef|\/(?:DCT|JPX|CCITTFax|JBIG2)Decode/.test(dict)) continue;
       let data = buf.subarray(start, end);
-      if (/\/FlateDecode/.test(dict))
+      if (/\/FlateDecode/.test(dict)) {
         data = await inflateCapped(data, "deflate", Math.min(MAX_PART_TEXT, MAX_TOTAL_TEXT - total));
-      else if (/\/Filter/.test(dict)) continue; // other encodings: skip
+      } else if (/\/Filter/.test(dict)) continue; // other encodings: skip
       if (!data) continue;
       total += data.length;
       streams.push(latin1.decode(data));
@@ -181,18 +181,21 @@
   async function readAttachmentDetailed(file) {
     try {
       if (OFFICE_FILE.test(file.name)) return { text: await officeText(file), reason: null };
-      if (/\.pdf$/i.test(file.name) || file.type === "application/pdf")
+      if (/\.pdf$/i.test(file.name) || file.type === "application/pdf") {
         return { text: await pdfText(file), reason: null };
-      if (SVG_FILE.test(file.name) || file.type === "image/svg+xml")
+      }
+      if (SVG_FILE.test(file.name) || file.type === "image/svg+xml") {
         return { text: file.size <= MAX_TEXT_FILE_BYTES ? xmlToText(await file.text()) : null, reason: null };
+      }
       if (
         file.size <= MAX_TEXT_FILE_BYTES &&
         (TEXT_FILE.test(file.name) ||
           KEY_FILE_NAMES.test(file.name) ||
           ENV_VARIANT.test(file.name) ||
           /^text\/|json/.test(file.type))
-      )
+      ) {
         return { text: await file.text(), reason: null };
+      }
     } catch (err) {
       return { text: null, reason: err instanceof UnreadableDoc ? err.reason : "damaged" };
     }

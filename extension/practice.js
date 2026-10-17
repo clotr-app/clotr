@@ -241,7 +241,7 @@ function answerLeak(l, choice) {
     if (choice === "change-it") leak.changed++;
   }
   const n = found.reduce((sum, r) => sum + r.matches.length, 0);
-  if (found.length)
+  if (found.length) {
     $("leak-reveal").replaceChildren(
       el("div", { className: "leak-card found" }, [
         el("h3", {
@@ -260,12 +260,13 @@ function answerLeak(l, choice) {
         el("p", { textContent: l.instead || bandageLine(l.text, found) }),
       ]),
     );
-  else if (!$("leak-reveal").childElementCount)
+  } else if (!$("leak-reveal").childElementCount) {
     $("leak-reveal").replaceChildren(
       el("div", { className: "leak-card none" }, [
         el("p", { textContent: msg("pd_seesNothing", "Clotr finds nothing private here. Fine to send.") }),
       ]),
     );
+  }
   $("leak-next").hidden = false;
   $("leak-next").focus();
 }

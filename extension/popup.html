@@ -11,7 +11,7 @@
     <h1 class="wordmark" data-i18n-skip><img src="icons/wordmark.svg" alt="Clotr" width="68" height="24"></h1>
     <button id="tq-chip" class="chip tq-chip" type="button" hidden data-feature="tourniquet" aria-label="Tourniquet on: see what it changes" data-i18n-aria-label="pp_tqChipLabel"><svg class="tq-shield" viewBox="0 0 16 16" aria-hidden="true"><path d="M8 1 14 3.4V8c0 3.4-2.5 6.1-6 7-3.5-.9-6-3.6-6-7V3.4Z"/></svg><span data-i18n="pp_tqChip">Tourniquet on</span></button>
     <span class="chip" title="Detection and history never leave this browser" data-i18n-title="popup_detectionAndHistoryNeverLeave" data-i18n="popup_localOnly">Local only</span>
-    <button id="quick-exit" class="chip quick-exit-btn" type="button" title="Closes every open Clotr page, including this one" data-i18n-title="pc_exitHint" data-i18n-aria-label="pc_exitLabel" aria-label="Quick exit: close every open Clotr page"><span data-i18n="pc_exit">Quick exit</span></button>
+    <button id="quick-exit" class="chip quick-exit-btn" type="button" hidden data-feature="checkup" title="Closes every open Clotr page, including this one" data-i18n-title="pc_exitHint" data-i18n-aria-label="pc_exitLabel" aria-label="Quick exit: close every open Clotr page"><span data-i18n="pc_exit">Quick exit</span></button>
   </header>
 
   <section id="tq-end" class="whats-new tq-end" data-feature="tourniquet" aria-labelledby="tq-end-title" hidden>
@@ -323,7 +323,8 @@
     <h2 data-i18n="popup_history">History</h2>
     <p class="muted" data-i18n="popup_clotrRemembersTheKindOf">Clotr remembers what kind of data it was, the site, the time and what you chose, never the data itself. It stays on this computer for a year unless you change that in the full report.</p>
     <p><button id="open-stored" class="btn" type="button" data-i18n="popup_seeExactlyWhatSStored">See exactly what's stored</button>
-      <button id="open-move" class="btn" type="button" data-i18n="mv_title">Move to a new computer</button></p>
+      <button id="open-move" class="btn" type="button" data-i18n="mv_title">Move to a new computer</button>
+      <a href="https://clotr.app/download.html#windows" data-i18n="getClotrWindows">Get Clotr for Windows</a></p>
     <button id="clear" class="danger-link" data-i18n="popup_clearHistory">Clear history</button>
     </div>
   </main>

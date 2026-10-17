@@ -88,6 +88,27 @@
         "Un enlace que lleva un código de rastreo recibe su propio aviso, con un botón para quitar solo esa parte.",
         "Un mensaje ahora necesita algo que tú hiciste de verdad, para que el propio script de una página no pueda fingir un envío y probar qué avisaría Clotr.",
         "La política de un equipo puede hacer que un archivo espere por cualquier cosa que encuentre adentro, no solo lo puesto en Preguntar antes de enviar."
+      ],
+      "1.4": [
+        "Una letra pegada a un número de teléfono o de identidad, o una larga fila de palabras delante de una frase de recuperación, ya no se escapa de la revisión.",
+        "Ajustes tiene un enlace a Clotr para Windows.",
+        "El logo del panel ahora coincide con el icono de Clotr, con la misma tirita sobre la o.",
+        "Un decimal cualquiera ya no se lee como número de tarjeta, y una ruta de unidad ya no se lee como DNI.",
+        "Una lista de palabras corrientes, como una tarjeta de diario, ya no se lee como frase de recuperación de un monedero: una real tiene que pasar su propia suma de control.",
+        "El nombre de archivo de una película o serie, como Dune.Part.Two.2024.2160p, ya no se lee como número de identidad o de teléfono.",
+        "Pegar una lista larga, como unos cientos de contactos, ya no detiene la pestaña del chat.",
+        "Lo mismo al pegar cientos de números o correos de un tipo que guardaste en tu caja fuerte.",
+        "Al adjuntar una foto que guarda el lugar donde se tomó, Clotr quita el lugar antes de que el sitio la reciba, con un botón para devolverlo.",
+        "El panel dice claramente cuando no encuentra el cuadro de chat de un sitio, y un cuadro de chat que cambió de forma en un rediseño se sigue encontrando.",
+        "«¿Es una estafa?» ya no marca como premio una simple felicitación por tus propias noticias, y detecta un plazo de cierre inventado.",
+        "Se arreglaron más formas en que un texto hecho a propósito podía congelar la pestaña del chat.",
+        "«¿Es una estafa?» ahora marca una petición de comprar una tarjeta regalo por un importe fijo, y una tarjeta regalo como obsequio sigue sin marcarse.",
+        "Lo que guardas en tu caja fuerte, o lo que queda en tu historial, ahora cuesta tiempo de verdad adivinarlo.",
+        "Los enlaces a la guía de formación para oficinas ya no llevan a una página eliminada.",
+        "La página de bienvenida dice por qué existe Clotr y dónde revisa.",
+        "Clotr reacciona solo a lo que de verdad escribes, eliges y envías, no al script de una página que se hace pasar por ti.",
+        "Se detecta más de lo que la gente pega, como una clave de API dicha en una frase o una contraseña dicha como «mi contraseña es …».",
+        "El icono de la barra, el panel y los avisos muestran la misma C con la tirita que usan Clotr para Windows y Android."
       ]
     }
   },
@@ -100,5 +121,26 @@
     "A link that carries a tracking code gets its own warning, with a button to remove just that part.",
     "A message now needs something you actually did first, so a page's own script can't fake a send to test what Clotr would warn about.",
     "A team's policy can hold a file for anything it finds inside, not only what's set to Ask before sending."
+  ],
+  "1.4": [
+    "A letter stuck to a phone or ID number, or a long run of words in front of a recovery phrase, no longer slips past the check.",
+    "Settings has a link to Clotr for Windows.",
+    "The popup's logo now matches Clotr's icon, with the same bandage over the o.",
+    "A random decimal is no longer read as a card number, and a drive path is no longer read as a Spanish ID.",
+    "A list of ordinary words, like a diary card, is no longer read as a wallet's recovery phrase: a real one has to pass its own checksum.",
+    "A movie or show's file name, like Dune.Part.Two.2024.2160p, is no longer read as an ID or phone number.",
+    "Pasting a long list, like a few hundred contacts, no longer holds up the chat tab.",
+    "The same goes for pasting hundreds of numbers or emails of a kind you saved to your vault.",
+    "When you attach a photo that has the place it was taken saved inside it, Clotr takes the place out before the site gets it, with a button to put it back.",
+    "The popup says plainly when it can't find a site's chat box, and a chat box that changed shape in a redesign is still found.",
+    "\"Is this a scam?\" no longer marks a plain congrats about your own news as a prize, and catches a made-up closing window.",
+    "More ways specially made text could freeze the chat tab are fixed.",
+    "\"Is this a scam?\" now marks a request to buy a gift card for a set amount, while a gift card as a present still isn't marked.",
+    "What you save to your vault, or what ends up in your history, now takes real time to guess back out.",
+    "Links to the office training walkthrough no longer point to a page that was removed.",
+    "The welcome page says why Clotr exists and where it checks.",
+    "Clotr reacts only to what you actually type, pick and send, not to a page's own script pretending to be you.",
+    "More of what people paste is caught, like an API key told in a sentence or a password told as \"my password's …\".",
+    "The toolbar icon, popup and warnings show the same C with the bandage that Clotr for Windows and Android use."
   ]
 }

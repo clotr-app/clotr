@@ -64,9 +64,11 @@ test("six drills and 24 Spot-the-leak messages, the same in English and Spanish,
   assert.equal(en.leaks.filter((l) => l.finds.length).length, 12, "12 with something private");
   assert.equal(en.leaks.filter((l) => !l.finds.length).length, 12, "12 without");
   // Checks that Spanish really is Spanish, not just the English text left in place.
-  for (const [i, d] of es.drills.entries())
-    for (const field of ["who", "from", "message", "reply", "safer", "why"])
+  for (const [i, d] of es.drills.entries()) {
+    for (const field of ["who", "from", "message", "reply", "safer", "why"]) {
       assert.notEqual(d[field], en.drills[i][field], `drill ${d.id}: ${field} has no Spanish`);
+    }
+  }
   for (const [i, l] of es.leaks.entries()) assert.notEqual(l.text, en.leaks[i].text, `${l.id} has no Spanish`);
 });
 
@@ -121,14 +123,17 @@ test("a bare reply shaped like what a drill asked for stays quiet for detect(), 
     }
   }
   // Checks that this line is genuinely Spanish too.
-  for (const [i, d] of LANGS.es.drills.entries())
-    if (d.bareAsk)
+  for (const [i, d] of LANGS.es.drills.entries()) {
+    if (d.bareAsk) {
       assert.notEqual(d.bareAsk.text, LANGS.en.drills[i].bareAsk.text, `drill ${d.id}: bareAsk has no Spanish`);
+    }
+  }
 });
 
 test("every Spot-the-leak message finds exactly what it lists, in both languages", () => {
-  for (const [lang, data] of Object.entries(LANGS))
+  for (const [lang, data] of Object.entries(LANGS)) {
     for (const l of data.leaks) assert.deepEqual(finds(l.text), [...l.finds].sort(), `${lang} ${l.id}: "${l.text}"`);
+  }
 });
 
 // Every value in the practice data must be made up, never a real person's detail: phone numbers use 555-01xx,
@@ -155,12 +160,15 @@ test("every value in the practice is made up", () => {
       ...data.leaks.flatMap((l) => [l.text, l.instead || ""]),
     ];
     for (const text of texts) {
-      for (const r of detect(text))
-        for (const m of r.matches)
+      for (const r of detect(text)) {
+        for (const m of r.matches) {
           assert.match(m, MADE_UP[r.id] || /^$/, `${lang}: ${r.id} "${m}" in "${text}" isn't on the made-up list`);
+        }
+      }
       // Any web address found here must use one of the reserved example domains.
-      for (const [host] of text.matchAll(/\b[a-z0-9-]+(\.[a-z0-9-]+)*\.(com|net|org|es|io|gov|invalid)\b/gi))
+      for (const [host] of text.matchAll(/\b[a-z0-9-]+(\.[a-z0-9-]+)*\.(com|net|org|es|io|gov|invalid)\b/gi)) {
         assert.match(host, /(^|\.)example\.(com|invalid)$/, `${lang}: "${host}" in "${text}"`);
+      }
     }
   }
 });
@@ -183,7 +191,7 @@ test("a message with something Bandage can't cover says what the AI needs instea
 // goes online.
 test("the practice page loads only Clotr's own scripts and never stores, sends or fetches anything", () => {
   const html = fs.readFileSync(path.join(EXT, "practice.html"), "utf8");
-  const scripts = [...html.matchAll(/<script\b([^>]*)>([\s\S]*?)<\/script>/g)];
+  const scripts = [...html.matchAll(/<script\b([^>]*)>([\s\S]*?)<\/script\b[^>]*>/gi)];
   assert.ok(scripts.length >= 4, "the page's scripts");
   for (const [, attrs, body] of scripts) {
     const src = /\bsrc="([^"]+)"/.exec(attrs)?.[1];

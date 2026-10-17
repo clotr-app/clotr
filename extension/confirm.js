@@ -15,20 +15,23 @@ const nameOf = (id) => PATTERNS.find((p) => p.id === id)?.name || id;
 const names = (ids) => [...new Set(ids.map(nameOf))].join(", ");
 
 function describe(a) {
-  if (a.allow)
+  if (a.allow) {
     return msg(
       "cf_allow",
       "Stop warning you about the $1 you chose in the warning, on every site? Clotr still counts it in your history.",
       names(a.allow),
     );
-  if (a.value === "log")
+  }
+  if (a.value === "log") {
     return msg(
       "cf_log",
       "Stop warning you about $1 on every site? Clotr still counts it in your history.",
       names(a.ids),
     );
-  if (a.value === "warn")
+  }
+  if (a.value === "warn") {
     return msg("cf_warn", "Just warn you about $1 on every site, instead of asking before it's sent?", names(a.ids));
+  }
   return msg("cf_change", "Change how Clotr handles $1 on every site?", names(a.ids));
 }
 

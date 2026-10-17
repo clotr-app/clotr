@@ -38,7 +38,7 @@ function retrySlow(check, { tries = 3, pauseMs = 300 } = {}) {
     miss = check();
     if (!miss) return i + 1;
   }
-  assert.fail(`${miss} (slow on all ${tries} tries)`);
+  return assert.fail(`${miss} (slow on all ${tries} tries)`);
 }
 
 // The same for an async check().
@@ -49,7 +49,7 @@ async function retrySlowAsync(check, { tries = 3, pauseMs = 300 } = {}) {
     miss = await check();
     if (!miss) return i + 1;
   }
-  assert.fail(`${miss} (slow on all ${tries} tries)`);
+  return assert.fail(`${miss} (slow on all ${tries} tries)`);
 }
 
 // Runs fn() with this process bumped one step above its normal priority, then puts the priority back afterward.
@@ -125,8 +125,9 @@ function reference() {
   let n = 0;
   for (let r = 0; r < 20; r++) {
     const text = REFERENCE_TEXT + referenceRuns++;
-    for (const m of text.matchAll(/\b(\d{3})-(\d{3})-(\d{4})\b|[\w.]+@[\w.]+\.\w+|\d+ \w+ (?:Dr|St)\b/g))
+    for (const m of text.matchAll(/\b(\d{3})-(\d{3})-(\d{4})\b|[\w.]+@[\w.]+\.\w+|\d+ \w+ (?:Dr|St)\b/g)) {
       n += m.index & 1;
+    }
     n += text.toLowerCase().split(/[\s,.:]+/).length;
     n += text.replace(/\d/g, "#").length;
   }

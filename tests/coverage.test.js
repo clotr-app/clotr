@@ -8,7 +8,15 @@ const os = require("os");
 const path = require("path");
 const { pathToFileURL } = require("url");
 const { spawnSync } = require("child_process");
-const { lineCoverage, extensionFile, browserFile, merge, mergeBrowserRun, summary } = require("../tools/coverage.js");
+const {
+  lineCoverage,
+  extensionFile,
+  browserFile,
+  merge,
+  mergeBrowserRun,
+  foldBrowserFile,
+  summary,
+} = require("../tools/coverage.js");
 
 const ROOT = path.join(__dirname, "..");
 
@@ -135,6 +143,25 @@ test("a browser script counts for extension/ only when the copy it was loaded fr
     assert.equal(browserFile(`chrome-extension://${id}/gone.js`, dirs, dir), null);
     assert.equal(browserFile("https://chatgpt.com/page.js", dirs, dir), null);
     assert.equal(browserFile(`chrome-extension://${id}/../page.js`, dirs, dir), null);
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("the all-on build's saved run folds into the plain build's file, a line run by either counting as run", () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "clotr-coverage-"));
+  try {
+    const target = path.join(dir, "plain.json");
+    const extra = path.join(dir, "all-on.json");
+    fs.writeFileSync(
+      target,
+      JSON.stringify({ lines: { "extension/lookback.js": [false, false, null], "extension/a.js": [true] } }),
+    );
+    fs.writeFileSync(extra, JSON.stringify({ lines: { "extension/lookback.js": [true, false, null] } }));
+    foldBrowserFile(target, extra);
+    assert.deepEqual(JSON.parse(fs.readFileSync(target, "utf8")), {
+      lines: { "extension/lookback.js": [true, false, null], "extension/a.js": [true] },
+    });
   } finally {
     fs.rmSync(dir, { recursive: true, force: true });
   }

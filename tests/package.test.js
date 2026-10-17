@@ -47,7 +47,15 @@ const tmp = () => {
   return d;
 };
 test.after(() => {
-  for (const d of made) fs.rmSync(d, { recursive: true, force: true, maxRetries: 3 });
+  const errors = [];
+  for (const d of made) {
+    try {
+      fs.rmSync(d, { recursive: true, force: true, maxRetries: 3 });
+    } catch (err) {
+      errors.push(err);
+    }
+  }
+  if (errors.length) throw new AggregateError(errors, "could not remove every package-test temp folder");
 });
 
 test("release zip is byte-identical when built twice, and its checksum is recorded", () => {
@@ -99,8 +107,9 @@ test("release zip holds exactly the shipped files, sorted, manifest at the root,
   const shipped = JSON.parse(entries.find(([n]) => n === "manifest.json")[1].toString("utf8"));
   const disk = JSON.parse(fs.readFileSync(path.join(EXT, "manifest.json"), "utf8"));
   if (!disk.clotr_features.extcheck) delete disk.optional_permissions;
-  if (!disk.clotr_features.commandcheck)
+  if (!disk.clotr_features.commandcheck) {
     disk.content_scripts = disk.content_scripts.map((c) => ({ ...c, js: c.js.filter((f) => f !== "commands.js") }));
+  }
   disk.clotr_features = Object.fromEntries(Object.entries(disk.clotr_features).filter(([, on]) => on));
   assert.deepStrictEqual(shipped, disk);
   assert.deepStrictEqual(shipped.clotr_features, disk.clotr_features);
@@ -157,11 +166,12 @@ test("Chrome and Firefox builds stay as they were: their manifests, exactly", ()
   // Extension check is on, no Command check listener unless Command check is on.
   const noHeldBack = { ...source };
   if (!source.clotr_features.extcheck) delete noHeldBack.optional_permissions;
-  if (!source.clotr_features.commandcheck)
+  if (!source.clotr_features.commandcheck) {
     noHeldBack.content_scripts = source.content_scripts.map((c) => ({
       ...c,
       js: c.js.filter((f) => f !== "commands.js"),
     }));
+  }
   noHeldBack.clotr_features = Object.fromEntries(Object.entries(source.clotr_features).filter(([, on]) => on));
   assert.deepStrictEqual(zipManifest(build({ outDir: dir }).out), noHeldBack);
   const expected = { ...noHeldBack };
@@ -212,8 +222,9 @@ test("Safari build: the Safari manifest, the same files, and a ready folder besi
   );
   assert.deepStrictEqual(m.optional_host_permissions, source.optional_host_permissions);
   assert.ok(!("optional_permissions" in m), "Safari has no chrome.management, so no optional_permissions either");
-  for (const key of ["version", "name", "action", "icons", "commands", "content_security_policy", "default_locale"])
+  for (const key of ["version", "name", "action", "icons", "commands", "content_security_policy", "default_locale"]) {
     assert.deepStrictEqual(m[key], source[key], key);
+  }
   // Every file but the manifest is byte for byte the same as the Chrome build's, except the extension-check page,
   // which Safari never ships since it has no chrome.management.
   const chromeFiles = new Map(unzip(fs.readFileSync(chrome.out)));
@@ -223,8 +234,9 @@ test("Safari build: the Safari manifest, the same files, and a ready folder besi
     safariFiles.map(([n]) => n),
     [...chromeFiles.keys()].filter((n) => !DROPPED.includes(n)),
   );
-  for (const [name, data] of safariFiles)
+  for (const [name, data] of safariFiles) {
     if (name !== "manifest.json") assert.ok(data.equals(chromeFiles.get(name)), `${name} differs from Chrome's`);
+  }
   // The folder, meant for Apple's packager on a Mac or Safari's "Add Temporary Extension", holds exactly the
   // zip's files.
   assert.strictEqual(safari.folder, path.join(dir, `clotr-${version}-safari`));
@@ -237,8 +249,9 @@ test("Safari build: the Safari manifest, the same files, and a ready folder besi
     }
   })(safari.folder);
   assert.deepStrictEqual(onDisk.sort(), safariFiles.map(([n]) => n).sort());
-  for (const [name, data] of safariFiles)
+  for (const [name, data] of safariFiles) {
     assert.ok(fs.readFileSync(path.join(safari.folder, ...name.split("/"))).equals(data), `folder's ${name} differs`);
+  }
   // Building Chrome, Firefox and Safari together leaves three checksum lines.
   const ff = build({ firefox: true, outDir: dir });
   assert.deepStrictEqual(
@@ -289,8 +302,9 @@ test("Firefox folder: the zip's files with the Firefox manifest, alone; a rebuil
     filesIn(folder),
     files.map(([n]) => n),
   );
-  for (const [name, data] of files)
+  for (const [name, data] of files) {
     assert.ok(fs.readFileSync(path.join(folder, ...name.split("/"))).equals(data), `folder's ${name} differs`);
+  }
   assert.strictEqual(
     JSON.parse(fs.readFileSync(path.join(folder, "manifest.json"), "utf8")).browser_specific_settings.gecko.id,
     "clotr@billiambash",

@@ -17,10 +17,12 @@
     redact,
     generalize,
     fingerprint,
+    fingerprintStrong,
     setVault,
     vaultKinds,
     isPicture,
     readPicture,
+    removePhotoPlace,
     namedDocument,
     readBandageLabels,
     bandageKindOf,
@@ -33,15 +35,35 @@
   // Which held-back features this build ships (`clotr_features` in manifest.json).
   const FEATURES = chrome.runtime.getManifest().clotr_features || {};
 
+  // Whether this page is one of the AI sites Clotr ships with, from the manifest's own static match list, not
+  // a dynamic one registered for a site you added yourself or "Everywhere I type". sites.js already has this
+  // exact check (matchPatternToRegExp/urlMatchesAny), but that file isn't shipped as a content script (its own
+  // comment says why), so this is a small, self-contained copy. Used only to let the shape fallback below run
+  // here without Everywhere I type; never for a permission or a message leaving this page.
+  function isBuiltInSite() {
+    const matches = chrome.runtime.getManifest().content_scripts?.[0]?.matches || [];
+    return matches.some((pattern) => {
+      const m = /^(https?|\*):\/\/([^/]+)(\/.*)$/.exec(pattern);
+      if (!m) return false;
+      const [, scheme, host, pathPart] = m;
+      const esc = (s) => s.replace(/[.+?^${}()|[\]\\]/g, "\\$&");
+      const hostRe = host === "*" ? "[^/]+" : host.startsWith("*.") ? `([^/]+\\.)?${esc(host.slice(2))}` : esc(host);
+      const schemeRe = scheme === "*" ? "https?" : scheme;
+      const re = new RegExp(`^${schemeRe}://${hostRe}${esc(pathPart).replace(/\*/g, ".*")}$`);
+      return re.test(location.href);
+    });
+  }
+  const builtInSite = isBuiltInSite();
+
   console.info(LOG, "active on", location.href, IS_TOP ? "(top frame)" : "(iframe)");
 
   // ---------- Fail open ----------
   // After an update, this page's copy of Clotr keeps running but is cut off from the extension: every call
   // into chrome.* now throws "Extension context invalidated". These helpers catch that so it never throws
   // into the chat or into Clotr's own UI.
-  function message(msg) {
+  function message(payload) {
     try {
-      return chrome.runtime.sendMessage(msg);
+      return chrome.runtime.sendMessage(payload);
     } catch (err) {
       return Promise.reject(err);
     }
@@ -59,8 +81,9 @@
   // a message or records anything, since reloading the page is what brings in the new version.
   let orphanLogged = false;
   function noteOrphaned() {
-    if (!orphanLogged)
+    if (!orphanLogged) {
       console.info(LOG, "Clotr was updated; this page keeps warning with the old copy until it's reloaded");
+    }
     orphanLogged = true;
   }
 
@@ -171,6 +194,20 @@
     for (const node of root.querySelectorAll('textarea, [contenteditable="true"], [contenteditable=""]')) {
       if (node.getClientRects().length && qualifyingEditor(node)) return qualifyingEditor(node);
     }
+    // A built-in site's own box is always a textarea or one of those two contenteditable values above, which
+    // is enough everywhere a built-in site has looked so far. A redesign can still move to a contenteditable
+    // value the selector above doesn't list (Chrome's "plaintext-only", say): findEditor already reads any of
+    // them through the DOM's own isContentEditable, so the shape rule (isChatComposer) tells a real chat box
+    // apart from an unrelated editable region there, the same way it already does on "Everywhere I type". This
+    // only ever runs on a built-in site, never one you added yourself or the open web, which stay exactly as
+    // they are behind their own click or the broad switch.
+    if (builtInSite) {
+      for (const node of root.querySelectorAll("[contenteditable]")) {
+        if (!node.getClientRects().length) continue;
+        const editor = findEditor(node);
+        if (editor && isChatComposer(composerInfo(editor))) return editor;
+      }
+    }
     if (depth > 2) return null;
     for (const node of root.querySelectorAll("*")) {
       const inside = node.shadowRoot && findChatBox(node.shadowRoot, depth + 1);
@@ -203,7 +240,10 @@
       return;
     }
     try {
-      if (document.documentElement && findChatBox()) return noteEditor();
+      if (document.documentElement && findChatBox()) {
+        noteEditor();
+        return;
+      }
     } catch {
       /* never let the self-check break the page */
     }
@@ -244,7 +284,14 @@
   // Per-site mode (popup → per-site view): "block" = stricter here, "log" = quieter here.
   let siteMode = null; // this site's mode, or null
   // What each found value does is decided in decide.js, the same on every host, from what this page knows.
-  const known = () => ({ salt: saltValue, vault: vaultEntries, responses, siteMode, cache: vaultCache });
+  const known = () => ({
+    salt: saltValue,
+    vault: vaultEntries,
+    responses,
+    siteMode,
+    cache: vaultCache,
+    budget: scanBudget,
+  });
   const responseOf = (patternId) => globalThis.Clotr.responseOf(patternId, { responses, siteMode });
 
   function setToLog(patternIds) {
@@ -288,6 +335,51 @@
   // fingerprints. Never stored here; they come with the settings each time.
   let teamKinds = [];
   const vaultCache = new Map(); // "type\0match" → "protect" | "allow" | null, hashed once per page
+  // Each scan gets this long to look values up in the vault (decide.js vaultMode). A value it didn't get to keeps
+  // its kind's usual response, never quieter, and vaultLater works it out a few at a time, then scans again.
+  const VAULT_SCAN_MS = 50;
+  let scanBudget = null; // { until, missed } while a scan runs
+  const vaultQueue = new Map(); // "type\0match" → [type, match], waiting to be worked out
+  let vaultRunning = false;
+  let vaultRescanned = null; // the draft vaultLater last scanned again, so it never loops on one text
+
+  function vaultLater(missed, draft) {
+    if (draft === vaultRescanned) {
+      // Even the scan after catching up ran out of time (more values than the cache holds): they keep their
+      // usual response.
+      console.info(LOG, "too many details to check against your vault; they keep their usual warning");
+      return;
+    }
+    for (const [id, m] of missed) vaultQueue.set(`${id}\0${m}`, [id, m]);
+    if (!vaultRunning) vaultCatchUp().catch((err) => console.warn(LOG, "could not finish the vault check", err));
+  }
+
+  async function vaultCatchUp() {
+    vaultRunning = true;
+    try {
+      console.info(LOG, "checking", vaultQueue.size, "details against your vault in the background");
+      let turn = performance.now();
+      while (vaultQueue.size) {
+        const [key, [id, m]] = vaultQueue.entries().next().value;
+        vaultQueue.delete(key);
+        // About 30 ms of work, then the page's turn: one value at a time on a slow computer.
+        if (performance.now() - turn > 30) {
+          await pageTurn();
+          turn = performance.now();
+        }
+        if (retired) return;
+        globalThis.Clotr.vaultMode(id, m, known()); // no budget outside a scan: worked out in full, then cached
+      }
+    } finally {
+      vaultRunning = false;
+    }
+    const editor = activeEditor;
+    if (!editor?.isConnected || isPaused() || ui.isDialogOpen() || composing || bandaging) return;
+    const draft = getText(editor);
+    if (!draft.trim()) return;
+    vaultRescanned = draft;
+    scan(editor);
+  }
 
   function applyVault() {
     vaultCache.clear();
@@ -443,6 +535,27 @@
 
   getSalt().catch((err) => console.warn(LOG, "could not load salt", err));
 
+  // The strong fingerprint is slow on purpose (about 15 ms each), so a warning with hundreds of details would hold
+  // the tab for seconds if they were all worked out in one go: this hands the page its turn every few of them.
+  // A message-channel task waits its turn behind whatever the page already has queued (a timer, a streamed reply),
+  // and unlike a timer it isn't slowed to once a second in a background tab.
+  const turns = new MessageChannel();
+  const waiting = [];
+  turns.port1.onmessage = () => waiting.shift()?.();
+  const pageTurn = () =>
+    new Promise((resolve) => {
+      waiting.push(resolve);
+      turns.port2.postMessage(0);
+    });
+  async function strongFingerprints(salt, pairs) {
+    const out = [];
+    for (const [i, [id, m]] of pairs.entries()) {
+      if (i && i % 3 === 0) await pageTurn();
+      out.push(fingerprintStrong(salt, id, m));
+    }
+    return out;
+  }
+
   // Records one event per detected value. The `via` field says how a "redacted" event happened, whether
   // Bandage covered it automatically or the person hid it by hand, so reports can tell the two apart.
   async function report(results, action, via) {
@@ -450,21 +563,22 @@
     try {
       const t = Date.now();
       const salt = await getSalt();
-      const events = [];
-      for (const r of results) {
-        for (const m of r.matches) {
-          events.push({
-            t,
-            site: location.hostname,
-            type: r.id,
-            name: r.name,
-            severity: r.severity,
-            action,
-            fp: fingerprint(salt, r.id, m),
-            ...(via ? { via } : {}),
-          });
-        }
-      }
+      const found = results.flatMap((r) => r.matches.map((m) => [r, m]));
+      const fps = await strongFingerprints(
+        salt,
+        found.map(([r, m]) => [r.id, m]),
+      );
+      const events = found.map(([r], i) => ({
+        t,
+        site: location.hostname,
+        type: r.id,
+        name: r.name,
+        severity: r.severity,
+        action,
+        fp: fps[i],
+        scheme: 2,
+        ...(via ? { via } : {}),
+      }));
       if (events.length) await message({ type: "clotr:events", events });
     } catch (err) {
       console.warn(LOG, "could not record event", err);
@@ -524,11 +638,16 @@
   let bandageRounds = [];
   // While an IME composition is in progress (Japanese, Chinese, Korean...), I never swap the text, since that
   // would scramble it mid-composition. The scan right after it ends covers whatever was typed.
+  // Only a real start counts, and an end matters only during one: a page could otherwise fake an end to get a
+  // fresh check of whatever it just put in the box, which would let it test guesses against the vault. The end
+  // itself isn't held to isTrusted: Chrome marks one committed through its DevTools input untrusted, so a real
+  // input method might hit the same path.
   let composing = false;
-  addEventListener("compositionstart", () => (composing = true), true);
+  addEventListener("compositionstart", (e) => e.isTrusted && (composing = true), true);
   addEventListener(
     "compositionend",
     safely(() => {
+      if (!composing) return;
       composing = false;
       if (!activeEditor?.isConnected) return;
       clearTimeout(scanTimer);
@@ -876,16 +995,15 @@
   // "Fine to share" waits for the person to say yes on Clotr's own page, as setResponse explains; "always watch"
   // is kept right away. Returns true when it went there to be confirmed.
   function addToVault(results, mode) {
-    const entries = results.flatMap((r) =>
-      r.matches.map((m) => ({
-        kind: "value",
-        type: r.id,
-        fp: fingerprint(saltValue, r.id, m),
-        mode,
-        added: Date.now(),
-      })),
-    );
-    message({ type: "clotr:vaultAdd", entries }).catch((err) => console.warn(LOG, "could not add to vault", err));
+    const found = results.flatMap((r) => r.matches.map((m) => [r.id, m]));
+    const salt = saltValue;
+    strongFingerprints(salt, found)
+      .then((fps) => {
+        const added = Date.now();
+        const entries = found.map(([type], i) => ({ kind: "value", type, fp: fps[i], scheme: 2, mode, added }));
+        return message({ type: "clotr:vaultAdd", entries });
+      })
+      .catch((err) => console.warn(LOG, "could not add to vault", err));
     return mode === "allow";
   }
 
@@ -914,11 +1032,12 @@
       );
       pending = [];
       warnings = [];
-      if (!doRedact && resend)
+      if (!doRedact && resend) {
         setTimeout(
           safely(() => sendAgain(resend)),
           0,
         );
+      }
     };
     ui.showDialog(results, {
       resend: Boolean(resend),
@@ -936,8 +1055,10 @@
   }
 
   // Shows the corner warning, which never blocks or takes focus. The `file` argument is { name, lines } for
-  // an attached file, which can't be redacted in place, only removed by the user.
-  function warn(results, file = null, truncated = false) {
+  // an attached file, which can't be redacted in place, only removed by the user. `placeFile` is the actual
+  // attached File, null unless this warning is for exactly one picture whose place was found, the only case
+  // "Remove the place" offers.
+  function warn(results, file = null, truncated = false, placeFile = null) {
     ui.showNotice(results, file, {
       leave: () => {
         allowWarnings();
@@ -956,7 +1077,184 @@
         );
       },
       truncated,
+      strip: placeFile ? () => stripPlaceInFile(placeFile) : null,
     });
+  }
+
+  // ---------- "Remove the place, keep the photo" ----------
+  // Rebuilding the file is pictures.js's job (a pure function over bytes); getting the result to the site
+  // before the original is this part's. Sites upload an attachment from their own handler for the pick, drop
+  // or paste, the moment it fires. Clotr's listeners run first, but reading a file never finishes inside the
+  // event, so for a JPEG or PNG the event stops at Clotr instead: each picture is read, any place in it taken
+  // out, and the page gets the same event again with those files a few milliseconds later. That is the only
+  // case where Clotr says the site never saw the place. Everything else, a hold that runs long, or anything
+  // that goes wrong, hands the page exactly what the person gave it.
+  const HOLD_MAX_MS = 1500;
+  const rebuildable = (f) =>
+    isPicture(f) && (/^image\/(jpeg|png)$/i.test(f.type || "") || /\.(jpe?g|png)$/i.test(f.name || ""));
+  // A page that ignored a drop or paste Clotr handed back gets every later one straight from the browser.
+  const handBackIgnored = new Set();
+
+  function holdsPictures(list, kind) {
+    return (
+      list.length > 0 &&
+      list.length <= MAX_FILES &&
+      list.every(rebuildable) &&
+      settingsLoaded &&
+      !everyday &&
+      !retired &&
+      !isPaused() &&
+      !orphaned() &&
+      !handBackIgnored.has(kind)
+    );
+  }
+
+  // The files to hand the page, each with its place taken out where one was found and is set to warn.
+  async function withoutPlaces(list) {
+    const files = [];
+    const removed = [];
+    for (const f of list) {
+      const place = (await readPicture(f)).filter((r) => r.id === "photo_location");
+      const hits = filterMatches(place, (r, m) => respFor(r, m) !== "log" && !allowedValues.has(m));
+      const cleaned = hits.length ? await removePhotoPlace(f).catch(() => null) : null;
+      if (cleaned) removed.push({ results: hits, original: f, cleaned });
+      files.push(cleaned || f);
+    }
+    return { files, removed };
+  }
+
+  // Holds files the person just attached while their places come out, then gives them to the page through
+  // `handBack(files)`, which returns the files the page actually got, or null if it ignored them. A send in
+  // the meantime waits, as it does for any file still being read.
+  function holdForPlaces(list, kind, handBack) {
+    const reading = { names: list.map((f) => f.name), late: false };
+    fileReads.add(reading);
+    let finished = false;
+    let timer = 0;
+    const finish = (files, removed) => {
+      if (finished) return;
+      finished = true;
+      clearTimeout(timer);
+      fileReads.delete(reading);
+      let given = null;
+      try {
+        given = handBack(files);
+      } catch (err) {
+        console.warn(LOG, "couldn't hand the attached files to the page", err);
+      }
+      fileReadEnded();
+      if (!given) {
+        handBackIgnored.add(kind);
+        ui.tellNotTaken(removed.length ? () => removed.forEach((r) => saveCopy(r.cleaned)) : null);
+        return;
+      }
+      const done = removed.filter((r) => given.includes(r.cleaned));
+      if (done.length) placesRemoved(done, handBack);
+      scanFiles(given).catch((err) => console.warn(LOG, "file scan failed", err));
+    };
+    timer = setTimeout(() => finish(list, []), HOLD_MAX_MS);
+    withoutPlaces(list).then(
+      ({ files, removed }) => finish(files, removed),
+      (err) => {
+        console.warn(LOG, "couldn't check an attached picture for its place", err);
+        finish(list, []);
+      },
+    );
+  }
+
+  // The site only ever got the copies without the place. "Put the place back" gives it the originals as well,
+  // since an upload can't be taken back from the site: the person can take the clean copy off themselves.
+  function placesRemoved(done, handBack) {
+    const results = done.flatMap((r) => r.results);
+    report(results, "redacted");
+    console.info(LOG, "removed the place from attached pictures before the page got them", done.length);
+    ui.tellPlaceRemovedFirst(done.length === 1 ? done[0].original.name : null, done.length, () => {
+      let back = null;
+      try {
+        back = handBack(done.map((r) => r.original));
+      } catch (err) {
+        console.warn(LOG, "couldn't give the page the original pictures", err);
+      }
+      if (!back) {
+        ui.tellPlaceNotBack();
+        return;
+      }
+      for (const r of results) for (const m of r.matches) allowedValues.add(m);
+      report(results, "allowed");
+      ui.tellPlaceBack(done.length);
+    });
+  }
+
+  // Gives a held file input its files: swapped into its own FileList where they changed (the way a pick
+  // arrives), then the events the browser would have fired. Returns what the input holds afterwards.
+  function handBackToInput(el, files, inputHeld) {
+    const now = [...(el.files || [])];
+    if (now.length !== files.length || files.some((f, i) => f !== now[i])) {
+      const dt = new DataTransfer();
+      files.forEach((f) => dt.items.add(f));
+      el.files = dt.files;
+    }
+    const got = [...(el.files || [])];
+    if (inputHeld) el.dispatchEvent(new Event("input", { bubbles: true, composed: true }));
+    el.dispatchEvent(new Event("change", { bubbles: true }));
+    return got;
+  }
+
+  // Gives a held drop or paste its files, as the same kind of event on the same element. A page that takes
+  // files from a drop or paste cancels the event (or the browser would open or insert the file itself), so an
+  // event nobody cancelled means the page didn't take them. A paste's text goes back with it, and if the page
+  // leaves the paste to the browser, the text goes in the way the browser would have put it.
+  function handBackAsEvent(type, { path, init, strings }, files, withText) {
+    const target = path.find((n) => n instanceof Node && n.isConnected);
+    if (!target) return null;
+    const dt = new DataTransfer();
+    if (withText) for (const [t, v] of strings) dt.setData(t, v);
+    files.forEach((f) => dt.items.add(f));
+    const ev =
+      type === "drop"
+        ? new DragEvent("drop", { ...init, bubbles: true, cancelable: true, composed: true, dataTransfer: dt })
+        : new ClipboardEvent("paste", { bubbles: true, cancelable: true, composed: true, clipboardData: dt });
+    if (!target.dispatchEvent(ev)) return files;
+    const text = withText && strings.find(([t]) => t === "text/plain")?.[1];
+    if (type === "paste" && text && document.execCommand("insertText", false, text)) return files;
+    return null;
+  }
+
+  // The parts of a trusted drop or paste a page might read, copied while the event is still readable.
+  function eventCopy(e, data) {
+    const strings = [...(data?.types || [])].filter((t) => t !== "Files").map((t) => [t, data.getData(t)]);
+    const init = {};
+    for (const k of ["clientX", "clientY", "screenX", "screenY", "ctrlKey", "shiftKey", "altKey", "metaKey"]) {
+      if (k in e) init[k] = e[k];
+    }
+    return { path: e.composedPath(), init, strings };
+  }
+
+  // A real click on a detached link, same as any file download, never a fetch or a page navigation.
+  function saveCopy(file) {
+    const url = URL.createObjectURL(file);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = file.name;
+    a.click();
+    setTimeout(() => URL.revokeObjectURL(url), 60000);
+  }
+
+  // The warning's button, for a photo the site already got: a pick Clotr didn't hold (an email or chat app,
+  // a picture among other files, a hold that ran long). The site has the original by now, so Clotr builds
+  // the copy without the place for the person to attach instead, and records nothing as redacted.
+  async function stripPlaceInFile(file) {
+    let cleaned = null;
+    try {
+      cleaned = await removePhotoPlace(file);
+    } catch (err) {
+      console.warn(LOG, "couldn't remove a photo's place", err);
+    }
+    if (!cleaned) {
+      ui.tellStripFailed();
+      return;
+    }
+    ui.tellStripFallback(() => saveCopy(cleaned));
   }
 
   // ---------- Learning offers (local only): "add to your vault?", "warn less?" ----------
@@ -974,7 +1272,8 @@
         entries: items.map((f) => ({
           kind: "value",
           type: f.id,
-          fp: fingerprint(saltValue, f.id, f.value),
+          fp: fingerprintStrong(saltValue, f.id, f.value),
+          scheme: 2,
           mode: "protect",
           learned: true,
           added: Date.now(),
@@ -1037,6 +1336,21 @@
   // ---------- Scanning & blocking ----------
 
   function scan(editor) {
+    if (scanBudget) {
+      scanNow(editor); // a scan from inside a scan shares its budget
+      return;
+    }
+    const budget = { until: performance.now() + VAULT_SCAN_MS, missed: [] };
+    scanBudget = budget;
+    try {
+      scanNow(editor);
+    } finally {
+      scanBudget = null;
+      if (budget.missed.length) vaultLater(budget.missed, getText(editor));
+    }
+  }
+
+  function scanNow(editor) {
     activeEditor = editor;
     const lost = orphaned(); // after an update: warn only, record nothing
     if (lost) {
@@ -1084,9 +1398,11 @@
       // Edited into another value of the same type ("555-555-5636" → "…5637") isn't a removal.
       if (text.trim() && !all.some((r) => r.id === f.id)) removed.push({ value, ...f });
     }
-    for (const r of all)
-      for (const m of r.matches)
+    for (const r of all) {
+      for (const m of r.matches) {
         if (respFor(r, m) !== "log" && !willCover(r, m)) flagged.set(m, { id: r.id, name: r.name });
+      }
+    }
     if (pending.length && backToEdit) {
       // Editing after "Go back to my message": the dialog returns when they send.
     } else if (pending.length) {
@@ -1152,7 +1468,10 @@
   let scanAfterReady = null;
   let scanReadyTimer = 0;
   function scanWhenReady(editor) {
-    if (!shouldWait()) return scan(editor);
+    if (!shouldWait()) {
+      scan(editor);
+      return;
+    }
     scanAfterReady = editor;
     if (!scanReadyTimer) scanReadyTimer = setTimeout(safely(scanNowReady), READY_WAIT_MS);
   }
@@ -1270,13 +1589,22 @@
   // now that its details are allowed.
   function sendAgain(via) {
     if (!via.isConnected || orphaned()) return;
-    if (via instanceof HTMLFormElement) return via.requestSubmit();
-    if (via !== activeEditor) return via.click();
+    if (via instanceof HTMLFormElement) {
+      via.requestSubmit();
+      return;
+    }
+    if (via !== activeEditor) {
+      via.click();
+      return;
+    }
     let area = via;
     for (let i = 0; i < 5 && area; i++) {
       area = area.parentElement || area.getRootNode().host;
       const btn = area?.querySelector(SEND_BUTTON_SELECTOR);
-      if (btn && !btn.disabled) return btn.click();
+      if (btn && !btn.disabled) {
+        btn.click();
+        return;
+      }
     }
     const key = {
       key: "Enter",
@@ -1315,7 +1643,14 @@
   }
 
   // Capture-phase listeners on window run before the site's own handlers.
+  // A page's own document.execCommand("insertText") fires an input event the browser marks trusted, with nobody
+  // typing, though never a beforeinput. So an input event only counts right after a trusted beforeinput, which
+  // every real edit fires first; otherwise a page could type guesses by script and watch for the warning.
+  const REAL_EDIT_MS = 1000;
+  let realEditAt = 0;
   const onTyping = safely((e) => {
+    if (e.type === "beforeinput" && e.isTrusted) realEditAt = Date.now();
+    if (e.type === "input" && Date.now() - realEditAt > REAL_EDIT_MS) return;
     if (isPaused() || globalThis.Clotr.editor.isEditing() || !byUser(e)) return;
     const editor = qualifyingEditor(realTarget(e));
     if (!editor) return;
@@ -1334,13 +1669,27 @@
   window.addEventListener("beforeinput", onTyping, true);
 
   let enterDown = false; // true while Enter is physically down, so its own check decides, not the new line it types
-  let lastTrustedEnterAt = 0; // a real Enter keydown, whatever happens after: evidence for the submit check below
-  let lastTrustedClickAt = 0; // a real click on something that could send: the same kind of evidence
+  // A real Enter or a real click on something that could send is the evidence the submit check at the end needs:
+  // when it happened, and what the chat box held at that moment.
+  let armedAt = 0;
+  let armedBox = null;
+  let armedText = null;
+  function armSubmit(editor) {
+    armedAt = Date.now();
+    try {
+      armedBox = editor?.isConnected ? editor : null;
+      armedText = armedBox ? getText(armedBox) : null;
+    } catch (err) {
+      armedAt = 0; // unarmed: a submit right after goes through unchecked; the key or click's own check still runs
+      console.warn(LOG, "couldn't note the chat box for the send check", err);
+    }
+  }
   window.addEventListener(
     "keydown",
     safely((e) => {
-      enterDown = e.key === "Enter";
-      if (enterDown && e.isTrusted) lastTrustedEnterAt = Date.now();
+      // Only real keys move this, or a page's made-up Enter could switch off the phone new-line check below.
+      if (e.isTrusted) enterDown = e.key === "Enter";
+      if (enterDown && e.isTrusted) armSubmit(qualifyingEditor(realTarget(e)) || activeEditor);
       if (e.key !== "Enter" || e.shiftKey || e.isComposing || !byUser(e)) return;
       const editor = qualifyingEditor(realTarget(e));
       if (!editor) return;
@@ -1351,7 +1700,7 @@
   );
   window.addEventListener(
     "keyup",
-    safely(() => (enterDown = false)),
+    safely((e) => e.isTrusted && (enterDown = false)),
     true,
   );
 
@@ -1401,7 +1750,7 @@
       if (!(target instanceof Element)) return;
       const sendBtn = target.closest(SEND_BUTTON_SELECTOR);
       const otherBtn = !sendBtn && composerButton(target);
-      if (e.isTrusted && (sendBtn || otherBtn)) lastTrustedClickAt = Date.now();
+      if (e.isTrusted && (sendBtn || otherBtn)) armSubmit(activeEditor);
       if (!byUser(e)) return;
       if (sendBtn) {
         if (shouldBlock({ via: sendBtn })) block(e, "send button");
@@ -1430,15 +1779,17 @@
   let replyObserver = null;
   let replyChecked = false; // this message's reply check is done
 
-  function fpOf(r, m) {
-    return saltValue ? fingerprint(saltValue, r.id, m) : null;
-  }
+  // scan() calls this for every found value on every keystroke, so it uses the single-round fingerprint: these two
+  // sets live only in this page's memory and are never stored, and the strong one (slow on purpose, about 15 ms
+  // each) would hold the tab for seconds on a pasted list of hundreds of details.
+  const fpOf = (r, m) => (saltValue ? fingerprint(saltValue, r.id, m) : null);
   function noteTyped(results) {
-    for (const r of results)
+    for (const r of results) {
       for (const m of r.matches) {
         const fp = fpOf(r, m);
         if (fp) typedHere.add(fp);
       }
+    }
   }
   const isOwn = (r, m) => OWN_WORD_TYPES.has(r.id) || (vaultMode(r.id, m) !== null && vaultMode(r.id, m) !== "allow");
 
@@ -1479,8 +1830,9 @@
     if (
       !n?.isConnected ||
       (activeEditor && (n === activeEditor || n.contains(activeEditor) || activeEditor.contains(n)))
-    )
+    ) {
       return false;
+    }
     return !n.closest?.("textarea, input, [contenteditable='true'], [contenteditable='']");
   }
 
@@ -1509,7 +1861,7 @@
     if (!labelsToFind) closeReplyWindow();
     const own = filterMatches(splitOwnIds(detect(text)), (r, m) => {
       const fp = fpOf(r, m);
-      return fp && isOwn(r, m) && !typedHere.has(fp) && !mentioned.has(fp);
+      return fp && !typedHere.has(fp) && !mentioned.has(fp) && isOwn(r, m);
     });
     if (!own.length) return;
     for (const r of own) for (const m of r.matches) mentioned.add(fpOf(r, m));
@@ -1538,8 +1890,9 @@
   // Anything Clotr itself drew on the page. A copy from inside one of its own boxes isn't the person
   // copying a command.
   function inOwnUI(node) {
-    for (let e = node instanceof Element ? node : node?.parentElement; e; e = e.parentElement)
+    for (let e = node instanceof Element ? node : node?.parentElement; e; e = e.parentElement) {
       if (/^CLOTR-/.test(e.nodeName)) return true;
+    }
     return false;
   }
 
@@ -1598,11 +1951,13 @@
 
   function checkCopiedCommand(copied, source) {
     // Held back in this build: commands.js isn't even in the package then.
-    if (!FEATURES.commandcheck || !commandCheck || everyday || isPaused() || retired || orphaned() || !settingsLoaded)
+    if (!FEATURES.commandcheck || !commandCheck || everyday || isPaused() || retired || orphaned() || !settingsLoaded) {
       return;
+    }
     if (typeof copied !== "string" || !copied.trim() || inOwnUI(source)) return;
-    if (ui.isDialogOpen() || (ui.isNoticeOpen() && ui.noticeKind() !== "offer" && ui.noticeKind() !== "command"))
-      return; // a warning about the person's own details has priority
+    if (ui.isDialogOpen() || (ui.isNoticeOpen() && ui.noticeKind() !== "offer" && ui.noticeKind() !== "command")) {
+      return;
+    } // a warning about the person's own details has priority
     const trick = globalThis.Clotr.commandTrick(copied, messageAround(source));
     if (!trick || noted.has(copied)) return;
     if (noted.size > 50) noted.clear();
@@ -1739,10 +2094,11 @@
   async function readFindings(f, unchecked) {
     if (isPicture(f)) return { all: await readPicture(f), lines: 0, picture: "photo" };
     const text = await readChecked(f, unchecked); // null: not a kind Clotr reads, unreadable or too slow (fail open)
-    if (!text?.trim())
+    if (!text?.trim()) {
       return /\.pdf$/i.test(f.name) || f.type === "application/pdf"
         ? { all: namedDocument(f), lines: 0, picture: "scan" }
         : null;
+    }
     // splitOwnIds builds a new array, which doesn't carry detect()'s truncated flag along, so that's read here.
     const raw = detect(text);
     const all = splitOwnIds(raw);
@@ -1750,11 +2106,13 @@
     return { all, lines: text.split("\n").length, picture: false };
   }
 
+  // Checks files the person attached, and warns about what's in them.
   async function scanFiles(files) {
     if (isPaused()) return;
     const list = [...(files || [])];
-    if (list.length > MAX_FILES)
+    if (list.length > MAX_FILES) {
       console.info(LOG, "checking the first", MAX_FILES, "of", list.length, "attached files");
+    }
     // While these are read, a send that they could hold waits for them (waitForFiles).
     const reading = { names: list.slice(0, MAX_FILES).map((f) => f.name), late: false };
     fileReads.add(reading);
@@ -1765,6 +2123,7 @@
     let pictures = 0;
     let picture = false; // "photo" or "scan": a picture is among the files with something found
     let truncated = false; // a file's own text was too long for detect() to check all the way through
+    let placeFile = null; // the one picture file, kept only when it alone carries a found place
     try {
       for (const f of list.slice(0, MAX_FILES)) {
         if (isPicture(f)) pictures++; // its words can't be read
@@ -1794,6 +2153,7 @@
         lines += read.lines;
         picture ||= read.picture;
         found = mergeResults(found, hits);
+        if (read.picture === "photo" && hits.some((r) => r.id === "photo_location")) placeFile = f;
       }
       if (unchecked.length && !found.length) tellUnchecked(unchecked);
       if (!found.length) {
@@ -1801,14 +2161,17 @@
         return;
       }
       fileWarnings = mergeResults(fileWarnings, found); // an earlier file not yet acknowledged stays counted
-      if (!ui.isDialogOpen())
+      if (!ui.isDialogOpen()) {
+        // "Remove the place" only ever applies to exactly one attached file; with more than one, names.length
+        // is past 1 and placeFile is dropped below regardless of which file it was found in.
+        const single = names.length === 1;
         warn(
           found,
-          names.length === 1
-            ? { name: names[0], lines, picture }
-            : { name: quoted(names), lines, count: names.length, picture },
+          single ? { name: names[0], lines, picture } : { name: quoted(names), lines, count: names.length, picture },
           truncated,
+          single ? placeFile : null,
         );
+      }
     } finally {
       fileReads.delete(reading);
       fileReadEnded();
@@ -1938,18 +2301,22 @@
     if (!wait || wait.reading.some((r) => fileReads.has(r))) return;
     endFileWait(wait);
     if (fileHold && !orphaned() && !health.uiRemoved) askAboutFiles(wait.via);
-    else if (wait.via)
+    else if (wait.via) {
       setTimeout(
         safely(() => sendAgain(wait.via)),
         0,
       );
+    }
   }
 
   // The files took too long to check. The message goes anyway, and whatever they find later just gets
   // noted.
   function fileWaitTimedOut(wait) {
     if (fileWait !== wait) return;
-    if ((teamHold || holdFiles) && !orphaned() && !health.uiRemoved) return askStillChecking(wait);
+    if ((teamHold || holdFiles) && !orphaned() && !health.uiRemoved) {
+      askStillChecking(wait);
+      return;
+    }
     for (const r of wait.reading) r.late = true;
     endFileWait(wait);
     console.info(LOG, "an attached file took too long to check; the message goes");
@@ -1978,11 +2345,12 @@
         endFileWait(wait);
         ui.closeDialog();
         console.info(LOG, "user sent without waiting for an attached file's check");
-        if (wait.via)
+        if (wait.via) {
           setTimeout(
             safely(() => sendAgain(wait.via)),
             0,
           );
+        }
       },
       back: () => {
         endFileWait(wait);
@@ -2032,12 +2400,12 @@
       off ? "user took the file off" : "user sent the file",
       hold.results.map((r) => r.id),
     );
-    if (via)
+    if (via) {
       setTimeout(
         safely(() => sendAgain(via)),
         0,
       );
-    else focusChatBox();
+    } else focusChatBox();
   }
 
   // Back to writing: the chat box Clotr last saw, or the one on the page (a file can be sent before anything's typed).
@@ -2054,40 +2422,102 @@
 
   // A page can't fake `isTrusted`, so that's enough to know a person really picked, dropped or pasted the
   // file: nothing here runs for files a page added on its own.
+  // A real pick is read when the browser's own input event fires, before change. Clotr's listener runs before any
+  // the page adds, so a page can't swap its own guess files into the person's pick in between. Without that input
+  // event (a browser that skips it), the input's files at change are what gets checked, as before.
+  // Pictures Clotr can take a place out of stop here (holdForPlaces) and reach the page a moment later; the
+  // input event is held with its change, so the page sees both together, the way a pick arrives.
+  const pickedFiles = new WeakMap();
+  const heldInputs = new WeakSet();
+  const scanned = (files) => scanFiles(files).catch((err) => console.warn(LOG, "file scan failed", err));
+  const isFileInput = (t) => t instanceof HTMLInputElement && t.type === "file";
+  window.addEventListener(
+    "input",
+    safely((e) => {
+      const t = realTarget(e);
+      if (!e.isTrusted || !isFileInput(t)) return;
+      const files = [...(t.files || [])];
+      pickedFiles.set(t, files);
+      if (holdsPictures(files, "input")) {
+        heldInputs.add(t);
+        e.stopImmediatePropagation();
+      }
+    }),
+    true,
+  );
   window.addEventListener(
     "change",
     safely((e) => {
       const t = realTarget(e);
-      if (e.isTrusted && t instanceof HTMLInputElement && t.type === "file")
-        scanFiles(t.files).catch((err) => console.warn(LOG, "file scan failed", err));
+      if (!e.isTrusted || !isFileInput(t)) return;
+      const files = pickedFiles.get(t) || [...(t.files || [])];
+      pickedFiles.delete(t);
+      const inputHeld = heldInputs.delete(t);
+      if (inputHeld || holdsPictures(files, "input")) {
+        e.stopImmediatePropagation();
+        holdForPlaces(files, "input", (given) => handBackToInput(t, given, inputHeld));
+      } else scanned(files);
     }),
     true,
   );
+  // A drop or paste is read while it's still being dispatched (its data can't be read afterwards), and only
+  // stops once that copy is safely made. A drop is only held where the page itself took the drag (it cancelled
+  // the last dragover): anywhere else the browser's own handling of the drop is what the person would get.
+  let lastDragover = null;
+  window.addEventListener(
+    "dragover",
+    (e) => {
+      if (e.isTrusted) lastDragover = e;
+    },
+    true,
+  );
+  const onFileEvent = (type, dataOf) =>
+    safely((e) => {
+      const data = dataOf(e);
+      if (!e.isTrusted || !data?.files?.length) return;
+      const files = [...data.files];
+      const pageTakes = type !== "drop" || lastDragover?.defaultPrevented === true;
+      let copy = null;
+      if (pageTakes && holdsPictures(files, type)) {
+        try {
+          copy = eventCopy(e, data);
+        } catch (err) {
+          console.warn(LOG, `couldn't hold a ${type}`, err);
+        }
+      }
+      if (!copy) {
+        scanned(files);
+        return;
+      }
+      e.preventDefault();
+      e.stopImmediatePropagation();
+      let first = true; // the paste's own text goes back once, with the first hand-back
+      holdForPlaces(files, type, (given) => {
+        const got = handBackAsEvent(type, copy, given, first);
+        first = false;
+        return got;
+      });
+    });
   window.addEventListener(
     "drop",
-    safely((e) => {
-      if (e.isTrusted && e.dataTransfer?.files?.length)
-        scanFiles(e.dataTransfer.files).catch((err) => console.warn(LOG, "file scan failed", err));
-    }),
+    onFileEvent("drop", (e) => e.dataTransfer),
     true,
   );
   window.addEventListener(
     "paste",
-    safely((e) => {
-      if (e.isTrusted && e.clipboardData?.files?.length)
-        scanFiles(e.clipboardData.files).catch((err) => console.warn(LOG, "file scan failed", err));
-    }),
+    onFileEvent("paste", (e) => e.clipboardData),
     true,
   );
 
   // The background asks before an update reload. Only a frame currently showing a dialog or a warning
   // answers back; if none does, the reload goes ahead.
-  chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
-    if (msg?.type === "clotr:busy?" && (ui.isDialogOpen() || (ui.isNoticeOpen() && ui.noticeKind() !== "offer")))
+  chrome.runtime.onMessage.addListener((req, _sender, sendResponse) => {
+    if (req?.type === "clotr:busy?" && (ui.isDialogOpen() || (ui.isNoticeOpen() && ui.noticeKind() !== "offer"))) {
       sendResponse(true);
-    if (msg?.type === "clotr:focusNotice" && IS_TOP) ui.focusNotice();
-    if (msg?.type === "clotr:settingsChanged" && !retired) loadSettings();
-    if (msg?.type === "clotr:showChatBox" && IS_TOP && !retired) {
+    }
+    if (req?.type === "clotr:focusNotice" && IS_TOP) ui.focusNotice();
+    if (req?.type === "clotr:settingsChanged" && !retired) loadSettings();
+    if (req?.type === "clotr:showChatBox" && IS_TOP && !retired) {
       try {
         sendResponse(showChatBox());
       } catch (err) {
@@ -2096,7 +2526,7 @@
       }
     }
     // Still here after an in-page navigation: tell the background again.
-    if (msg?.type === "clotr:ping" && IS_TOP && !retired) sendResponse({ alive: true, paused: isPaused(), ...health });
+    if (req?.type === "clotr:ping" && IS_TOP && !retired) sendResponse({ alive: true, paused: isPaused(), ...health });
     return false;
   });
 
@@ -2105,15 +2535,23 @@
   // The browser marks a `submit` event trusted even when a page script starts it with form.requestSubmit(),
   // so isTrusted alone can't prove a person sent this one. A real Enter or a real click on a send-like button
   // fires in the same turn as the native submit that follows it, so requiring one close enough closes that
-  // gap without holding up a genuine send.
-  const trustedSubmit = () =>
-    Math.min(Date.now() - lastTrustedEnterAt, Date.now() - lastTrustedClickAt) < TRUSTED_SUBMIT_WINDOW_MS;
+  // gap without holding up a genuine send. The box must also still hold what it held at that moment: a page
+  // could otherwise swap its own guesses in right after a real key or click, submit, and put the text back,
+  // testing them against the vault. When the text changed in between, or nobody acted at all, the submit goes
+  // through unchecked. That's on purpose: the text is the page's own by then, and the person's was already
+  // checked at their Enter or click.
+  const trustedSubmit = () => {
+    if (Date.now() - armedAt >= TRUSTED_SUBMIT_WINDOW_MS) return false;
+    const box = activeEditor?.isConnected ? activeEditor : null;
+    return box === armedBox && (box ? getText(box) === armedText : true);
+  };
 
   window.addEventListener(
     "submit",
     safely((e) => {
-      if (trustedSubmit() && shouldBlock({ via: e.target instanceof HTMLFormElement ? e.target : null }))
+      if (trustedSubmit() && shouldBlock({ via: e.target instanceof HTMLFormElement ? e.target : null })) {
         block(e, "form submit");
+      }
     }),
     true,
   );

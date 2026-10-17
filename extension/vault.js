@@ -4,7 +4,7 @@
 // The typed text is cleared right after saving and is never written anywhere.
 "use strict";
 
-const { detect, redact, fingerprint, addressCore, msg, practiceNotice } = globalThis.Clotr;
+const { detect, redact, fingerprint, fingerprintStrong, addressCore, msg, practiceNotice } = globalThis.Clotr;
 const Sites = globalThis.ClotrSites;
 const $ = (id) => document.getElementById(id);
 // Which held-back features this build ships (`clotr_features` in manifest.json).
@@ -54,20 +54,30 @@ function entriesFor(kind, type, line, salt) {
     const out = [{ kind: "shape", type, shape }];
     // A real example is also kept as a fingerprint, so Clotr can tell your own ID from others
     // with the same format. Typing only the format (AB-######) keeps just the format.
-    if (!/[#@]/.test(line)) out.push({ kind: "value", type, fp: fingerprint(salt, type, line), mode: "protect" });
+    if (!/[#@]/.test(line)) {
+      out.push({ kind: "value", type, fp: fingerprintStrong(salt, type, line), scheme: 2, mode: "protect" });
+    }
     return out;
   }
   if (type === "street_address") {
-    if (!addressCore(line))
+    if (!addressCore(line)) {
       return msg("vt_errAddress", "doesn't read as a street address (number + street name + St/Ave/Rd…) or PO Box");
-    return [{ kind: "value", type, fp: fingerprint(salt, type, line), mode: "protect" }];
+    }
+    return [{ kind: "value", type, fp: fingerprintStrong(salt, type, line), scheme: 2, mode: "protect" }];
   }
   const found = detect(line).find((r) => r.id === type);
-  if (!found)
+  if (!found) {
     return type === "email"
       ? msg("vt_errEmail", "doesn't look like an email address")
       : msg("vt_errPhone", "doesn't look like a phone number");
-  return found.matches.map((m) => ({ kind: "value", type, fp: fingerprint(salt, type, m), mode: "protect" }));
+  }
+  return found.matches.map((m) => ({
+    kind: "value",
+    type,
+    fp: fingerprintStrong(salt, type, m),
+    scheme: 2,
+    mode: "protect",
+  }));
 }
 
 $("vault-form").addEventListener("submit", async (e) => {
@@ -118,10 +128,11 @@ const fmtDate = new Intl.DateTimeFormat([], { month: "short", day: "numeric" });
 
 function describe(e) {
   if (e.kind === "shape") return [el("code", { textContent: e.shape })];
-  if (e.kind === "word")
+  if (e.kind === "word") {
     return [
       e.words > 1 ? msg("vt_wordsHidden", "$1 words (hidden)", e.words) : msg("vt_wordHidden", "1 word (hidden)"),
     ];
+  }
   return [msg("vt_hidden", "Hidden")];
 }
 
@@ -161,6 +172,9 @@ function render(vault) {
     }),
   );
   $("vault-empty").hidden = vault.length > 0;
+  // Re-saving a value needs it typed again (a one-way hash can't be upgraded in place), so this only ever
+  // offers; it never removes a weaker entry on its own.
+  $("strengthen-offer").hidden = !vault.some((e) => e.kind === "value" && e.scheme !== 2);
 }
 
 chrome.storage.local.get("vault").then(({ vault = [] }) => render(vault));
@@ -243,7 +257,7 @@ function allowCard() {
     if (!missing.length) return;
     askForAiChats(missing).then(async (yes) => {
       await check();
-      if (missing.length)
+      if (missing.length) {
         status(
           yes
             ? ""
@@ -252,6 +266,7 @@ function allowCard() {
                 "Your browser didn't allow it, so Clotr still can't warn you in those AI chats. Use the button to ask again.",
               ),
         );
+      }
     });
   });
   chrome.permissions.onAdded?.addListener(check);
@@ -308,8 +323,9 @@ if (new URLSearchParams(location.search).has("welcome")) {
     // Something in the fold is already on (the welcome page reopened by someone who'd already picked a
     // site or two): open it, so nothing someone turned on is hidden.
     const { origins = [] } = await chrome.permissions.getAll();
-    if (Sites.grantedEverydayApps(origins).length || Sites.grantedMoreSites(origins).length)
+    if (Sites.grantedEverydayApps(origins).length || Sites.grantedMoreSites(origins).length) {
       $("where-pick-sites").open = true;
+    }
     mountWhereOffer();
     $("where-offer").hidden = false;
   });
@@ -327,11 +343,12 @@ function mountWhereOffer() {
     status.textContent = "";
     const yes = await Sites.requestEverywhere();
     if (yes) $("where-offer").hidden = true;
-    else
+    else {
       status.textContent = msg(
         "ev_refused",
         "Nothing was switched on: the browser's question was closed or answered No. Tick and try again, or switch them on later in Settings.",
       );
+    }
   });
 }
 

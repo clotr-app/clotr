@@ -26,8 +26,9 @@
   // type="text" for everything Clotr does here, so it's treated the same way.
   function findEditor(node) {
     if (!(node instanceof Element)) return null;
-    if (node.matches("input[type='text'], input[type='search'], input:not([type])"))
+    if (node.matches("input[type='text'], input[type='search'], input:not([type])")) {
       return isSignInField(node) ? null : node;
+    }
     if (node.matches("textarea")) return node;
     if (!node.isContentEditable) return null;
     let root = node;

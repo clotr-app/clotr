@@ -48,7 +48,7 @@ every entry point, backed by automated checks that now run on every change, list
 | 20 | A page that removes Clotr's dialog (hostile, or an app rebuilding the page) left you stuck with *Ask before sending*: every Enter was held and the dialog never showed; focus was left on the page, not the chat box | Clotr notices its box vanishing without it closing it: it stops holding messages on that page (fail open), gives the keyboard back to the chat box, and the self-check says "This page removed Clotr's warnings" (red ! badge) | e2e: stuck before the fix |
 | 21 | Found while testing the fix above: since the storage lock (finding 19) a chat tab still starting up could miss a settings change (made in the popup meanwhile) until it was hidden and shown again | Changes are announced to every tab, not only those already registered | e2e SET1; EG1 caught it |
 | 22 | Can a hostile page plant fake entries in your history by filling and emptying its own chat box with no user action? | Not in the test: a page that filled its box with a detail and emptied it by script, with no Enter or click from you, left nothing recorded as *sent* | e2e: kept as a regression test |
-| 23 | **A page could probe your vault.** It could put guesses ("Emma? Liam?") in its own chat box by script, fire a fake input event or Enter, and watch whether Clotr's warning appeared; vault names only warn when they're yours, so that revealed them. The reply check was a second way: after one real send, the page could add guess after guess as "reply" text for 90 seconds | Clotr reacts only to events from the person (or a site's script right after a real key or click, via the browser's user-activation signal; where a browser can't tell, as before). The reply is checked once per message sent, after it has been quiet for 3 seconds | e2e SEC2, SEC3, RP5 |
+| 23 | **A page could probe your vault.** It could put guesses ("Emma? Liam?") in its own chat box by script, fire a fake input event or Enter, and watch whether Clotr's warning appeared; vault names only warn when they're yours, so that revealed them. The reply check was a second way: after one real send, the page could add guess after guess as "reply" text for 90 seconds | Clotr reacts only to events the browser marks as the person's own, and not to the trusted events a script can cause (see "Events a page's script can cause" below). The reply is checked once per message sent, after it has been quiet for 3 seconds | e2e SEC2-SEC8, RP5 |
 | 24 | Clotr's pages could have connected out if a future change tried | Strict CSP: `connect-src 'self'`, `object-src 'none'`, … | rule + e2e CSP1 (proven to fail without it) |
 
 Checked on real sites, logged out and with fake data: ChatGPT, Gemini and Grok all send nothing typed before Send,
@@ -206,6 +206,31 @@ a message it acts on, so Tourniquet's storage has no path from a hostile page to
 ever adds one, it should come with a test proving Tourniquet can't be reached through it, the same way the
 vault-probing findings above (23) got one.
 
+## Events a page's script can cause
+A security scan of 1.2.1 found two more ways around finding 23, and a second look found a few close relatives. The
+browser marks some events trusted even when only the page's own script acted, so `isTrusted` alone doesn't prove a
+person did anything. Each of these let a hostile or compromised AI page put guesses in its chat box, get Clotr to
+check them, and watch for Clotr's element to appear, with nobody typing.
+- `document.execCommand("insertText")` fires a trusted `input` event, though never a `beforeinput`. Typing now
+  counts only right after a trusted `beforeinput`, which every real edit fires first. This one needed no action from
+  the person at all.
+- A page could fake the end of an input-method composition, which Clotr follows with a fresh check of the box. Only
+  a composition the browser itself starts counts now, and an end matters only during one.
+- A file pick's `change` event is trusted, but a page's own listener could put its guess files on the input before
+  Clotr read them. Clotr now reads the pick at the browser's own `input` event, where its listener runs first.
+  Made-up `change`, `drop` and `paste` events were already ignored, and a real drop or paste can't be edited by
+  the page.
+- `form.requestSubmit()` gives a trusted `submit`. Clotr already checked one only right after a real Enter or a real
+  click on a send button, but a page could use that moment to swap its guesses in and put the person's text back.
+  A submit is now checked only while the box holds exactly what it held at that key or click.
+- A made-up Enter key could switch off the check of a phone keyboard's new line. Only real keys count for that now.
+
+Every one of these changes only skips a check, so none of them can hold a message. A send a page's script starts
+with nobody acting, or after changing the box, goes through unchecked. Checking it is exactly what would answer the
+page's guesses, and the person's own text was already checked at their Enter or click. Clotr's warning
+and dialog listen only on their own buttons inside a closed shadow root, which a page can't reach to fake a click
+or a key. Checked by e2e SEC2b, SEC2c, SEC4-swap, SEC6, SEC7 and SEC8, each seen failing before its fix.
+
 ## Accepted limits
 - A hostile AI site can defeat Clotr on its own pages. It can remove the warning, though Clotr then notices and
   stops holding messages there, as finding 20 above describes. It can imitate Clotr's warning, or cover its
@@ -214,17 +239,23 @@ vault-probing findings above (23) got one.
   own page, which opens in its own tab beside the chat. Planting fake *sent* entries by scripting its chat box doesn't work, per
   finding 22 above. Clotr's warnings never ask you to type anything, so an imitation can't collect details, and
   the site can't learn anything it doesn't already receive, since it is the destination the text is going to
-  anyway. There are two narrow exceptions that need you to act: text the site adds to your chat box while you
-  type gets checked along with yours, and you would see it in your box, and a reply gets checked once per message
-  you send, so the site can test one guess per message against your vault, per finding 23 above. Fixing this
-  would need browser support that doesn't exist for extensions.
+  anyway. There are a few narrow exceptions, each needing you to act. Text the site adds to your chat box while you
+  type, or before you press Enter, gets checked along with yours; it sits in your box, though a page could style it
+  so it's hard to see. A reply gets checked once per message you send, so the site can test one guess per message
+  against your vault, per finding 23 above. And in a tab Clotr joined after the page had loaded (right after an
+  install or update), a page that set its own listener first can still swap its files into a file you pick, until
+  the tab is reloaded. Fixing these would need browser support that doesn't exist for extensions.
 - Bandage only sees what the page has loaded. Some sites load older messages only when you scroll up, so a label
   in a message that isn't loaded yet can't be seen. After a reload, or when you open an older chat, a new detail
   can end up reusing that same label, giving one label two different details in the same chat. Clotr doesn't
   scroll sites to load more, but scrolling up to the start of the chat first avoids the problem.
-- Fingerprints of short values are guessable by someone with full access to this browser profile, and "What Clotr
-  stores" discloses that. From 1.3.0 that includes a photo's place, rounded to about 100 metres, though that same
-  person could just open the photo itself.
+- Fingerprints of short values are harder to guess than they were, not solved: someone with full access to this
+  browser profile can still try every candidate for a value you saved to your vault or that landed in your history
+  (a 4-digit PIN takes minutes now, not under a millisecond; see `docs/security/fingerprints.md`). A word on your
+  own watch list is still fingerprinted the fast way, since `patterns.js` checks it against every span of text
+  while you type, and that word was yours to choose in the first place. "What Clotr stores" discloses all of this.
+  From 1.3.0 the same page also covers a photo's place, rounded to about 100 metres, though that same person could
+  just open the photo itself.
 
 ## Automated from now on
 `npm test` runs a ReDoS fuzz of every pattern, performance budgets, the false-alarm corpus, and checks for no

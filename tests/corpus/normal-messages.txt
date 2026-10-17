@@ -1188,3 +1188,51 @@ Where do I find my account number on a check, and which one is the routing numbe
 212 is the area code for Manhattan, right?
 ---
 My order number is 113-2846159-7730214 and the tracking number is 9361289744390612445812. Where's my package?
+---
+How do I upgrade from version 2.14.3 to 3.0.1 without breaking my lockfile? I also have react@18.2.0 and lodash@4.17.21 pinned.
+---
+I'm on Python 3.12.4 on Ubuntu 22.04.3 LTS and pip says the wheel needs glibc 2.35.
+---
+Order #W123456789 hasn't shipped and the tracking number 1Z999AA10123456784 shows nothing. What should I write to support?
+---
+The log says 2024-03-15T14:22:31.123Z ERROR timeout after 30000 ms, and the next line is timestamp 1712345678901. Is that in milliseconds?
+---
+Can you double this recipe? 2 1/2 cups flour, 1 tsp salt, 350 g sugar, 3 eggs, bake at 375 for 25-30 minutes.
+---
+Why does this fail?
+```
+const password = req.body.password;
+if (!password || password.length < 8) throw new Error("weak password");
+```
+---
+Is this .env template fine to commit? It has no values yet.
+```
+PASSWORD=
+USERNAME=admin
+DB_PASSWORD=
+DB_USER=postgres
+SECRET_KEY=
+ALLOWED_HOSTS=localhost,example.com
+```
+---
+My config reads `DB_PASSWORD=${DB_PASSWORD}` and `password: process.env.DB_PASSWORD`, but the container says it's undefined.
+---
+The README says to set OPENAI_API_KEY=your-api-key-here and then call api_key = os.environ['OPENAI_API_KEY']. Where does that go on Windows?
+---
+Replace YOUR_API_KEY with the key from your dashboard, the docs say, but the example uses AKIAIOSFODNN7EXAMPLE. Which one is real?
+---
+<input type="password" name="password" /> doesn't show the eye icon in Safari. How do I add one?
+---
+The API returns {"password": "string", "token": "string"} in the schema. Is that a bug in the OpenAPI file?
+---
+Invoice INV-2024-00123 is overdue and the build number on the receipt is 20240315.4. How do I word a reminder?
+---
+Windows shows error code 0x80070005 when I copy commit 7f3a9c2e17b4d8a6f0e5c9b2d7a1f4e8c3b2a1d0 to the share.
+---
+The book's ISBN is 978-0-306-40615-7, chapter 12, verses 4 to 19. Can you summarize it?
+---
+My package weighs 12.04 kg and the flight UA 1234 departs at 6:45. Will it fit the carry-on limit?
+---
+The docs' curl example is `curl -u user:password https://example.com/api`. Do I replace both words?
+---
+What should a strong password look like? Mine keeps getting rejected as too short.

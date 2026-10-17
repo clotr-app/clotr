@@ -333,8 +333,9 @@ async function settingsFor(url) {
   // Same idea for a per-site "Just count": drop it under any team policy or Tourniquet, so the content
   // script falls back to each kind's own floored response instead of letting everything through silently.
   const rawSiteMode = (host && r.siteModes?.[host]) || null;
-  const hasPolicy =
-    Boolean(managed?.requiredResponses && Object.keys(managed.requiredResponses).length) || Boolean(tourniquet);
+  // mergePolicy adds custom-kind responses to requiredResponses. Check the effective policy so a site's
+  // "Just count" mode cannot override a custom managed kind's response floor.
+  const hasResponseFloor = Boolean(policy.requiredResponses && Object.keys(policy.requiredResponses).length);
   // Email and chat apps: you write to people there, so no cover names and no reading of replies. A support
   // chat is the same shape (someone on the other end reads it, maybe a bot), so it gets the same wording and
   // the same features turned off. A search engine has nobody reading what you type either, but it isn't a
@@ -351,7 +352,7 @@ async function settingsFor(url) {
   return {
     responses: eff.responses,
     paused: eff.paused,
-    siteMode: rawSiteMode === "log" && hasPolicy ? null : rawSiteMode,
+    siteMode: rawSiteMode === "log" && hasResponseFloor ? null : rawSiteMode,
     vault,
     guided: r.guided || {},
     largeText: eff.largeText,
@@ -513,8 +514,9 @@ const HISTORY_ROOM = 9000;
 async function settleHistoryFull(count) {
   const { historyFull, keepDays } = await chrome.storage.local.get(["historyFull", "keepDays"]);
   if (!historyFull) return;
-  if (count < HISTORY_ROOM || !(historyFull.before >= keepCutoff(keepDays)))
+  if (count < HISTORY_ROOM || !(historyFull.before >= keepCutoff(keepDays))) {
     await chrome.storage.local.remove("historyFull");
+  }
 }
 chrome.storage.onChanged.addListener((changes, area) => {
   if (area !== "local" || !changes.events) return;
@@ -666,7 +668,10 @@ function recheckTab(tabId) {
 }
 
 chrome.alarms.onAlarm.addListener((alarm) => {
-  if (alarm.name === TOURNIQUET_END) return void stepTourniquetSafely();
+  if (alarm.name === TOURNIQUET_END) {
+    stepTourniquetSafely();
+    return;
+  }
   if (alarm.name !== "refresh-toolbar") return;
   enqueue(refreshToolbar); // rolls "today" over after midnight
   enqueue(pruneEvents);
@@ -1135,8 +1140,9 @@ chrome.runtime.onInstalled.addListener((details) => {
   }
   scheduleUpdateCheck();
   // First install: ask "What should I protect?" once. Everything on that page is optional.
-  if (details?.reason === "install")
+  if (details?.reason === "install") {
     chrome.tabs.create({ url: chrome.runtime.getURL("vault.html?welcome=1") }).catch(() => {});
+  }
   enqueue(runMigrations).catch((err) => console.error(LOG, "settings migration failed", err));
   enqueue(() => followPersonalSwitch(details?.reason)).catch((err) =>
     console.error(LOG, "personal-details switch failed", err),

@@ -61,6 +61,11 @@ module.exports = async function (env) {
       }
       expect(target, "How ads follow you didn't open the explainer page");
       const tab = await target.page();
+      const explanation = await tab.evaluate(() => ({ title: document.title, text: document.body.innerText }));
+      expect(explanation.title === "How ads follow you", `explainer title: "${explanation.title}"`);
+      expect(/tracking code/i.test(explanation.text), "explainer doesn't explain the link tracking code");
+      expect(/somewhere Clotr can't reach/i.test(explanation.text), "explainer doesn't describe what Clotr can't see");
+      expect(/On your phone/.test(explanation.text), "explainer is missing the phone guidance near the end");
       await tab.close();
     }),
   );
@@ -138,6 +143,48 @@ module.exports = async function (env) {
         await tracking.close();
       }
       return "cl-clean-link-note.png, cl-tracking-page.png";
+    }),
+  );
+
+  await check("CL8", "Gemini shows the Clean link note and removes only its tracking codes", () =>
+    withSite(ctx, "history", async (page) => {
+      await resetState(ctx, {});
+      await typeText(page, AD_LINK);
+      const note = await waitForNotice(page);
+      expect(note, "Gemini showed no note for the tracked link");
+      expect(
+        note.buttons.some((b) => b.text === "Remove the share code"),
+        `buttons: ${JSON.stringify(note.buttons.map((b) => b.text))}`,
+      );
+      await clickDialogButton(page, "Remove the share code", readNotice);
+      const after = await editorText(page);
+      expect(after === CLEANED, `Gemini editor after cleaning: "${after}"`);
+    }),
+  );
+
+  await check("CL9", "Gemini's Clean link note opens the tracking explainer", () =>
+    withSite(ctx, "history", async (page) => {
+      await resetState(ctx, {});
+      await typeText(page, AD_LINK);
+      const note = await waitForNotice(page);
+      expect(note, "Gemini showed no Clean link note");
+      const why = note.buttons.find((b) => b.text === "Why?");
+      expect(why, `no "Why?": ${JSON.stringify(note.buttons.map((b) => b.text))}`);
+      await clickNode(page, why.nodeId);
+      await settle(200);
+      expect(
+        /How ads follow you/.test((await readNotice(page))?.text || ""),
+        "Gemini's why panel omitted the explainer",
+      );
+      const found = ctx.browser
+        .waitForTarget((t) => t.url().endsWith("/tracking.html"), { timeout: 8000 })
+        .catch(() => null);
+      const fresh = (await readNotice(page))?.buttons.find((b) => b.text === "How ads follow you");
+      expect(fresh, "Gemini's explainer link went away");
+      await clickNode(page, fresh.nodeId);
+      const target = await found;
+      expect(target, "Gemini did not open the tracking explainer");
+      await (await target.page()).close();
     }),
   );
 };

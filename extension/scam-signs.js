@@ -189,9 +189,10 @@
   const GIFT = askLabels.gift_card.source;
   const NOT_THEM = String.raw`(?<!(?<![\p{L}])(?:i|we|they|he|she|i've|we've|i'll|we'll|did|should|shall|let's)\s+)`;
   const GIFT_ASKS = [
-    // Buying several, or for an amount, as in "buy two gift cards" or "buy some Steam cards".
+    // Buying several, or for an amount, as in "buy two gift cards", "buy some Steam cards" or "buy a" with an amount
+    // after it. "a" counts only before an amount: "buy a gift card" on its own is usually a present.
     new RegExp(
-      String.raw`${NOT_THEM}(?<![\p{L}])(?:buy|purchase|get|pick\s+up|grab|compra|compre|comprar|c[oó]mprame|c[oó]mpreme|c[oó]mpranos|cons[ií]gueme|consigue|consiga)(?:\s+(?:me|us))?(?<amount>(?:\s+(?:some|several|a\s+few|more|\d+|two|three|four|five|six|seven|eight|nine|ten|unas|algunas|varias|dos|tres|cuatro|cinco|\$\s?[\d,.]+|€\s?[\d,.]+|[\d.,]+\s?€))*)(?:\s+(?:worth\s+of|in|of|en|de))?\s+(?:${GIFT})`,
+      String.raw`${NOT_THEM}(?<![\p{L}])(?:buy|purchase|get|pick\s+up|grab|compra|compre|comprar|c[oó]mprame|c[oó]mpreme|c[oó]mpranos|cons[ií]gueme|consigue|consiga)(?:\s+(?:me|us))?(?:\s+(?:an?|una?)(?=\s+(?:\$|€|\d)))?(?<amount>(?:\s+(?:some|several|a\s+few|more|\d+|two|three|four|five|six|seven|eight|nine|ten|unas|algunas|varias|dos|tres|cuatro|cinco|\$\s?[\d,.]+|€\s?[\d,.]+|[\d.,]+\s?€))*)(?:\s+(?:worth\s+of|in|of|en|de))?\s+(?:${GIFT})`,
       "giu",
     ),
     // Paying with them, as in "pay with Google Play gift cards" or "only takes gift cards".
@@ -208,16 +209,18 @@
   const GIFT_ANY = new RegExp(GIFT, "iu");
   function asksGiftCard(text, sents, codes) {
     const out = [];
-    for (const re of GIFT_ASKS)
+    for (const re of GIFT_ASKS) {
       for (const m of all(re, text)) {
         const plural = /s$/i.test(m[0]) || /\S/.test(m.groups?.amount || "") || re !== GIFT_ASKS[0];
         if (plural && !negated(text, sents, m.index)) out.push(spanOf(m));
       }
-    if (GIFT_ANY.test(text))
+    }
+    if (GIFT_ANY.test(text)) {
       for (const m of all(GIFT_NUMBERS, text)) {
         const s = spanOf(m);
         if (!codes.some((c) => overlaps(c, s)) && !negated(text, sents, m.index)) out.push(s);
       }
+    }
     return out;
   }
 
@@ -350,8 +353,9 @@
     for (const p of all(PROTECT, text)) {
       const s = sentenceAt(sents, p.index);
       const move = all(MOVE, text.slice(s.start, s.end)).find((m) => !negated(text, sents, s.start + m.index));
-      if (move && !negated(text, sents, p.index))
+      if (move && !negated(text, sents, p.index)) {
         out.push(span(s.start + move.index, s.start + move.index + move[0].length), spanOf(p));
+      }
     }
     return out;
   }
@@ -366,6 +370,11 @@
       String.raw`(?<!(?<![\p{L}])(?:expires?|expiring|valid|good|arrives?|there|ready|back|delayed|late|starts?|done|finished|about|be\s+home|home)\s+)in\s+\d+\s*(?:minutes?|mins?|hours?|hrs?)`,
       String.raw`(?:ends?|expires?|expire)\s+(?:at\s+midnight|tonight|today)|closes?\s+at\s+midnight|(?:ends?|closes?)\s+in\s+\d+\s*(?:minutes?|mins?|hours?|hrs?)`,
       String.raw`(?:by|before|until)\s+(?:\d{1,2}(?::\d\d)?\s*(?:am|pm)\s+)?(?:tonight|midnight|the\s+end\s+of\s+(?:the\s+)?day|end\s+of\s+day)|before\s+\d{1,2}(?::\d\d)?\s*(?:am|pm)`,
+      // A closing window invented for the pitch, the way a "grow your account fast" seller writes it: no real
+      // date, just a window that's said to be narrowing right now, or a vague "the next little while decides
+      // everything" line. A real deadline ("closes Friday", "the window is open now") stays quiet on its own:
+      // this only fires on the fear-of-missing-out phrasing sellers actually use alongside it.
+      String.raw`while\s+it\s+(?:still\s+)?counts|window\s+(?:cools|narrows|closes|shrinks)\s+(?:fast|quickly)|decides?\s+how\s+(?:far|fast|much|high)\s+(?:it|this|you)\s+(?:goes?|climbs?|grows?|gets?)`,
       String.raw`(?:responde|responda|contesta|conteste|llama|llame|paga|pague|haz|haga|act[uú]a|act[uú]e|env[ií]a|env[ií]e|confirma|confirme|hazlo)\s+(?:ya|ahora)|ahora\s+mismo|de\s+inmediato|inmediatamente|urgente(?:mente)?|cuanto\s+antes|lo\s+antes\s+posible|hoy\s+mismo|[uú]ltimo\s+aviso|date\s+prisa|d[eé]se\s+prisa`,
       String.raw`en\s+las?\s+pr[oó]xim[ao]s?\s+(?:\d+\s+)?(?:horas?|minutos?|hora)|antes\s+de\s+(?:\d+|una|1)\s+(?:horas?|minutos?|hora)|(?<!(?<![\p{L}])(?:caduca|caducan|vence|llegar[aá])\s+)en\s+\d+\s+(?:horas?|minutos?)`,
       String.raw`(?:termina|acaba)\s+(?:en\s+\d+\s+(?:horas?|hora|minutos?)|a\s+medianoche|esta\s+noche|hoy)|(?:caduca|caducan)\s+(?:a\s+medianoche|esta\s+noche|hoy)|(?:se\s+)?cierra[n]?\s+en\s+\d+\s+(?:horas?|hora|minutos?)|hasta\s+esta\s+noche|antes\s+de\s+esta\s+noche`,
@@ -465,12 +474,20 @@
   );
   const PRIZE = words(
     [
-      String.raw`(?:you(?:'ve|\s+have)?|your\s+(?:[\p{L}]+\s+)?(?:wallet|email|number|phone))\s+(?:just\s+)?(?:won|been\s+(?:selected|chosen|picked))|(?:lucky\s+)?winners?|congratulations|congrats|prizes?|sweepstakes|lottery|jackpot|giveaway|lucky\s+draw|(?:relief|government|cash)\s+grant|(?:reward|refund)\s+waiting|free\s+(?:[\p{L}]+\s+){0,2}?(?:iphone|phone|cruise|vacation|gift|tv|ringtone|bluetooth|entry|auction|credits|text\s+messages?)|chosen\s+to\s+receive|selected\s+(?:as|for)|(?:has|ha|han)\s+(?:sido\s+)?(?:ganado|seleccionad[oa]|elegid[oa])|ganador(?:a)?|enhorabuena|felicidades|premios?|sorteo|loter[ií]a|concurso|(?:un|una)\s+[\p{L}]+\s+gratis`,
+      String.raw`(?:you(?:'ve|\s+have)?|your\s+(?:[\p{L}]+\s+)?(?:wallet|email|number|phone))\s+(?:just\s+)?(?:won|been\s+(?:selected|chosen|picked))|(?:lucky\s+)?winners?|prizes?|sweepstakes|lottery|jackpot|giveaway|lucky\s+draw|(?:relief|government|cash)\s+grant|(?:reward|refund)\s+waiting|free\s+(?:[\p{L}]+\s+){0,2}?(?:iphone|phone|cruise|vacation|gift|tv|ringtone|bluetooth|entry|auction|credits|text\s+messages?)|chosen\s+to\s+receive|selected\s+(?:as|for)|(?:has|ha|han)\s+(?:sido\s+)?(?:ganado|seleccionad[oa]|elegid[oa])|ganador(?:a)?|premios?|sorteo|loter[ií]a|concurso|(?:un|una)\s+[\p{L}]+\s+gratis`,
       // "win"/"won" on their own are too common in everyday talk ("if we win", "won't") to count alone, so this
       // only matches the shape a real prize text uses: the word right next to an article, "cash", or an amount.
       // "claim" alone is common too, but "to claim" or "claim ur/your/this prize" isn't something people say.
       String.raw`win\s+(?:a|an|cash)|win\s?[£$€]\s?\d[\d,.]*|won(?!'t)\s+(?:a|an|cash)|won(?!'t)\s?[£$€]\s?\d[\d,.]*|(?:to|2)\s+claim|claim\s+(?:ur|your|yr|this|now|prize|award|code)`,
     ].join("|"),
+  );
+  // "Congrats"/"congratulations" alone is how people talk about a job, a birth, a merged PR, so it isn't a prize
+  // sign by itself. It only counts when something actually won, free, awarded or claimed follows close behind,
+  // the way a real prize text reads ("Congrats! ... is yours", "Congratulations, you're awarded...").
+  const CONGRATS_CLAIM = String.raw`(?:is|are|r)\s+yours?|awarded|winner?s?|won(?!'t)|prizes?|selected|chosen|free|grants?|gifts?|claim(?:ed)?|premios?|ganad[oa]|regalos?|gratis`;
+  const CONGRATS_PRIZE = new RegExp(
+    String.raw`(?<![\p{L}\p{N}])(?:congratulations|congrats|enhorabuena|felicidades)(?![\p{L}\p{N}])(?=[\s\S]{0,70}?(?<![\p{L}\p{N}])(?:${CONGRATS_CLAIM})(?![\p{L}\p{N}]))`,
+    "giu",
   );
   // Something to do right now is either a link, or a word that sends you somewhere or asks you to act.
   const DO_NOW = words(
@@ -572,9 +589,10 @@
     // problem sign when the message already named the bank, the government, or tech support, so that
     // pretext doesn't get counted twice.
     const doNow = asksOrPays || has(DO_NOW, text) || LINK.test(text);
-    if (doNow && !found.has("pret_bank") && !found.has("pret_gov") && !found.has("pret_support"))
+    if (doNow && !found.has("pret_bank") && !found.has("pret_gov") && !found.has("pret_support")) {
       add("prob_account", spansOf(PROBLEM, text));
-    if (doNow) add("prob_prize", spansOf(PRIZE, text));
+    }
+    if (doNow) add("prob_prize", [...spansOf(PRIZE, text), ...spansOf(CONGRATS_PRIZE, text)]);
 
     return SCAM_SIGNS.filter((s) => found.has(s.id)).map((s) => ({
       id: s.id,

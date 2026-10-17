@@ -37,9 +37,15 @@
           tabbed = true;
           return;
         }
-        if ((e.key === " " || e.key === "Spacebar") && !deliberate) return stop(e);
+        if ((e.key === " " || e.key === "Spacebar") && !deliberate) {
+          stop(e);
+          return;
+        }
         if (e.key !== "Enter") return;
-        if (e.repeat || (!deliberate && Date.now() - shownAt < KEY_GRACE_MS)) return stop(e);
+        if (e.repeat || (!deliberate && Date.now() - shownAt < KEY_GRACE_MS)) {
+          stop(e);
+          return;
+        }
         const focused = container.getRootNode().activeElement;
         const control = focused instanceof HTMLButtonElement || focused?.tagName === "SUMMARY";
         if (control && focused !== enter && (tabbed || deliberate)) return; // presses (or opens) what the user moved to
@@ -170,8 +176,9 @@
         n.style.setProperty("--vv-height", `${view.height}px`);
       }
     }
-    for (const type of ["resize", "scroll"])
+    for (const type of ["resize", "scroll"]) {
       window.visualViewport?.addEventListener(type, () => fitted.size && fitToVisible(), { passive: true });
+    }
 
     // Draws a brief outline around the chat box Clotr is watching, for the popup's "Test Clotr here" button.
     // It never takes clicks, and it removes itself.
@@ -213,9 +220,10 @@
       const lines = file ? file.lines : editor ? getText(editor).split("\n").length : 0;
       if (!file && totalMatches(results) <= BULK_ITEMS && lines < BULK_LINES) return null;
       const counts = results.map((r) => `${r.name} ×${r.matches.length}`).join(", ");
-      if (file?.count > 1)
+      if (file?.count > 1) {
         return msg("bulkFiles", "$1 files you attached ($2) contain $3.", file.count, file.name, counts);
-      if (file)
+      }
+      if (file) {
         return msg(
           "bulkFile",
           "The file “$1” you attached ($2) contains $3.",
@@ -223,6 +231,7 @@
           lines === 1 ? msg("linesOne", "1 line") : msg("linesMany", "$1 lines", lines),
           counts,
         );
+      }
       if (lines >= BULK_LINES) return msg("bulkPaste", "Large paste: $1 lines, with $2.", lines, counts);
       return app.search()
         ? msg("bulkSearch", "This search has $1.", counts)
@@ -236,12 +245,13 @@
     function pictureLines(results, file) {
       if (!file?.picture) return null;
       const everyday = app.everyday();
-      if (file.count > 1)
+      if (file.count > 1) {
         return {
           lead: null,
           hint: null,
           honest: msg("picHonest", "Clotr can't read the words in a picture, so look it over yourself."),
         };
+      }
       const scan = file.picture === "scan";
       const honest = scan
         ? msg("picScanHonest", "Clotr can't read the words in a scan, so look it over yourself.")
@@ -257,7 +267,7 @@
         : everyday
           ? msg("picSentHere", " If you send it, the people who read it here get it.")
           : msg("picSent", " If you send it, this AI gets it.");
-      if (only && named)
+      if (only && named) {
         return {
           lead: [
             scan
@@ -284,7 +294,8 @@
             : msg("picHint", "To keep it private, take the picture off before you send."),
           honest,
         };
-      if (only && place)
+      }
+      if (only && place) {
         return {
           lead: [
             msg("picFoundPlace", "The photo “$1” has the place it was taken saved inside it.", file.name),
@@ -298,6 +309,7 @@
           ),
           honest,
         };
+      }
       return {
         lead: [msg("picFoundOther", "The picture “$1” has $2 in it.", file.name, kindsOf(results)), sent],
         hint: msg("picHint", "To keep it private, take the picture off before you send."),
@@ -467,25 +479,26 @@
       icon.append(disc, mark, dot);
       return icon;
     }
-    // The plaster from Clotr's own mark, drawn small and white for the notice's label strip.
+    // Clotr's own mark, drawn small and white for the notice's label strip: the same C with the bandage across
+    // its mouth as the toolbar icon, simplified to one colour.
     function plasterIcon() {
       const icon = svgIcon("plaster-icon");
+      const ring = document.createElementNS(SVG_NS, "path");
+      Object.entries({ d: "M9.8 4.3a4.3 4.3 0 1 0 0 7.4", class: "plaster-ring" }).forEach(([k, v]) =>
+        ring.setAttribute(k, v),
+      );
       const g = document.createElementNS(SVG_NS, "g");
-      g.setAttribute("transform", "translate(8 8) rotate(-32)");
+      g.setAttribute("transform", "translate(11.2 8) rotate(-45)");
       const outer = document.createElementNS(SVG_NS, "rect");
-      Object.entries({ x: -5.5, y: -2, width: 11, height: 4, rx: 1, class: "plaster-outer" }).forEach(([k, v]) =>
+      Object.entries({ x: -2.1, y: -4, width: 4.2, height: 8, rx: 2.1, class: "plaster-outer" }).forEach(([k, v]) =>
         outer.setAttribute(k, v),
       );
       const pad = document.createElementNS(SVG_NS, "rect");
-      Object.entries({ x: -2, y: -1.2, width: 4, height: 2.4, rx: 0.4, class: "plaster-pad" }).forEach(([k, v]) =>
+      Object.entries({ x: -1.1, y: -1.3, width: 2.2, height: 2.6, rx: 0.5, class: "plaster-pad" }).forEach(([k, v]) =>
         pad.setAttribute(k, v),
       );
-      const stitch = document.createElementNS(SVG_NS, "line");
-      Object.entries({ x1: -5, y1: 0, x2: 5, y2: 0, class: "plaster-stitch" }).forEach(([k, v]) =>
-        stitch.setAttribute(k, v),
-      );
-      g.append(outer, pad, stitch);
-      icon.append(g);
+      g.append(outer, pad);
+      icon.append(ring, g);
       return icon;
     }
     // A question (bold, on its own line) and its answer, in Tourniquet's warm box.
@@ -910,8 +923,9 @@
 
     function whyFound(results, file) {
       const names = [...new Set(results.map((r) => r.name))].join(", ");
-      if (file?.count > 1)
+      if (file?.count > 1) {
         return msg("whyFoundFiles", "Clotr found what looks like: $1, in the files $2. ", names, file.name);
+      }
       return file
         ? msg("whyFoundFile", "Clotr found what looks like: $1, in the file “$2”. ", names, file.name)
         : msg("whyFound", "Clotr found what looks like: $1. ", names);
@@ -1124,7 +1138,7 @@
     // Builds the corner warning. file holds a name and line count when the warning is about an attached
     // file, since a file can't be redacted, only removed by the user. leave keeps what was found, and
     // cover hides it, or keeps it general if called with true.
-    function showNotice(results, file, { leave, cover, truncated = false }) {
+    function showNotice(results, file, { leave, cover, truncated = false, strip = null }) {
       if (!noticeHost) {
         noticeHost = ownHost("clotr-notice");
         noticeShadow = noticeHost.attachShadow({ mode: "closed" });
@@ -1157,6 +1171,12 @@
         textContent: linkOnly ? msg("cl_remove", "Remove the share code") : msg("noticeCover", "Cover it"),
       });
       const keepBtn = el("button", { textContent: file ? msg("ok", "OK") : msg("noticeSendAsIs", "Send as is") });
+      // Offered only for one attached photo whose place was found, and only when content.js actually has a
+      // way to rebuild it (strip is null for every other warning, and for HEIC or WebP, which aren't rebuilt).
+      const stripOffered = Boolean(strip) && file && !file.count && results.some((r) => r.id === "photo_location");
+      const stripBtn = stripOffered
+        ? el("button", { className: "primary", textContent: msg("picStripIt", "Remove the place, keep the photo") })
+        : null;
       const whyBtn = el("button", { className: "link", textContent: msg("noticeWhy", "Why?") });
       whyBtn.setAttribute("aria-expanded", String(whyOpen));
       // "Wrong?" opens a prefilled GitHub issue naming only the kind of data, never the value or the site.
@@ -1271,7 +1291,7 @@
             ]
           : []),
         ...(line ? [line] : []),
-        el("div", { className: "actions" }, file ? [keepBtn] : [redactBtn, keepBtn]),
+        el("div", { className: "actions" }, file ? (stripBtn ? [stripBtn, keepBtn] : [keepBtn]) : [redactBtn, keepBtn]),
         ...(more ? [more] : []),
         ...(tipBox ? [tipBox] : []),
         whyBtn,
@@ -1284,8 +1304,16 @@
       // argument there means "keep it general".
       redactBtn.addEventListener("click", () => cover());
       keepBtn.addEventListener("click", () => leave());
+      // content.js does the actual work (reading the file, rebuilding it, trying to put it back) and only
+      // tells this box what to show once it knows the outcome; clicking twice while that's in flight would
+      // just read the same file again, so the button goes quiet until it's done.
+      stripBtn?.addEventListener("click", () => {
+        stripBtn.disabled = true;
+        stripBtn.textContent = msg("picStripping", "Removing the place…");
+        Promise.resolve(strip()).catch(() => {});
+      });
 
-      keyboardReach(box, file ? keepBtn : redactBtn);
+      keyboardReach(box, stripBtn || (file ? keepBtn : redactBtn));
       if (!isNoticeOpen() || noticeKind !== (file ? "file" : "warn")) noticeOpenedAt = Date.now();
       noticeKind = file ? "file" : "warn";
       fitToVisible(box);
@@ -1464,6 +1492,108 @@
       showOffer({
         title: msg("bandageHeldTitle", "🩹 Details covered"),
         text: msg("bandageHeldText", "Your details have cover names now. Press Enter again to send."),
+        yes: msg("ok", "OK"),
+        no: null,
+      });
+    }
+
+    // Clotr took the place out of the photos before the page's own handler ever saw them, so the site only
+    // has the copies without it. `name` is the photo's name when there's one, `onPutBack` hands the site the
+    // originals too.
+    function tellPlaceRemovedFirst(name, count, onPutBack) {
+      showOffer({
+        title: msg("picStripDoneTitle", "🩹 Place removed"),
+        text: name
+          ? msg(
+              "picStripFirstText",
+              "The photo “$1” had the place it was taken saved inside it. Clotr took the place out before the site got the photo, and the photo itself looks the same.",
+              name,
+            )
+          : msg(
+              "picStripFirstMany",
+              "$1 photos had the place they were taken saved inside them. Clotr took the places out before the site got them, and the photos themselves look the same.",
+              String(count),
+            ),
+        yes: msg("ok", "OK"),
+        no: msg("picPutBack", "Put the place back"),
+        onNo: onPutBack,
+      });
+    }
+
+    // The site got the originals as well, next to the copies it already had.
+    function tellPlaceBack(count) {
+      showOffer({
+        title: msg("picPutBackTitle", "ℹ️ The place is back"),
+        text:
+          count > 1
+            ? msg(
+                "picPutBackMany",
+                "Clotr gave the site the photos with their places too. If the copies without them are still in your message, you can take those off.",
+              )
+            : msg(
+                "picPutBackText",
+                "Clotr gave the site the photo with its place too. If the copy without the place is still in your message, you can take that one off.",
+              ),
+        yes: msg("ok", "OK"),
+        no: null,
+      });
+    }
+
+    function tellPlaceNotBack() {
+      showOffer({
+        title: msg("picPutBackFailedTitle", "⚠️ Clotr couldn't put the place back"),
+        text: msg(
+          "picPutBackFailedText",
+          "The site didn't take the original photo from Clotr. Attach it again and it goes in with its place.",
+        ),
+        yes: msg("ok", "OK"),
+        no: null,
+      });
+    }
+
+    // Clotr held a drop or paste to check it, and the page didn't take it back. Whatever Clotr cleaned can be
+    // saved; the next drop or paste here goes straight to the site.
+    function tellNotTaken(onSave) {
+      showOffer({
+        title: msg("picNotTakenTitle", "⚠️ The site didn't take your photo"),
+        text: onSave
+          ? msg(
+              "picNotTakenSave",
+              "Clotr took the place out of your photo, but this site didn't take the copy from Clotr. Save the copy without the place, then add it again.",
+            )
+          : msg(
+              "picNotTakenText",
+              "This site didn't take the photo when Clotr passed it on. Add it again and it goes straight in.",
+            ),
+        yes: onSave ? msg("picStripFallbackSave", "Save a copy without the place") : msg("ok", "OK"),
+        no: null,
+        onYes: onSave,
+      });
+    }
+
+    // The warning's "Remove the place, keep the photo", for a photo the site got before Clotr could hold it:
+    // the original may already be uploaded, so a copy to attach instead is what Clotr can offer.
+    function tellStripFallback(onSave) {
+      showOffer({
+        title: msg("picStripFallbackTitle", "🩹 Here's the cleaned photo"),
+        text: msg(
+          "picStripFallbackText",
+          "The site may already have the original photo with its place. Take that photo off your message, then save this copy and attach it instead.",
+        ),
+        yes: msg("picStripFallbackSave", "Save a copy without the place"),
+        no: null,
+        onYes: onSave,
+      });
+    }
+
+    // Nothing was built at all: an odd or unsupported file. The usual advice still stands.
+    function tellStripFailed() {
+      showOffer({
+        title: msg("picStripFailedTitle", "⚠️ Clotr couldn't remove the place"),
+        text: msg(
+          "picStripFailedText",
+          "This photo didn't rebuild the way Clotr expected. Take it off before you send, the way you would otherwise.",
+        ),
         yes: msg("ok", "OK"),
         no: null,
       });
@@ -1983,7 +2113,10 @@
       if (peekTarget === sp && peekHost?.isConnected) return;
       // This hotspot is left over from a chat the user switched away from, so it and the rest get cleared
       // and nothing shows.
-      if (!sameChat(sp)) return retireSpots();
+      if (!sameChat(sp)) {
+        retireSpots();
+        return;
+      }
       const value = sp.older ? null : app.realValue(sp.label, sp.chat);
       if ((!value && !sp.older) || !sp.node.isConnected) return;
       closePeek();
@@ -1996,7 +2129,10 @@
         const copied = el("p", { className: "copied", hidden: true, textContent: msg("bandageCopied", "Copied.") });
         const copy = el("button", { type: "button", textContent: msg("bandageCopyReal", "Copy with real names") });
         copy.addEventListener("click", async () => {
-          if (!sameChat(sp)) return retireSpots(); // the chat changed while the bubble was open
+          if (!sameChat(sp)) {
+            retireSpots(); // the chat changed while the bubble was open
+            return;
+          }
           try {
             await navigator.clipboard.writeText(app.realText(sp.root, sp.chat));
             copied.hidden = false;
@@ -2047,6 +2183,12 @@
       reloadAsked: () => reloadAsked,
       tellCovered,
       tellCoverFailed,
+      tellPlaceRemovedFirst,
+      tellPlaceBack,
+      tellPlaceNotBack,
+      tellNotTaken,
+      tellStripFallback,
+      tellStripFailed,
       offerVault,
       offerRelax,
       tellJustSent,

@@ -140,7 +140,7 @@ function letterFromResult(result, place, lang) {
   const kindIds = new Set();
   for (const c of chats) for (const id of Object.keys(c.kinds)) kindIds.add(id);
   const links =
-    result.grouping === "day"
+    result.grouping === "day" || result.format === "gemini"
       ? chats.map((c) => c.date)
       : chats.map((c) => (c.link && C.chatLinkOk(c.link) ? c.link : c.title));
   return C.letterFor({
@@ -163,9 +163,12 @@ for (const name of ["chatgpt", "claude", "gemini"]) {
     assert.equal(text.includes(result.tool), true);
     for (const c of result.chats) {
       for (const id of Object.keys(c.kinds)) assert.ok(text.includes(kindName(id)), `names ${id}`);
-      if (result.grouping !== "day" && c.link && C.chatLinkOk(c.link))
+      if (result.grouping !== "day" && result.format !== "gemini" && c.link && C.chatLinkOk(c.link)) {
         assert.ok(text.includes(c.link), "carries the chat's link");
-      if (result.grouping === "day") assert.ok(text.includes(c.date), "names the day instead of the one shared link");
+      }
+      if (result.grouping === "day" || result.format === "gemini") {
+        assert.ok(text.includes(c.date), "names the day instead of the one shared link");
+      }
     }
     // None of the fixtures' own decoy values or real matched secrets, listed in expected.json's notTheirs plus
     // the values the "found" rows match on, should ever show up verbatim in a letter built only from names and links.

@@ -57,11 +57,12 @@ function rationals(value, parts) {
   if (parts === 1) return [[Math.round(a * 1e6), 1e6]];
   const deg = Math.floor(a);
   const minutes = (a - deg) * 60;
-  if (parts === 2)
+  if (parts === 2) {
     return [
       [deg, 1],
       [Math.round(minutes * 1e4), 1e4],
     ];
+  }
   const min = Math.floor(minutes);
   return [
     [deg, 1],
@@ -86,11 +87,12 @@ function tiffGps({
   gpsCount = null,
   ratAt = null,
   den = null,
+  orientation = null,
 } = {}) {
   const w16 = (b, o, n) => (bigEndian ? b.writeUInt16BE(n, o) : b.writeUInt16LE(n, o));
   const w32 = (b, o, n) => (bigEndian ? b.writeUInt32BE(n >>> 0, o) : b.writeUInt32LE(n >>> 0, o));
   const make = ascii("Clotr test camera\0");
-  const ifd0Entries = gps ? 2 : 1;
+  const ifd0Entries = 1 + (orientation != null ? 1 : 0) + (gps ? 1 : 0);
   const ifd0 = 8;
   const gpsIfd = ifd0 + 2 + ifd0Entries * 12 + 4;
   const gpsTags = [];
@@ -111,10 +113,19 @@ function tiffGps({
     w16(b, at + 2, type);
     w32(b, at + 4, count);
     if (typeof value === "string") b.write(value, at + 8, "latin1");
+    // A SHORT with a single value sits left-justified in the 4-byte field: writing the full 4 bytes with
+    // w32 would right-justify it under a big-endian byte order, which real cameras never do.
+    else if (type === 3 && count === 1) w16(b, at + 8, value);
     else w32(b, at + 8, value);
   };
-  entry(ifd0 + 2, 0x010f, 2, make.length, makeAt);
-  if (gps) entry(ifd0 + 14, 0x8825, 4, 1, gpsAt ?? gpsIfd);
+  let pos = ifd0 + 2;
+  entry(pos, 0x010f, 2, make.length, makeAt);
+  pos += 12;
+  if (orientation != null) {
+    entry(pos, 0x0112, 3, 1, orientation);
+    pos += 12;
+  }
+  if (gps) entry(pos, 0x8825, 4, 1, gpsAt ?? gpsIfd);
   w32(b, ifd0 + 2 + ifd0Entries * 12, 0);
   if (gps) {
     w16(b, gpsIfd, gpsCount ?? gpsEntries);
@@ -150,15 +161,15 @@ const jpegWithGps = (opts) => jpegWith(exifSegment(tiffGps(opts)));
 
 // Some photo editors write the location as XMP text instead of EXIF numbers, in the form "DDD,MM,SSk" or
 // "DDD,MM.mmk".
-function xmpPacket(lat, lon) {
+function xmpPacket(lat, lon, prefix = "exif") {
   return (
-    '<?xpacket begin="" id="W5M0MpCehiHzreSzNTczkc9d"?><x:xmpmeta xmlns:x="adobe:ns:meta/"><rdf:RDF ' +
-    'xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#"><rdf:Description xmlns:exif="http://ns.adobe.com/exif/1.0/" ' +
-    `exif:GPSLatitude="${lat}" exif:GPSLongitude="${lon}"/></rdf:RDF></x:xmpmeta><?xpacket end="w"?>`
+    `<?xpacket begin="" id="W5M0MpCehiHzreSzNTczkc9d"?><x:xmpmeta xmlns:x="adobe:ns:meta/"><rdf:RDF ` +
+    `xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#"><rdf:Description xmlns:${prefix}="http://ns.adobe.com/exif/1.0/" ` +
+    `${prefix}:GPSLatitude="${lat}" ${prefix}:GPSLongitude="${lon}"/></rdf:RDF></x:xmpmeta><?xpacket end="w"?>`
   );
 }
-const jpegWithXmp = (lat = "40,41.35482N", lon = "74,2.67012W") =>
-  jpegWith(segment(0xe1, Buffer.concat([ascii("http://ns.adobe.com/xap/1.0/\0"), ascii(xmpPacket(lat, lon))])));
+const jpegWithXmp = (lat = "40,41.35482N", lon = "74,2.67012W", prefix = "exif") =>
+  jpegWith(segment(0xe1, Buffer.concat([ascii("http://ns.adobe.com/xap/1.0/\0"), ascii(xmpPacket(lat, lon, prefix))])));
 
 // ---------- PNG ----------
 function chunk(type, data) {
@@ -387,6 +398,7 @@ function all() {
     "photo-with-location.avif": heifWithGps({ brand: "avif", ilocVersion: 1, tiff: tiffGps(liberty) }),
     "photo-with-location.tiff": tiffGps(opera),
     "photo-with-location-xmp.jpg": jpegWithXmp(),
+    "photo-with-location-xmp-alias.jpg": jpegWithXmp("40,41.35482N", "74,2.67012W", "e"),
     "photo-without-location.jpg": BASE.jpeg,
     "passport-scan.jpg": BASE.jpeg,
     "w2-2025.pdf": pdf(),
