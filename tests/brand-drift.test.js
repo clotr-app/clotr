@@ -12,6 +12,82 @@ const path = require("path");
 
 const ROOT = path.join(__dirname, "..");
 
+// Each browser smooths a small icon's edges a little differently (Brave on Windows, Chromium on Linux CI), so the
+// files never match byte for byte across machines. The pixels are compared instead: a redrawn mark differs in most
+// of its pixels, smoothing only in a few edge ones.
+function decodePng(buf) {
+  const zlib = require("zlib");
+  let pos = 8;
+  let width = 0;
+  let height = 0;
+  let channels = 4;
+  const idat = [];
+  while (pos < buf.length) {
+    const len = buf.readUInt32BE(pos);
+    const type = buf.toString("latin1", pos + 4, pos + 8);
+    const data = buf.subarray(pos + 8, pos + 8 + len);
+    if (type === "IHDR") {
+      width = data.readUInt32BE(0);
+      height = data.readUInt32BE(4);
+      if (data[8] !== 8 || data[12] !== 0) throw new Error("only 8-bit, non-interlaced PNGs are read here");
+      channels = { 0: 1, 2: 3, 4: 2, 6: 4 }[data[9]];
+      if (!channels) throw new Error(`PNG colour type ${data[9]} isn't read here`);
+    } else if (type === "IDAT") idat.push(data);
+    else if (type === "IEND") break;
+    pos += 12 + len;
+  }
+  const raw = zlib.inflateSync(Buffer.concat(idat));
+  const stride = width * channels;
+  const out = Buffer.alloc(height * stride);
+  for (let y = 0; y < height; y++) {
+    const filter = raw[y * (stride + 1)];
+    const line = raw.subarray(y * (stride + 1) + 1, (y + 1) * (stride + 1));
+    for (let x = 0; x < stride; x++) {
+      const a = x >= channels ? out[y * stride + x - channels] : 0;
+      const b = y > 0 ? out[(y - 1) * stride + x] : 0;
+      const c = x >= channels && y > 0 ? out[(y - 1) * stride + x - channels] : 0;
+      const p = a + b - c;
+      const pa = Math.abs(p - a);
+      const pb = Math.abs(p - b);
+      const pc = Math.abs(p - c);
+      const paeth = pa <= pb && pa <= pc ? a : pb <= pc ? b : c;
+      const add = [0, a, b, (a + b) >> 1, paeth][filter];
+      out[y * stride + x] = (line[x] + add) & 0xff;
+    }
+  }
+  const pixels = Buffer.alloc(width * height * 4);
+  for (let i = 0; i < width * height; i++) {
+    const src = out.subarray(i * channels, (i + 1) * channels);
+    const rgba =
+      channels === 4
+        ? src
+        : channels === 3
+          ? [...src, 255]
+          : channels === 2
+            ? [src[0], src[0], src[0], src[1]]
+            : [src[0], src[0], src[0], 255];
+    for (let k = 0; k < 4; k++) pixels[i * 4 + k] = rgba[k];
+  }
+  return { width, height, pixels };
+}
+
+// The mean channel difference, and the share of pixels that differ by more than 32 in any channel.
+function pixelDiff(a, b) {
+  let total = 0;
+  let far = 0;
+  const count = a.length / 4;
+  for (let i = 0; i < count; i++) {
+    let worst = 0;
+    for (let k = 0; k < 4; k++) {
+      const d = Math.abs(a[i * 4 + k] - b[i * 4 + k]);
+      total += d;
+      worst = Math.max(worst, d);
+    }
+    if (worst > 32) far++;
+  }
+  return { mean: Math.round((total / a.length) * 100) / 100, farOff: Math.round((far / count) * 1000) / 1000 };
+}
+
 function findBrowser() {
   const candidates = [
     "C:/Program Files/BraveSoftware/Brave-Browser/Application/brave.exe",
@@ -75,9 +151,16 @@ test("brand drift: the extension's icons match tools/make-icons.js's own output"
     for (const state of ["on", "off", "spot"]) {
       for (const size of [16, 32, 48, 128]) {
         const name = `icon-${state}-${size}.png`;
+        const drawn = decodePng(fs.readFileSync(path.join(tmp, name)));
+        const committed = decodePng(fs.readFileSync(path.join(realIcons, name)));
         assert.ok(
-          fs.readFileSync(path.join(tmp, name)).equals(fs.readFileSync(path.join(realIcons, name))),
+          drawn.width === committed.width && drawn.height === committed.height,
           `extension/icons/${name} is stale: re-run npm run icons`,
+        );
+        const diff = pixelDiff(drawn.pixels, committed.pixels);
+        assert.ok(
+          diff.mean <= 4 && diff.farOff <= 0.05,
+          `extension/icons/${name} is stale: re-run npm run icons (${JSON.stringify(diff)})`,
         );
       }
     }
