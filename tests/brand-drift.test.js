@@ -157,9 +157,12 @@ test("brand drift: the extension's icons match tools/make-icons.js's own output"
           drawn.width === committed.width && drawn.height === committed.height,
           `extension/icons/${name} is stale: re-run npm run icons`,
         );
+        // Loose on purpose: a 16-pixel icon smoothed by another browser is off by about 7 on average, as much as
+        // the small spotted dot. The fingerprint test below catches a small change exactly; this catches an icon
+        // that doesn't match its drawing at all (the on, off and spot icons are 32 to 54 apart).
         const diff = pixelDiff(drawn.pixels, committed.pixels);
         assert.ok(
-          diff.mean <= 4 && diff.farOff <= 0.05,
+          diff.mean <= 20 && diff.farOff <= 0.5,
           `extension/icons/${name} is stale: re-run npm run icons (${JSON.stringify(diff)})`,
         );
       }
@@ -167,4 +170,13 @@ test("brand drift: the extension's icons match tools/make-icons.js's own output"
   } finally {
     fs.rmSync(tmp, { recursive: true, force: true });
   }
+});
+
+test("brand drift: the extension's icons were drawn from today's bandage", () => {
+  const { iconsSourceHash, FINGERPRINT } = require(path.join(ROOT, "tools", "make-icons.js"));
+  assert.equal(
+    fs.readFileSync(FINGERPRINT, "utf8").trim(),
+    iconsSourceHash(),
+    "the bandage drawing changed since the icons were made: re-run npm run icons",
+  );
 });
