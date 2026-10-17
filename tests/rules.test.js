@@ -1740,10 +1740,8 @@ function hostOfLink(href) {
 function buyLinkOffenders(pages, checkoutHost) {
   const found = [];
   for (const [page, raw] of Object.entries(pages)) {
-    // A commented-out example isn't a link. Repeat until nothing changes, so a comment split around another can't
-    // leave a new "<!--" behind.
-    let html = raw;
-    for (let prev = null; prev !== html;) [prev, html] = [html, html.replace(/<!--[\s\S]*?-->/g, "")];
+    // A commented-out example isn't a link.
+    const html = require("../tools/package.js").withoutHtmlComments(raw);
     for (const [, attrs, inner] of html.matchAll(/<a\b([^>]*)>([\s\S]*?)<\/a>/gi)) {
       const words = inner
         .replace(/<[^>]+>/g, " ")

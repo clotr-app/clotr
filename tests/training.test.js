@@ -339,7 +339,7 @@ test("STEP_TITLES: eight non-empty titles, in order, and Spanish differs from En
 
 test("the training page loads only Clotr's own scripts and never stores, sends or fetches anything", () => {
   const html = fs.readFileSync(path.join(EXT, "training.html"), "utf8");
-  const scripts = [...html.matchAll(/<script\b([^>]*)>([\s\S]*?)<\/script\s*>/gi)];
+  const scripts = [...html.matchAll(/<script\b([^>]*)>([\s\S]*?)<\/script\b[^>]*>/gi)];
   assert.ok(scripts.length >= 4, "the page's scripts");
   for (const [, attrs, body] of scripts) {
     const src = /\bsrc="([^"]+)"/.exec(attrs)?.[1];

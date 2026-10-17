@@ -137,10 +137,23 @@ function featureManifest(base, features) {
 // reviewer to find; the element (and the switch that un-hides it) stays in the source untouched. Every HTML
 // comment goes too: they're dev notes, not needed once the page is built, and some of them name a held-back
 // feature by hand.
+// Every "<!--" to its "-->" comes out, and an unclosed one takes the rest of the page with it. A plain search, not
+// a regex, so taking one comment out can't join the pieces around it into a new one that gets missed.
+function withoutHtmlComments(html) {
+  let out = "";
+  let from = 0;
+  for (;;) {
+    const start = html.indexOf("<!--", from);
+    if (start < 0) return out + html.slice(from);
+    out += html.slice(from, start);
+    const end = html.indexOf("-->", start + 4);
+    if (end < 0) return out;
+    from = end + 3;
+  }
+}
+
 function stripFeatureMarkup(html, features) {
-  // Repeat until nothing changes: removing one comment can join the pieces around it into a new "<!--".
-  let out = html;
-  for (let prev = null; prev !== out;) [prev, out] = [out, out.replace(/<!--[\s\S]*?-->/g, "")];
+  let out = withoutHtmlComments(html);
   for (const [name, on] of Object.entries(features)) if (!on) out = removeDataFeature(out, name);
   return out.replace(/[ \t]+\n/g, "\n").replace(/\n{3,}/g, "\n\n");
 }
@@ -504,6 +517,7 @@ module.exports = {
   safariManifest,
   featureManifest,
   stripFeatureMarkup,
+  withoutHtmlComments,
   pruneMessages,
   BACKGROUND_SCRIPTS,
   DROP_FOR,
