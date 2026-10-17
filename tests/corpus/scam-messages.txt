@@ -604,3 +604,9 @@ Example Streaming Billing Team
 ---
 [signs: asks_gift_card, press_secret, press_stay, press_threat, pret_gov]
 This is Officer Mark Davis with the Sheriff's Office. There is a warrant for your arrest for missing jury duty. You can resolve it today by paying the fine with gift cards. Go to the store, buy $1,500 in Google Play cards and stay on the line with me. Do not discuss this with anyone, it's a confidential matter.
+---
+[signs: asks_code, asks_gift_card, prob_account]
+This is Anytown Bank. Your account is locked. Reply with the 6-digit code we texted you and buy a $500 gift card to unlock it.
+---
+[signs: prob_prize]
+Congrats! A one year cinema pass for two is yours. Call 555-0199 now to claim it, offer ends soon.

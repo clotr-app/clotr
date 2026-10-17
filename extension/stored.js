@@ -66,13 +66,14 @@ function everydayHosts(granted, siteKinds = {}) {
 function tourniquetText(raw) {
   const t = globalThis.ClotrSites.cleanTourniquet(raw);
   if (!t) return msg("sj_off", "Off");
-  if (t.for === "after_scam")
+  if (t.for === "after_scam") {
     return msg(
       "sj_tqOnAfterScam",
       "After a scam, since $1, until $2. Clotr asks before bank, card and ID numbers, gift card numbers, passwords and sign-in codes go out.",
       fmtDate.format(t.since),
       fmtDate.format(t.until),
     );
+  }
   return t.for === "child"
     ? msg(
         "sj_tqOnChild",
@@ -388,7 +389,7 @@ async function refresh() {
   render(all, origins);
 }
 refresh();
-chrome.storage.onChanged.addListener((changes, area) => {
+chrome.storage.onChanged.addListener((_changes, area) => {
   if (area === "local") refresh();
 });
 chrome.permissions.onAdded.addListener(refresh);

@@ -613,8 +613,9 @@ module.exports = async function (env) {
             return /How should Clotr handle/.test(n?.text || "") ? n : null;
           }, 3000);
           expect(tip, `no first-time tip: ${(await readNotice(page))?.text}`);
-          for (const kept of ["Warn me", "Ask before sending", "Always watch it"])
+          for (const kept of ["Warn me", "Ask before sending", "Always watch it"]) {
             expect(choicesOf(tip).includes(kept), `the tip lost "${kept}": ${choicesOf(tip).join(" | ")}`);
+          }
           expect(!choicesOf(tip).some((t) => LOOSENING.test(t)), `tip: ${choicesOf(tip).join(" | ")}`);
           // When the chat page asks directly to loosen it, I refuse. A stricter choice sent the same way still
           // goes through.
@@ -2411,8 +2412,8 @@ module.exports = async function (env) {
       .waitForFunction((r) => !("moving" in (document.querySelector(r)?.dataset || {})), { timeout: 3000 }, root)
       .catch(() => {});
     return page.evaluate(
-      (root) =>
-        [...document.querySelectorAll(`${root} .mind-node`)]
+      (sel) =>
+        [...document.querySelectorAll(`${sel} .mind-node`)]
           .filter((n) => n.dataset.nodeType !== "leaf")
           .map(
             (n) =>
@@ -2469,8 +2470,9 @@ module.exports = async function (env) {
           "open/branch/:0",
           "blind/branch/:0",
           "blind/cant-see/:0",
-        ])
+        ]) {
           expect(nodes.includes(want), `missing ${want} in ${JSON.stringify(nodes)}`);
+        }
         expect(
           got.rows.join(" | ") ===
             "Already has: chatgpt.com | Already has: claude.ai | Already has: gemini.google.com | Near misses: chatgpt.com | Blind spots: Clotr can't see",
@@ -2574,8 +2576,9 @@ module.exports = async function (env) {
         await page.click('#map-view [data-view="kind"]');
         await sleep(300);
         let nodes = await mindNodes(page);
-        for (const want of ["has/kind/phone_number:3", "has/kind/password:1", "near/kind/street_address:1"])
+        for (const want of ["has/kind/phone_number:3", "has/kind/password:1", "near/kind/street_address:1"]) {
           expect(nodes.includes(want), `by kind: missing ${want} in ${JSON.stringify(nodes)}`);
+        }
         expect(!nodes.some((n) => n.startsWith("has/service/")), "services left in the by-kind view");
         await shot(page, "dashboard-map-kind.png");
         await page.reload();
@@ -2626,8 +2629,9 @@ module.exports = async function (env) {
           "open/kind/my_name:1",
           "blind/branch/:1",
           "blind/service/chat.newtool.ai:0",
-        ])
+        ]) {
           expect(nodes.includes(want), `missing ${want} in ${JSON.stringify(nodes)}`);
+        }
         expect(!nodes.includes("open/kind/phone_number:1"), "a phone number that was sent is listed as not shared");
         expect(!nodes.some((n) => n.startsWith("open/kind/email")), "a fine-to-share detail is listed as at risk");
         expect(!nodes.includes("blind/service/chatgpt.com:0"), "a protected built-in site is listed as a blind spot");
@@ -2973,7 +2977,7 @@ module.exports = async function (env) {
           const line = await waitFor(() => stored.$eval("#history-count", (n) => n.textContent || null), 3000);
           expect(/^22 records \(some stand for a long list sent at once\), from /.test(line || ""), `stores: ${line}`);
           const rows = await stored.$$eval("#history-table tbody tr", (trs) =>
-            trs.map((tr) => tr.cells[2].innerText.replace(/\s+/g, " ")).filter((t) => /more in one go/.test(t)),
+            trs.map((tr) => tr.cells[2].innerText.replace(/\s+/g, " ")).filter((text) => /more in one go/.test(text)),
           );
           expect(
             rows.sort().join("|") === "Credit Card Number 5 more in one go|Email Address 290 more in one go",

@@ -56,11 +56,11 @@
 
   // `letterFor({ company, tool, kindNames, mentionedKindNames, firstDate, lastDate, links, place, lang })` builds
   // the letter. `kindNames` and `mentionedKindNames` are the kinds' own display names, never a value or a count.
-  // `mentionedKindNames` is what the AI's own replies brought up, which only Privacy Check-up can know, since Look
-  // back never reads the AI's answers; there, it's always empty, and I leave that sentence out rather than say it
-  // falsely. `links` is ready-made text for each chat, such as an address, a title when there's no address, or the
-  // day for Gemini, already chosen and ordered by the caller: given, it fills the chats' blank outright, and left
-  // out, the blank stays for the person to fill by hand, since history itself holds no chat links. `place` is
+  // `mentionedKindNames` is what the AI's own replies brought up, which Look back never reads: there, it's always
+  // empty, and I leave that sentence out rather than say it falsely. `links` is ready-made text for each chat,
+  // such as an address, a title when there's no address, or the day for Gemini, already chosen and ordered by
+  // the caller: given, it fills the chats' blank outright, and left out, the blank stays for the person to fill
+  // by hand, since history itself holds no chat links. `place` is
   // "eu", "uk", "california" or "other", and `lang` is "en" or "es". The function returns `{ text, blanks }`, the
   // letter and how many "[...]" blanks in it still need filling by hand.
   function letterFor(opts = {}) {

@@ -195,7 +195,7 @@ test("leakPicks: a missing or non-array leaks list is handled without throwing",
 
 // ---------- Step 5: the AI-tool checklist ----------
 
-test("CHECKLIST: three plain questions with a hint, no links (Privacy Check-up isn't built), text in both languages", () => {
+test("CHECKLIST: three plain questions with a hint, no links yet, text in both languages", () => {
   for (const lang of LANGS) {
     withLang(lang, () => {
       assert.equal(t.CHECKLIST.length, 3);
@@ -339,7 +339,7 @@ test("STEP_TITLES: eight non-empty titles, in order, and Spanish differs from En
 
 test("the training page loads only Clotr's own scripts and never stores, sends or fetches anything", () => {
   const html = fs.readFileSync(path.join(EXT, "training.html"), "utf8");
-  const scripts = [...html.matchAll(/<script\b([^>]*)>([\s\S]*?)<\/script>/g)];
+  const scripts = [...html.matchAll(/<script\b([^>]*)>([\s\S]*?)<\/script\s*>/gi)];
   assert.ok(scripts.length >= 4, "the page's scripts");
   for (const [, attrs, body] of scripts) {
     const src = /\bsrc="([^"]+)"/.exec(attrs)?.[1];

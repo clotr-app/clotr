@@ -192,11 +192,12 @@ module.exports = async function (env) {
           const n = all || (await readNotice(page));
           const missing = names.filter((name) => !n?.text.includes(name));
           expect(!missing.length, `"${text}" → missing ${missing.join(", ")} (notice: ${n?.text})`);
-          if (text.startsWith("their"))
+          if (text.startsWith("their")) {
             expect(
               !n.text.includes("Your Account/ID Number"),
               `someone else's ID in your format was called yours: ${n.text}`,
             );
+          }
           await clickDialogButton(page, "Send as is", readNotice);
         }
       });
@@ -245,16 +246,18 @@ module.exports = async function (env) {
   await check("V3", 'Vault → "OK to share" makes your own item quiet; Remove forgets it', async () => {
     await store.set(ctx, { responses: {} });
     // Runs standalone too, so it can't rely on V1 having already saved a phone number: seed one here if it's
-    // not there yet (same fingerprint V1's would make, so running after V1 just finds it already present).
+    // not there yet (same fingerprint V1's vault.js save would make, so running after V1 just finds it
+    // already present).
     const fp = await ctx.worker.evaluate(async () => {
       const salt = await ensureSalt();
-      return globalThis.Clotr.fingerprint(salt, "phone_number", "(555) 555-5636");
+      return globalThis.Clotr.fingerprintStrong(salt, "phone_number", "(555) 555-5636");
     });
     const { vault = [] } = await store.get(ctx, "vault");
-    if (!vault.some((e) => e.kind === "value" && e.type === "phone_number" && e.fp === fp))
+    if (!vault.some((e) => e.kind === "value" && e.type === "phone_number" && e.fp === fp)) {
       await store.set(ctx, {
-        vault: [...vault, { kind: "value", type: "phone_number", fp, mode: "protect", added: Date.now() }],
+        vault: [...vault, { kind: "value", type: "phone_number", fp, scheme: 2, mode: "protect", added: Date.now() }],
       });
+    }
     const vp = await openExtPage(ctx, "vault.html");
     const setPhone = (v) =>
       vp.evaluate((val) => {
@@ -288,6 +291,49 @@ module.exports = async function (env) {
     await vp.close();
     expect((await store.get(ctx, "vault")).vault.length === before - 1, "entry not removed");
   });
+
+  await check(
+    "V10",
+    "Vault page: an unrecognized line in each field keeps its own error, stays in the box, and saves nothing",
+    async () => {
+      await resetState(ctx, {});
+      await store.set(ctx, { vault: [] });
+      const vp = await openExtPage(ctx, "vault.html");
+      try {
+        const bad = {
+          my_name: "This Has Way Too Many Words To Keep",
+          watch_list: "EMP-##",
+          my_id: "AB",
+          street_address: "nowhere special",
+          phone_number: "not a phone",
+          email: "not an email",
+        };
+        for (const [type, line] of Object.entries(bad)) await vp.type(`#f-${type}`, line);
+        await vp.click("#save");
+        const msg = await waitFor(async () => vp.$eval("#save-msg", (n) => n.textContent || null), 3000);
+        expect(!/^Saved/.test(msg || ""), `nothing should have saved: ${msg}`);
+        const expected = [
+          'Your name: "This Has Way Too Many Words To Keep" up to 4 words per line',
+          'Watch word: "EMP-##" a format needs 4+ # or @ marks',
+          'Account/ID format: "AB" needs at least 4 letters/digits, like AB-123456',
+          'Address: "nowhere special" doesn\'t read as a street address (number + street name + St/Ave/Rd…) or PO Box',
+          'Phone number: "not a phone" doesn\'t look like a phone number',
+          'Email address: "not an email" doesn\'t look like an email address',
+        ];
+        for (const line of expected) expect((msg || "").includes(line), `missing "${line}" in: ${msg}`);
+        const leftover = await vp.$$eval("textarea[data-type]", (ts) =>
+          Object.fromEntries(ts.map((t) => [t.dataset.type, t.value])),
+        );
+        for (const [type, line] of Object.entries(bad)) {
+          expect(leftover[type] === line, `${type}'s bad line should stay for fixing: ${leftover[type]}`);
+        }
+        const stored = (await store.get(ctx, "vault")).vault;
+        expect(!stored.length, `an unrecognized line was saved anyway: ${JSON.stringify(stored)}`);
+      } finally {
+        await vp.close();
+      }
+    },
+  );
 
   // A busy browser can take seconds to hand a new page its settings (each storage call once stalled 2.5 s). While
   // they're on the way, what you type must not be warned about by Clotr's defaults if your own settings say

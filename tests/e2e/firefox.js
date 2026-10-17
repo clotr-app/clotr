@@ -109,8 +109,8 @@ const ONLY = arg("--only")
   ?.split(",")
   .map((id) => id.trim().toUpperCase());
 const wanted = (id) => !ONLY || ONLY.includes(id.toUpperCase());
-// Click the visible label, not the small checkbox inside it. Marionette can't reliably scroll
-// the checkbox into view, while a person can click the whole app row.
+// Click the visible label, not the small checkbox inside it. Marionette cannot reliably scroll
+// that checkbox into view in headless Firefox, while a person can click the whole app row.
 const offerLabel = (app) => `#everyday-offer label.ev-app:has(input[value="${app}"])`;
 async function clickOfferApp(ff, app) {
   const label = offerLabel(app);
@@ -213,8 +213,9 @@ async function main() {
         }
         if (shot) await tab.screenshot({ path: path.join(OUT, shot) });
         const missing = kinds.filter((k) => !found.includes(k));
-        if (missing.length || !host)
+        if (missing.length || !host) {
           throw new Error(`found ${JSON.stringify(found)}, missing ${JSON.stringify(missing)}, warning shown: ${host}`);
+        }
       } finally {
         await tab.close();
       }
@@ -249,8 +250,9 @@ async function main() {
       await page.keyboard.press("Enter");
       await sleep(500);
       const text = await page.$eval("#prompt-textarea", (t) => t.value);
-      if (!text.includes("[REDACTED AWS ACCESS KEY]") || text.includes("AKIA4HPQ"))
+      if (!text.includes("[REDACTED AWS ACCESS KEY]") || text.includes("AKIA4HPQ")) {
         throw new Error(`box: ${JSON.stringify(text)}`);
+      }
     });
     await check("FF2", "Warn never blocks: Enter sends (Firefox)", async () => {
       await page.focus("#prompt-textarea");
@@ -262,13 +264,15 @@ async function main() {
       if (sent !== 1) throw new Error(`sent ${sent} messages`);
     });
     // A VIN pasted on its own, with no label and no vehicle word, showed nothing in Firefox's practice chat until
-    // this was added. Inserted the way a paste is. Firefox automation can't read the closed warning, so
-    // Cover it tells what the warning was about: the box then names the VIN's kind.
+    // this was added. Typed with real key events: text a page's own script inserts (execCommand) no longer counts as
+    // the person's (the 1.2.1 scan's page-events finding), so a scripted insert can't stand in for a paste here.
+    // Firefox automation can't read the closed warning, so Cover it tells what the warning was about: the box then
+    // names the VIN's kind.
     await check("FFVIN1", "A VIN pasted on its own warns; Cover it covers it as a VIN (Firefox)", async () => {
       const tab = await openChat();
       try {
         await tab.focus("#prompt-textarea");
-        await tab.evaluate(() => document.execCommand("insertText", false, "1HGCM82633A004352"));
+        await tab.keyboard.type("1HGCM82633A004352");
         let host = false;
         for (let t = 0; t < 5000 && !host; t += 250) {
           await sleep(250);
@@ -365,8 +369,35 @@ async function main() {
       await page.screenshot({ path: path.join(OUT, "firefox-peek.png") });
       if (!peek) throw new Error("no peek bubble appeared");
     });
-    await check("FF5", "A photo with the place it was taken saved inside: the Photo Location warning (Firefox)", () =>
-      attachExpecting("IMG_FF5.jpg", fx.jpegWithGps(fx.PLACES.liberty), ["photo_location"], "firefox-photo-place.png"),
+    // A lone photo (nothing else attached alongside it) is rebuildable, so Clotr takes its place out before the
+    // site ever sees the file, instead of warning after the fact the way scanFiles does for text files (FF6-8):
+    // that's "removed the place from attached pictures", not "attached file … contains", so this doesn't reuse
+    // attachExpecting's log-matching (chromium's PIC14 covers the same behaviour with shadow-DOM access).
+    await check(
+      "FF5",
+      "A photo with the place it was taken saved inside: the place comes out before the site gets it (Firefox)",
+      async () => {
+        const tab = await openChat();
+        try {
+          const file = path.join(files, "IMG_FF5.jpg");
+          fs.writeFileSync(file, fx.jpegWithGps(fx.PLACES.liberty));
+          let removed = false;
+          const onConsole = (m) => {
+            if (m.text().startsWith("[Clotr] removed the place from attached pictures")) removed = true;
+          };
+          tab.on("console", onConsole);
+          await (await tab.$("#attach")).uploadFile(file);
+          let host = false;
+          for (let t = 0; t < 6000 && !(host && removed); t += 250) {
+            await sleep(250);
+            host = await tab.evaluate(() => Boolean(document.querySelector("clotr-notice")));
+          }
+          await tab.screenshot({ path: path.join(OUT, "firefox-photo-place.png") });
+          if (!removed || !host) throw new Error(`place removed: ${removed}, warning shown: ${host}`);
+        } finally {
+          await tab.close();
+        }
+      },
     );
     await check("FF6", "A PDF with text: the key and the phone number in it are found (Firefox)", () =>
       attachExpecting(
@@ -538,8 +569,9 @@ async function ownPageChecks(check, firefox, ext) {
       );
       if (!ready) throw new Error("the welcome page's site choices didn't load");
       // The app rows live under "Pick sites one by one instead" on the welcome page.
-      if (!(await ff.exec('return document.querySelector("#where-pick-sites").open;')))
+      if (!(await ff.exec('return document.querySelector("#where-pick-sites").open;'))) {
         await ff.click("#where-pick-sites summary");
+      }
     };
 
     await check(
@@ -574,10 +606,11 @@ async function ownPageChecks(check, firefox, ext) {
         const said = await ff.waitFor(
           'return (await chrome.permissions.contains({ origins: ["https://mail.google.com/*"] })) ? document.querySelector("#ev-status").textContent : null;',
         );
-        if (!said)
+        if (!said) {
           throw new Error(
             `Gmail isn't on (the card says ${JSON.stringify(await ff.exec('return document.querySelector("#ev-status").textContent;'))})`,
           );
+        }
       },
     );
 
@@ -595,8 +628,9 @@ async function ownPageChecks(check, firefox, ext) {
         // already-on app would untick it, so this only ticks the ones that still need it.
         for (const app of ["Gmail", "Discord"]) {
           const box = `#everyday-offer input[value="${app}"]`;
-          if (!(await ff.exec(`return document.querySelector(${JSON.stringify(box)}).checked;`)))
+          if (!(await ff.exec(`return document.querySelector(${JSON.stringify(box)}).checked;`))) {
             await clickOfferApp(ff, app);
+          }
         }
         await ff.click("#ev-go");
         const on = await ff.waitFor(
@@ -615,10 +649,11 @@ async function ownPageChecks(check, firefox, ext) {
         const status = await ff.waitFor(
           'const t = document.querySelector("#ev-status").textContent; return /Nothing was switched on/.test(t) ? t : null;',
         );
-        if (!status)
+        if (!status) {
           throw new Error(
             `status after No: ${await ff.exec('return document.querySelector("#ev-status").textContent;')}`,
           );
+        }
         const ticked = await ff.exec(
           'return [...document.querySelectorAll("#everyday-offer input[type=checkbox]")].filter((b) => b.checked && !b.parentElement.classList.contains("on")).map((b) => b.value);',
         );
@@ -644,10 +679,11 @@ async function ownPageChecks(check, firefox, ext) {
         const status = await ff.waitFor(
           'const t = document.querySelector("#ev-status").textContent; return /Nothing was switched on/.test(t) ? t : null;',
         );
-        if (!status)
+        if (!status) {
           throw new Error(
             `status right after the No: ${await ff.exec('return document.querySelector("#ev-status").textContent;')}`,
           );
+        }
         // Waits long enough for a stray permission event near the answer to have redrawn the card.
         await sleep(1000);
         const later = await ff.exec('return document.querySelector("#ev-status").textContent;');
@@ -680,10 +716,11 @@ async function ownPageChecks(check, firefox, ext) {
           at = await ff.inBrowser(front);
           if (at !== SITE) await sleep(150);
         }
-        if (at !== SITE)
+        if (at !== SITE) {
           throw new Error(
             `the tab in front is on ${JSON.stringify(at)}, not the chat (tabs: ${await ff.inBrowser('const g = Services.wm.getMostRecentWindow("navigator:browser").gBrowser; return JSON.stringify(g.tabs.map((t) => (t.selected ? "*" : "") + t.linkedBrowser.currentURI.spec));')})`,
           );
+        }
         await ff.inBrowser(`
         const { ExtensionParent } = ChromeUtils.importESModule("resource://gre/modules/ExtensionParent.sys.mjs");
         const win = Services.wm.getMostRecentWindow("navigator:browser");
@@ -696,10 +733,11 @@ async function ownPageChecks(check, firefox, ext) {
         if (!popup) throw new Error("the popup didn't open");
         await ff.switchTo(popup);
         const offered = await ff.waitFor('return document.querySelector("#site button.linkish")?.textContent || null;');
-        if (!offered)
+        if (!offered) {
           throw new Error(
             `no way to protect the site: ${JSON.stringify(await ff.exec('return document.querySelector("#site").innerText;'))}`,
           );
+        }
         await ff.click("#site button.linkish"); // "It's an AI chat: protect it"
         // Confirms it's fully set up: Firefox granted the site, Clotr's script for added sites runs on it, and
         // it's remembered as an AI chat.
@@ -711,8 +749,9 @@ async function ownPageChecks(check, firefox, ext) {
         const { siteKinds = {} } = await chrome.storage.local.get("siteKinds");
         const kind = siteKinds[${JSON.stringify(new URL(SITE).hostname)}];`;
         const done = await ff.waitFor(`${setUp} return granted && runs && kind === "ai";`, 15000);
-        if (!done)
+        if (!done) {
           throw new Error(`not set up: ${JSON.stringify(await ff.exec(`${setUp} return { granted, runs, kind };`))}`);
+        }
       },
     );
 
@@ -788,15 +827,17 @@ async function ownPageChecks(check, firefox, ext) {
             'return document.querySelector("#site .state")?.textContent || null;',
             10000,
           );
-          if (!spotted || !/not protected yet/i.test(spotted))
+          if (!spotted || !/not protected yet/i.test(spotted)) {
             throw new Error(
               `not spotted as an AI chat: ${JSON.stringify(await ff.exec('return document.querySelector("#site")?.innerText || null;'))}`,
             );
+          }
           const btn = await ff.exec(
             'const b = document.querySelector("#site button.primary"); return b ? { text: b.textContent, linkish: b.classList.contains("linkish") } : null;',
           );
-          if (!btn || btn.linkish)
+          if (!btn || btn.linkish) {
             throw new Error(`"Protect this site" isn't the primary button: ${JSON.stringify(btn)}`);
+          }
           await ff.click("#site button.primary"); // "Protect this site"
           // A host permission pattern never names a port, so the fixture's random port doesn't appear here
           // either, matching what Clotr actually asks for.
@@ -808,8 +849,9 @@ async function ownPageChecks(check, firefox, ext) {
           const { siteKinds = {} } = await chrome.storage.local.get("siteKinds");
           const kind = siteKinds[${JSON.stringify(new URL(fixture.url).hostname)}];`;
           const done = await ff.waitFor(`${setUp} return granted && runs && kind === "ai";`, 15000);
-          if (!done)
+          if (!done) {
             throw new Error(`not set up: ${JSON.stringify(await ff.exec(`${setUp} return { granted, runs, kind };`))}`);
+          }
         } finally {
           await fixture.close();
         }
@@ -843,10 +885,11 @@ async function ownPageChecks(check, firefox, ext) {
           await ff.click("#prompt-textarea");
           await ff.type("#prompt-textarea", "call me at 555-555-0123 ");
           const host = await ff.waitFor('return Boolean(document.querySelector("clotr-notice")) || null;', 8000);
-          if (!host)
+          if (!host) {
             throw new Error(
               `no corner note for a phone number under Tourniquet (box: ${JSON.stringify(await ff.exec('return document.querySelector("#prompt-textarea")?.value ?? null;'))})`,
             );
+          }
         } finally {
           await onWelcome();
           await ff.exec('await chrome.storage.local.remove("tourniquet");').catch(() => {});
@@ -862,8 +905,9 @@ async function ownPageChecks(check, firefox, ext) {
 // Other test tools find Firefox the same way.
 module.exports = { findFirefox };
 
-if (require.main === module)
+if (require.main === module) {
   main().catch((err) => {
     console.error(err);
     process.exitCode = 1;
   });
+}

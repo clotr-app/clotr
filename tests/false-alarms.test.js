@@ -116,8 +116,9 @@ test("IBANs from many countries are caught: on their own, in groups of four, aft
       [`Mi IBAN es ${printed(v)}`, printed(v)],
     ]) {
       const found = detect(text);
-      if (JSON.stringify(found) !== JSON.stringify({ bank_account: [want] }))
+      if (JSON.stringify(found) !== JSON.stringify({ bank_account: [want] })) {
         missed.push(`${country}: ${JSON.stringify(text)} → ${JSON.stringify(found)}`);
+      }
     }
   }
   assert.deepEqual(missed, []);
@@ -159,8 +160,9 @@ test("order, booking and tracking codes, serials and keys that pass the IBAN che
     iban("TA", "306HGI9I73A6R1R"), // a random 17-character code
     iban("AK", "304KAJ98ZJZZS71"),
     `PO ${iban("PO", "20261002118833")}`,
-  ])
+  ]) {
     expectNothing(text);
+  }
 });
 
 // Checks how often a random code passes as an IBAN, with a seeded generator so the counts are the same every
@@ -198,8 +200,9 @@ test("a code that starts with DL isn't a driver's license: servers, flights, del
     "DLXNGXF386T0MPRIJ",
     "DL6BPH03NPKJTU91H",
     "DL0573013103930",
-  ])
+  ]) {
     expectNothing(text);
+  }
 });
 
 test("a driver's license after its label is still caught, DL with a state's number too", () => {
@@ -218,8 +221,9 @@ test("a driver's license after its label is still caught, DL with a state's numb
     ["DL 12345678", "12345678"], // Texas: eight digits
     ["DL F123-456-78-901-0", "F123-456-78-901-0"], // Florida: a letter and twelve digits
     ["Name: Jane Roe, DL SB123456", "SB123456"], // Ohio: two letters and six digits
-  ])
+  ]) {
     expectOnly(text, "drivers_license", value);
+  }
 });
 
 test("driver's license: random codes that start with DL never pass", () => {
@@ -243,6 +247,7 @@ function card(start) {
     }
     if (sum % 10 === 0) return start + d;
   }
+  return undefined;
 }
 
 // Amazon's order numbers are grouped 3-7-7 digits, and 1 in 10 of them passes the card check, so only the
@@ -254,8 +259,9 @@ test("an order number grouped another way isn't a card: Amazon's 3-7-7", () => {
     "my order 586-7423846-0807778 was charged twice",
     "Pedido 143-4550015-9079957: ¿cuándo llega?",
     `the refund for ${card("114-5502817-391782")} is late`,
-  ])
+  ]) {
     expectNothing(text);
+  }
   const random = seeded(20261004);
   const orders = codes(
     2000,
@@ -282,8 +288,9 @@ test("a card is still caught however it's typed: in fours, with dashes, in one r
     card("6212 3456 7890 1234 56"), // UnionPay, 19 digits
     card("601100099013942412"), // Discover, 19 digits
     card("6304 0000 0000 000"), // Maestro, 13 digits
-  ])
+  ]) {
     expectOnly(`my card is ${value} exp 09/28`, "credit_card", value);
+  }
 });
 
 // An IBAN printed in groups of four has a run of digits that can pass a card check, which used to make 1 in
@@ -293,8 +300,9 @@ test("the digits inside an IBAN aren't a card", () => {
     `Wire it to ${printed(iban("IL", "0782703740572779206"))} today`,
     `iban: ${printed(iban("LT", "7748993440972592")).toLowerCase()}`,
     `Mi IBAN es ${printed(iban("PL", "779502869335113305966983"))}`,
-  ])
+  ]) {
     assert.deepEqual(Object.keys(detect(text)), ["bank_account"], text);
+  }
 });
 
 // A bare 13-to-19-digit number passes the Luhn check about 1 time in 10, so real tracking, order, confirmation
@@ -307,8 +315,9 @@ test("a bare card-shaped number with no card word nearby must be from a real net
     `confirmation ${card("012345678901234")}`, // starts with 0
     `Can you check ${card("199999999999999")}? It looks wrong.`,
     card("199999999999999"), // nothing around it at all
-  ])
+  ]) {
     expectNothing(text);
+  }
 });
 
 // The same made-up numbers still count once a card word names them. Someone who says "my card is ..." means
@@ -318,8 +327,9 @@ test("a card number after its label still counts even from a made-up prefix", ()
     [`my card is ${card("199999999999999")} exp 09/28`, card("199999999999999")],
     [`my Visa card number is ${card("999999999999999")}`, card("999999999999999")],
     [`la tarjeta de crédito es ${card("012345678901234")}`, card("012345678901234")],
-  ])
+  ]) {
     expectOnly(text, "credit_card", value);
+  }
 });
 
 // Checks how often a random 13-to-19-digit number passes as a card, with a seeded generator so the count is
@@ -343,8 +353,9 @@ test("card: random bare numbers almost never pass once a real network is require
 // random 9-digit numbers happen to fit its ranges. Like an SSN, 9 digits in one solid run only count after a
 // label, but with its dashes an ITIN counts on its own.
 test("9 digits starting with 9 aren't an ITIN without its dashes or its name", () => {
-  for (const text of ["912701234", "the code is 946512345", "ref 946512345", "tracking 970123456 hasn't moved"])
+  for (const text of ["912701234", "the code is 946512345", "ref 946512345", "tracking 970123456 hasn't moved"]) {
     expectNothing(text);
+  }
   const random = seeded(20261005);
   const numbers = codes(5000, () => "9" + chars(random, DIGITS, 8));
   const found = numbers.filter((n) => detect(n).national_id);
@@ -359,8 +370,9 @@ test("an ITIN with its dashes or after its name is still caught", () => {
     ["my ITIN is 912701234", "912701234"],
     ["ITIN: 912701234", "912701234"],
     ["my tax id is 912701234", "912701234"],
-  ])
+  ]) {
     expectOnly(text, "national_id", value);
+  }
 });
 
 // ---------- Phones: the "00" international prefix ----------
@@ -378,8 +390,9 @@ test("a code that starts 00 and a digit isn't a phone from abroad: IDs, orders, 
     "ref 0028374659102",
     "0049372819462", // nothing around it at all
     "0093728194621",
-  ])
+  ]) {
     expectNothing(text);
+  }
 });
 
 // A real international number still counts, whether it's written with a "+", spelled out as "plus", printed
@@ -391,8 +404,9 @@ test("a real international number after 00 is still caught, in pieces or near a 
     ["+44 20 7946 0958", "+44 20 7946 0958"],
     ["call me on 0044207946095 8", "0044207946095 8"], // two groups, not one solid run
     ["call 0044207946958 when you land", "0044207946958"], // a phone word right before a solid run
-  ])
+  ]) {
     expectOnly(text, "phone_number", value);
+  }
 });
 
 // Checks how often a random code passes as a phone number this way, with a seeded generator so the count is
@@ -424,8 +438,9 @@ test("a bare NINO-shaped code isn't a National Insurance number without an NI wo
     "booking ref AB123456C",
     "serial number AB 12 34 56 C",
     "AB123456C", // nothing around it at all
-  ])
+  ]) {
     expectNothing(text);
+  }
 });
 
 // Checks how often a random NINO-shaped code, using real prefix and suffix letters, 6 digits and a final
@@ -456,8 +471,9 @@ test("a label's letters inside a code aren't a label", () => {
     "MRNWQ3FY8P394VH6U",
     "the part is MRNZT22KNPFJN6Y7G",
     "CCV581MFYU0P3VKJQ",
-  ])
+  ]) {
     expectNothing(text);
+  }
   const random = seeded(20261006);
   const lists = codes(2000, () => codes(5, () => chars(random, CAPITALS + DIGITS, 17)).join(" "));
   const found = lists.filter((l) => detect(l).password || detect(l).medical_record || detect(l).card_code);
@@ -476,8 +492,31 @@ test("the labels themselves still count: pw, MRN, CVV", () => {
     ["my CVV is 581", "card_code", "581"],
     ["cvv 123", "card_code", "123"],
     ["CVV581", "card_code", "581"],
-  ])
+  ]) {
     expectOnly(text, id, value);
+  }
+});
+
+// ---------- Words that describe a password ----------
+
+// "My password is …" usually comes before the password, but just as often before a word about it, and a
+// hyphen makes such a word look like a password with a symbol in it.
+test("a word or range describing a password isn't the password", () => {
+  for (const text of [
+    "your password is case-sensitive",
+    "the password is case-insensitive on that site",
+    "the password is one-time use only",
+    "my password is auto-generated",
+    "the password is 8-16 characters long",
+    "la contraseña es sensible a mayúsculas",
+    "la contraseña es de 8-16 caracteres",
+  ]) {
+    expectNothing(text);
+  }
+  // A real passphrase or password written with hyphens is still one.
+  expectOnly("my password is purple-monkey-dishwasher", "password", "purple-monkey-dishwasher");
+  expectOnly("the wifi password is sol-y-luna", "password", "sol-y-luna");
+  expectOnly("my pin is 12-34", "password");
 });
 
 // ---------- Speed ----------
@@ -506,8 +545,9 @@ test("these rules stay fast on hostile text", () => {
       const a = bestOfBoth(() => detectFresh(small));
       const b = bestOfBoth(() => detectFresh(big));
       if (b.over(1500)) return `${JSON.stringify(unit)}: ${b.wall.toFixed(0)} ms for 4000 repeats`;
-      if (b.wall >= 50 && grewMoreThan(a, b, 10))
-        return `${JSON.stringify(unit)}: ${a.wall.toFixed(0)} → ${b.wall.toFixed(0)} ms for 4 times the text`;
+      return b.wall >= 50 && grewMoreThan(a, b, 10)
+        ? `${JSON.stringify(unit)}: ${a.wall.toFixed(0)} → ${b.wall.toFixed(0)} ms for 4 times the text`
+        : undefined;
     });
   }
 });

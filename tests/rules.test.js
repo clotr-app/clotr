@@ -110,6 +110,22 @@ test("scope: the broad https://*/* origin is built in exactly one place and regi
   assert.match(everywhereSync, /matches:\s*\[EVERYWHERE_ORIGIN\]/, "syncEverywhere registers EVERYWHERE_ORIGIN");
 });
 
+// The shape fallback (isChatComposer) that lets a built-in site survive a redesign must never spread past
+// built-in sites: that stays behind "Everywhere I type" and the once-only check, as written.
+// findChatBox calls isChatComposer exactly twice: once inside qualifyingEditor (gated on the everywhere flag,
+// already rule-checked elsewhere by its own tests), and once as the fallback, which this checks is gated on
+// builtInSite and nothing broader.
+test("scope: the built-in shape fallback in content.js never runs outside a built-in site", () => {
+  const src = code("content.js");
+  const calls = [...src.matchAll(/isChatComposer\(composerInfo\(/g)];
+  assert.equal(calls.length, 2, `expected one call in qualifyingEditor and one in the fallback, found ${calls.length}`);
+  const fallback =
+    /if \(builtInSite\) \{\s*for \(const node of root\.querySelectorAll\("\[contenteditable\]"\)\) \{[\s\S]*?isChatComposer\(composerInfo\(editor\)\)/.exec(
+      src,
+    );
+  assert.ok(fallback, "the fallback's isChatComposer check isn't gated on builtInSite as written");
+});
+
 // A permission like webRequest, declarativeNetRequest, debugger, tabs, cookies or history would let a
 // compromised copy of Clotr read or reroute traffic across the whole browser, far beyond the AI sites it
 // protects. This checks every manifest the build produces: the one Chrome and Edge ship from extension/, and
@@ -120,8 +136,9 @@ test("scope: no manifest the build produces gains a permission that can read or 
   // Only Extension check's management permission, read-only and asked for only when someone clicks to check.
   const allowedOptional = new Set(["management"]);
   for (const m of [manifest, firefoxManifest(JSON.parse(JSON.stringify(manifest)))]) {
-    for (const p of m.permissions || [])
+    for (const p of m.permissions || []) {
       assert.ok(!banned.includes(p) && !p.startsWith("declarativeNetRequest"), `required permission gained: ${p}`);
+    }
     for (const p of m.optional_permissions || []) assert.ok(allowedOptional.has(p), `optional permission gained: ${p}`);
   }
   // The shipped build's optional permission follows Extension check's own flag, whichever way it's set, not a
@@ -225,8 +242,9 @@ function permissionAsks(sources) {
   for (const [file, src] of Object.entries(sources)) {
     const spans = (ASK_ALLOWED[file] || []).map((name) => functionSpan(src, name)).filter(Boolean);
     for (const m of src.matchAll(ASK)) {
-      if (!spans.some(([a, b]) => m.index > a && m.index < b))
+      if (!spans.some(([a, b]) => m.index > a && m.index < b)) {
         bad.push(`${file}:${src.slice(0, m.index).split("\n").length}: ${m[0]}`);
+      }
     }
   }
   return bad;
@@ -235,8 +253,9 @@ function permissionAsks(sources) {
 test("scope: Clotr asks only for listed email and chat apps or the open tab", () => {
   const sources = Object.fromEntries(scripts.map((f) => [f, code(f)]));
   assert.deepEqual(permissionAsks(sources), []);
-  for (const [file, names] of Object.entries(ASK_ALLOWED))
+  for (const [file, names] of Object.entries(ASK_ALLOWED)) {
     for (const name of names) assert.ok(functionSpan(sources[file], name), `${file}: ${name} is gone`);
+  }
   // The welcome page's card never asks for a new permission. It only asks for sites the manifest already lists,
   // dropping anything that isn't on that list.
   const [a, b] = functionSpan(sources["vault.js"], "askForAiChats");
@@ -641,8 +660,9 @@ test("built-in AI-site list (ai-sites.json) matches the manifest", () => {
 
 test("every pattern belongs to a Settings group", () => {
   require("../extension/patterns.js");
-  for (const p of globalThis.Clotr.PATTERNS)
+  for (const p of globalThis.Clotr.PATTERNS) {
     assert.ok(["credentials", "personal", "links", "custom"].includes(p.group), `${p.id}: group ${p.group}`);
+  }
 });
 
 test("changelog.json has notes for the current version", () => {
@@ -715,10 +735,11 @@ test("no invisible or bidi-control characters in shipped files", () => {
   for (const f of fs.readdirSync(EXT).filter((n) => /\.(js|html|css|json)$/.test(n))) {
     const text = fs.readFileSync(path.join(EXT, f), "utf8");
     const m = text.match(/\p{Cf}/u);
-    if (m)
+    if (m) {
       bad.push(
         `${f}: U+${m[0].codePointAt(0).toString(16).toUpperCase().padStart(4, "0")} at line ${text.slice(0, m.index).split("\n").length}`,
       );
+    }
   }
   assert.deepEqual(bad, []);
 });
@@ -770,8 +791,9 @@ test("console output never includes detected values, drafts or file names", () =
         /\.matches\b(?!\.length)|\bgetText\(|\bdraft\b|\bvalue\b|\.name\b(?!\.match)|\btext\b(?!\s*\))/.test(
           call.replace(/"[^"]*"|`[^`]*`/g, ""),
         )
-      )
+      ) {
         bad.push(`${f}:${text.slice(0, m.index).split("\n").length}: ${call.replace(/\s+/g, " ").slice(0, 100)}`);
+      }
     }
   }
   assert.deepEqual(bad, []);
@@ -892,8 +914,9 @@ test("CI: read-only token and actions pinned to commits", () => {
     assert.match(wf, /^permissions:\s*\n\s+contents: read/m, `${f}: default permissions must be read-only`);
     const uses = [...wf.matchAll(/uses:\s*([^\s#]+)/g)].map((m) => m[1]);
     for (const u of uses) assert.match(u, /@[0-9a-f]{40}$/, `${f}: ${u} is not pinned to a commit`);
-    if (/actions\/checkout@/.test(wf))
+    if (/actions\/checkout@/.test(wf)) {
       assert.match(wf, /persist-credentials: false/, `${f}: checkout keeps credentials`);
+    }
   }
 });
 
@@ -915,10 +938,11 @@ test("no control characters in source files (extension, tests, tools)", () => {
     for (const f of fs.readdirSync(dir).filter((n) => /\.(js|html|css|json|ps1|sh)$/.test(n))) {
       const text = fs.readFileSync(path.join(dir, f), "utf8");
       const m = text.match(/[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]/);
-      if (m)
+      if (m) {
         bad.push(
           `${path.relative(path.join(__dirname, ".."), path.join(dir, f))}: U+${m[0].charCodeAt(0).toString(16).padStart(4, "0")} at line ${text.slice(0, m.index).split("\n").length}`,
         );
+      }
     }
   }
   assert.deepEqual(bad, []);
@@ -971,17 +995,37 @@ test("welcome page: the no-AI line stays as written", () => {
   );
 });
 
-test("welcome page: the note's first sentence stays as written", () => {
+test("welcome page: the note reflects the author's latest words", () => {
   const html = fs.readFileSync(path.join(EXT, "vault.html"), "utf8");
-  const body = /data-i18n="vault_noteBody">([^<]*)</.exec(html)?.[1] || "";
-  assert.ok(
-    body.startsWith(
-      'I made Clotr after I noticed how much I was telling AI chats without a second thought, I immediately wanted a Tony Stark style "Suit of armor around the world" to exist. So, here we are.',
-    ),
-    body.slice(0, 160),
+  const copy = (key) => new RegExp(`data-i18n="${key}">([^<]*)<`).exec(html)?.[1] || "";
+  assert.equal(
+    copy("vault_noteBody"),
+    "I made Clotr after I noticed how much I was telling AI chats without a second thought. I immediately wanted a Tony Stark style \"suit of armor around the world\", but with a computer. It reads what you type into an AI chat, right here on your computer, and speaks up before something private goes out. It's free, it doesn't track you, and it never sends anything anywhere.",
+  );
+  assert.equal(
+    copy("vault_noteWhy"),
+    "My main goal is privacy from big tech, for everyone. Building it is how I'm learning software engineering as a whole, and how I turn what I'm learning at university into something people can actually use.",
+  );
+  assert.equal(copy("vault_noteCoding"), "I do, however, employ agentic coding.");
+  assert.equal(
+    copy("vault_noteReport"),
+    "The more you use Clotr, the more you report bugs, the better it gets. For free.",
+  );
+  assert.equal(
+    copy("vault_clotrChecksWhatYouType"),
+    "Clotr checks what you type in AI chats, and in email or chat apps you switch on.",
   );
   const es = JSON.parse(fs.readFileSync(path.join(EXT, "_locales", "es", "messages.json"), "utf8"));
   assert.ok(es.vault_noteBody.message.includes("Tony Stark"), "the Spanish note says the same");
+  assert.ok(
+    es.vault_noteWhy.message.includes("grandes tecnológicas"),
+    "the Spanish note keeps the author's stated goal",
+  );
+  assert.ok(
+    es.vault_noteCoding.message.includes("programación con agentes"),
+    "the Spanish note mentions agentic coding",
+  );
+  assert.ok(es.vault_clotrChecksWhatYouType.message.includes("Clotr revisa lo que escribes"));
 });
 
 // Every message the code asks for exists in Spanish, and every kind of data has a Spanish name. English is
@@ -1015,7 +1059,7 @@ test("every data-i18n key in Clotr's pages, and every self-check message, has a 
   keys.push(...[...code("sites.js").matchAll(/key: "([A-Za-z0-9_]+)"/g)].map((m) => `sites.js: ${m[1]}`));
   const missing = keys.filter((k) => !es[k.split(": ")[1]]);
   assert.deepEqual(missing, []);
-  for (const f of htmls.filter((f) => /data-i18n/.test(fs.readFileSync(path.join(EXT, f), "utf8")))) {
+  for (const f of htmls.filter((name) => /data-i18n/.test(fs.readFileSync(path.join(EXT, name), "utf8")))) {
     assert.match(
       fs.readFileSync(path.join(EXT, f), "utf8"),
       /<script src="page-i18n\.js">/,
@@ -1075,8 +1119,9 @@ test("the printed card: six rows in both languages, each carrying its source", (
     assert.equal(keys.length, 2, `a row without its two parts: ${row}`);
     for (const k of keys) assert.ok(es[k], `no Spanish for ${k}`);
     if (source === "plain fact") continue;
-    for (const url of source.split(" "))
+    for (const url of source.split(" ")) {
       assert.ok(SOURCES.has(url), `${keys[0]}: not a source the design cites: ${url}`);
+    }
   }
   // The box's advice stands on the FTC too. The name and number are blanks on paper, never actual form fields.
   assert.match(card, /<div class="card-box" data-source="https:\/\/consumer\.ftc\.gov\/articles\/how-avoid-scam">/);
@@ -1155,8 +1200,9 @@ test("the public versioning standard is there and linked", () => {
   const root = path.join(__dirname, "..");
   const inPublic = path.join(root, "public", "VERSIONING.md");
   const std = fs.readFileSync(fs.existsSync(inPublic) ? inPublic : path.join(root, "VERSIONING.md"), "utf8");
-  for (const kind of ["**Minor**", "**Patch**", "**Major**", "MAJOR.MINOR.PATCH"])
+  for (const kind of ["**Minor**", "**Patch**", "**Major**", "MAJOR.MINOR.PATCH"]) {
     assert.ok(std.includes(kind), `VERSIONING.md lost "${kind}"`);
+  }
   const exporter = path.join(root, "tools", "export-public.js");
   assert.match(
     fs.readFileSync(fs.existsSync(exporter) ? exporter : path.join(root, "README.md"), "utf8"),
@@ -1167,10 +1213,15 @@ test("the public versioning standard is there and linked", () => {
 // The history reads newest first, each release above the one before it.
 test("CHANGELOG.md's versions go down from top to bottom", () => {
   const log = fs.readFileSync(path.join(__dirname, "..", "CHANGELOG.md"), "utf8");
-  const versions = [...log.matchAll(/^## (\d+)\.(\d+)(?:\.(\d+))?/gm)].map((m) => [+m[1], +m[2], +(m[3] || 0)]);
+  const versions = [...log.matchAll(/^## (\d+)\.(\d+)(?:\.(\d+))?/gm)].map((m) => [
+    Number(m[1]),
+    Number(m[2]),
+    Number(m[3] || 0),
+  ]);
   const below = (a, b) => a[0] - b[0] || a[1] - b[1] || a[2] - b[2];
-  for (let i = 1; i < versions.length; i++)
+  for (let i = 1; i < versions.length; i++) {
     assert.ok(below(versions[i], versions[i - 1]) < 0, `${versions[i].join(".")} is listed under an older version`);
+  }
 });
 
 // Every e2e check has its own ID, since --only and the test notes refer to them by it.
@@ -1230,7 +1281,6 @@ test("the e2e runner picks its sections by the build's own flags, in number orde
   );
 
   // The manifest Clotr actually ships: each gated section runs exactly when its own flags say it should.
-  const manifest = JSON.parse(fs.readFileSync(path.join(EXT, "manifest.json"), "utf8"));
   const current = sections(undefined, manifest.clotr_features);
   for (const [name, needs] of Object.entries(SECTION_FLAGS)) {
     const shouldRun = needs.every((flag) => manifest.clotr_features[flag]);
@@ -1353,8 +1403,9 @@ test("Tourniquet's presets hold only requiredResponses, largeText and apps", () 
   assert.deepEqual(Object.keys(TOURNIQUET).sort(), ["adult", "after_scam", "child"]);
   const apps = new Set(EVERYDAY_SITES.map((s) => s.name));
   for (const [word, preset] of Object.entries(TOURNIQUET)) {
-    for (const key of Object.keys(preset))
+    for (const key of Object.keys(preset)) {
       assert.ok(["requiredResponses", "largeText", "apps"].includes(key), `${word}.${key}`);
+    }
     for (const [id, v] of Object.entries(preset.requiredResponses)) {
       assert.match(id, /^[a-z0-9_]{1,64}$/, `${word}: ${id}`);
       assert.ok(v === "block" || v === "warn", `${word}.${id}: ${v}`);
@@ -1372,17 +1423,21 @@ test('no words to people say "elder": messages, Clotr\'s pages, the website, the
   const look = (where, text) => {
     if (/elder/i.test(text)) hits.push(where);
   };
-  for (const lang of fs.readdirSync(path.join(EXT, "_locales")))
+  for (const lang of fs.readdirSync(path.join(EXT, "_locales"))) {
     for (const [k, v] of Object.entries(
       JSON.parse(fs.readFileSync(path.join(EXT, "_locales", lang, "messages.json"), "utf8")),
-    ))
+    )) {
       look(`_locales/${lang}: ${k}`, v.message);
+    }
+  }
   for (const f of htmls) look(f, fs.readFileSync(path.join(EXT, f), "utf8"));
   const site = path.join(__dirname, "..", "site"); // the website (not in the public export)
-  for (const f of fs.existsSync(site) ? fs.readdirSync(site).filter((n) => n.endsWith(".html")) : [])
+  for (const f of fs.existsSync(site) ? fs.readdirSync(site).filter((n) => n.endsWith(".html")) : []) {
     look(`site/${f}`, fs.readFileSync(path.join(site, f), "utf8"));
-  for (const f of scripts.filter((n) => n !== "patterns.js"))
+  }
+  for (const f of scripts.filter((n) => n !== "patterns.js")) {
     for (const m of code(f).matchAll(/\bmsg\(\s*"[A-Za-z0-9_]+",\s*(["'`])((?:\\.|(?!\1).)*)\1/g)) look(f, m[2]);
+  }
   assert.deepEqual(hits, []);
 });
 
@@ -1397,17 +1452,20 @@ test('no warning or card title says "Heads up" or opens with a Spanish "Atenció
   const lookGreeting = (where, text) => {
     if (/^(atención|aviso)\s*:/i.test(bare(text))) hits.push(where);
   };
-  for (const lang of fs.readdirSync(path.join(EXT, "_locales")))
+  for (const lang of fs.readdirSync(path.join(EXT, "_locales"))) {
     for (const [k, v] of Object.entries(
       JSON.parse(fs.readFileSync(path.join(EXT, "_locales", lang, "messages.json"), "utf8")),
     )) {
       lookAnywhere(`_locales/${lang}: ${k}`, v.message);
       lookGreeting(`_locales/${lang}: ${k}`, v.message);
     }
+  }
   for (const f of htmls) lookAnywhere(f, fs.readFileSync(path.join(EXT, f), "utf8"));
-  for (const f of scripts.filter((n) => n !== "patterns.js"))
-    for (const m of code(f).matchAll(/\bmsg\(\s*"[A-Za-z0-9_]+",\s*(["'`])((?:\\.|(?!\1).)*)\1/g))
+  for (const f of scripts.filter((n) => n !== "patterns.js")) {
+    for (const m of code(f).matchAll(/\bmsg\(\s*"[A-Za-z0-9_]+",\s*(["'`])((?:\\.|(?!\1).)*)\1/g)) {
       lookAnywhere(f, m[2]);
+    }
+  }
   assert.deepEqual(hits, []);
 });
 
@@ -1416,11 +1474,14 @@ test('no warning or card title says "Heads up" or opens with a Spanish "Atenció
 // English comes straight from the code and the pages; the Spanish comes from _locales.
 function englishByKey() {
   const en = {};
-  for (const f of scripts)
+  for (const f of scripts) {
     for (const m of code(f).matchAll(/\bmsg\(\s*"([A-Za-z0-9_]+)",\s*(["'`])((?:\\.|(?!\2).)*)\2/g)) en[m[1]] ??= m[3];
-  for (const f of htmls)
-    for (const m of fs.readFileSync(path.join(EXT, f), "utf8").matchAll(/data-i18n="([A-Za-z0-9_]+)"[^>]*>([^<]+)</g))
+  }
+  for (const f of htmls) {
+    for (const m of fs.readFileSync(path.join(EXT, f), "utf8").matchAll(/data-i18n="([A-Za-z0-9_]+)"[^>]*>([^<]+)</g)) {
       en[m[1]] ??= m[2];
+    }
+  }
   return en;
 }
 test("Tourniquet's words: factual, no promises, and never who it's for on the protected person's own screens", () => {
@@ -1491,28 +1552,40 @@ function reportingOffenders(schema, mergePolicy) {
   const found = [];
   const fields = schema.properties || {};
   for (const name of Object.keys(fields)) if (!Object.hasOwn(POLICY_FIELDS, name)) found.push(`a new field: ${name}`);
-  for (const [name, type] of Object.entries(POLICY_FIELDS))
+  for (const [name, type] of Object.entries(POLICY_FIELDS)) {
     if (fields[name]?.type !== type) found.push(`${name}: ${fields[name] ? `type ${fields[name].type}` : "missing"}`);
+  }
   const kindFields = fields.kinds?.items?.properties || {};
   if (fields.kinds?.items?.type !== "object") found.push("kinds: each one isn't an object");
-  for (const name of Object.keys(kindFields))
+  for (const name of Object.keys(kindFields)) {
     if (!Object.hasOwn(KIND_FIELDS, name)) found.push(`a new field in a kind: ${name}`);
-  for (const [name, type] of Object.entries(KIND_FIELDS))
-    if (kindFields[name]?.type !== type)
+  }
+  for (const [name, type] of Object.entries(KIND_FIELDS)) {
+    if (kindFields[name]?.type !== type) {
       found.push(`kinds.${name}: ${kindFields[name] ? `type ${kindFields[name].type}` : "missing"}`);
+    }
+  }
   const walk = (node, where) => {
-    if (Array.isArray(node)) return node.forEach((item, i) => walk(item, `${where}[${i}]`));
+    if (Array.isArray(node)) {
+      node.forEach((item, i) => walk(item, `${where}[${i}]`));
+      return;
+    }
     if (!node || typeof node !== "object") return;
     for (const [key, value] of Object.entries(node)) {
-      if (key === "properties" && where !== "schema" && where !== KINDS_ITEMS)
+      if (key === "properties" && where !== "schema" && where !== KINDS_ITEMS) {
         found.push(`${where}: fields inside a field`);
-      if (key === "properties" || key === "patternProperties")
-        for (const name of Object.keys(value))
+      }
+      if (key === "properties" || key === "patternProperties") {
+        for (const name of Object.keys(value)) {
           if (REPORTING.test(asWords(name))) found.push(`${where}.${key}.${name}: name`);
-      if ((key === "title" || key === "description") && typeof value === "string" && REPORTING.test(value))
+        }
+      }
+      if ((key === "title" || key === "description") && typeof value === "string" && REPORTING.test(value)) {
         found.push(`${where}: ${key}`);
-      if (key === "enum" && Array.isArray(value))
+      }
+      if (key === "enum" && Array.isArray(value)) {
         for (const v of value) if (typeof v === "string" && REPORTING.test(asWords(v))) found.push(`${where}: "${v}"`);
+      }
       walk(value, `${where}.${key}`);
     }
   };
@@ -1539,11 +1612,14 @@ function reportingOffenders(schema, mergePolicy) {
     reportUrl: "https://example.com/collect",
     webhook: "https://example.com/hook",
   });
-  for (const key of Object.keys(merged))
+  for (const key of Object.keys(merged)) {
     if (!Object.hasOwn(POLICY_FIELDS, key)) found.push(`the merged policy carries ${key}`);
-  for (const kind of Array.isArray(merged.kinds) ? merged.kinds : [])
-    for (const key of Object.keys(kind))
+  }
+  for (const kind of Array.isArray(merged.kinds) ? merged.kinds : []) {
+    for (const key of Object.keys(kind)) {
       if (!Object.hasOwn(KIND_FIELDS, key) && !KIND_MADE.has(key)) found.push(`a merged kind carries ${key}`);
+    }
+  }
   return found;
 }
 test("a team policy sets rules, never reporting: the managed schema's nine fields and a kind's six, nothing sent back", () => {
@@ -1664,7 +1740,10 @@ function hostOfLink(href) {
 function buyLinkOffenders(pages, checkoutHost) {
   const found = [];
   for (const [page, raw] of Object.entries(pages)) {
-    const html = raw.replace(/<!--[\s\S]*?-->/g, ""); // a commented-out example isn't a link
+    // A commented-out example isn't a link. Repeat until nothing changes, so a comment split around another can't
+    // leave a new "<!--" behind.
+    let html = raw;
+    for (let prev = null; prev !== html;) [prev, html] = [html, html.replace(/<!--[\s\S]*?-->/g, "")];
     for (const [, attrs, inner] of html.matchAll(/<a\b([^>]*)>([\s\S]*?)<\/a>/gi)) {
       const words = inner
         .replace(/<[^>]+>/g, " ")
@@ -1677,15 +1756,17 @@ function buyLinkOffenders(pages, checkoutHost) {
         /^(buy|comprar)\b/i.test(words) || /^(buy|comprar)\b/i.test(label) || /\sclass="[^"]*\bbuy\b/i.test(attrs);
       if (!isBuy && !(host && PAYMENT_HOSTS.test(host))) continue;
       if (!checkoutHost) found.push(`${page}: a Buy link before buying is open: ${href || "(no address)"}`);
-      else if (!href.startsWith("https://") || host !== checkoutHost)
+      else if (!href.startsWith("https://") || host !== checkoutHost) {
         found.push(`${page}: a Buy link that isn't https://${checkoutHost}: ${href || "(no address)"}`);
+      }
     }
     for (const [, ref] of html.matchAll(
       /<(?:script|img|link|source|iframe|video|audio)\b[^>]*\s(?:src|href)="([^"]+)"/gi,
     )) {
       const host = hostOfLink(ref);
-      if (host && (PAYMENT_HOSTS.test(host) || host === checkoutHost))
+      if (host && (PAYMENT_HOSTS.test(host) || host === checkoutHost)) {
         found.push(`${page} loads from the payment service: ${ref}`);
+      }
     }
   }
   return found;
@@ -1704,16 +1785,20 @@ test(
     // Plants Buy links and checks each one, judged both with no checkout host yet and with one set.
     const host = "clotr.lemonsqueezy.com";
     const buy = '<a class="buy" href="https://clotr.lemonsqueezy.com/buy/1" aria-label="Buy the Team pack">Buy</a>';
-    const offenders = (html, h) => buyLinkOffenders({ "x.html": html }, h).length;
-    assert.equal(offenders(buy, null), 1, "no checkout host yet: any Buy link fails");
-    assert.equal(offenders(buy, host), 0, "a Buy link to the checkout host passes");
-    assert.equal(offenders(buy.replace("https://clotr.lemonsqueezy.com", "https://pay.example.com"), host), 1);
-    assert.equal(offenders(buy.replace("https://", "http://"), host), 1, "not https");
-    assert.equal(offenders('<a href="https://pay.example.com/team">Buy the Team pack</a>', host), 1, "by its words");
-    assert.equal(offenders('<a href="https://other.lemonsqueezy.com/x">Get the pack</a>', host), 1, "by its address");
-    assert.equal(offenders('<script src="https://clotr.lemonsqueezy.com/js/lemon.js"></script>', host), 1);
-    assert.equal(offenders(`<!-- ${buy} -->`, null), 0, "a commented-out example");
-    assert.equal(offenders('<a href="terms.html">Terms of sale</a> <b>Buy</b> Pick a pack', null), 0);
+    const buyOffenders = (html, h) => buyLinkOffenders({ "x.html": html }, h).length;
+    assert.equal(buyOffenders(buy, null), 1, "no checkout host yet: any Buy link fails");
+    assert.equal(buyOffenders(buy, host), 0, "a Buy link to the checkout host passes");
+    assert.equal(buyOffenders(buy.replace("https://clotr.lemonsqueezy.com", "https://pay.example.com"), host), 1);
+    assert.equal(buyOffenders(buy.replace("https://", "http://"), host), 1, "not https");
+    assert.equal(buyOffenders('<a href="https://pay.example.com/team">Buy the Team pack</a>', host), 1, "by its words");
+    assert.equal(
+      buyOffenders('<a href="https://other.lemonsqueezy.com/x">Get the pack</a>', host),
+      1,
+      "by its address",
+    );
+    assert.equal(buyOffenders('<script src="https://clotr.lemonsqueezy.com/js/lemon.js"></script>', host), 1);
+    assert.equal(buyOffenders(`<!-- ${buy} -->`, null), 0, "a commented-out example");
+    assert.equal(buyOffenders('<a href="terms.html">Terms of sale</a> <b>Buy</b> Pick a pack', null), 0);
   },
 );
 
@@ -1891,8 +1976,9 @@ function appsNetworkOffenders(dir) {
       if (perms.some((t) => !/tools:node\s*=\s*"remove"/.test(t))) found.push(`${rel}: asks for the internet`);
       else if (appManifest(text) && !perms.length) found.push(`${rel}: doesn't remove the internet permission`);
     }
-    if (lang === "plist" && /<key>\s*RequestsOpenAccess\s*<\/key>\s*<true\s*\/>/.test(text))
+    if (lang === "plist" && /<key>\s*RequestsOpenAccess\s*<\/key>\s*<true\s*\/>/.test(text)) {
       found.push(`${rel}: the keyboard asks for Full Access`);
+    }
     if (lang === "tauri") {
       const conf = JSON.parse(text);
       const csp = conf.app?.security?.csp ?? conf.tauri?.security?.csp;
@@ -1902,10 +1988,21 @@ function appsNetworkOffenders(dir) {
               .map(([k, v]) => `${k} ${v}`)
               .join("; ")
           : csp;
-      if (typeof policy !== "string" || !/default-src 'self'/.test(policy) || /https?:|\*/.test(policy))
+      // The one http: address allowed is Tauri's own IPC, and only under connect-src: WebView2 hands a request
+      // there straight to Clotr for Windows, never to the network, so a file's bytes can travel as bytes.
+      const outside =
+        typeof policy === "string"
+          ? policy
+              .split(";")
+              .map((d) => (/^\s*connect-src\s/.test(d) ? d.replace(/\shttp:\/\/ipc\.localhost(?=\s|$)/, "") : d))
+              .join(";")
+          : policy;
+      if (typeof policy !== "string" || !/default-src 'self'/.test(policy) || /https?:|\*/.test(outside)) {
         found.push(`${rel}: the web view's policy isn't default-src 'self'`);
-      for (const p of Object.keys(conf.plugins || {}).filter((k) => /^(http|updater|websocket|upload)$/.test(k)))
+      }
+      for (const p of Object.keys(conf.plugins || {}).filter((k) => /^(http|updater|websocket|upload)$/.test(k))) {
         found.push(`${rel}: the ${p} plugin`);
+      }
     }
   }
   return found;
@@ -1984,8 +2081,9 @@ function appsStorageOffenders(dir) {
   for (const rel of appFiles(dir).filter((r) => langOf(r) === "android")) {
     const text = appCode(dir, rel);
     if (/android:allowBackup\s*=\s*"true"/.test(text)) found.push(`${rel}: app backups on`);
-    else if (appManifest(text) && !/android:allowBackup\s*=\s*"false"/.test(text))
+    else if (appManifest(text) && !/android:allowBackup\s*=\s*"false"/.test(text)) {
       found.push(`${rel}: app backups not turned off`);
+    }
   }
   return found;
 }
@@ -2017,7 +2115,7 @@ const MODEL_RULES = [
     langs: ["js", "html"],
     what: "a model runtime",
     re: new RegExp(
-      `(?:require\\s*\\(|from\\s+|import\\s*\\()\\s*["'\`](?:${MODEL_RUNTIMES.map((n) => n.replace(/[/.]/g, "\\$&")).join("|")})`,
+      `(?:require\\s*\\(|from\\s+|import\\s*\\()\\s*["'\`](?:${MODEL_RUNTIMES.map((n) => n.replace(/[.*+?^${}()|[\]\\/]/g, "\\$&")).join("|")})`,
     ),
   },
 ];
@@ -2125,7 +2223,7 @@ const GOOD_APP = {
     '[graph]\ntargets = ["x86_64-pc-windows-msvc"]\n\n[bans]\ndeny = [\n  { crate = "reqwest", reason = "network" },\n]\n',
   "desktop/src-tauri/target/debug/clotr.exe": Buffer.alloc(3 * 1024 * 1024, 1), // built output, not a source
   "desktop/src-tauri/tauri.conf.json": JSON.stringify({
-    app: { security: { csp: "default-src 'self'" } },
+    app: { security: { csp: "default-src 'self'; connect-src ipc: http://ipc.localhost" } },
     plugins: {},
   }),
   "desktop/ui/index.html": '<!doctype html><script src="card.js"></script><link href="card.css" rel="stylesheet">\n',
@@ -2193,6 +2291,18 @@ test("apps: nothing goes online (network code, network libraries, the internet p
       "ios/Keyboard/Sync.swift:1: a network call",
     ]),
   );
+  // Tauri's IPC address passes under connect-src only, and only exactly.
+  for (const csp of [
+    "default-src 'self' http://ipc.localhost",
+    "default-src 'self'; connect-src ipc: http://ipc.localhost.example.com",
+  ]) {
+    const conf = JSON.stringify({ app: { security: { csp } } });
+    withPlanted({ ...GOOD_APP, "desktop/src-tauri/tauri.conf.json": conf }, (dir) =>
+      assert.deepEqual(appsNetworkOffenders(dir), [
+        "desktop/src-tauri/tauri.conf.json: the web view's policy isn't default-src 'self'",
+      ]),
+    );
+  }
 });
 
 test("apps: nothing detected is stored (one writer, backups off, no word learning, logs that name kinds only)", () => {
@@ -2304,7 +2414,7 @@ function honestWordsOffenders(en, es) {
     /^(?:sc|ss|cg|lb|ec)_|^cmd[A-Z]/.test(k),
   );
   const out = [];
-  for (const k of keys)
+  for (const k of keys) {
     for (const [lang, text] of [
       ["en", en[k]],
       ["es", es[k]?.message],
@@ -2316,6 +2426,7 @@ function honestWordsOffenders(en, es) {
         if (SCAN_UNSAID.test(text) || SPY_WORDS.test(text)) out.push(`${lang} ${k}: ${text}`);
       } else if (UNSAID.test(text)) out.push(`${lang} ${k}: ${text}`);
     }
+  }
   return out;
 }
 test("Is this a scam?: no word says a message is fine, in English or Spanish", () => {
@@ -2326,8 +2437,9 @@ test("Is this a scam?: no word says a message is fine, in English or Spanish", (
   assert.ok(en.sc_never && es.sc_never, "the footnote");
   assert.deepEqual(honestWordsOffenders(en, es), []);
   // Plants each forbidden word and checks it gets caught, and makes sure the footnote keeps its "never".
-  for (const bad of ["This message looks safe.", "It's fine to reply.", "100% legit", "Score: 80%", "Es seguro."])
+  for (const bad of ["This message looks safe.", "It's fine to reply.", "100% legit", "Score: 80%", "Es seguro."]) {
     assert.equal(honestWordsOffenders({ sc_x: bad }, {}).length, 1, bad);
+  }
   assert.equal(honestWordsOffenders({}, { sc_x: { message: "No es una estafa." } }).length, 1);
   assert.deepEqual(honestWordsOffenders({ sc_never: "It says a message is fine." }, {}), [
     "en sc_never: doesn't say it as a never",
@@ -2351,9 +2463,11 @@ test("Look back and Extension check: every word exists in both languages, and th
   }
   assert.deepEqual(honestWordsOffenders(en, es), []);
   // Plants each one and checks it's caught, for either page, in either language.
-  for (const bad of ["Looks safe to use.", "Spying on your extensions.", "Score: 4 of 11", "Malicious code found."])
-    for (const prefix of ["lb_x", "ec_x"])
+  for (const bad of ["Looks safe to use.", "Spying on your extensions.", "Score: 4 of 11", "Malicious code found."]) {
+    for (const prefix of ["lb_x", "ec_x"]) {
       assert.equal(honestWordsOffenders({ [prefix]: bad }, {}).length, 1, `${prefix}: ${bad}`);
+    }
+  }
   assert.deepEqual(honestWordsOffenders({ ec_x: "That's fine, nothing changed." }, {}), []);
   assert.equal(honestWordsOffenders({}, { lb_x: { message: "Es una app espía." } }).length, 1);
 });
@@ -2375,8 +2489,9 @@ test("Is this a scam?: the page loads only Clotr's own scripts, and keeps, sends
     [/\blocalStorage\b|\bsessionStorage\b|\bindexedDB\b|document\.cookie/, "the page's own storage"],
     [/\bconsole\.(?:log|info|warn|error|debug)\(/, "a log"],
     [/\.innerHTML\b|insertAdjacentHTML|document\.write/, "HTML from a string"],
-  ])
+  ]) {
     assert.doesNotMatch(src, re, `check.js: ${what}`);
+  }
   assert.match(src, /chrome\.storage\.local\s*\.get\(\s*\[\s*"salt",\s*"vault"\s*\]\s*\)/, "reads the salt and vault");
   assert.equal((src.match(/storage\.\w+\s*\.get\(/g) || []).length, 1, "reads storage once, for those two");
 });
@@ -2397,8 +2512,9 @@ test("the command check never stores, sends or logs the copied command or the me
     [/\bsendMessage\b|\bconnect\(/, "a message out of the page"],
     [/\bfetch\(|XMLHttpRequest|sendBeacon|WebSocket/, "a request"],
     [/\blocalStorage\b|\bsessionStorage\b|\bindexedDB\b|document\.cookie/, "the page's own storage"],
-  ])
+  ]) {
     assert.doesNotMatch(section, re, `content.js command check: ${what}`);
+  }
   // The one log in this section names the shape only, never the copied command or the message around it.
   const logs = [...section.matchAll(/console\.(?:log|info|warn|error|debug)\([^)]*\)/g)].map((m) => m[0]);
   assert.equal(logs.length, 1, `expected exactly one log in the command-check section, found ${logs.length}`);
@@ -2410,8 +2526,9 @@ test("the command check never stores, sends or logs the copied command or the me
     [/\bsendMessage\b|\bconnect\(/, "a message out of the page"],
     [/\bfetch\(|XMLHttpRequest|sendBeacon|WebSocket/, "a request"],
     [/\bconsole\.(?:log|info|warn|error|debug)\(/, "a log"],
-  ])
+  ]) {
     assert.doesNotMatch(cmdSrc, re, `commands.js: ${what}`);
+  }
 });
 
 test("Is this a scam?: every sign has its name, its meaning and a source, in English and Spanish", () => {
@@ -2454,4 +2571,33 @@ test("every shadow root Clotr makes is closed, so a site's own script can never 
 // from its own click. Patching Clipboard.prototype or reassigning navigator.clipboard would reopen that bug class.
 test("nothing patches the page's clipboard: Bandage calls navigator.clipboard directly, never intercepts it", () => {
   assert.deepEqual(offenders(/Clipboard\.prototype|navigator\.clipboard\s*\.\s*(?:writeText|write)\s*=(?!=)/), []);
+});
+
+// A web page can only reach an extension through these two manifest keys, and Clotr uses neither: the background
+// still checks who sent each message, but this keeps the door from opening in the first place.
+test("no web page can message Clotr or load its files: no externally_connectable, no web_accessible_resources", () => {
+  assert.equal(manifest.externally_connectable, undefined);
+  assert.equal(manifest.web_accessible_resources, undefined);
+});
+
+// A code-signing certificate exported with its private key is a .pfx or .p12 file. A copy left in the working tree
+// must never be one `git add .` away from a commit: with it, anyone could sign a package that a PC trusting that
+// certificate installs without a warning.
+test("signing keys stay out of the repository: .gitignore covers .pfx, .p12 and .pem files", () => {
+  const ignored = fs
+    .readFileSync(path.join(__dirname, "..", ".gitignore"), "utf8")
+    .split("\n")
+    .map((l) => l.trim());
+  for (const pattern of ["*.pfx", "*.p12", "*.pem"]) assert.ok(ignored.includes(pattern), pattern);
+});
+
+// The Android upload key (tools/android-create-upload-key.js) lives in %LOCALAPPDATA%\Clotr\keys\, never in the
+// repository: the same reasoning as the test above, for the key that signs the Play bundle instead of the Windows
+// package.
+test("the Android upload key stays out of the repository: .gitignore covers .jks, .keystore and keystore.properties", () => {
+  const ignored = fs
+    .readFileSync(path.join(__dirname, "..", ".gitignore"), "utf8")
+    .split("\n")
+    .map((l) => l.trim());
+  for (const pattern of ["*.jks", "*.keystore", "keystore.properties"]) assert.ok(ignored.includes(pattern), pattern);
 });

@@ -165,7 +165,7 @@ $("pa-show-words").addEventListener("change", (e) => {
 $("pa-print").addEventListener("click", () => window.print());
 
 document.title = msg("pa_title", "Organization policy applied here");
-chrome.storage.onChanged.addListener((changes, area) => {
+chrome.storage.onChanged.addListener((_changes, area) => {
   if (area === "managed") render();
 });
 render();

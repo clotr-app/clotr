@@ -119,10 +119,11 @@ const FEATURE_FILES = {
 // it isn't shipped. And since Extension check is the only reason the optional `management` permission
 // exists, that comes out too when the feature is off. A feature's name only appears here once it's shipped:
 // an off one isn't running, so there's nothing for the person's browser (or a store reviewer) to read it as.
-function featureManifest(m, features) {
-  m = { ...m, clotr_features: Object.fromEntries(Object.entries(features).filter(([, on]) => on)) };
-  if (!features.commandcheck)
+function featureManifest(base, features) {
+  const m = { ...base, clotr_features: Object.fromEntries(Object.entries(features).filter(([, on]) => on)) };
+  if (!features.commandcheck) {
     m.content_scripts = m.content_scripts.map((c) => ({ ...c, js: c.js.filter((f) => f !== "commands.js") }));
+  }
   if (!features.extcheck) {
     m.optional_permissions = (m.optional_permissions || []).filter((p) => p !== "management");
     if (!m.optional_permissions.length) delete m.optional_permissions;
@@ -137,7 +138,9 @@ function featureManifest(m, features) {
 // comment goes too: they're dev notes, not needed once the page is built, and some of them name a held-back
 // feature by hand.
 function stripFeatureMarkup(html, features) {
-  let out = html.replace(/<!--[\s\S]*?-->/g, "");
+  // Repeat until nothing changes: removing one comment can join the pieces around it into a new "<!--".
+  let out = html;
+  for (let prev = null; prev !== out;) [prev, out] = [out, out.replace(/<!--[\s\S]*?-->/g, "")];
   for (const [name, on] of Object.entries(features)) if (!on) out = removeDataFeature(out, name);
   return out.replace(/[ \t]+\n/g, "\n").replace(/\n{3,}/g, "\n\n");
 }
@@ -188,8 +191,9 @@ function pruneMessages(entries) {
     if (!name.startsWith("_locales/") || !name.endsWith("/messages.json")) continue;
     const messages = JSON.parse(data.toString("utf8"));
     const kept = {};
-    for (const [key, value] of Object.entries(messages))
+    for (const [key, value] of Object.entries(messages)) {
       if (DYNAMIC_MESSAGE_PREFIXES.some((p) => key.startsWith(p)) || corpus.includes(key)) kept[key] = value;
+    }
     entries[i] = [name, Buffer.from(`${JSON.stringify(kept, null, 2)}\n`, "utf8")];
   }
 }
@@ -221,8 +225,9 @@ function trackedFiles() {
 // Every shipped file as [zip path, bytes], sorted by path.
 function collect(target, features) {
   const tracked = trackedFiles();
-  if (!tracked)
+  if (!tracked) {
     console.warn("[package] not a git checkout: packaging every file in extension/ (check it has nothing personal)");
+  }
   const drop = new Set(DROP_FOR[target] || []);
   for (const [name, on] of Object.entries(features)) if (!on) for (const f of FEATURE_FILES[name] || []) drop.add(f);
   if (!features.practice && !features.training) drop.add("practice-data.js");
@@ -242,8 +247,9 @@ function collect(target, features) {
       if (tracked && !tracked.has(rel)) continue;
       if (drop.has(rel)) continue;
       let data = fs.readFileSync(file);
-      if (TEXT.has(path.extname(name).toLowerCase()))
+      if (TEXT.has(path.extname(name).toLowerCase())) {
         data = Buffer.from(data.toString("utf8").replace(/\r\n/g, "\n"), "utf8");
+      }
       if (rel === "manifest.json") {
         let m = featureManifest(JSON.parse(data.toString("utf8")), features);
         if (target !== "chrome") m = MANIFEST_FOR[target](m);
@@ -436,7 +442,7 @@ function build({
   firefox = false,
   safari = false,
   outDir = path.join(ROOT, "dist"),
-  folder,
+  folder: folderArg,
   zip: makeZip = true,
   manifest,
   features: featureOverrides,
@@ -467,12 +473,13 @@ function build({
   ].filter(Boolean);
   const shipped = new Set(entries.map(([n]) => n));
   const missing = needed.filter((f) => !shipped.has(f));
-  if (missing.length)
+  if (missing.length) {
     throw new Error(
       `the manifest uses files that aren't in the zip: ${missing.join(", ")} (new files must be added to git)`,
     );
+  }
   const fileName = `clotr-${version}${target === "chrome" ? "" : `-${target}`}.zip`;
-  if (safari && !folder) folder = path.join(outDir, fileName.replace(/\.zip$/, ""));
+  const folder = safari && !folderArg ? path.join(outDir, fileName.replace(/\.zip$/, "")) : folderArg;
   const changed = folder ? writeFolder(folder, entries) : undefined;
   const files = entries.map(([n]) => n);
   if (!makeZip) return { folder, changed, files, version, manifest: m, features };
@@ -525,10 +532,11 @@ if (require.main === module) {
     console.log(`${path.relative(ROOT, r.out)}: ${r.files.length} files, ${(r.size / 1024).toFixed(0)} KB`);
     if (r.folder) {
       console.log(`The same files, unzipped${safari ? " (for a Mac)" : ""}: ${path.relative(ROOT, r.folder)}`);
-      if (safari && !appStoreVersion(r.version))
+      if (safari && !appStoreVersion(r.version)) {
         console.log(
           `Version ${r.version} has four numbers: fine to try on a Mac; App Store Connect takes a release's three.`,
         );
+      }
     }
     console.log(
       `SHA-256 ${r.sha256} (also in ${path.relative(ROOT, path.join(path.dirname(r.out), "SHA256SUMS.txt"))})`,

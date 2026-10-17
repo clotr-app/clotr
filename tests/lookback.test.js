@@ -104,7 +104,8 @@ async function checkGemini(entries) {
   assert.equal(got.format, "gemini");
   assert.equal(got.tool, "Gemini");
   assert.equal(got.company, "Google");
-  assert.equal(got.grouping, "day");
+  assert.equal(got.grouping, "record");
+  assert.equal(got.read.chats, want.prompts);
   assert.equal(got.records, want.records);
   assert.equal(got.prompts, want.prompts);
   assert.deepEqual(got.chats.map(shapeFound), newestFirst(want.found).map(shapeExpected));
@@ -131,10 +132,82 @@ test("a title is shown with every detail in it masked, never in full", async () 
   }
 });
 
+function syntheticGemini(records) {
+  return C.folderFileEntries({
+    "made-up/MyActivity.json": JSON.stringify(
+      records.map((record) => ({
+        header: "Gemini Apps",
+        time: "2026-05-10T14:03:22.118Z",
+        products: ["Gemini Apps"],
+        ...record,
+      })),
+    ),
+  });
+}
+
+test("Gemini ignores values in replies, subtitles, and attachments", async () => {
+  const got = await C.readExport(
+    syntheticGemini([
+      {
+        title: "Prompted Can you explain this engine part?",
+        safeHtmlItem: [{ html: "VIN 1HGCM82633A004352 and key AKIA4HPQ7XZ2R6TWLJ3N" }],
+        subtitles: ["VIN 1HGCM82633A004352 and key AKIA4HPQ7XZ2R6TWLJ3N"],
+        attachedFiles: [{ name: "AKIA4HPQ7XZ2R6TWLJ3N.txt" }],
+      },
+    ]),
+    { salt: "s" },
+  );
+  assert.deepEqual(got.chats, []);
+  assert.deepEqual(got.totals, {});
+});
+
+test("Gemini finds values in the prompt and keeps each finding with its record", async () => {
+  const got = await C.readExport(
+    syntheticGemini([
+      {
+        title: "Prompted Help me identify this plug",
+        safeHtmlItem: [{ html: "VIN 1HGCM82633A004352 and key AKIA4HPQ7XZ2R6TWLJ3N" }],
+      },
+      {
+        title: "Prompted My VIN is 1HGCM82633A004352 and key is AKIA4HPQ7XZ2R6TWLJ3N",
+        safeHtmlItem: [{ html: "That looks interesting." }],
+      },
+    ]),
+    { salt: "s" },
+  );
+  assert.equal(got.chats.length, 1);
+  assert.deepEqual(Object.keys(got.chats[0].kinds), ["aws_access_key", "vin"]);
+  assert.equal(got.chats[0].title, "My VIN is 1HGC…52 and key is AKIA…3N");
+});
+
+test("Gemini titles are short excerpts with every detected value masked", async () => {
+  const prompt = `Prompted My key is AKIA4HPQ7XZ2R6TWLJ3N. ${"please review this code block ".repeat(12)}`;
+  const got = await C.readExport(syntheticGemini([{ title: prompt }]), { salt: "s" });
+  assert.equal(got.chats.length, 1);
+  assert.ok(got.chats[0].title.length <= 90);
+  assert.match(got.chats[0].title, /AKIA…3N/);
+  assert.ok(!got.chats[0].title.includes("AKIA4HPQ7XZ2R6TWLJ3N"));
+  assert.ok(!got.chats[0].title.endsWith("block"));
+});
+
 test("Gemini's HTML export is recognized, not read (the page must ask for JSON)", async () => {
   const got = await C.readExport(folderEntries("gemini-html"), { salt: "s" });
   assert.equal(got.format, "gemini-html");
   assert.deepEqual(got.chats, []);
+});
+
+test("a Google Takeout with Gems and scheduled actions but no Gemini Apps chats is identified in a folder and zip", async () => {
+  const files = {
+    "Takeout/Gemini/gemini_scheduled_actions_data.html": "12345678901",
+    "Takeout/Gemini/gemini_gems_data.html": "12345678901",
+  };
+  const folder = C.folderFileEntries(files);
+  const zip = await C.fileEntriesFromZip(C.fromBytes(require("./fixtures/exports/make-exports.js").zip(files)));
+  for (const entries of [folder, zip]) {
+    const got = await C.readExport(entries, { salt: "s" });
+    assert.equal(got.format, "gemini-no-chats");
+    assert.deepEqual(got.chats, []);
+  }
 });
 
 async function checkCopilot(entries) {
@@ -275,8 +348,9 @@ test("onProgress ticks once per chat read, with a chat only when it holds someth
   // always go through mask() first.
   assert.ok(ticks.every((t) => t.chat && Object.keys(t.chat.kinds).length > 0));
   const flat = JSON.stringify(ticks);
-  for (const v of ["AKIA4HPQ7XZ2R6TWLJ3N", "219-09-9999", "hunter2", "Sunflower!2024"])
+  for (const v of ["AKIA4HPQ7XZ2R6TWLJ3N", "219-09-9999", "hunter2", "Sunflower!2024"]) {
     assert.ok(!flat.includes(v), `a raw value reached onProgress: ${v}`);
+  }
 });
 
 test("onProgress is optional: readExport works the same without it", async () => {

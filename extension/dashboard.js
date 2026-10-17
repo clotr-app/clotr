@@ -177,13 +177,15 @@ async function renderMap() {
   find(tree);
   const empty = !model.has.bySite.length && !model.near.bySite.length;
   if (chosen) show(chosen);
-  else
+  else {
     $("map-details").textContent = empty
       ? msg("db_mapEmpty", "Nothing here yet. The map fills in as Clotr notices things in your chats and email.")
       : "";
+  }
   renderMindMapTable($("map-table").tBodies[0], tree);
-  for (const btn of $("map-view").querySelectorAll("button"))
+  for (const btn of $("map-view").querySelectorAll("button")) {
     btn.setAttribute("aria-checked", String(btn.dataset.view === mapView));
+  }
 }
 
 $("map-view").addEventListener("click", (e) => {
@@ -259,12 +261,13 @@ function renderWeeks(events) {
     }
     g.append(Object.assign(svg("title"), { textContent: g.getAttribute("aria-label") }));
     nodes.push(g);
-    if (i % 2 === 0)
+    if (i % 2 === 0) {
       nodes.push(
         Object.assign(svg("text", { class: "tick", x: x + width / 2, y: H - 6, "text-anchor": "middle" }), {
           textContent: fmtDay.format(w.from),
         }),
       );
+    }
   });
   $("weeks").replaceChildren(...nodes);
   $("legend").replaceChildren(...SERIES.map((s) => el("span", {}, [Object.assign(el("i"), { style: "" }), s.label])));

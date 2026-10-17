@@ -5,7 +5,7 @@
 "use strict";
 
 (() => {
-  const { msg, detect, fingerprint, setVault, scamSigns, scamHasLink } = globalThis.Clotr;
+  const { msg, detect, fingerprintFor, setVault, scamSigns, scamHasLink } = globalThis.Clotr;
   const $ = (id) => document.getElementById(id);
   const el = (tag, props = {}, children = []) => {
     const node = document.createElement(tag);
@@ -281,11 +281,18 @@
     const out = [];
     for (const r of detect(text)) {
       for (const m of r.matches) {
-        const ours =
-          VAULT_WORDS.has(r.id) || values.some((e) => e.type === r.id && e.fp === fingerprint(own.salt, r.id, m));
+        // Each scheme once per match: the stronger one is slow on purpose.
+        const byScheme = new Map();
+        const fpOf = (scheme) => {
+          const k = scheme === 2 ? 2 : 1;
+          if (!byScheme.has(k)) byScheme.set(k, fingerprintFor(k === 2 ? 2 : undefined, own.salt, r.id, m));
+          return byScheme.get(k);
+        };
+        const ours = VAULT_WORDS.has(r.id) || values.some((e) => e.type === r.id && e.fp === fpOf(e.scheme));
         if (!ours) continue;
-        for (let at = text.indexOf(m); at >= 0; at = text.indexOf(m, at + m.length))
+        for (let at = text.indexOf(m); at >= 0; at = text.indexOf(m, at + m.length)) {
           out.push({ kind: r.id, start: at, end: at + m.length });
+        }
       }
     }
     return out;

@@ -194,8 +194,9 @@ module.exports = async function (env) {
             const file = path.join(dir, `doc${i}.${["txt", "docx", "xlsx"][kind]}`);
             if (kind === 0) fs.writeFileSync(file, `${filler}\n${risky}\n`);
             else if (kind === 1) makeZip(file, [["word/document.xml", docxXml([filler, risky])]]);
-            else
+            else {
               makeZip(file, [["xl/sharedStrings.xml", `<sst><si><t>${filler}</t></si><si><t>${risky}</t></si></sst>`]]);
+            }
             files.push(file);
           }
           const t0 = Date.now();
@@ -259,6 +260,48 @@ module.exports = async function (env) {
           expect(grew < 5 * 1024 * 1024, `heap grew ${(grew / 1024 / 1024).toFixed(1)} MB over 450 messages`);
           expect(!errors.length, `errors: ${errors.slice(0, 3).join(" | ")}`);
           return `heap +${(grew / 1024 / 1024).toFixed(2)} MB over 450 messages`;
+        }),
+    );
+
+    await check(
+      "STS8",
+      "Stress: a 50-word watch list stays fast against a 2,000-character message, even on a 4x-throttled CPU",
+      () =>
+        withSite(ctx, "chatgpt", async (page) => {
+          await resetState(ctx, {});
+          // Up to 4 words each, so the per-span scan (vaultMatches in patterns.js) checks every 1-, 2-, 3- and
+          // 4-word span, the worst case this fix has to keep cheap: the watch-list fingerprint stays the single,
+          // fast round (scheme 1) no matter how strong the vault's saved values get.
+          const watchPhrase = "Project Falcon Launch Team";
+          const words = [watchPhrase, ...Array.from({ length: 49 }, (_, i) => `Codename${i} Internal Term ${i}`)];
+          const vault = await ctx.worker.evaluate(async (phrases) => {
+            const salt = await ensureSalt();
+            return phrases.map((phrase) => ({
+              kind: "word",
+              type: "watch_list",
+              fp: globalThis.Clotr.fingerprint(salt, "watch_list", phrase),
+              words: phrase.split(" ").length,
+              mode: "protect",
+              added: Date.now(),
+            }));
+          }, words);
+          await store.set(ctx, { events: [], responses: {}, vault, guided: ALL_GUIDED });
+          page.cdp ??= await page.createCDPSession();
+          await page.cdp.send("Emulation.setCPUThrottlingRate", { rate: 4 });
+          try {
+            const filler = "a quarterly update with nothing sensitive in it ".repeat(40); // ~2,000 chars
+            const text = `${filler}${watchPhrase} ${filler}`.slice(0, 2000);
+            const t0 = Date.now();
+            await typeText(page, text);
+            const n = await waitFor(() => readNotice(page), 4000);
+            const ms = Date.now() - t0;
+            expect(n && /Watch List Item/.test(n.text), `no warning for the watched phrase (notice: ${n?.text})`);
+            expect(ms < 4000, `${ms} ms to warn with a 50-word watch list, 4x throttled`);
+            return `${ms} ms to warn, 50 watch words, 2,000 chars, 4x CPU throttle`;
+          } finally {
+            await page.cdp.send("Emulation.setCPUThrottlingRate", { rate: 1 });
+            await store.set(ctx, { vault: [] });
+          }
         }),
     );
   }

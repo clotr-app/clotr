@@ -500,6 +500,25 @@ module.exports = async function (env) {
       }),
   );
 
+  await check(
+    "HC5",
+    "Self-check: a built-in site redesigned to a contenteditable value the plain scan misses is still found, through the shape rule",
+    () =>
+      withSite(ctx, "redesigned", async (page) => {
+        await resetState(ctx, {});
+        await page.bringToFront();
+        // No typing at all: only the pre-scan (findChatBox's shape fallback) can have set this.
+        const h = await waitFor(async () => {
+          const x = await tabHealth();
+          return x?.editor ? x : null;
+        }, 5000);
+        expect(h?.editor === true && !h.editFailed, `health: ${JSON.stringify(await tabHealth())}`);
+        // The fallback finding it is one thing; real protection still has to work on it.
+        await typeText(page, `key ${KEY}`);
+        expect(await waitForNotice(page), "no notice on the redesigned box");
+      }),
+  );
+
   // What the popup's "Test Clotr here" button asks this tab's Clotr. The button itself needs a real click to
   // open, so that part is checked by hand instead.
   const showChatBox = () =>
@@ -638,6 +657,30 @@ module.exports = async function (env) {
       }),
   );
 
+  await check(
+    "SEC2b",
+    "A page can't probe with document.execCommand: an edit the browser marks trusted, but nobody typed, gets no reaction",
+    () =>
+      withSite(ctx, "hostile", async (page) => {
+        await resetState(ctx, {});
+        const reacted = await page.evaluate((k) => window.__probeExec(`is it Emma? Liam? key ${k}`), KEY);
+        expect(!reacted, "Clotr reacted to text the page put in with execCommand");
+        await typeText(page, " qx-sec2b");
+        const n = await waitFor(() => readNotice(page), 3000);
+        expect(n && /AWS Access Key/.test(n.text), "no warning after real typing");
+      }),
+  );
+
+  await check("SEC2c", "A page can't probe with a made-up end of an input-method composition", () =>
+    withSite(ctx, "hostile", async (page) => {
+      await resetState(ctx, {});
+      await typeText(page, "hello"); // a real keystroke first, so Clotr knows the chat box
+      await sleep(600);
+      const reacted = await page.evaluate((k) => window.__probeCompose(`key ${k}`), KEY);
+      expect(!reacted, "Clotr checked the box after a composition end the page made up");
+    }),
+  );
+
   await check("SEC3", "A page can't trigger Ask before sending with a scripted Enter", () =>
     withSite(ctx, "hostile", async (page) => {
       await resetState(ctx, { aws_access_key: "block" });
@@ -646,7 +689,7 @@ module.exports = async function (env) {
     }),
   );
 
-  for (const kind of ["change", "drop", "paste"])
+  for (const kind of ["change", "drop", "paste"]) {
     await check(
       `SEC4-${kind}`,
       `A page can't test guesses against the vault with a script-made file ${kind} event`,
@@ -657,6 +700,37 @@ module.exports = async function (env) {
           expect(!reacted, `a script-made ${kind} event with a file got a reaction`);
         }),
     );
+  }
+
+  await check(
+    "SEC4-swap",
+    "A page can't swap its own guess file into a file the person really picked, and a real pick is still checked",
+    () =>
+      withSite(ctx, "hostile", async (page) => {
+        await resetState(ctx, {});
+        const pick = async (name, text, swapName, swapText) => {
+          const file = path.join(OUT, name);
+          fs.writeFileSync(file, text);
+          await page.evaluate((n, t) => window.__swapOnPick(n, t), swapName, swapText);
+          await (await page.$("#attach")).uploadFile(file);
+          const swapped = await page.evaluate(() => document.getElementById("attach").files[0]?.name);
+          const reacted = await page.evaluate(() => window.__watch(2000));
+          fs.rmSync(file);
+          expect(swapped === swapName, `the page's swap didn't happen (the input holds ${swapped})`);
+          return reacted;
+        };
+        // The person picks a harmless file; the page swaps in its guesses.
+        let reacted = await pick("packing-list.txt", "socks, charger, sunscreen", "guess.txt", `key ${KEY}`);
+        expect(!reacted, "Clotr checked the page's swapped-in file instead of the one picked");
+        // The person picks a file with a key in it; the page swaps in something harmless.
+        reacted = await pick("deploy-notes.txt", `deploy key ${KEY}`, "nothing.txt", "nothing here");
+        const notice = await waitFor(() => readNotice(page), 3000);
+        expect(
+          reacted && /deploy-notes\.txt/.test(notice?.text || "") && /AWS Access Key/.test(notice.text),
+          `the real pick wasn't checked: ${notice?.text}`,
+        );
+      }),
+  );
 
   await check(
     "SEC5",
@@ -679,6 +753,42 @@ module.exports = async function (env) {
         }, KEY);
         await clickSend(page);
         expect(await waitForDialog(page), "a real click on Send stopped asking first");
+      }),
+  );
+
+  await check(
+    "SEC6",
+    "A page can't use a real Shift+Enter to test a guess: its own submit right after, with its guess swapped in, gets no reaction",
+    () =>
+      withSite(ctx, "hostile", async (page) => {
+        await resetState(ctx, { aws_access_key: "block" });
+        await typeText(page, "hello");
+        await sleep(600);
+        await page.keyboard.down("Shift");
+        await page.keyboard.press("Enter");
+        await page.keyboard.up("Shift");
+        const reacted = await page.evaluate((k) => window.__probeAfterGesture(`key ${k}`), KEY);
+        expect(!reacted, "the page's submit right after a real key tested its guess");
+        const events = await store.events(ctx);
+        expect(!events.length, `the probe was recorded: ${JSON.stringify(events)}`);
+      }),
+  );
+
+  await check(
+    "SEC7",
+    "A page can't use a real click on Send to test a guess: its own click handler swaps the box and submits, and gets no reaction",
+    () =>
+      withSite(ctx, "hostile", async (page) => {
+        await resetState(ctx, { aws_access_key: "block" });
+        await typeText(page, "hello");
+        await sleep(600);
+        await page.evaluate((k) => window.__swapOnSend(`key ${k}`), KEY);
+        await clickSend(page);
+        const reacted = await page.evaluate(() => window.__watch(1500));
+        expect(!reacted, "the page's submit inside the real click tested its guess");
+        // Nothing gets stuck: the page's own send went out (SEC5 shows a real click on a held key still asks).
+        const sent = await sentMessages(page);
+        expect(sent.length === 1, `sent: ${JSON.stringify(sent)}`);
       }),
   );
 
@@ -763,7 +873,7 @@ module.exports = async function (env) {
         if (n.nodeName === "CODE") codes.push(n);
         for (const c of [...(n.children || []), ...(n.shadowRoots || [])]) walk(c);
       })(root);
-      expect(box && codes.length, `notice box ${!!box}, items ${codes.length}`);
+      expect(box && codes.length, `notice box ${Boolean(box)}, items ${codes.length}`);
       const right = async (n) => {
         const q = (await page.cdp.send("DOM.getBoxModel", { nodeId: n.nodeId })).model.border;
         return Math.max(q[0], q[2], q[4], q[6]);
@@ -1904,12 +2014,26 @@ module.exports = async function (env) {
       withSite(ctx, "chatgpt", async (page) => {
         await resetState(ctx, {});
         await forgetNotes();
+        // Picked along with a file that isn't a picture, the photo isn't held, so it reaches the site as it is
+        // and the warning comes after.
+        const notes = path.join(OUT, "PIC5 notes.txt");
+        fs.writeFileSync(notes, "trip notes");
         try {
-          await attach(page, pictureFile("IMG_PIC5.jpg", fx.jpegWithGps(fx.PLACES.liberty)));
+          await (
+            await page.$("#attach")
+          ).uploadFile(pictureFile("IMG_PIC5.jpg", fx.jpegWithGps(fx.PLACES.liberty)), notes);
           const n = await waitForNotice(page);
           expect(
-            n?.text.startsWith(`Before you send this | ${PLACE_LEAD("IMG_PIC5.jpg")} | ${PLACE_HINT} | ${HONEST} | OK`),
+            n?.text.startsWith(
+              `Before you send this | ${PLACE_LEAD("IMG_PIC5.jpg")} | ${PLACE_HINT} | ${HONEST} | ` +
+                `Remove the place, keep the photo | OK`,
+            ),
             `notice: ${n?.text}`,
+          );
+          // A JPEG's place can be stripped, so the primary button offers to; OK stays second, never primary.
+          expect(
+            n.buttons[0]?.text === "Remove the place, keep the photo" && n.buttons[1]?.text === "OK",
+            `buttons: ${n.buttons.map((b) => b.text)}`,
           );
           // The only digits anywhere in the notice should be the ones in the file's own name.
           expect(!/\d/.test(n.text.replaceAll("IMG_PIC5.jpg", "")), `notice: ${n.text}`);
@@ -1945,6 +2069,7 @@ module.exports = async function (env) {
           expect(!Object.keys(await noted()).length, "the picture note was marked shown for a picture that warned");
         } finally {
           dropMadePictures();
+          fs.rmSync(notes, { force: true });
         }
       }),
   );
@@ -1969,9 +2094,11 @@ module.exports = async function (env) {
             ["PIC6 scan.tiff", fx.tiffGps(tokyo)],
           ]) {
             await attach(page, pictureFile(name, bytes));
+            // A PNG can be rebuilt, so its place comes out before the site gets it; the rest get the warning.
+            const lead = name.endsWith(".png") ? "Place removed" : PLACE_LEAD(name);
             const n = await waitFor(async () => {
               const w = await readNotice(page);
-              return w?.text.includes(PLACE_LEAD(name)) ? w : null;
+              return w?.text.includes(lead) ? w : null;
             }, 5000);
             expect(n, `${name}: ${(await readNotice(page))?.text}`);
             await clickDialogButton(page, "OK", readNotice);
@@ -1987,7 +2114,9 @@ module.exports = async function (env) {
             await expectNoUI(page, name);
           }
           // Each OK is recorded through the background's queue, which can lag on a busy computer, so I wait for it.
-          const want = Array(5).fill("photo_location:allowed").join();
+          const want = ["allowed", "redacted", "allowed", "allowed", "allowed"]
+            .map((a) => `photo_location:${a}`)
+            .join();
           const kinds = async () => (await store.events(ctx)).map((e) => `${e.type}:${e.action}`).join();
           expect(
             await waitFor(async () => ((await kinds()) === want ? true : null), 5000),
@@ -2027,14 +2156,15 @@ module.exports = async function (env) {
       try {
         await withSite(ctx, "chatgpt", async (page) => {
           const { liberty, tokyo } = fx.PLACES;
-          await attach(page, pictureFile("PIC6b first.jpg", fx.jpegWithGps(liberty)));
-          expect(await warningFor(page, "PIC6b first.jpg"), "no warning for the first picture");
+          // HEIC can't be rebuilt, so these reach the site as they are and get the warning.
+          await attach(page, pictureFile("PIC6b first.heic", fx.heifWithGps({ tiff: fx.tiffGps(liberty) })));
+          expect(await warningFor(page, "PIC6b first.heic"), "no warning for the first picture");
           await clickDialogButton(page, "OK", readNotice); // kept a third time: the offer is on its way
-          await attach(page, pictureFile("PIC6b second.jpg", fx.jpegWithGps(tokyo)));
-          expect(await warningFor(page, "PIC6b second.jpg"), "no warning for the second picture");
+          await attach(page, pictureFile("PIC6b second.heic", fx.heifWithGps({ tiff: fx.tiffGps(tokyo) })));
+          expect(await warningFor(page, "PIC6b second.heic"), "no warning for the second picture");
           await sleep(2500); // the late offer has arrived by now
           const n = await readNotice(page);
-          expect(n?.text.includes(PLACE_LEAD("PIC6b second.jpg")), `the warning was replaced: ${n?.text}`);
+          expect(n?.text.includes(PLACE_LEAD("PIC6b second.heic")), `the warning was replaced: ${n?.text}`);
           await clickDialogButton(page, "OK", readNotice);
           // Now that the warning's been answered, the offer can finally show up.
           const offer = await waitFor(async () => {
@@ -2132,17 +2262,16 @@ module.exports = async function (env) {
             }
           }
           await clickDialogButton(page, "OK", readNotice);
-          // This photo is named like a passport and has a place saved inside it, so one warning should mention both.
+          // This photo is named like a passport and has a place saved inside it. The place comes out before the
+          // site gets it, so the warning that follows is only about the name.
           await attach(page, pictureFile("Passport photo page.jpg", fx.jpegWithGps(fx.PLACES.eiffel)));
-          const both = await waitForNotice(page);
+          const idOnly = await waitFor(async () => {
+            const o = await readNotice(page);
+            return o?.text.includes("“Passport photo page.jpg” looks like a photo of an ID") ? o : null;
+          }, 5000);
           expect(
-            both?.text.includes(
-              "The picture “Passport photo page.jpg” looks like a photo of an ID or document, going by its name, and has " +
-                "the place it was taken saved inside it.",
-            ) &&
-              /ID or Document Picture, Photo Location/.test(both.text) &&
-              !/\d/.test(both.text),
-            `notice: ${both?.text}`,
+            idOnly && !/Photo Location|place it was taken/.test(idOnly.text) && !/\d/.test(idOnly.text),
+            `notice: ${idOnly?.text ?? (await readNotice(page))?.text}`,
           );
           await clickDialogButton(page, "OK", readNotice);
           await attach(page, pictureFile("IMG_2041.jpg", fx.BASE.jpeg));
@@ -2162,8 +2291,8 @@ module.exports = async function (env) {
           await clickDialogButton(page, "OK", readNotice);
           const want = [
             "id_picture:allowed:true",
+            "photo_location:redacted:true",
             "id_picture:allowed:true",
-            "photo_location:allowed:true",
             "id_picture:allowed:true",
           ].join();
           const events = async () =>
@@ -2178,6 +2307,303 @@ module.exports = async function (env) {
         await forgetNotes();
       }
     },
+  );
+
+  // PIC14-PIC19: a page that uploads a file the moment it arrives, as the big AI sites most likely do. Whatever
+  // its own handlers got is what the site has, so these read that list instead of the file box.
+  const uploads = (page) => page.evaluate(() => window.__uploads);
+  const placeRemovedFirst = async (page) => {
+    const o = await readNotice(page);
+    return o?.text.includes("Place removed") && o.text.includes("before the site got") ? o : null;
+  };
+  // The page's handler got exactly one file, named as picked, with the cleaned file's size; and the place was
+  // recorded as redacted once, since the site never had it.
+  const expectOnlyCleaned = async (page, via, name, cleanSize) => {
+    const n = await waitFor(() => placeRemovedFirst(page), 5000);
+    const got = await uploads(page);
+    expect(
+      got.length === 1 && got[0].via === via && got[0].name === name && got[0].size === cleanSize,
+      `the page's ${via} handler got ${JSON.stringify(got)}; the cleaned file is ${cleanSize} bytes`,
+    );
+    expect(n, `notice: ${(await readNotice(page))?.text}`);
+    expect(
+      n?.buttons.map((b) => b.text).join("|") === "Put the place back|OK",
+      `buttons: ${n?.buttons.map((b) => b.text)}`,
+    );
+    const events = await waitFor(async () => {
+      const e = await store.events(ctx);
+      return e.length ? e : null;
+    }, 3000);
+    expect(
+      events?.length === 1 && events[0].type === "photo_location" && events[0].action === "redacted",
+      `events: ${JSON.stringify(events)}`,
+    );
+    return n;
+  };
+
+  await check(
+    "PIC16",
+    "A photo with its place, picked in a file box: the page's own change handler only ever gets the cleaned copy",
+    () =>
+      withSite(ctx, "uploadNow", async (page) => {
+        await resetState(ctx, {});
+        await forgetNotes();
+        try {
+          await attach(page, pictureFile("IMG_PIC16.jpg", fx.jpegWithGps(fx.PLACES.liberty)));
+          const n = await expectOnlyCleaned(page, "change", "IMG_PIC16.jpg", fx.BASE.jpeg.length);
+          expect(!/\d/.test(n.text.replaceAll("IMG_PIC16.jpg", "")), `notice: ${n.text}`);
+          // Run axe and take screenshots of the note in dark then light, at a phone width and a desktop width.
+          const problems = [];
+          for (const theme of ["dark", "light"]) {
+            await page.emulateMediaFeatures([{ name: "prefers-color-scheme", value: theme }]);
+            await sleep(150);
+            problems.push(...((await auditShadow(page, "CLOTR-NOTICE")) || []).map((p) => `${theme}: ${p}`));
+            for (const width of [380, 1040]) {
+              await page.setViewport({ width, height: 640 });
+              await sleep(200);
+              await page.screenshot({ path: path.join(OUT, `picture-place-removed-${theme}-${width}.png`) });
+            }
+          }
+          expect(!problems.length, problems.slice(0, 3).join(" | "));
+          // Putting the place back hands the page the original as well, and says so.
+          await clickDialogButton(page, "Put the place back", readNotice);
+          const back = await waitFor(async () => {
+            const o = await readNotice(page);
+            return o?.text.includes("with its place") ? o : null;
+          }, 3000);
+          expect(back, `notice after putting it back: ${(await readNotice(page))?.text}`);
+          const got = await uploads(page);
+          expect(
+            got.length === 2 && got[1].size === fx.jpegWithGps(fx.PLACES.liberty).length,
+            `after putting the place back: ${JSON.stringify(got)}`,
+          );
+          await clickDialogButton(page, "OK", readNotice);
+          // A photo with no place in it reaches the page as it is.
+          await attach(page, pictureFile("IMG_PIC16 plain.jpg", fx.BASE.jpeg));
+          const plain = await waitFor(async () => ((await uploads(page)).length === 3 ? uploads(page) : null), 3000);
+          expect(
+            plain?.[2]?.name === "IMG_PIC16 plain.jpg" && plain[2].size === fx.BASE.jpeg.length,
+            `a plain photo: ${JSON.stringify(plain)}`,
+          );
+        } finally {
+          dropMadePictures();
+          await forgetNotes();
+        }
+      }),
+  );
+
+  // Drops a file the way a drag from the desktop would: the browser's own input pipeline (CDP), so it's trusted.
+  const dropFile = async (page, file) => {
+    await page.setDragInterception(true);
+    const data = { items: [], files: [file], dragOperationsMask: 1 };
+    const at = { x: 50, y: 50 };
+    await page.mouse.dragEnter(at, data);
+    await page.mouse.dragOver(at, data);
+    await page.mouse.drop(at, data);
+  };
+
+  await check(
+    "PIC17",
+    "A photo with its place, dropped on the chat: the page's own drop handler only ever gets the cleaned copy",
+    () =>
+      withSite(ctx, "uploadNow", async (page) => {
+        await resetState(ctx, {});
+        await forgetNotes();
+        try {
+          await dropFile(page, pictureFile("IMG_PIC17.jpg", fx.jpegWithGps(fx.PLACES.opera)));
+          await expectOnlyCleaned(page, "drop", "IMG_PIC17.jpg", fx.BASE.jpeg.length);
+          await clickDialogButton(page, "OK", readNotice);
+        } finally {
+          dropMadePictures();
+          await forgetNotes();
+        }
+      }),
+  );
+
+  // Pastes the way Ctrl+V does: written to the browser's clipboard, then a real paste command, so the paste event
+  // is trusted.
+  const pressPaste = async (page) => {
+    await page.focus("#prompt-textarea");
+    await page.keyboard.down("Control");
+    await page.keyboard.press("KeyV", { commands: ["paste"] });
+    await page.keyboard.up("Control");
+  };
+  const pastePicture = async (page, bytes, type) => {
+    await page
+      .browserContext()
+      .overridePermissions(new URL(page.url()).origin, [
+        "clipboard-read",
+        "clipboard-write",
+        "clipboard-sanitized-write",
+      ]);
+    await page.evaluate(
+      async (b64, t) => {
+        const bin = Uint8Array.from(atob(b64), (c) => c.charCodeAt(0));
+        await navigator.clipboard.write([new ClipboardItem({ [t]: new Blob([bin], { type: t }) })]);
+      },
+      Buffer.from(bytes).toString("base64"),
+      type,
+    );
+    await pressPaste(page);
+  };
+
+  await check(
+    "PIC18",
+    "A pasted picture: the page's own paste handler gets it only once Clotr has read it, the same file",
+    () =>
+      withSite(ctx, "uploadNow", async (page) => {
+        await resetState(ctx, {});
+        await forgetNotes();
+        try {
+          // The browser re-encodes a picture written to its clipboard, which drops the place, so this can't
+          // carry one the way a photo file copied in Explorer or Finder does. What it shows is the hold itself:
+          // the page's handler gets the paste from Clotr (not the person's own event), with the same file.
+          await pastePicture(page, fx.pngWithGps(fx.PLACES.eiffel), "image/png");
+          const got = await waitFor(async () => ((await uploads(page)).length ? uploads(page) : null), 3000);
+          const size = await page.evaluate(async () => {
+            const [item] = await navigator.clipboard.read();
+            return (await item.getType("image/png")).size;
+          });
+          expect(
+            got?.length === 1 && got[0].via === "paste" && got[0].trusted === false && got[0].size === size,
+            `the page's paste handler got ${JSON.stringify(got)}; the clipboard holds ${size} bytes`,
+          );
+          // Text pasted on its own never waits.
+          await page.evaluate(() => navigator.clipboard.writeText("what's in this picture?"));
+          await pressPaste(page);
+          const text = await page.$eval("#prompt-textarea", (b) => b.value);
+          expect(text === "what's in this picture?", `the box holds ${JSON.stringify(text)}`);
+        } finally {
+          await forgetNotes();
+        }
+      }),
+  );
+
+  await check(
+    "PIC19",
+    "A site that ignores the drop Clotr hands back: Clotr says so, offers the cleaned copy, and the next drop goes straight through",
+    () =>
+      withSite(ctx, "uploadStrict", async (page) => {
+        await resetState(ctx, {});
+        await forgetNotes();
+        try {
+          page.cdp ??= await page.createCDPSession();
+          await page.cdp.send("Page.enable");
+          // Its own folder, so the saved copy never lands on the photo this check drops a second time.
+          const saved = path.join(OUT, "PIC19 saved");
+          fs.mkdirSync(saved, { recursive: true });
+          await page.cdp.send("Page.setDownloadBehavior", { behavior: "allow", downloadPath: saved });
+          let download = null;
+          page.cdp.on("Page.downloadWillBegin", (e) => {
+            download = e;
+          });
+          const photo = pictureFile("IMG_PIC19.jpg", fx.jpegWithGps(fx.PLACES.bigBen));
+          await dropFile(page, photo);
+          const n = await waitFor(async () => {
+            const o = await readNotice(page);
+            return o?.text.includes("didn't take the copy") ? o : null;
+          }, 5000);
+          expect(n, `notice: ${(await readNotice(page))?.text}`);
+          expect(!(await uploads(page)).length, `uploads: ${JSON.stringify(await uploads(page))}`);
+          await clickDialogButton(page, "Save a copy without the place", readNotice);
+          expect(await waitFor(() => (download ? true : null), 3000), "no download began");
+          expect(!(await store.events(ctx)).length, `events: ${JSON.stringify(await store.events(ctx))}`);
+          // The next drop isn't held, so the site gets it, and Clotr warns about the place the way it did before.
+          await dropFile(page, photo);
+          const got = await waitFor(async () => ((await uploads(page)).length ? uploads(page) : null), 3000);
+          expect(got?.length === 1 && got[0].trusted === true, `the second drop: ${JSON.stringify(got)}`);
+          const late = await waitForNotice(page);
+          expect(late?.text.includes(PLACE_LEAD("IMG_PIC19.jpg")), `notice: ${late?.text}`);
+        } finally {
+          dropMadePictures();
+          await forgetNotes();
+        }
+      }),
+  );
+
+  await check(
+    "PIC14",
+    "A photo with its place in a file box the page reads at send: the cleaned copy is what's in the box, and what goes out",
+    () =>
+      withSite(ctx, "chatgpt", async (page) => {
+        await resetState(ctx, {});
+        await forgetNotes();
+        try {
+          await attach(page, pictureFile("IMG_PIC14.jpg", fx.jpegWithGps(fx.PLACES.liberty)));
+          const done = await waitFor(async () => {
+            const o = await readNotice(page);
+            return o?.text.includes("Place removed") ? o : null;
+          }, 5000);
+          expect(done, `notice: ${(await readNotice(page))?.text}`);
+          const [name, size] = await page.evaluate(() => {
+            const f = document.getElementById("attach").files[0];
+            return [f?.name, f?.size];
+          });
+          expect(name === "IMG_PIC14.jpg", `file name in the box: ${name}`);
+          expect(
+            size === fx.BASE.jpeg.length,
+            `file in the box: ${size} bytes vs the place-free ${fx.BASE.jpeg.length}`,
+          );
+          await clickDialogButton(page, "OK", readNotice);
+          await sleep(300);
+          expect(!(await readNotice(page)), "a notice stayed after the 'place removed' OK");
+          await clickSend(page);
+          const sent = await waitFor(async () => ((await sentMessages(page)).length ? sentMessages(page) : null), 2000);
+          expect(sent?.[0] === "[IMG_PIC14.jpg]", `sent: ${JSON.stringify(sent)}`);
+        } finally {
+          dropMadePictures();
+          await forgetNotes();
+        }
+      }),
+  );
+
+  await check(
+    "PIC15",
+    "A photo picked along with another file reaches the site as it is: the button builds a copy and says the site may already have the original",
+    () =>
+      withSite(ctx, "uploadNow", async (page) => {
+        await resetState(ctx, {});
+        await forgetNotes();
+        try {
+          page.cdp ??= await page.createCDPSession();
+          await page.cdp.send("Page.enable");
+          const saved = path.join(OUT, "PIC15 saved");
+          fs.mkdirSync(saved, { recursive: true });
+          await page.cdp.send("Page.setDownloadBehavior", { behavior: "allow", downloadPath: saved });
+          let download = null;
+          page.cdp.on("Page.downloadWillBegin", (e) => {
+            download = e;
+          });
+          const original = fx.jpegWithGps(fx.PLACES.opera);
+          const notes = path.join(OUT, "PIC15 notes.txt");
+          fs.writeFileSync(notes, "trip notes");
+          await (await page.$("#attach")).uploadFile(pictureFile("IMG_PIC15.jpg", original), notes);
+          const n = await waitForNotice(page);
+          expect(n?.buttons[0]?.text === "Remove the place, keep the photo", `notice: ${n?.text}`);
+          const got = await uploads(page);
+          expect(
+            got.length === 2 && got[0].size === original.length && got[0].trusted === true,
+            `the page got ${JSON.stringify(got)}`,
+          );
+          await clickDialogButton(page, "Remove the place, keep the photo", readNotice);
+          const fallback = await waitFor(async () => {
+            const o = await readNotice(page);
+            return o?.text.includes("may already have the original photo") ? o : null;
+          }, 5000);
+          expect(fallback, `notice after strip: ${(await readNotice(page))?.text}`);
+          expect(!/replaced/i.test(fallback?.text || ""), `the words claim a swap: ${fallback?.text}`);
+          await clickDialogButton(page, "Save a copy without the place", readNotice);
+          expect(await waitFor(() => (download ? true : null), 3000), "no download began");
+          expect(download?.suggestedFilename === "IMG_PIC15.jpg", `download name: ${download?.suggestedFilename}`);
+          // The site has the original, so nothing here is counted as redacted.
+          expect(!(await store.events(ctx)).length, `events: ${JSON.stringify(await store.events(ctx))}`);
+          expect((await uploads(page)).length === 2, `the page got more: ${JSON.stringify(await uploads(page))}`);
+          fs.rmSync(notes, { force: true });
+        } finally {
+          dropMadePictures();
+          await forgetNotes();
+        }
+      }),
   );
 
   await check(
@@ -2201,14 +2627,14 @@ module.exports = async function (env) {
           await input.uploadFile(...files); // all at once
           await sleep(1500);
           await expectNoUI(page, "hostile pictures");
-          // This 25 MB photo has its place saved in the first few bytes, so Clotr only needs to read the start
-          // of the file and should warn right away.
+          // This 25 MB photo has its place saved in the first few bytes. Clotr holds it while it takes the place
+          // out, which means reading the whole file, and that still has to be quick and leave the page responsive.
           const big = pictureFile("IMG_PIC13 big.jpg", fx.bigJpeg(25));
           const t1 = Date.now();
           await input.uploadFile(big);
           const n = await waitForNotice(page);
           const warnedIn = Date.now() - t1;
-          expect(n?.text.includes(PLACE_LEAD("IMG_PIC13 big.jpg")), `notice: ${n?.text}`);
+          expect(n?.text.includes("Place removed"), `notice: ${n?.text}`);
           const lag = await page.evaluate(() => {
             const s = performance.now();
             return new Promise((r) => setTimeout(() => r(performance.now() - s), 0));

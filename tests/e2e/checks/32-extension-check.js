@@ -271,6 +271,63 @@ module.exports = async function (env) {
     },
   );
 
+  // A sideloaded extension that reaches only non-AI sites, and an admin-installed one that reaches an AI site:
+  // neither is a real loaded extension, since chrome.management.getAll() only ever reports "development" for an
+  // unpacked copy in this harness, never "sideload" or "admin". So this stubs chrome.management and
+  // chrome.permissions.request directly on the shared page, the same way EX5 stands in for a prompt that can't
+  // be clicked, to reach the two install notes and the "some sites" reach line no fixture extension can produce.
+  await check(
+    "EX9",
+    "Extension check: a sideloaded extension reads as worth a look even with no report, and an admin install gets its own note",
+    async () => {
+      const page = await openExtPage(ctx, "extcheck.html");
+      try {
+        await page.evaluate(() => {
+          chrome.permissions.request = () => Promise.resolve(true);
+          chrome.management.getAll = () =>
+            Promise.resolve([
+              {
+                id: "sideload1",
+                name: "Sideloaded reader",
+                type: "extension",
+                enabled: true,
+                installType: "sideload",
+                hostPermissions: ["https://example.com/*"],
+              },
+              {
+                id: "admin1",
+                name: "Admin-installed AI reader",
+                type: "extension",
+                enabled: true,
+                installType: "admin",
+                hostPermissions: ["https://chatgpt.com/*"],
+              },
+            ]);
+          chrome.management.getPermissionWarningsById = () => Promise.resolve([]);
+          chrome.management.getPermissionWarningsByManifest = () => Promise.resolve([]);
+        });
+        await page.click("#start-check");
+        await waitFor(() => page.evaluate(() => !document.getElementById("results").hidden), 5000);
+        const { worth, rows } = await readResults(page);
+        const sideload = worth.find((r) => r.id === "sideload1");
+        expect(sideload, `the sideloaded fake isn't worth a look: ${JSON.stringify(worth)}`);
+        expect(
+          sideload.reason === "Installed by another program, not from a store.",
+          `sideload reason: ${sideload.reason}`,
+        );
+        expect(
+          sideload.reach === "Can read some sites; your browser's page lists them",
+          `sideload reach line: ${sideload.reach}`,
+        );
+        const admin = rows.find((r) => r.id === "admin1");
+        expect(admin, `the admin-installed fake isn't in the can-read rows: ${JSON.stringify(rows)}`);
+        expect(admin.note === "Added by your organization.", `admin note: ${admin.note}`);
+      } finally {
+        await page.close();
+      }
+    },
+  );
+
   // The other branch is the browser saying no. No fake extensions are needed here, since `chrome.permissions.request`
   // is stubbed on the shared browser, the same way EV's checks stand in for a prompt that can't be clicked.
   await check(

@@ -76,12 +76,10 @@ function viewEvents() {
 
 function renderSiteFilter() {
   const counts = countBy(state.events, (e) => e.site);
-  if (siteFilter && !counts.some(([site]) => site === siteFilter)) siteFilter = "";
+  if (siteFilter && !counts.some(([s]) => s === siteFilter)) siteFilter = "";
   $("site-filter").replaceChildren(
     el("option", { value: "", textContent: msg("pp_allTools", "All chats"), selected: !siteFilter }),
-    ...counts.map(([site, n]) =>
-      el("option", { value: site, textContent: `${site} (${n})`, selected: site === siteFilter }),
-    ),
+    ...counts.map(([s, n]) => el("option", { value: s, textContent: `${s} (${n})`, selected: s === siteFilter })),
   );
   $("filter-bar").hidden = counts.length < 2 && !siteFilter;
   // With one tool chosen, its per-site mode sits right next to it. "Quieter here" doesn't apply under
@@ -100,12 +98,15 @@ function renderSiteFilter() {
 
 const $ = (id) => document.getElementById(id);
 $("site-mode").addEventListener("change", async (e) => {
-  const site = siteFilter; // read before awaiting: the filter may change meanwhile
+  const filterSite = siteFilter; // read before awaiting: the filter may change meanwhile
   const mode = e.target.value;
-  if (!site || isLocked()) return renderSiteFilter();
+  if (!filterSite || isLocked()) {
+    renderSiteFilter();
+    return;
+  }
   const { siteModes = {} } = await chrome.storage.local.get("siteModes");
-  if (mode) siteModes[site] = mode;
-  else delete siteModes[site];
+  if (mode) siteModes[filterSite] = mode;
+  else delete siteModes[filterSite];
   await chrome.storage.local.set({ siteModes });
 });
 $("site-filter").addEventListener("change", (e) => {
@@ -203,7 +204,7 @@ async function detectSite() {
       target: { tabId: tab.id },
       func: Sites.inspectPageForAIChat,
     });
-    site = { ...base, kind: result?.looksLikeAI ? "spotted" : "not-ai", signals: result?.signals || [] };
+    site = { ...base, kind: Sites.spotKind(url.hostname, result), signals: result?.signals || [] };
     if (site.kind === "spotted") noteSpotted(url.hostname);
   } catch {
     site = { ...base, kind: "not-ai", signals: [] };
@@ -231,8 +232,9 @@ async function protectSite(url, kind = "ai") {
   const scope = Sites.protectScope(url);
   const perm = Sites.permissionFor(scope);
   const siteScopes = { ...state.siteScopes };
-  if (scope === perm)
-    delete siteScopes[perm]; // the whole host
+  if (scope === perm) {
+    delete siteScopes[perm];
+  } // the whole host
   else siteScopes[perm] = [...new Set([...(siteScopes[perm] || []), scope])];
   const siteKinds = { ...state.siteKinds, [new URL(url).hostname]: kind };
   Object.assign(state, { siteScopes, siteKinds });
@@ -277,7 +279,7 @@ async function setEverydaySite(s, on) {
     say("everyday-status", "");
     const yes = await Sites.requestEverydayApps([s.name]);
     // A closed prompt or a No used to leave this silent; say so instead, the same way the welcome page does.
-    if (!yes)
+    if (!yes) {
       say(
         "everyday-status",
         msg(
@@ -285,6 +287,7 @@ async function setEverydaySite(s, on) {
           "Nothing was switched on: the browser's question was closed or answered No. Tick and try again, or switch them on later in Settings.",
         ),
       );
+    }
   } else {
     say("everyday-status", "");
     const hosts = s.matches.map((p) => new URL(p.replace(/\*$/, "")).hostname);
@@ -306,6 +309,7 @@ const SIGNALS = {
   "AI wording in the page title": "pp_sigTitle",
   "a chat-style prompt box": "pp_sigBox",
   "a send button": "pp_sigSend",
+  "a chat-shaped box": "pp_sigShape",
 };
 const signalText = (s) => (SIGNALS[s] ? msg(SIGNALS[s], s) : s);
 
@@ -348,11 +352,12 @@ function renderSite() {
     allow.addEventListener("click", async () => {
       const granted = await allowBuiltInHere(site.url);
       if (granted) renderSite();
-      else
+      else {
         status.textContent = msg(
           "pp_allowNo",
           "Your browser didn't allow it, so Clotr still can't warn you here. Use the button to ask again.",
         );
+      }
     });
     box.replaceChildren(
       el("div", { className: "grow" }, [
@@ -392,6 +397,7 @@ function renderSite() {
             editor: site.health?.editor,
             editFailed: site.health?.editFailed,
             uiRemoved: site.health?.uiRemoved,
+            builtIn: site.source === "built-in",
           });
           const line = stateLine(h.level, msg(h.key, h.text));
           line.dataset.health = h.level;
@@ -411,7 +417,7 @@ function renderSite() {
   }
 
   // "Test Clotr here": the chat box Clotr watches on this tab flashes orange. Nothing is typed or sent.
-  function testHere(site) {
+  function testHere(forSite) {
     const result = el("div", { className: "why", role: "status" });
     const btn = el("button", {
       className: "linkish test-here",
@@ -421,7 +427,7 @@ function renderSite() {
     btn.addEventListener("click", async () => {
       let answer = null;
       try {
-        answer = await chrome.tabs.sendMessage(site.tabId, { type: "clotr:showChatBox" }, { frameId: 0 });
+        answer = await chrome.tabs.sendMessage(forSite.tabId, { type: "clotr:showChatBox" }, { frameId: 0 });
       } catch {
         /* no Clotr in this tab (yet) */
       }
@@ -700,7 +706,7 @@ function renderExposure() {
     if (!seen.has(e.site)) seen.set(e.site, new Set());
     seen.get(e.site).add(`${e.type}:${e.fp}`);
   }
-  const rows = [...seen].map(([site, fps]) => [site, fps.size]).sort((a, b) => b[1] - a[1]);
+  const rows = [...seen].map(([s, fps]) => [s, fps.size]).sort((a, b) => b[1] - a[1]);
   renderHBars($("exposure"), rows);
   $("exposure-empty").hidden = rows.length > 0;
   $("exposure-card").hidden = viewEvents().length === 0; // nothing at all yet: the empty card covers it
@@ -758,8 +764,8 @@ function renderLegend(events) {
 }
 
 function colPath(x, y, w, h, r) {
-  r = Math.min(r, h, w / 2);
-  return `M${x},${y + h}V${y + r}Q${x},${y} ${x + r},${y}H${x + w - r}Q${x + w},${y} ${x + w},${y + r}V${y + h}Z`;
+  const radius = Math.min(r, h, w / 2);
+  return `M${x},${y + h}V${y + radius}Q${x},${y} ${x + radius},${y}H${x + w - radius}Q${x + w},${y} ${x + w},${y + radius}V${y + h}Z`;
 }
 
 function renderChart(days, events) {
@@ -992,20 +998,23 @@ function groupValue(ids) {
   return values.size === 1 ? [...values][0] : "custom";
 }
 
-// Quick exit (Privacy Check-up): tells every other open Clotr page to close itself, then closes the popup, the
+// Quick exit: tells every other open Clotr page to close itself, then closes the popup, the
 // one page that isn't a tab (closeThisTab() no-ops there). window.close() waits a tick so the click itself
 // finishes first: closing the popup's execution context mid-click can leave the broadcast half-sent.
-$("quick-exit").addEventListener("click", () => {
-  globalThis.Clotr.broadcastQuickExit();
-  setTimeout(() => window.close(), 0);
-});
-$("quick-exit").hidden = !FEATURES.checkup;
+if ($("quick-exit")) {
+  $("quick-exit").addEventListener("click", () => {
+    globalThis.Clotr.broadcastQuickExit();
+    setTimeout(() => window.close(), 0);
+  });
+  $("quick-exit").hidden = !FEATURES.checkup;
+}
 $("open-vault").addEventListener("click", () => chrome.tabs.create({ url: chrome.runtime.getURL("vault.html") }));
 $("open-watch").addEventListener("click", () => chrome.tabs.create({ url: chrome.runtime.getURL("vault.html#watch") }));
 $("open-stored").addEventListener("click", () => chrome.tabs.create({ url: chrome.runtime.getURL("stored.html") }));
 $("open-move").addEventListener("click", () => chrome.tabs.create({ url: chrome.runtime.getURL("stored.html#move") }));
-for (const id of ["open-dashboard", "digest-open", "mini-map-open"])
+for (const id of ["open-dashboard", "digest-open", "mini-map-open"]) {
   $(id).addEventListener("click", () => chrome.tabs.create({ url: chrome.runtime.getURL("dashboard.html") }));
+}
 
 // Removes one protected section; the host's permission goes when none are left.
 async function removeUserSite(pattern) {
@@ -1087,8 +1096,9 @@ for (const [id, page] of [
   ["ss-settings-practice", "practice.html"],
   ["ss-open-card", "share.html#card"],
   ["ss-tq30-open", "helper.html?for=after_scam#who"],
-])
+]) {
   $(id)?.addEventListener("click", () => chrome.tabs.create({ url: chrome.runtime.getURL(page) }));
+}
 // The Overview row's own doors, folded into Scam help in Settings too, so someone who meets the row under
 // Tourniquet and someone who opens the folded section both land in the same two places.
 if ($("ss-row-check")) $("ss-row-check").hidden = !FEATURES.scamcheck;
@@ -1113,8 +1123,9 @@ for (const [id, page] of [
   ["lb-card-check", "extcheck.html"],
   ["lb-settings-open", "lookback.html"],
   ["lb-settings-check", "extcheck.html"],
-])
+]) {
   $(id)?.addEventListener("click", () => chrome.tabs.create({ url: chrome.runtime.getURL(page) }));
+}
 // Look back and Extension check are both held back, gated independently; Safari also has
 // no management API, so its build hides Extension check's doors even when the feature is on.
 if ($("lb-card-row")) $("lb-card-row").hidden = !FEATURES.lookback;
@@ -1139,11 +1150,11 @@ function renderLookBackCard() {
 function renderScamHelpToday() {
   const link = $("ss-today-link");
   if (!link) return;
-  const startOfDay = new Date().setHours(0, 0, 0, 0);
+  const todayStart = new Date().setHours(0, 0, 0, 0);
   const shown =
     FEATURES.scamcheck &&
     !tourniquetOn() &&
-    state.events.some((e) => e.t >= startOfDay && (e.type === "card_code" || e.type === "gift_card"));
+    state.events.some((e) => e.t >= todayStart && (e.type === "card_code" || e.type === "gift_card"));
   link.hidden = !shown;
 }
 
@@ -1184,7 +1195,10 @@ $("open-welcome").addEventListener("click", () =>
 $("everywhere-switch").addEventListener("click", () => setEverywhere(!state.everywhereOn));
 $("lock-set").addEventListener("click", async () => {
   const pin = $("pin").value.trim();
-  if (!Helper.validPin(pin)) return say("lock-msg", msg("pp_pinDigits", "Use 4 to 8 digits."), true);
+  if (!Helper.validPin(pin)) {
+    say("lock-msg", msg("pp_pinDigits", "Use 4 to 8 digits."), true);
+    return;
+  }
   const lock = await Helper.makeLock(pin);
   await markUnlocked(); // you set it, so you stay in for now
   await chrome.storage.local.set({ lock });
@@ -1196,7 +1210,10 @@ $("lock-remove").addEventListener("click", async () => {
   say("lock-msg", msg("pp_pinRemoved", "PIN removed: settings are open again."));
 });
 async function tryUnlock() {
-  if (Date.now() < retryAt) return say("unlock-msg", msg("pp_tooMany", "Too many tries: wait half a minute."), true);
+  if (Date.now() < retryAt) {
+    say("unlock-msg", msg("pp_tooMany", "Too many tries: wait half a minute."), true);
+    return;
+  }
   const pin = $("unlock-pin").value.trim();
   const ok = await Helper.pinMatches(pin, state.lock);
   $("unlock-pin").value = "";
@@ -1205,7 +1222,8 @@ async function tryUnlock() {
       retryAt = Date.now() + 30000;
       wrongTries = 0;
     }
-    return say("unlock-msg", msg("pp_wrongPin", "That PIN didn't match."), true);
+    say("unlock-msg", msg("pp_wrongPin", "That PIN didn't match."), true);
+    return;
   }
   wrongTries = 0;
   say("unlock-msg", "");
@@ -1242,7 +1260,7 @@ async function setMoreSite(s, on, statusId) {
   if (on) {
     say(statusId, "");
     const yes = await Sites.requestMoreSites([s.name]);
-    if (!yes)
+    if (!yes) {
       say(
         statusId,
         msg(
@@ -1250,6 +1268,7 @@ async function setMoreSite(s, on, statusId) {
           "Nothing was switched on: the browser's question was closed or answered No. Tick and try again, or switch them on later in Settings.",
         ),
       );
+    }
   } else {
     say(statusId, "");
     await chrome.permissions.remove({ origins: s.matches });
@@ -1273,7 +1292,7 @@ async function setEverywhere(on) {
   say("everywhere-status", "");
   if (on) {
     const yes = await Sites.requestEverywhere();
-    if (!yes)
+    if (!yes) {
       say(
         "everywhere-status",
         msg(
@@ -1281,6 +1300,7 @@ async function setEverywhere(on) {
           "Nothing was switched on: the browser's question was closed or answered No. Tick and try again, or switch them on later in Settings.",
         ),
       );
+    }
   } else {
     await chrome.permissions.remove({ origins: [Sites.EVERYWHERE_ORIGIN] });
   }
@@ -1547,7 +1567,10 @@ function renderTourniquet() {
   // folded in Settings and the quiet day-link (renderScamHelpToday) covers the rest.
   if ($("ss-row")) $("ss-row").hidden = !t || (!FEATURES.scamcheck && !FEATURES.practice);
   for (const id of ["tq-chip", "tq-line", "tq-card", "tq-keeps-note"]) if ($(id)) $(id).hidden = !t;
-  if (!t) return disarmTourniquetOff();
+  if (!t) {
+    disarmTourniquetOff();
+    return;
+  }
   const child = t.for === "child";
   const scam = t.for === "after_scam"; // the grown-up's rules, for 30 days (Scam Shield)
   $("tq-line-text").textContent = child
@@ -1605,8 +1628,9 @@ function renderTourniquet() {
     ? msg("pp_tqApps", "Also on your email and chat apps: $1.", apps.join(", "))
     : "";
   $("tq-switch").hidden = isLocked();
-  for (const b of $("tq-switch").querySelectorAll("button"))
+  for (const b of $("tq-switch").querySelectorAll("button")) {
     b.setAttribute("aria-pressed", String(b.dataset.for === t.for));
+  }
 }
 
 // "2 October", the browser's own way: the 30 days' dates.
@@ -1672,11 +1696,12 @@ $("tq-switch")?.addEventListener("click", async (e) => {
   if (b.dataset.for !== "off") {
     disarmTourniquetOff();
     // A new choice is a new start: `since` is when it was chosen (after a scam: 30 days from now).
-    if (b.dataset.for !== t.for)
+    if (b.dataset.for !== t.for) {
       await chrome.storage.local.set({
         tourniquet:
           b.dataset.for === "after_scam" ? Sites.afterScam(Date.now()) : { for: b.dataset.for, since: Date.now() },
       });
+    }
     return;
   }
   if (!tourniquetOffArmed) {
@@ -1824,7 +1849,7 @@ async function answerTourniquetEnd(next) {
   $("tq-end").hidden = true;
   renderAll();
   await renderTopCard();
-  if (hadFocus)
+  if (hadFocus) {
     (
       [
         $("everyday-offer").querySelector("button"),
@@ -1832,6 +1857,7 @@ async function answerTourniquetEnd(next) {
         $("whats-new-ok"),
       ].find((n) => n?.checkVisibility()) || $("tab-overview")
     ).focus();
+  }
 }
 $("tq-end-more")?.addEventListener("click", () => answerTourniquetEnd(Sites.afterScam(Date.now())));
 $("tq-end-adult")?.addEventListener("click", () => answerTourniquetEnd({ for: "adult", since: Date.now() }));
@@ -1862,8 +1888,9 @@ async function closeEverydayOffer(yes) {
   $("everyday-offer").hidden = true;
   if (yes) refreshSites();
   await renderWhatsNew();
-  if (hadFocus)
+  if (hadFocus) {
     [$("whats-new-more").querySelector("summary"), $("whats-new-ok")].find((n) => n.checkVisibility())?.focus();
+  }
 }
 $("ev-no").addEventListener("click", () => {
   chrome.storage.local.set({ everydayOffer: "done" }).catch(() => {});

@@ -78,7 +78,10 @@ module.exports = async function (env) {
         // should stall it every time.
         const scroll = () =>
           new Promise((resolve) => {
-            if (!PerformanceObserver.supportedEntryTypes.includes("longtask")) return resolve(null);
+            if (!PerformanceObserver.supportedEntryTypes.includes("longtask")) {
+              resolve(null);
+              return;
+            }
             const long = [];
             const watch = new PerformanceObserver((list) => {
               for (const e of list.getEntries()) long.push(Math.round(e.duration));
@@ -112,6 +115,134 @@ module.exports = async function (env) {
         await resetState(ctx, {});
         return `${shown} labels on screen, ${run.frames} frames`;
       }),
+  );
+
+  // The strong fingerprint is slow on purpose (about 15 ms each), so it has to stay off the path a paste takes:
+  // worked out once per found value, a 500-row contact list would hold the tab for about nine seconds.
+  await check("PERF3", "A pasted 500-row contact list (600 details) gets its warning within 2 seconds", () =>
+    withSite(ctx, "chatgpt", async (page) => {
+      await resetState(ctx, {});
+      const rows = Array.from(
+        { length: 500 },
+        (_, i) => `row ${i}, jane.doe${i}@corp-mail.com, 555-01${String(i % 100).padStart(2, "0")}-${1000 + i}`,
+      );
+      const t0 = Date.now();
+      await typeText(page, rows.join("\n"));
+      const notice = await waitFor(() => readNotice(page), 30000);
+      const ms = Date.now() - t0;
+      expect(notice, "no notice");
+      const allowed = 2000 * patience();
+      expect(ms < allowed, `the warning took ${ms} ms (${Math.round(allowed)} allowed on this computer now)`);
+      // Sending records one event per detail, each with its strong fingerprint: that has to leave the page free
+      // to respond, so the longest wait for a timer over the next three seconds stays short.
+      await pressEnter(page);
+      expect(await waitFor(async () => (await sentMessages(page)).length === 1, 8000, 20), "the message didn't send");
+      const worst = await page.evaluate(
+        () =>
+          new Promise((resolve) => {
+            let max = 0;
+            let last = performance.now();
+            const end = last + 3000;
+            (function tick() {
+              const now = performance.now();
+              max = Math.max(max, now - last);
+              last = now;
+              if (now < end) setTimeout(tick, 10);
+              else resolve(Math.round(max));
+            })();
+          }),
+      );
+      const stall = 300 * patience();
+      expect(worst < stall, `the page stalled for ${worst} ms after sending (${Math.round(stall)} allowed)`);
+      await resetState(ctx, {});
+      return `${ms} ms to warn, ${worst} ms longest stall after sending`;
+    }),
+  );
+
+  // The longest the page waited for a timer over the next `ms`: anything long means the tab was frozen.
+  const longestStall = (page, ms) =>
+    page.evaluate(
+      (span) =>
+        new Promise((resolve) => {
+          let max = 0;
+          let last = performance.now();
+          const end = last + span;
+          (function tick() {
+            const now = performance.now();
+            max = Math.max(max, now - last);
+            last = now;
+            if (now < end) setTimeout(tick, 10);
+            else resolve(Math.round(max));
+          })();
+        }),
+      ms,
+    );
+  // A saved detail, fingerprinted the way the vault page saves it (the strong fingerprint).
+  const saveDetail = async (type, value, mode) => {
+    const fp = await ctx.worker.evaluate(
+      async ([t, v]) => globalThis.Clotr.fingerprintStrong(await ensureSalt(), t, v),
+      [type, value],
+    );
+    await store.set(ctx, { vault: [{ kind: "value", type, fp, scheme: 2, mode, added: Date.now() }] });
+  };
+
+  // Telling a saved detail apart from the others takes each found value's strong fingerprint, about 15 ms. With a
+  // phone number saved, a pasted list of 600 phone numbers used to hold the tab for 9 seconds or more.
+  await check("PERF4", "With a phone number saved, a paste of 600 phone numbers warns within 2 seconds", async () => {
+    await resetState(ctx, {});
+    await saveDetail("phone_number", "(555) 555-5636", "protect");
+    return withSite(ctx, "chatgpt", async (page) => {
+      const rows = Array.from({ length: 600 }, (_, i) => `555-${200 + Math.floor(i / 10)}-${1000 + i}`);
+      const t0 = Date.now();
+      await typeText(page, rows.join("\n"));
+      const notice = await waitFor(() => readNotice(page), 30000);
+      const ms = Date.now() - t0;
+      expect(notice, "no notice");
+      expect(/Phone Number ×600/.test(notice.text), `notice: ${notice.text}`);
+      const allowed = 2000 * patience();
+      expect(ms < allowed, `the warning took ${ms} ms (${Math.round(allowed)} allowed on this computer now)`);
+      const worst = await longestStall(page, 2000);
+      const stall = 300 * patience();
+      expect(worst < stall, `the page stalled for ${worst} ms after the warning (${Math.round(stall)} allowed)`);
+      await resetState(ctx, {});
+      return `${ms} ms to warn, ${worst} ms longest stall after`;
+    });
+  });
+
+  // An "OK to share" email does change the answer, so each email is looked up: the scan looks up what fits in its
+  // time and works out the rest in the background, the page free meanwhile, then the warning drops the saved one.
+  await check(
+    "PERF5",
+    "With an email marked OK to share, a paste of 600 emails warns fast and then drops it",
+    async () => {
+      await resetState(ctx, {});
+      const mine = "jo.saved@example.org";
+      await saveDetail("email", mine, "allow");
+      return withSite(ctx, "chatgpt", async (page) => {
+        const rows = [...Array.from({ length: 599 }, (_, i) => `jane.doe${i}@corp-mail.com`), mine];
+        const t0 = Date.now();
+        await typeText(page, rows.join("\n"));
+        const notice = await waitFor(() => readNotice(page), 30000);
+        const ms = Date.now() - t0;
+        expect(notice, "no notice");
+        const allowed = 2000 * patience();
+        expect(ms < allowed, `the warning took ${ms} ms (${Math.round(allowed)} allowed on this computer now)`);
+        const worst = await longestStall(page, 3000);
+        const stall = 300 * patience();
+        expect(
+          worst < stall,
+          `the page stalled for ${worst} ms while the vault was checked (${Math.round(stall)} allowed)`,
+        );
+        const settled = await waitFor(
+          async () => /Email Address ×599\b/.test((await readNotice(page))?.text || ""),
+          60000,
+        );
+        const done = Date.now() - t0;
+        expect(settled, `the saved email was still warned about: ${(await readNotice(page))?.text}`);
+        await resetState(ctx, {});
+        return `${ms} ms to warn, ${worst} ms longest stall, ${done} ms until the saved email dropped out`;
+      });
+    },
   );
 
   await check("MEM1", "Memory stays steady: 200 more messages barely grow the page's heap", () =>

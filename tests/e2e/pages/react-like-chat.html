@@ -1,0 +1,40 @@
+<!doctype html>
+<!-- Stand-in for a React-style composer: picking a file re-renders the file input as a brand new DOM node (the
+     same key-based remount React does), so a reference kept from the moment the file was picked stops being
+     the live element a moment later. This is the page "Remove the place, keep the photo" can't swap into: by
+     the time the person presses the button, the input it watched is gone, so it has to fall back to a download. -->
+<html lang="en">
+<head><meta charset="utf-8"><title>React-like composer (Clotr test page)</title></head>
+<body>
+  <textarea id="prompt-textarea" placeholder="Ask anything" rows="4" cols="60"></textarea>
+  <div id="attach-slot"><input type="file" id="attach" aria-label="Attach a file"></div>
+  <button id="send" aria-label="Send prompt">Send</button>
+  <script>
+    window.__sent = [];
+    window.__picked = null;
+    const slot = document.getElementById("attach-slot");
+    const box = document.getElementById("prompt-textarea");
+    function mountInput() {
+      const input = document.createElement("input");
+      input.type = "file";
+      input.id = "attach";
+      input.setAttribute("aria-label", "Attach a file");
+      input.addEventListener("change", () => {
+        window.__picked = input.files[0] || null;
+        // A fresh node, the way React swaps in a new element for the same key instead of mutating the old one.
+        mountInput();
+      });
+      slot.replaceChildren(input);
+    }
+    mountInput();
+    document.getElementById("send").addEventListener("click", () => {
+      const name = window.__picked?.name;
+      if (!box.value && !name) return;
+      window.__sent.push(box.value || `[${name}]`);
+      box.value = "";
+      window.__picked = null;
+      mountInput();
+    });
+  </script>
+</body>
+</html>

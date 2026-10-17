@@ -77,6 +77,13 @@ module.exports = async function (env) {
           return {
             shown: !card.hidden,
             height: Math.round(card.getBoundingClientRect().height),
+            // A build with unreleased tools adds a row of buttons under the notes to try them, so measure the
+            // card down to the end of its notes row.
+            notesHeight: Math.round(
+              card.querySelector(".whats-new-row").getBoundingClientRect().bottom -
+                card.getBoundingClientRect().top +
+                parseFloat(getComputedStyle(card).paddingBottom),
+            ),
             title: document.getElementById("whats-new-title").textContent,
             summary: more && !more.hidden ? more.querySelector("summary").textContent.trim() : null,
             open: Boolean(more?.open),
@@ -99,15 +106,17 @@ module.exports = async function (env) {
         expect(closed.shown && !closed.open, `card: ${JSON.stringify(closed)}`);
         expect(closed.summary === `See what's new (${notes.length})`, `summary: ${closed.summary}`);
         expect(closed.notes === notes.length && closed.showing === 0, `notes showing while closed: ${closed.showing}`);
-        expect(closed.height <= 80, `the closed card is ${closed.height}px tall`);
-        for (const theme of ["light", "dark"])
+        expect(closed.notesHeight <= 80, `the closed card is ${closed.notesHeight}px tall`);
+        for (const theme of ["light", "dark"]) {
           await shotAt(popup, `popup-whats-new-closed-${theme}.png`, { theme, height: 600 });
+        }
         await open(popup);
         const opened = await read(popup);
         expect(opened.open && opened.showing === notes.length, `opened: ${JSON.stringify(opened)}`);
         expect(opened.summary === "Hide the list", `summary when open: ${opened.summary}`);
-        for (const theme of ["light", "dark"])
+        for (const theme of ["light", "dark"]) {
           await shotAt(popup, `popup-whats-new-open-${theme}.png`, { theme, height: 600 });
+        }
         expect((await seen()) === false, "opening the list counted as seen");
         await popup.click("#whats-new-ok");
         await sleep(300);
@@ -154,13 +163,15 @@ module.exports = async function (env) {
         const closedEs = await read(p);
         const count = (log.translations?.es?.[minor] || notes).length;
         expect(closedEs.summary === `Ver las novedades (${count})`, `Spanish summary: ${closedEs.summary}`);
-        for (const theme of ["light", "dark"])
+        for (const theme of ["light", "dark"]) {
           await shotAt(p, `popup-whats-new-closed-es-${theme}.png`, { theme, height: 600 });
+        }
         await open(p);
         const openEs = await read(p);
         expect(openEs.summary === "Ocultar la lista", `Spanish summary when open: ${openEs.summary}`);
-        for (const theme of ["light", "dark"])
+        for (const theme of ["light", "dark"]) {
           await shotAt(p, `popup-whats-new-open-es-${theme}.png`, { theme, height: 600 });
+        }
         await p.close();
       } finally {
         await es.browser.close();
@@ -234,7 +245,7 @@ module.exports = async function (env) {
   );
 
   await check("U2e", "Live line: a new local-update.txt from a local updater reloads Clotr once, same version", () =>
-    withChangedCopy(async (other, bump, dir) => {
+    withChangedCopy(async (other, _bump, dir) => {
       await other.worker.evaluate(() => {
         globalThis.__reloads = 0;
         chrome.runtime.reload = () => {

@@ -89,7 +89,7 @@
         active: false,
         example: msg(
           "tw_wordsNone",
-          "Your office hasn't added any of its own words yet. An admin can add a client's name, a file-number format, or anything else worth watching for, through your organization's own settings. Nobody outside your office ever sees the list, and Clotr turns each word into a scrambled code before it's ever compared against anything you type.",
+          "Your office hasn't added any custom words yet. An admin can add client names or file-number formats through browser or device-management policy. Those values are delivered to managed computers and may remain readable to policy administrators or on those computers. Clotr fingerprints words locally before matching, but this does not encrypt or hide the original policy values.",
         ),
       };
     }
@@ -101,8 +101,7 @@
       })),
       example: msg(
         "tw_wordsSome",
-        "Your office has added $1 of its own. Here's a made-up example, never the real words: if a message named one, Clotr would catch it the same way it catches a Social Security number, without your office's list ever leaving this computer.",
-        String(list.length),
+        "Your office has configured its own kinds. Here's a made-up example, never the real values: if a message matched one of its configured words or formats, Clotr could catch it. Kind labels appear in this exercise; words and formats do not. The words, formats and kind labels are carried in management policy and may remain readable to policy administrators or on managed computers. Clotr fingerprints words locally but does not encrypt or hide the original policy values.",
       ),
     };
   }
@@ -117,7 +116,7 @@
   }
 
   // ---------- Step 5: Is this AI tool set up safely? ----------
-  // Privacy Check-up isn't built yet, so this is plain questions with no links instead. Each is "to think
+  // No per-tool settings guide exists yet to link to, so this is plain questions instead. Each is "to think
   // about", not scored.
   const CHECKLIST = [
     {

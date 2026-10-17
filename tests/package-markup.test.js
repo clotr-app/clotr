@@ -64,18 +64,21 @@ test("the shipped build strips every still-held-back feature's markup, comments 
   for (const [name, data] of html) {
     const text = data.toString("utf8");
     assert.ok(!text.includes("<!--"), `${name}: still has a comment`);
-    for (const feature of STILL_OFF)
+    for (const feature of STILL_OFF) {
       assert.ok(!text.includes(`data-feature="${feature}"`), `${name}: still has ${feature}'s markup`);
+    }
   }
   const manifest = JSON.parse(entries.find(([n]) => n === "manifest.json")[1].toString("utf8"));
-  for (const feature of STILL_OFF)
+  for (const feature of STILL_OFF) {
     assert.ok(
       !(feature in manifest.clotr_features),
       `${feature}: a held-back feature's name is still in clotr_features`,
     );
+  }
   const es = JSON.parse(entries.find(([n]) => n === "_locales/es/messages.json")[1].toString("utf8"));
-  for (const [feature, key] of Object.entries(FEATURE_MESSAGES))
+  for (const [feature, key] of Object.entries(FEATURE_MESSAGES)) {
     if (STILL_OFF.includes(feature)) assert.ok(!(key in es), `${key}: a held-back string still shipped`);
+  }
 });
 
 test("turning a held-back feature on ships its markup, name and strings again", () => {

@@ -13,7 +13,7 @@
 
   const msg =
     globalThis.Clotr?.msg ||
-    ((key, english, ...subs) => english.replace(/\$(\d)/g, (_, n) => String(subs[n - 1] ?? "")));
+    ((_key, english, ...subs) => english.replace(/\$(\d)/g, (_match, n) => String(subs[n - 1] ?? "")));
 
   function version() {
     try {
@@ -124,8 +124,9 @@
       .filter((k) => k !== TEAM && k !== OTHER)
       .sort((a, b) => groups.get(b).found - groups.get(a).found || (a < b ? -1 : 1));
     for (const id of kinds) lines.push(`${msg(`type_${id}`, builtIn.get(id).name)} (${id}): ${counts(groups.get(id))}`);
-    if (groups.has(TEAM))
+    if (groups.has(TEAM)) {
       lines.push(`${msg("rpt_sumTeamKinds", "Kinds your organization added")}: ${counts(groups.get(TEAM))}`);
+    }
     if (groups.has(OTHER)) lines.push(`${msg("rpt_sumOtherKinds", "Other kinds")}: ${counts(groups.get(OTHER))}`);
     if (!groups.size) lines.push(msg("rpt_sumNothing", "Nothing found in the last 30 days."));
 

@@ -240,13 +240,14 @@ module.exports = async function (env) {
             const line = await lineIn(page, "CLOTR-NOTICE");
             expect(line?.icon === "ask-icon", `${s.id}: the line's icon is "${line?.icon}"`);
             expect(!line.overflows, `${s.id} at ${size}: something runs past the warning's edge`);
-            if (s.id === "login_code" && size === "real")
+            if (s.id === "login_code" && size === "real") {
               for (const theme of ["light", "dark"]) {
                 await page.emulateMediaFeatures([{ name: "prefers-color-scheme", value: theme }]);
                 await sleep(150);
                 const problems = await auditShadow(page, "CLOTR-NOTICE");
                 expect(!problems.length, `axe, ${theme}: ${problems.join(" | ")}`);
               }
+            }
             await shots(page, `who-asks-${s.id}-${size}`);
           } finally {
             await page.close();
@@ -368,11 +369,11 @@ module.exports = async function (env) {
       await resetState(ctx, {});
       await setTourniquet(ctx, "adult");
       try {
-        for (const id of ["login_code", "gift_card"])
+        for (const id of ["login_code", "gift_card"]) {
           for (const [size, viewport] of [
             ["real", null],
             ["380", PHONE],
-          ])
+          ]) {
             await withSite(
               ctx,
               "chatgpt",
@@ -387,6 +388,8 @@ module.exports = async function (env) {
               },
               { viewport },
             );
+          }
+        }
       } finally {
         await setTourniquet(ctx, null);
         await resetState(ctx);
@@ -401,7 +404,7 @@ module.exports = async function (env) {
       const es = await launch(EXT, ["--lang=es-ES", "--accept-lang=es-ES"], { LANGUAGE: "es", LANG: "es_ES.UTF-8" });
       try {
         await resetState(es, {});
-        for (const s of SAMPLES)
+        for (const s of SAMPLES) {
           for (const [size, viewport] of [
             ["real", null],
             ["380", PHONE],
@@ -416,6 +419,7 @@ module.exports = async function (env) {
               await page.close();
             }
           }
+        }
         // Checks that What to do shows in Spanish too.
         const page = await openSite(es, "chatgpt");
         try {
@@ -469,7 +473,7 @@ module.exports = async function (env) {
   for (const [id, wa] of [
     ["card_code", "WA9"],
     ["gift_card", "WA10"],
-  ])
+  ]) {
     await check(
       wa,
       `${sample(id).name.split(" (")[0]}: its own kind, with its line, on an AI chat and on an email app switched on`,
@@ -487,6 +491,7 @@ module.exports = async function (env) {
         });
       },
     );
+  }
 
   await check("WA11", "Fail open: if choosing the line fails, the warning still shows, named, without the line", () =>
     withSite(ctx, "chatgpt", async (page) => {

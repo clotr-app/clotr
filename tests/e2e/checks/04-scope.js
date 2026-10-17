@@ -16,7 +16,7 @@ module.exports = async function (env) {
     const src = await popup.evaluate(() => globalThis.ClotrSites.inspectPageForAIChat.toString());
     await popup.close();
     const verdicts = {};
-    for (const key of ["newtool", "chatgpt", "ordinary"]) {
+    for (const key of ["newtool", "chatgpt", "ordinary", "shapeOnly"]) {
       verdicts[key] = await withSite(ctx, key, (page) => page.evaluate(`(${src})()`));
     }
     expect(verdicts.newtool.looksLikeAI, `new AI tool not recognized: ${JSON.stringify(verdicts.newtool)}`);
@@ -24,6 +24,23 @@ module.exports = async function (env) {
     expect(!verdicts.ordinary.looksLikeAI, `ordinary site flagged: ${JSON.stringify(verdicts.ordinary)}`);
     return `new tool found: ${verdicts.newtool.signals.join(", ")}`;
   });
+
+  await check(
+    "D2b",
+    "Page check: a chat-shaped box with no AI wording at all still offers the once-only check",
+    async () => {
+      const popup = await openPopup(ctx);
+      const src = await popup.evaluate(() => globalThis.ClotrSites.inspectPageForAIChat.toString());
+      await popup.close();
+      const verdict = await withSite(ctx, "shapeOnly", (page) => page.evaluate(`(${src})()`));
+      expect(verdict.looksLikeAI, `shape alone wasn't enough: ${JSON.stringify(verdict)}`);
+      expect(verdict.signals.includes("a chat-shaped box"), `no shape signal: ${JSON.stringify(verdict)}`);
+      expect(
+        !verdict.signals.some((s) => s.startsWith("AI wording")),
+        `the fixture leaked AI wording, so this isn't testing shape alone: ${JSON.stringify(verdict)}`,
+      );
+    },
+  );
 
   await check("D6", "Ordinary website: Clotr stays completely off", () =>
     withSite(ctx, "ordinary", async (page) => {

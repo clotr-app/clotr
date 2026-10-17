@@ -146,7 +146,7 @@
 
   function isGeminiRecord(r) {
     return (
-      !!r &&
+      Boolean(r) &&
       typeof r.title === "string" &&
       typeof r.time === "string" &&
       [r.header, ...(Array.isArray(r.products) ? r.products : [])].some((h) => /gemini|bard/i.test(h || ""))
@@ -250,15 +250,22 @@
       const shape = header && copilotShape(header);
       if (shape) csvMatches.push({ entry, shape });
     }
-    if (csvMatches.length)
+    if (csvMatches.length) {
       return {
         format: "copilot",
         dataEntries: csvMatches.map((m) => m.entry),
         csvShapes: csvMatches.map((m) => m.shape),
       };
+    }
     const htmlEntries = fileEntries.filter((f) => /\.html?$/i.test(f.name));
-    for (const entry of htmlEntries)
+    for (const entry of htmlEntries) {
       if (await looksLikeGeminiHtml(entry)) return { format: "gemini-html", dataEntries: [] };
+    }
+    const hasTakeoutFiles = fileEntries.some((f) => /(?:^|\/)Takeout\//i.test(f.name.replace(/\\/g, "/")));
+    const hasGeminiActivity = fileEntries.some((f) =>
+      /(?:^|\/)Takeout\/My Activity\/Gemini Apps\/MyActivity\.(?:json|html)$/i.test(f.name.replace(/\\/g, "/")),
+    );
+    if (hasTakeoutFiles && !hasGeminiActivity) return { format: "gemini-no-chats", dataEntries: [] };
     return { format: null, dataEntries: [] };
   }
 
@@ -317,7 +324,9 @@
     if (typeof title !== "string") return "";
     let shown = title;
     for (const r of detect(title)) for (const v of r.matches) shown = shown.split(v).join(mask(v));
-    return shown;
+    shown = shown.replace(/\s+/g, " ").trim();
+    if (shown.length <= 90) return shown;
+    return `${shown.slice(0, 89).trimEnd()}…`;
   }
 
   // ---------- Opening the chat: a fixed address, from an id of a fixed shape, or no link at all ----------
@@ -445,8 +454,9 @@
       const where = live.has(nodeId) ? WHERE.message : WHERE.edited;
       for (const part of m.content?.parts || []) {
         if (typeof part === "string") textEntries.push({ text: part, where });
-        else if (part?.content_type === "audio_transcription" && part.direction !== "out")
+        else if (part?.content_type === "audio_transcription" && part.direction !== "out") {
           textEntries.push({ text: part.text, where: WHERE.voice });
+        }
       }
       for (const a of meta.attachments || []) {
         attachmentNames.push(a.name);
@@ -557,11 +567,11 @@
       if (m.sender !== "human") continue;
       const blocks = (m.content || []).filter((b) => b.type === "text" || b.type === "voice_note");
       const blockTexts = blocks.map((b) => b.text);
-      if (blockTexts.some((t) => t && t.trim()))
+      if (blockTexts.some((t) => t && t.trim())) {
         blocks.forEach((b, i) =>
           textEntries.push({ text: blockTexts[i], where: b.type === "voice_note" ? WHERE.voice : WHERE.message }),
         );
-      else textEntries.push({ text: m.text, where: WHERE.message });
+      } else textEntries.push({ text: m.text, where: WHERE.message });
       for (const a of m.attachments || []) {
         if (a.extracted_content) textEntries.push({ text: a.extracted_content, where: WHERE.file });
         attachmentNames.push(a.file_name);
@@ -613,53 +623,13 @@
     return chats;
   }
 
-  // ---------- Gemini (Google Takeout): one record per prompt, grouped by day (no chat id) ----------
-  // Takeout's My Activity records come in date order, so I group them by day as I go: once a new day's record
-  // arrives, the day that just finished turns into its chat and gets let go. That way only one day's prompts
-  // are ever held in memory at once.
-
-  // Makes a light first pass over the file, without parsing any record, just to see whether the English
-  // "Prompted " prefix shows up anywhere. That lets the real pass below skip non-prompt records as it goes
-  // instead of filtering them out afterward. This stops as soon as it finds a match; on a non-English export
-  // it ends up reading the whole file a second time, trading time for memory.
-  async function detectGeminiLocale(entry) {
-    for await (const item of jsonItems(entry.chunks(), { cap: PEEK_CAP })) {
-      const raw = item.text ?? item.prefix ?? "";
-      if (/"title"\s*:\s*"Prompted /.test(raw)) return true;
-    }
-    return false;
-  }
-
-  // In English, a prompt's title starts "Prompted ", which I drop, and I skip every other record. A locale
-  // that doesn't use that word gives no way to tell a prompt from the rest, so there I read every record.
+  // ---------- Gemini (Google Takeout): one result per prompt record, with no chat id ----------
+  // Only Takeout records with the documented prompt marker hold text the person wrote. Replies, subtitles and
+  // attachment metadata are intentionally ignored because the export doesn't label their authors reliably.
   async function readGeminiChats(entry, ctx) {
-    const englishSeen = await detectGeminiLocale(entry);
     const chats = [];
     let records = 0;
     let prompts = 0;
-    let currentDay = null;
-    let dayTitle = "";
-    let dayTexts = [];
-    const flushDay = () => {
-      if (currentDay == null || !dayTexts.length) return;
-      const { kinds, finds } = scanTexts(
-        dayTexts.map((t) => ({ text: t, where: WHERE.message })),
-        ctx,
-        currentDay,
-      );
-      const chat = {
-        id: currentDay,
-        link: chatLink("gemini", currentDay),
-        title: maskedTitle(dayTitle),
-        date: currentDay,
-        kinds: tidy(kinds),
-        finds,
-      };
-      ctx.read.chats++;
-      tick(ctx, chat);
-      chats.push(chat);
-      dayTexts = [];
-    };
     try {
       for await (const item of jsonItems(entry.chunks(), { cap: CHAT_CAP })) {
         if (item.text === null) {
@@ -677,20 +647,25 @@
         if (!isGeminiRecord(r)) continue;
         records++;
         ctx.read.messages++;
-        const isPrompt = /^Prompted /.test(r.title);
-        if (englishSeen && !isPrompt) continue;
-        const text = isPrompt ? r.title.replace(/^Prompted /, "") : r.title;
+        if (!/^Prompted\s+/i.test(r.title)) continue;
+        const text = r.title.replace(/^Prompted\s+/i, "");
         const day = (r.time || "").slice(0, 10);
         if (!day) continue;
         prompts++;
-        if (day !== currentDay) {
-          flushDay();
-          currentDay = day;
-          dayTitle = text;
-        }
-        dayTexts.push(text);
+        const id = `${day}:${prompts}`;
+        const { kinds, finds } = scanTexts([{ text, where: WHERE.message }], ctx, id);
+        const chat = {
+          id,
+          link: chatLink("gemini", day),
+          title: maskedTitle(text),
+          date: day,
+          kinds: tidy(kinds),
+          finds,
+        };
+        ctx.read.chats++;
+        tick(ctx, chat);
+        if (Object.keys(kinds).length) chats.push(chat);
       }
-      flushDay();
       ctx.read.bytes += entry.size;
     } catch (err) {
       if (err?.code === "unpack-limit") ctx.notRead.unpackLimit++;
@@ -699,7 +674,7 @@
     return { chats, records, prompts };
   }
 
-  // ---------- Copilot: one CSV row per prompt, grouped by day (no chat id, the same as Gemini) ----------
+  // ---------- Copilot: one CSV row per prompt, grouped by day (no chat id) ----------
   // Only the column found to hold the prompt is ever scanned; whatever column might hold Copilot's own reply
   // (unconfirmed: Microsoft's pages don't name one) is never read, the same "never the AI's answer" rule as
   // every other format here.
@@ -795,15 +770,16 @@
     } else if (format === "gemini") {
       const r = await readGeminiChats(dataEntries[0], ctx);
       chats = r.chats;
-      grouping = "day";
+      grouping = "record";
       extra = { records: r.records, prompts: r.prompts };
     } else if (format === "copilot") {
       chats = await readCopilotFiles(dataEntries, csvShapes, ctx);
       grouping = "day";
     }
     const totals = {};
-    for (const [id, t] of Object.entries(ctx.totals))
+    for (const [id, t] of Object.entries(ctx.totals)) {
       totals[id] = { count: t.count, chats: t.chatIds.size, different: t.fps.size };
+    }
     const withFinds = chats
       .filter((c) => Object.keys(c.kinds).length)
       .sort((a, b) => (a.date < b.date ? 1 : a.date > b.date ? -1 : 0));

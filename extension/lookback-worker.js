@@ -74,11 +74,17 @@ self.onmessage = async (e) => {
     });
 
     if (result.format === null) {
-      postMessage({ type: "unsupported", kind: "unknown" });
+      // A bare .json or .jsonl picked on its own (never a .zip or a folder) gets a message that names the file
+      // Look back actually reads, since the generic "can't read this export" line leaves a person guessing.
+      postMessage({ type: "unsupported", kind: picked === "json" ? "unknownJson" : "unknown" });
       return;
     }
     if (result.format === "gemini-html") {
       postMessage({ type: "unsupported", kind: "html" });
+      return;
+    }
+    if (result.format === "gemini-no-chats") {
+      postMessage({ type: "unsupported", kind: "geminiNoChats" });
       return;
     }
     postMessage({ type: "done", result });

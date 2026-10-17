@@ -278,7 +278,10 @@ module.exports = async function (env) {
       // WCAG 2 contrast is the relative luminance of each colour, (lighter + 0.05) / (darker + 0.05).
       const rgb = (s) => (s.match(/[\d.]+/g) || []).slice(0, 4).map(Number);
       const lum = ([r, g, b]) => {
-        const lin = (c) => ((c /= 255) <= 0.04045 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4);
+        const lin = (c) => {
+          const n = c / 255;
+          return n <= 0.04045 ? n / 12.92 : ((n + 0.055) / 1.055) ** 2.4;
+        };
         return 0.2126 * lin(r) + 0.7152 * lin(g) + 0.0722 * lin(b);
       };
       const ratio = (a, b) => (Math.max(lum(a), lum(b)) + 0.05) / (Math.min(lum(a), lum(b)) + 0.05);
@@ -306,8 +309,9 @@ module.exports = async function (env) {
       }
       await page.emulateMediaFeatures([{ name: "prefers-color-scheme", value: "light" }]);
       const said = `dark ${measured.dark.toFixed(2)}:1, light ${measured.light.toFixed(2)}:1`;
-      for (const theme of ["dark", "light"])
+      for (const theme of ["dark", "light"]) {
         if (measured[theme] < 4.5) problems.push(`${theme} hint contrast below 4.5:1`);
+      }
       expect(!problems.length, `${said}; ${problems.join("; ")}`);
       return said;
     }),

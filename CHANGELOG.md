@@ -2,6 +2,58 @@
 
 What changed in each version of Clotr. How the version numbers work is in [VERSIONING.md](VERSIONING.md).
 
+## 1.4.0 (2026-10-17)
+
+- A letter stuck to a phone number or SSN, or a long run of words before a recovery phrase, can no longer slip past Clotr's check.
+- The settings page links to Clotr for Windows.
+- The logo in the popup now matches Clotr's icon, with the same bandage over the o.
+- A random decimal is no longer read as a card number, and a drive path is no longer read as a Spanish ID.
+- A long list of ordinary words, like a diary or tracking card, is no longer read as a crypto wallet's recovery
+  phrase. Clotr now checks whether twelve or more words in a row actually carry a real seed phrase's checksum,
+  not just whether they're all words from the list a wallet picks from.
+- A movie or show's file name, like "Dune.Part.Two.2024.2160p", is no longer read as an ID number or phone
+  number.
+- Pasting a long list, like a few hundred contacts, no longer holds the chat tab for seconds while Clotr checks it
+  or records the warning.
+- The same goes when you've saved a phone number or email to your vault and paste hundreds of that kind. If you
+  marked yours OK to share, the warning can still list it for a few seconds while Clotr finishes checking the rest
+  in the background.
+- When you attach a JPEG or PNG photo that has the place it was taken saved inside it, Clotr now takes the place
+  out before the AI site gets the photo, whether you pick it, drop it on the chat or paste it. The picture itself
+  stays the same, and a note says what happened, with a button to put the place back. Where Clotr can't get there
+  first, like an email app or a photo attached along with other files, the site may already have the original, so
+  the warning's "Remove the place, keep the photo" button saves a copy without the place and tells you to take the
+  original off and attach the copy. A HEIC or WebP photo, or one that holds a place Clotr can't take out, like a
+  second picture saved inside it, still gets the usual advice to take the photo off before you send.
+- The popup says plainly when it can't find the chat box on a built-in AI chat, and that copy and paste are
+  still checked when you send. A built-in site whose chat box changed shape in a redesign is now still found,
+  the same way a page covered only by "Everywhere I type" already is. On any other https page, a box shaped
+  like a chat, even with no "AI" in its name or title, can now also be spotted, with a button to protect it. An
+  email or chat app like Gmail or WhatsApp still gets its own switch instead, where the warning talks about people.
+- "Is this a scam?" no longer marks a plain "congrats" about your own news, like a new job or a merged PR, as a
+  prize. It still catches a real prize pitch, and now also catches a pitch that invents a closing window instead
+  of naming a real deadline, like "the window cools fast" or "while it counts".
+- Fixed more ways specially made text could freeze the chat tab for seconds or longer while Clotr checked it, this
+  time in the trims that clean up the end of a link, a sign-in key, a saved password and a few other details.
+- "Is this a scam?" now marks a request to buy a gift card for an amount, like "buy a $500 gift card", not only
+  "buy two gift cards". A gift card on its own, the kind you buy as a present, still isn't marked.
+- A detail you save to your vault, or that ends up in your history, now takes real time to guess back out,
+  nowhere near the fraction of a millisecond it used to take. A word you're watching for still checks itself
+  instantly while you type, since that only ever compares against words you chose yourself.
+- When the office training walkthrough is held out of a build, its links no longer point to a page that was removed.
+- The welcome page's note says why Clotr exists and how it's built, and its first line says where Clotr checks.
+- A chat page's own script had a few more ways to make an edit, a file pick or a send look like yours, and use
+  that to test what Clotr would warn about. Clotr now reacts only to what you actually type, pick and send. Text a
+  script or another extension puts in your chat box still gets checked, at your next key press or when you send.
+- Clotr now catches more of what people paste into AI chats. That covers an API key after "API key:" or told in a
+  sentence ("my token is …"), a password told as "my password's …" or "I changed my password to …", a birth date
+  written 1987/04/12 or 12-Apr-1987, and a spelled-out SSN with "fore" or "won" in it after "my SSN is". In Spanish
+  it covers an ID after "n.º", an insurance policy number, and a routing number after "número de ruta". An empty
+  line in an .env template and words like "case-sensitive" after "my password is" no longer bring up a warning.
+- Clotr's toolbar icon, popup and warnings now show the same C with the bandage across it that Clotr for Windows
+  and Clotr for Android already use, instead of the bandage on its own, so it's the one mark to look for everywhere
+  Clotr shows up.
+
 ## 1.3.0 (2026-10-10)
 
 - A chat page you've just opened gets your settings right away. In a busy browser it could wait several seconds,
@@ -54,6 +106,21 @@ What changed in each version of Clotr. How the version numbers work is in [VERSI
   own clock, instead of sitting on "Ready when you are" with the time still climbing.
 - Clotr for Windows (the trial build): a scan passes over a project's own build output now, the same way it
   already skips node_modules, so thousands of regenerated files can't crowd out your own and slow a scan down.
+- Clotr for Windows (the trial build): Check my files reads several files at once, one for each core your PC can
+  spare, so a scan finishes in a fraction of the time. A Quick scan reads Desktop, Downloads, Documents and
+  Pictures, and after your first Full scan only what changed there. It leaves code projects out, folders with a
+  `.git` or a `package.json` and the like, and says how many in one line. The time left waits until it has a steady
+  guess, then counts down without jumping between minutes and hours.
+- Clotr for Windows (the trial build): a Full scan now sticks to your own files. It leaves out code projects, files
+  made to hold a key or password (a `.env`, an SSH key, an `.npmrc` and the like), password-manager vaults, and the
+  programs and games you installed, wherever they are, and says in one line how many of each it left out. Before a
+  first Full scan the screen says plainly that it can take several hours, that you can keep using your PC, and
+  that you can leave Clotr running; once it has counted your files it shows the real time left. A later Full scan
+  reads only what's new or changed since the last one, unless you pick Read everything again. If you're a
+  developer looking for a password written straight into code instead of kept in an environment variable, turn on
+  Settings, Check code projects and secret files too, and both scans read them and list what they found under
+  their own heading. A scan also reads its files off the disk several at a time and while the last ones are
+  still being checked, so a Full scan of a PC full of files nobody opened lately no longer crawls.
 - A site or email app you switched on could stay unprotected until the next restart, if another change to your
   sites landed at the same moment. It can't any more.
 - Clotr for Windows (the trial build): opening the tray panel used to leave it running quietly in the background

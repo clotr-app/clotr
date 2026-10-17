@@ -98,7 +98,7 @@ module.exports = async function (env) {
       for (const [text, name] of [
         ["the 3 numbers on the back are 482", /Card Security Code/],
         ["the gift card code is 7KQ2-9PMX-4RT8", /Gift Card Code/],
-      ])
+      ]) {
         await withSite(ctx, "chatgpt", async (page) => {
           await store.set(ctx, { bandage: { "chatgpt.com": true } });
           await sleep(300);
@@ -107,6 +107,7 @@ module.exports = async function (env) {
           expect(n && name.test(n.text), `notice: ${n?.text}`);
           expect((await editorText(page)) === text, `the chat box changed: "${await editorText(page)}"`);
         });
+      }
     },
   );
 
@@ -344,19 +345,15 @@ module.exports = async function (env) {
         await resetState(ctx, {});
         await store.set(ctx, { bandage: { "chatgpt.com": true } });
         await sleep(300);
-        await page.evaluate((t) => {
-          const box = document.querySelector("#prompt-textarea");
-          box.focus();
-          box.dispatchEvent(new CompositionEvent("compositionstart", { bubbles: true, data: "" }));
-          document.execCommand("insertText", false, t);
-        }, `call me at ${PHONE}`);
+        // A real composition through the browser's own input method path: Clotr only trusts a composition the
+        // browser started, never one a page makes up.
+        const text = `call me at ${PHONE}`;
+        await page.evaluate(() => document.querySelector("#prompt-textarea").focus());
+        const cdp = await page.createCDPSession();
+        await cdp.send("Input.imeSetComposition", { text, selectionStart: text.length, selectionEnd: text.length });
         await sleep(1200); // well past the typing pause: still composing, so nothing may change
         expect((await editorText(page)).includes(PHONE), `swapped mid-composition: "${await editorText(page)}"`);
-        await page.evaluate(() => {
-          const box = document.querySelector("#prompt-textarea");
-          box.dispatchEvent(new CompositionEvent("compositionend", { bubbles: true, data: "" }));
-          box.dispatchEvent(new InputEvent("input", { bubbles: true }));
-        });
+        await cdp.send("Input.insertText", { text }); // commits the composition
         expect(await covered(page, "call me at [Phone 1]"), `after composing: "${await editorText(page)}"`);
         await resetState(ctx, {});
       }),
@@ -493,15 +490,15 @@ module.exports = async function (env) {
   // chat switch or the reply is still rendering and no message has that text yet.
   const pointIn = (page, selector, label) =>
     page.evaluate(
-      (sel, label) => {
-        const msg = [...document.querySelectorAll(sel)].filter((e) => e.textContent.includes(label)).pop();
+      (sel, lbl) => {
+        const msg = [...document.querySelectorAll(sel)].filter((e) => e.textContent.includes(lbl)).pop();
         const t = msg?.firstChild;
         if (!t || typeof t.nodeValue !== "string") return null;
-        const i = t.nodeValue.indexOf(label);
+        const i = t.nodeValue.indexOf(lbl);
         if (i < 0) return null;
         const r = document.createRange();
         r.setStart(t, i);
-        r.setEnd(t, i + label.length);
+        r.setEnd(t, i + lbl.length);
         const b = r.getBoundingClientRect();
         return { x: b.left + b.width / 2, y: b.top + b.height / 2 };
       },
@@ -554,8 +551,9 @@ module.exports = async function (env) {
         }
         const { x, y } = await pointIn(page, ".mine", "[Phone 1]");
         await page.mouse.move(x, y);
-        if (await waitFor(() => readUI(page, "CLOTR-PEEK"), 3000))
+        if (await waitFor(() => readUI(page, "CLOTR-PEEK"), 3000)) {
           await page.screenshot({ path: path.join(OUT, "bandage-not-kept.png") });
+        }
         await page.mouse.move(0, 0);
         await pressEnter(page);
         await sleep(300);
@@ -726,12 +724,12 @@ module.exports = async function (env) {
   // Finds the box of `label` in the `nth` reply, counting from the end when `nth` is negative.
   const labelRect = (page, nth = -1, label = "[Phone 1]") =>
     page.evaluate(
-      (nth, label) => {
+      (n, lbl) => {
         const replies = [...document.querySelectorAll(".reply")];
-        const t = replies[nth < 0 ? replies.length + nth : nth].firstChild;
+        const t = replies[n < 0 ? replies.length + n : n].firstChild;
         const r = document.createRange();
-        r.setStart(t, t.nodeValue.indexOf(label));
-        r.setEnd(t, t.nodeValue.indexOf(label) + label.length);
+        r.setStart(t, t.nodeValue.indexOf(lbl));
+        r.setEnd(t, t.nodeValue.indexOf(lbl) + lbl.length);
         const { left, top, right, bottom, width, height } = r.getBoundingClientRect();
         return { left, top, right, bottom, width, height };
       },
@@ -741,16 +739,16 @@ module.exports = async function (env) {
   // Adds a box of the page's own on top of `r`, as a sign-up pop-up or a menu would.
   const coverWith = (page, r, { tag = "div", padX = 24, padY = 12 } = {}) =>
     page.evaluate(
-      (r, tag, padX, padY) => {
-        const box = document.createElement(tag);
+      (rect, elTag, dx, dy) => {
+        const box = document.createElement(elTag);
         box.id = "site-popup";
         box.textContent = "Sign up to keep your chats";
         Object.assign(box.style, {
           position: "fixed",
-          left: `${r.left - padX}px`,
-          top: `${r.top - padY}px`,
-          width: `${r.width + 2 * padX + 160}px`,
-          height: `${r.height + 2 * padY}px`,
+          left: `${rect.left - dx}px`,
+          top: `${rect.top - dy}px`,
+          width: `${rect.width + 2 * dx + 160}px`,
+          height: `${rect.height + 2 * dy}px`,
           background: "#fff",
           border: "1px solid #999",
           boxShadow: "0 8px 24px rgba(0,0,0,.25)",
@@ -866,11 +864,11 @@ module.exports = async function (env) {
         // Checks which element is on top at each end of the label: Clotr's `own` box, or the reply under it.
         const ownOnTop = (r, own) =>
           page.evaluate(
-            (r, own) => {
+            (rect, ownTag) => {
               const reply = [...document.querySelectorAll(".reply")].pop();
-              return [r.left + 3, r.right - 3].every((x) => {
-                const stack = document.elementsFromPoint(x, r.top + r.height / 2);
-                const mine = stack.findIndex((e) => e.nodeName === own);
+              return [rect.left + 3, rect.right - 3].every((x) => {
+                const stack = document.elementsFromPoint(x, rect.top + rect.height / 2);
+                const mine = stack.findIndex((e) => e.nodeName === ownTag);
                 return mine >= 0 && mine < stack.indexOf(reply);
               });
             },

@@ -1,0 +1,54 @@
+<!doctype html>
+<!-- Stand-in for how ChatGPT, Claude and Gemini most likely treat an attachment: the moment a file is picked,
+     dropped or pasted, the page's own handler takes it and "uploads" it (here: notes its name, size and
+     whether the event was the person's own), then clears the file box so the same file can be picked again.
+     Nothing waits for a send. Whatever reaches these handlers is what the site has, so this is the page that
+     shows whether "Remove the place, keep the photo" got there first (PIC16-PIC18). With ?strict its drop
+     handler only takes the person's own drop, the way a site might, so Clotr's hand-back goes unused (PIC19). -->
+<html lang="en">
+<head><meta charset="utf-8"><title>Upload-at-once chat (Clotr test page)</title></head>
+<body>
+  <textarea id="prompt-textarea" placeholder="Ask anything" rows="4" cols="60"></textarea>
+  <input type="file" id="attach" multiple aria-label="Attach a file">
+  <button id="send" aria-label="Send prompt">Send</button>
+  <ul id="attached"></ul>
+  <script>
+    window.__uploads = [];
+    const strict = location.search.includes("strict");
+    window.__sent = [];
+    const box = document.getElementById("prompt-textarea");
+    const list = document.getElementById("attached");
+    const upload = (via, files, trusted) => {
+      for (const f of files) {
+        window.__uploads.push({ via, name: f.name, size: f.size, trusted });
+        const li = document.createElement("li");
+        li.textContent = f.name;
+        list.append(li);
+      }
+    };
+    const attach = document.getElementById("attach");
+    attach.addEventListener("change", (e) => {
+      upload("change", [...attach.files], e.isTrusted);
+      attach.value = "";
+    });
+    document.addEventListener("dragover", (e) => e.preventDefault());
+    document.addEventListener("drop", (e) => {
+      if (strict && !e.isTrusted) return;
+      e.preventDefault();
+      upload("drop", [...(e.dataTransfer?.files || [])], e.isTrusted);
+    });
+    box.addEventListener("paste", (e) => {
+      const files = [...(e.clipboardData?.files || [])];
+      if (!files.length) return;
+      e.preventDefault();
+      upload("paste", files, e.isTrusted);
+    });
+    document.getElementById("send").addEventListener("click", () => {
+      if (!box.value && !list.children.length) return;
+      window.__sent.push(box.value || `[${[...list.children].map((li) => li.textContent).join(", ")}]`);
+      box.value = "";
+      list.replaceChildren();
+    });
+  </script>
+</body>
+</html>

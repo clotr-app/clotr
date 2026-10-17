@@ -114,11 +114,11 @@
   }
 
   // The text form (XMP): exif:GPSLatitude="40,41.35N" (degrees, minutes and maybe seconds, then N/S, E/W).
-  const XMP_LAT = /exif:GPSLatitude(?:="|>)\s*(\d{1,3}(?:[.,]\d{1,12}){0,3})\s*([NS])?/;
-  const XMP_LON = /exif:GPSLongitude(?:="|>)\s*(\d{1,3}(?:[.,]\d{1,12}){0,3})\s*([EW])?/;
+  const XMP_LAT = /(?:[A-Za-z_][\w.-]*:)?GPSLatitude(?:="|>)\s*(\d{1,3}(?:[.,]\d{1,12}){0,3})\s*([NS])?/;
+  const XMP_LON = /(?:[A-Za-z_][\w.-]*:)?GPSLongitude(?:="|>)\s*(\d{1,3}(?:[.,]\d{1,12}){0,3})\s*([EW])?/;
   function xmpGps(b) {
     const text = latin1.decode(b);
-    if (!text.includes("exif:GPSL")) return null;
+    if (!/GPS(?:Latitude|Longitude)/.test(text)) return null;
     const read = (re) => {
       const m = re.exec(text);
       if (!m) return null;
@@ -150,8 +150,9 @@
       }
       const len = u16(b, p + 2);
       if (len < 2) return null;
-      if (marker === 0xe1 && tag(b, p + 4, "Exif\0\0"))
+      if (marker === 0xe1 && tag(b, p + 4, "Exif\0\0")) {
         return { tiff: b.subarray(p + 10, Math.min(p + 2 + len, b.length)) };
+      }
       p += 2 + len;
     }
     return null;
@@ -334,6 +335,276 @@
     return place && placeValue(place);
   }
 
+  // ---------- Removing a photo's place, keeping the photo ----------
+  // "Cover it" swaps a typed detail for a label; a photo needs a different fix, since its place isn't a word
+  // on screen to replace. This rebuilds the file itself: the picture's own bytes (what a person actually
+  // looks at, and its EXIF Orientation) stay exactly as they were, while the GPS directory that named the
+  // place, and any XMP text packet that repeats it, are gone. A pure function: the same bytes in always give
+  // the same bytes out, and the input is never written to. Redrawing the photo on a canvas would re-encode
+  // it and couldn't promise the pixels come out byte for byte the same; this instead edits the file in
+  // place, reusing the same bounded readers above, so JPEG and PNG keep their original image data untouched.
+  // HEIC and WebP aren't rebuilt here (today's advice, "take the photo off before you send," still applies
+  // to those).
+
+  // IFD0's GPS pointer (does this TIFF structure carry a place at all) and its Orientation value (1 to 8, or
+  // null), read the same bounded way tiffGps reads the position above: any oddity is "nothing to report",
+  // never a throw.
+  function tiffInfo(t) {
+    if (t.length < 8) return null;
+    const le = tag(t, 0, "II");
+    if (!le && !tag(t, 0, "MM")) return null;
+    const r16 = (at) =>
+      at >= 0 && at + 2 <= t.length ? (le ? t[at] | (t[at + 1] << 8) : (t[at] << 8) | t[at + 1]) : -1;
+    const r32 = (at) =>
+      at >= 0 && at + 4 <= t.length
+        ? le
+          ? (t[at] | (t[at + 1] << 8) | (t[at + 2] << 16) | (t[at + 3] << 24)) >>> 0
+          : ((t[at] << 24) | (t[at + 1] << 16) | (t[at + 2] << 8) | t[at + 3]) >>> 0
+        : -1;
+    if (r16(2) !== 42) return null;
+    const at0 = r32(4);
+    const n = r16(at0);
+    if (n < 0 || n > 200) return null;
+    let gps = false;
+    let orientation = null;
+    for (let i = 0; i < n; i++) {
+      const e = at0 + 2 + i * 12;
+      if (e + 12 > t.length) return null;
+      const entryTag = r16(e);
+      if (entryTag === 0x8825) gps = true;
+      else if (entryTag === 0x0112) {
+        const value = r16(e + 8); // a SHORT's value sits left-justified in the entry's 4-byte value field
+        if (r16(e + 2) === 3 && value >= 1 && value <= 8) orientation = value;
+      }
+    }
+    return { gps, orientation };
+  }
+
+  // A minimal TIFF structure holding nothing but one Orientation tag: "II", 42, one IFD with one entry, no
+  // GPS pointer at all, so there's no place left to find in it. 26 bytes, always little-endian (the byte
+  // order is this function's own choice, not the original photo's).
+  function buildOrientationTiff(value) {
+    const t = new Uint8Array(26);
+    t.set([0x49, 0x49, 0x2a, 0x00, 0x08, 0x00, 0x00, 0x00], 0); // "II", 42, IFD0 at TIFF offset 8
+    t[8] = 1; // one entry
+    t.set([0x12, 0x01, 0x03, 0x00, 0x01, 0x00, 0x00, 0x00, value & 0xff, 0, 0, 0], 10); // Orientation, SHORT, 1
+    return t; // bytes 22-25 (the next IFD's offset) stay 0: no more directories
+  }
+  const exifSig = new Uint8Array([0x45, 0x78, 0x69, 0x66, 0, 0]); // "Exif\0\0"
+  function jpegExifSegment(tiff) {
+    const len = exifSig.length + tiff.length + 2;
+    const out = new Uint8Array(4 + exifSig.length + tiff.length);
+    out.set([0xff, 0xe1, (len >> 8) & 0xff, len & 0xff], 0);
+    out.set(exifSig, 4);
+    out.set(tiff, 4 + exifSig.length);
+    return out;
+  }
+
+  // A PNG chunk: 4-byte length, the 4-byte type, the data, then the CRC32 the PNG format requires over the
+  // type and data together. The table is built once, the first time any chunk needs one.
+  let CRC_TABLE = null;
+  function crc32(bytes) {
+    if (!CRC_TABLE) {
+      CRC_TABLE = new Uint32Array(256);
+      for (let i = 0; i < 256; i++) {
+        let c = i;
+        for (let k = 0; k < 8; k++) c = c & 1 ? 0xedb88320 ^ (c >>> 1) : c >>> 1;
+        CRC_TABLE[i] = c;
+      }
+    }
+    let crc = 0xffffffff;
+    for (let i = 0; i < bytes.length; i++) crc = CRC_TABLE[(crc ^ bytes[i]) & 0xff] ^ (crc >>> 8);
+    return (crc ^ 0xffffffff) >>> 0;
+  }
+  function pngChunk(type, data) {
+    const typeBytes = new Uint8Array([...type].map((c) => c.charCodeAt(0)));
+    const out = new Uint8Array(12 + data.length);
+    const len = data.length;
+    out.set([(len >>> 24) & 0xff, (len >>> 16) & 0xff, (len >>> 8) & 0xff, len & 0xff], 0);
+    out.set(typeBytes, 4);
+    out.set(data, 8);
+    const crc = crc32(out.subarray(4, 8 + len));
+    out.set([(crc >>> 24) & 0xff, (crc >>> 16) & 0xff, (crc >>> 8) & 0xff, crc & 0xff], 8 + len);
+    return out;
+  }
+
+  // A JPEG rebuilt without its place: every marker segment before the image data is walked once (the same
+  // bounded way jpegExif reads it, at most 100 of them); the Exif segment that carried a GPS pointer is left
+  // out, replaced by a fresh Orientation-only one when it had an Orientation tag to keep, and an XMP text
+  // segment is left out too if it names a GPSLatitude. Everything else -- every other segment, and the whole
+  // image data onward -- is copied exactly as it was. Returns null when nothing needed removing, or the file
+  // doesn't parse this bounded way (the caller then keeps today's advice instead).
+  function stripJpegPlace(b) {
+    if (b[0] !== 0xff || b[1] !== 0xd8) return null;
+    const kept = [];
+    let orientation = null;
+    let changed = false;
+    let stop = -1;
+    let p = 2;
+    for (let n = 0; n < 100 && p + 4 <= b.length; n++) {
+      if (b[p] !== 0xff) {
+        stop = p;
+        break;
+      }
+      const marker = b[p + 1];
+      if (marker === 0xff) {
+        p++;
+        continue;
+      }
+      if (marker === 0xd9 || marker === 0xda) {
+        stop = p;
+        break;
+      }
+      if ((marker >= 0xd0 && marker <= 0xd7) || marker === 0x01) {
+        p += 2;
+        continue;
+      }
+      const len = u16(b, p + 2);
+      if (len < 2) {
+        stop = p;
+        break;
+      }
+      const dataStart = p + 4;
+      const dataEnd = Math.min(p + 2 + len, b.length);
+      let drop = false;
+      if (marker === 0xe1 && tag(b, dataStart, "Exif\0\0")) {
+        const info = tiffInfo(b.subarray(dataStart + 6, dataEnd));
+        if (info?.gps) {
+          drop = true;
+          changed = true;
+          orientation = info.orientation;
+        }
+      } else if ((marker >= 0xe0 && marker <= 0xef) || marker === 0xfe) {
+        // Any block of text that names a GPSLatitude: the XMP packet, an extended XMP part, a comment.
+        if (/GPS(?:Latitude|Longitude)/.test(latin1.decode(b.subarray(dataStart, dataEnd)))) {
+          drop = true;
+          changed = true;
+        }
+      }
+      if (!drop) kept.push(b.subarray(p, dataEnd));
+      p = dataEnd;
+    }
+    if (stop < 0 || !changed) return null;
+    const head = [
+      b.subarray(0, 2),
+      ...(orientation != null ? [jpegExifSegment(buildOrientationTiff(orientation))] : []),
+      ...kept,
+    ];
+    const total = head.reduce((n, a) => n + a.length, 0) + (b.length - stop);
+    const out = new Uint8Array(total);
+    let at = 0;
+    for (const part of head) {
+      out.set(part, at);
+      at += part.length;
+    }
+    out.set(b.subarray(stop), at);
+    return out;
+  }
+
+  // A PNG rebuilt without its place: every chunk is walked once (the same bounded way pngExif reads them, at
+  // most 1,000), an eXIf chunk that carries a GPS pointer is left out, replaced by a fresh Orientation-only
+  // one when it had an Orientation tag, inserted right after IHDR (always allowed there, and always before
+  // any IDAT); a text chunk naming a GPSLatitude is left out too. Everything else is copied exactly as it
+  // was. Returns null when nothing needed removing, or the file doesn't parse this bounded way.
+  function stripPngPlace(b) {
+    const chunks = [];
+    let orientation = null;
+    let changed = false;
+    let p = 8;
+    for (let n = 0; n < 1000 && p + 8 <= b.length; n++) {
+      const len = u32(b, p);
+      if (len < 0) return null;
+      const type = latin1.decode(b.subarray(p + 4, p + 8));
+      const end = Math.min(p + 12 + len, b.length);
+      let drop = false;
+      if (type === "eXIf") {
+        const info = tiffInfo(tiffStart(b.subarray(p + 8, Math.min(p + 8 + len, b.length))));
+        if (info?.gps) {
+          drop = true;
+          changed = true;
+          orientation = info.orientation;
+        }
+      } else if (type === "tEXt" || type === "iTXt") {
+        if (/GPS(?:Latitude|Longitude)/.test(latin1.decode(b.subarray(p + 8, Math.min(p + 8 + len, b.length))))) {
+          drop = true;
+          changed = true;
+        }
+      }
+      chunks.push({ type, start: p, end, drop });
+      if (type === "IEND") break;
+      p = p + 12 + len;
+    }
+    if (!changed) return null;
+    const parts = [b.subarray(0, 8)];
+    let inserted = false;
+    for (const c of chunks) {
+      if (c.type === "IHDR") {
+        parts.push(b.subarray(c.start, c.end));
+        if (orientation != null && !inserted) {
+          parts.push(pngChunk("eXIf", buildOrientationTiff(orientation)));
+          inserted = true;
+        }
+        continue;
+      }
+      if (!c.drop) parts.push(b.subarray(c.start, c.end));
+    }
+    const total = parts.reduce((n, a) => n + a.length, 0);
+    const out = new Uint8Array(total);
+    let at = 0;
+    for (const part of parts) {
+      out.set(part, at);
+      at += part.length;
+    }
+    return out;
+  }
+
+  // The bytes of a picture with its place removed, or null for a format this doesn't rebuild (HEIC, WebP) or
+  // a file too odd to parse safely. Never mutates `bytes`.
+  function stripPlace(bytes) {
+    try {
+      if (!(bytes instanceof Uint8Array)) return null;
+      let out = null;
+      if (bytes[0] === 0xff && bytes[1] === 0xd8) out = stripJpegPlace(bytes);
+      else if (tag(bytes, 0, "\x89PNG\r\n\x1a\n")) out = stripPngPlace(bytes);
+      return out && !placeLeft(out) ? out : null;
+    } catch {
+      return null;
+    }
+  }
+
+  // Whether a rebuilt file still carries a place anywhere, not just where the readers above look: place text,
+  // or an "Exif\0\0" structure with a GPS pointer (a second picture inside the file, as in MPO files, has its
+  // own). The rebuild above copies those parts as they were, so "removed" would be untrue: the caller keeps
+  // today's advice instead.
+  const PLACE_TEXT = new Uint8Array([..."GPSLatitude"].map((c) => c.charCodeAt(0)));
+  function indexOfBytes(b, seq, from) {
+    for (let i = b.indexOf(seq[0], from); i >= 0 && i + seq.length <= b.length; i = b.indexOf(seq[0], i + 1)) {
+      let k = 1;
+      while (k < seq.length && b[i + k] === seq[k]) k++;
+      if (k === seq.length) return i;
+    }
+    return -1;
+  }
+  function placeLeft(b) {
+    if (gpsFrom(b) || indexOfBytes(b, PLACE_TEXT, 0) >= 0 || /GPSLongitude/.test(latin1.decode(b))) return true;
+    for (let i = indexOfBytes(b, exifSig, 0); i >= 0; i = indexOfBytes(b, exifSig, i + 1)) {
+      if (tiffInfo(b.subarray(i + exifSig.length))?.gps) return true;
+    }
+    return false;
+  }
+
+  // The same file, with its place taken out: a new File, same name and type, built from stripPlace()'s
+  // bytes. Null when the format isn't rebuilt here or nothing could be removed, so the caller falls back to
+  // today's advice (take the photo off yourself).
+  const STRIP_MAX_BYTES = 50 * 1024 * 1024;
+  async function removePhotoPlace(file) {
+    if (!file || typeof file.arrayBuffer !== "function" || file.size > STRIP_MAX_BYTES) return null;
+    const bytes = new Uint8Array(ownBytes(await file.arrayBuffer()));
+    const out = stripPlace(bytes);
+    if (!out) return null;
+    return new File([out], file.name, { type: file.type || "" });
+  }
+
   // ---------- File names that say "passport" ----------
   // A picture named "passport-scan.jpg" is likely a photo of one. A short list of clue words, read from the name's
   // words (split on _ - . spaces, camelCase and between letters and digits, lowercased, accents dropped), single words
@@ -463,8 +734,9 @@
         if (clue.some((w, k) => words[i + k] !== w)) continue;
         const before = words[i - 1];
         const after = words[i + clue.length];
-        if (clue.length === 1 && LICENSE.has(clue[0]) && (NOT_AN_ID_BEFORE.has(before) || NOT_AN_ID_AFTER.has(after)))
+        if (clue.length === 1 && LICENSE.has(clue[0]) && (NOT_AN_ID_BEFORE.has(before) || NOT_AN_ID_AFTER.has(after))) {
           continue;
+        }
         if (clue[0] === "1099") {
           const alone = words.every((w, k) => k === i || YEAR.test(w));
           if (!alone && !FORM_1099.has(before) && !FORM_1099.has(after)) continue;
@@ -505,5 +777,13 @@
     return found;
   }
 
-  Object.assign(globalThis.Clotr, { isPicture, gpsFrom, nameClues, namedDocument, readPicture });
+  Object.assign(globalThis.Clotr, {
+    isPicture,
+    gpsFrom,
+    nameClues,
+    namedDocument,
+    readPicture,
+    stripPlace,
+    removePhotoPlace,
+  });
 })();

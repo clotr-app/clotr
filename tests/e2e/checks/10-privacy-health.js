@@ -527,14 +527,15 @@ module.exports = async function (env) {
         // Simulates the browser's answers for someone who didn't grant two of the AI chats at install. Its permission
         // prompt can't be answered under automation, so the first ask is turned down and the second is allowed.
         await page.evaluateOnNewDocument((gone) => {
-          const missing = new Set(gone);
+          const missingSet = new Set(gone);
           const real = chrome.permissions.contains.bind(chrome.permissions);
           window.__asked = [];
-          chrome.permissions.contains = async (p) => ((p.origins || []).some((o) => missing.has(o)) ? false : real(p));
+          chrome.permissions.contains = async (p) =>
+            (p.origins || []).some((o) => missingSet.has(o)) ? false : real(p);
           chrome.permissions.request = async (p) => {
             window.__asked.push(p);
             if (window.__asked.length === 1) return false;
-            for (const o of p.origins || []) missing.delete(o);
+            for (const o of p.origins || []) missingSet.delete(o);
             return true;
           };
         }, missing);
@@ -644,10 +645,12 @@ module.exports = async function (env) {
             await send(page); // This happens before the 400 ms pause, since it's the send itself that's held.
             await sleep(400);
             const seen = await page.evaluate(() => window.__seen.slice());
-            if (send === tapSend)
+            if (send === tapSend) {
               expect(seen.includes("touchstart") && seen.includes("touchend"), `not a real tap: ${seen}`);
-            if (send !== pressEnter && send !== tapSend)
+            }
+            if (send !== pressEnter && send !== tapSend) {
               expect(!seen.includes("keydown Enter"), `an Enter key reached the page: ${seen}`);
+            }
             expect((await sentMessages(page)).length === 0, `${way} sent a key that waits for an answer`);
             expect(await waitForDialog(page), `${way}: no dialog`);
             // The choice belongs to the person: tapping "Leave it in and send" sends it, once.
@@ -683,6 +686,34 @@ module.exports = async function (env) {
         notes.push(way);
       }
       return `held and sent: ${notes.join("; ")}`;
+    },
+  );
+
+  await check(
+    "SEC8",
+    "A page's made-up Enter key can't switch off the check of a phone keyboard's new line (no real Enter key)",
+    async () => {
+      await resetState(ctx); // This sets Ask before sending for keys, before the page opens.
+      return withSite(
+        ctx,
+        "phone",
+        async (page) => {
+          // On the phone keyboard's real key, the page fires a made-up Enter of its own where only Clotr hears it.
+          await page.evaluate(() =>
+            window.addEventListener("keydown", (e) => {
+              if (e.isTrusted && e.keyCode === 229) {
+                document.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true }));
+              }
+            }),
+          );
+          await typeText(page, `Here's the key ${KEY}`);
+          await phoneNewLine(page);
+          await sleep(400);
+          expect((await sentMessages(page)).length === 0, "the new line sent a key that waits for an answer");
+          expect(await waitForDialog(page), "no dialog");
+        },
+        phone(360),
+      );
     },
   );
 
@@ -840,8 +871,9 @@ module.exports = async function (env) {
         "policy.html",
         "check.html",
         "practice.html",
-      ].filter(hasPage))
+      ].filter(hasPage)) {
         pages.push([f, await openExtPage(ctx, f)]);
+      }
       const violations = [];
       try {
         for (const [name, page] of pages) {
@@ -853,8 +885,11 @@ module.exports = async function (env) {
                   seen.push(`${e.violatedDirective} ${e.blockedURI}`),
                 );
                 // Exercise the page, then collect.
-                for (const t of document.querySelectorAll('[role="tab"], #tab-overview, #tab-activity, #tab-settings'))
+                for (const t of document.querySelectorAll(
+                  '[role="tab"], #tab-overview, #tab-activity, #tab-settings',
+                )) {
                   t.click?.();
+                }
                 setTimeout(() => resolve(seen), 800);
               }),
           );

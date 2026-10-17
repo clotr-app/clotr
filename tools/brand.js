@@ -10,99 +10,97 @@ const ROOT = path.join(__dirname, "..");
 let uid = 0;
 const nextId = (p) => `${p}${uid++}`;
 
-// Geometry for the toolbar and store icon: just the stitched bandage, tilted -32 degrees, with no tile or
-// letter. I fit each size by hand instead of scaling one shape so small icons stay crisp, which is also why
-// the numbers below don't scale neatly between rows.
-const PLASTER_GEO = {
-  16: { tapeHW: 6.52, tapeHH: 2.42, tapeSW: 1.0, padX: 2.53, padY: 1.75, padW: 5.05, padH: 3.51, padR: 0.28 },
-  32: {
-    tapeHW: 13.75,
-    tapeHH: 5.29,
-    tapeSW: 1.5,
-    padX: 5.22,
-    padY: 3.63,
-    padW: 10.44,
-    padH: 7.25,
-    padR: 0.58,
-    stitchHW: 11.94,
-    stitchHH: 3.48,
-    stitchSW: 0.8,
-    stitchDash: "1.21 0.85",
-  },
-  48: {
-    tapeHW: 20.99,
-    tapeHH: 8.16,
-    tapeSW: 2.0,
-    padX: 7.92,
-    padY: 5.5,
-    padW: 15.83,
-    padH: 10.99,
-    padR: 0.88,
-    stitchHW: 18.24,
-    stitchHH: 5.41,
-    stitchSW: 1.01,
-    stitchDash: "1.83 1.28",
-  },
-  128: {
-    tapeHW: 57.91,
-    tapeHH: 23.25,
-    tapeSW: 3.0,
-    padX: 21.39,
-    padY: 14.85,
-    padW: 42.78,
-    padH: 29.7,
-    padR: 1.0,
-    stitchHW: 50.48,
-    stitchHH: 15.83,
-    stitchSW: 2.72,
-    stitchDash: "4.95 3.47",
-  },
-};
+// One mark everywhere: the same C with the bandage across its mouth that Clotr for Windows and Android draw.
+// tools/brand-mark.svg is a copy of the apps' own icon source, kept beside this script so it
+// works in a checkout without the apps; tests/brand-drift.test.js fails if the two stop matching.
+const APP_MARK_SOURCE = fs.readFileSync(path.join(__dirname, "brand-mark.svg"), "utf8").trim();
+const APP_MARK_BODY = APP_MARK_SOURCE.replace(/^<svg[^>]*>/, "").replace(/<\/svg>\s*$/, "");
 
 const PLASTER_COLORS = {
-  tape: "#E3E6E9", // a light steel, light enough to read on its own on both light and dark toolbars
-  key: "#1F2226",
-  pad: "#5B3A63",
-  padOff: "#545B64", // the same bandage with the plum drained out, used when Clotr isn't active
+  tileTop: "#4A3560", // plum, the tile's gradient start
+  tileBottom: "#1A1221", // ink, the tile's gradient end
+  tileEdge: "#93819f",
+  ring: "#FF6700", // the C
+  cap: "#F7F1FB", // the bandage's tape
+  key: "#1A1221", // ink: outlines and body text next to the mark
+  pad: "#4A3560", // plum: headings next to the mark (the name "pad" is historical, from the mark's old bandage-only look)
   dot: "#E2C81C", // matches the popup's colour for a spotted site
 };
 
-// The toolbar icon has three states. Only the pad's colour changes between on and off, and spot is just the
-// on bandage plus the dot Clotr already uses elsewhere to flag an AI site it hasn't opened on yet.
+// A fresh id for every def a drawing needs (gradients, filters), so two copies of the mark can sit in one page
+// (a preview sheet, a contact sheet) without one silently reusing the other's fill.
+function freshIds(body, ...names) {
+  let out = body;
+  for (const name of names) {
+    const id = nextId("m");
+    out = out
+      .replace(new RegExp(`id="${name}"`), `id="${id}"`)
+      .replace(new RegExp(`url\\(#${name}\\)`, "g"), `url(#${id})`);
+  }
+  return out;
+}
+
+// Below 24 px the full drawing (the ring's two-tone edge, the bandage's own border and stitch) blurs into a smudge,
+// so this is a simplified stand-in, by hand: one thick ring, a bigger bandage with no stitch, and (since colour
+// alone can't carry the shape once the off state drains it to grey) a dark keyline under the ring and the
+// bandage's tape, so the C and the bandage still read as two shapes at a few pixels across. Same C, same bandage
+// angle and corner as the full drawing.
+function simplifiedMark(size) {
+  const tile =
+    `<rect x="2" y="2" width="124" height="124" rx="26" fill="url(#g)" ` +
+    `stroke="${PLASTER_COLORS.tileEdge}" stroke-width="1.5" stroke-opacity=".6"/>`;
+  const ringEdge = `<path d="M 84.5 44.5 A 33 33 0 1 0 84.5 87.5" fill="none" stroke="${PLASTER_COLORS.key}" stroke-width="44"/>`;
+  const ring = `<path d="M 84.5 44.5 A 33 33 0 1 0 84.5 87.5" fill="none" stroke="${PLASTER_COLORS.ring}" stroke-width="38"/>`;
+  const bandage =
+    `<g transform="translate(93 66) rotate(-45)">` +
+    `<rect x="-19" y="-35" width="38" height="70" rx="6" fill="${PLASTER_COLORS.key}"/>` +
+    `<rect x="-18" y="-34" width="36" height="68" rx="5" fill="${PLASTER_COLORS.cap}"/>` +
+    `<rect x="-10" y="-11" width="20" height="22" rx="3" fill="${PLASTER_COLORS.ring}"/>` +
+    `</g>`;
+  const body = freshIds(
+    `<defs><linearGradient id="g" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="${PLASTER_COLORS.tileTop}"/>` +
+      `<stop offset="1" stop-color="${PLASTER_COLORS.tileBottom}"/></linearGradient></defs>${tile}${ringEdge}${ring}${bandage}`,
+    "g",
+  );
+  return `<g transform="scale(${size / 128})">${body}</g>`;
+}
+
+// The full drawing, scaled from its own 128-unit artwork.
+function fullMark(size) {
+  return `<g transform="scale(${size / 128})">${freshIds(APP_MARK_BODY, "g")}</g>`;
+}
+
+// The toolbar and store icon has three states. On and spot show the mark at full colour; off drains it to grey
+// and dims it, the same recipe Clotr for Windows' tray uses for its own off icon, so every app agrees on what
+// "not active" looks like.
 //   on   - protecting this tab
 //   off  - not active here yet (the default icon before any tab reports in)
 //   spot - this page looks like an AI chat, click to protect it
 function plaster(state = "on", { size = 128 } = {}) {
-  const g = PLASTER_GEO[size];
-  if (!g) throw new Error(`no plaster geometry for size ${size}`);
-  const cx = size / 2,
-    cy = size / 2;
-  const tape =
-    `<path d="M${-g.tapeHW} ${-g.tapeHH}H${g.tapeHW}V${g.tapeHH}H${-g.tapeHW}Z" fill="${PLASTER_COLORS.tape}" ` +
-    `stroke="${PLASTER_COLORS.key}" stroke-width="${g.tapeSW}" stroke-linejoin="round"/>`;
-  const pad = state === "off" ? PLASTER_COLORS.padOff : PLASTER_COLORS.pad;
-  const padRect = `<rect x="${-g.padX}" y="${-g.padY}" width="${g.padW}" height="${g.padH}" rx="${g.padR}" fill="${pad}"/>`;
-  const stitch = g.stitchHW
-    ? `<path d="M${-g.stitchHW} ${-g.stitchHH}H${g.stitchHW}V${g.stitchHH}H${-g.stitchHW}Z" fill="none" ` +
-      `stroke="${PLASTER_COLORS.key}" stroke-width="${g.stitchSW}" stroke-dasharray="${g.stitchDash}"/>`
-    : "";
-  const bandage = `<g transform="translate(${cx} ${cy}) rotate(-32)">${tape}${padRect}${stitch}</g>`;
+  const mark = size < 24 ? simplifiedMark(size) : fullMark(size);
+  const body =
+    state === "off"
+      ? freshIds(
+          `<defs><filter id="drain"><feColorMatrix type="saturate" values="0"/></filter></defs>` +
+            `<g filter="url(#drain)" opacity="0.7">${mark}</g>`,
+          "drain",
+        )
+      : mark;
   const dot =
     state === "spot"
       ? `<circle cx="${size * 0.78}" cy="${size * 0.78}" r="${size * 0.165}" fill="${PLASTER_COLORS.dot}" ` +
         `stroke="${PLASTER_COLORS.key}" stroke-width="${Math.max(size * 0.02, 0.6)}"/>`
       : "";
-  return `<svg xmlns="http://www.w3.org/2000/svg" width="${size}" height="${size}" viewBox="0 0 ${size} ${size}">${bandage}${dot}</svg>`;
+  return `<svg xmlns="http://www.w3.org/2000/svg" width="${size}" height="${size}" viewBox="0 0 ${size} ${size}">${body}${dot}</svg>`;
 }
 
-// The bandage at any size, for pictures bigger than the toolbar's: one hand-fit drawing scaled through the viewBox,
-// with an optional margin and an opaque background. The hand-fit sizes with neither come back exactly as plaster()
-// draws them.
-function plasterAt(size, { from = PLASTER_GEO[size] ? size : 128, padding = 0, background = null, state = "on" } = {}) {
+// The mark at any size, for pictures bigger than the toolbar's: one drawing scaled through the viewBox, with an
+// optional margin and an opaque background. With neither, this comes back exactly as plaster() draws it.
+function plasterAt(size, { from = size, padding = 0, background = null, state = "on" } = {}) {
   const svg = plaster(state, { size: from });
   if (from === size && !padding && !background) return svg;
-  const m = +((padding * from) / (size - 2 * padding)).toFixed(3);
-  const side = +(from + 2 * m).toFixed(3);
+  const m = Number(((padding * from) / (size - 2 * padding)).toFixed(3));
+  const side = Number((from + 2 * m).toFixed(3));
   const bg = background ? `<rect x="${-m}" y="${-m}" width="${side}" height="${side}" fill="${background}"/>` : "";
   return svg.replace(
     / width="\d+" height="\d+" viewBox="[^"]*">/,
@@ -137,11 +135,24 @@ function wordmarkTight() {
 }
 
 // The clotr-app organisation's avatar, which GitHub also puts on the repo's link previews. GitHub shows it as small
-// as 20 px and crops it to a circle, so the bandage is drawn large with its far corners still inside the circle.
+// as 20 px and crops it to a circle, so the tile is drawn round here instead of its usual rounded square: a
+// square's corners would be cut off by that crop (tests/site-icons.test.js checks this directly).
+function githubAvatarSvg() {
+  const size = GITHUB_AVATAR.size;
+  const markSize = 470; // its radius (235) stays inside the 240 px GitHub crops to, with a hair of margin
+  const circleTile = `<circle cx="64" cy="64" r="62" fill="url(#g)" stroke="${PLASTER_COLORS.tileEdge}" stroke-width="1.5" stroke-opacity=".6"/>`;
+  const body = freshIds(APP_MARK_BODY.replace(/<rect[^>]*rx="26"[^>]*\/>/, circleTile), "g");
+  const offset = (size - markSize) / 2;
+  return (
+    `<svg xmlns="http://www.w3.org/2000/svg" width="${size}" height="${size}" viewBox="0 0 ${size} ${size}">` +
+    `<rect width="${size}" height="${size}" fill="${STEEL}"/>` +
+    `<g transform="translate(${offset} ${offset}) scale(${markSize / 128})">${body}</g></svg>`
+  );
+}
 const GITHUB_AVATAR = {
   size: 500,
   file: "docs/brand/github-avatar-500.png",
-  svg: () => plasterAt(500, { padding: 30, background: STEEL }),
+  svg: githubAvatarSvg,
 };
 
 // Recursive is the extension's own font. I embed it here so a render never has to fetch anything.
@@ -183,7 +194,7 @@ async function renderPng(jobs) {
       fs.mkdirSync(path.dirname(j.file), { recursive: true });
       await tab.screenshot({
         path: j.file,
-        omitBackground: !!j.transparent,
+        omitBackground: Boolean(j.transparent),
         clip: { x: 0, y: 0, width: j.w, height: j.h },
       });
       console.log(path.relative(ROOT, j.file).replace(/\\/g, "/"), `(${j.w}×${j.h})`);
@@ -223,6 +234,7 @@ async function renderWebp(jobs) {
 
 module.exports = {
   ROOT,
+  APP_MARK_SOURCE,
   GITHUB_AVATAR,
   PLASTER_COLORS,
   STORE_LOGOS,

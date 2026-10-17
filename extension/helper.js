@@ -417,13 +417,17 @@ if ($("open-practice")) $("open-practice").hidden = !FEATURES.practice;
 if ($("open-training")) $("open-training").hidden = !FEATURES.training;
 $("after-share-row").hidden = !FEATURES.scamcheck && !FEATURES.practice && !FEATURES.training;
 // Extension check: Safari has no management API, so its build drops the page; hide the line here too.
-if ($("ext-check-line") && (!FEATURES.extcheck || chrome.runtime.getManifest().browser_specific_settings?.safari))
+if ($("ext-check-line") && (!FEATURES.extcheck || chrome.runtime.getManifest().browser_specific_settings?.safari)) {
   $("ext-check-line").hidden = true;
+}
 $("large-text").addEventListener("change", (e) => chrome.storage.local.set({ largeText: e.target.checked }));
 $("strict-personal").addEventListener("change", (e) => Helper.setAskBeforePersonal(e.target.checked));
 $("lock-set").addEventListener("click", async () => {
   const pin = $("pin").value.trim();
-  if (!Helper.validPin(pin)) return say("lock-msg", msg("pp_pinDigits", "Use 4 to 8 digits."), true);
+  if (!Helper.validPin(pin)) {
+    say("lock-msg", msg("pp_pinDigits", "Use 4 to 8 digits."), true);
+    return;
+  }
   const next = await Helper.makeLock(pin);
   unlockedUntil = await Helper.markUnlocked(); // you set it, so you stay in for now
   await chrome.storage.local.set({ lock: next });
@@ -432,7 +436,10 @@ $("lock-set").addEventListener("click", async () => {
 });
 
 async function tryUnlock() {
-  if (Date.now() < retryAt) return say("unlock-msg", msg("pp_tooMany", "Too many tries: wait half a minute."), true);
+  if (Date.now() < retryAt) {
+    say("unlock-msg", msg("pp_tooMany", "Too many tries: wait half a minute."), true);
+    return;
+  }
   const ok = await Helper.pinMatches($("unlock-pin").value.trim(), lock);
   $("unlock-pin").value = "";
   if (!ok) {
@@ -440,7 +447,8 @@ async function tryUnlock() {
       retryAt = Date.now() + 30000;
       wrongTries = 0;
     }
-    return say("unlock-msg", msg("pp_wrongPin", "That PIN didn't match."), true);
+    say("unlock-msg", msg("pp_wrongPin", "That PIN didn't match."), true);
+    return;
   }
   wrongTries = 0;
   say("unlock-msg", "");

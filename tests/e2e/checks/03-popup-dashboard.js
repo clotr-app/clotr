@@ -41,7 +41,7 @@ module.exports = async function (env) {
         legend.includes(`Just counted ${n("suppressed")}`),
       `legend: ${legend}`,
     );
-    const alerts = await popup.$eval("#alerts", (n) => n.innerText);
+    const alerts = await popup.$eval("#alerts", (el) => el.innerText);
     expect(alerts.includes("found the same AWS Access Key 2 times"), `alerts: ${alerts}`);
     expect(alerts.includes("sent 1 high-risk"), `alerts: ${alerts}`);
     await shot(popup, "popup-overview-light.png");

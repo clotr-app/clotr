@@ -15,10 +15,12 @@ const STILL_OFF = HELD_BACK.filter((k) => !manifestOnDisk.clotr_features[k]);
 
 test("the shipped build drops only the features still held back", () => {
   const { files, manifest } = build({ zip: false });
-  for (const name of STILL_OFF)
+  for (const name of STILL_OFF) {
     for (const f of FEATURE_FILES[name]) assert.ok(!files.includes(f), `${f} (${name}) shipped while held back`);
-  for (const name of HELD_BACK.filter((k) => !STILL_OFF.includes(k)))
+  }
+  for (const name of HELD_BACK.filter((k) => !STILL_OFF.includes(k))) {
     for (const f of FEATURE_FILES[name]) assert.ok(files.includes(f), `${f} (${name}) missing though it's on`);
+  }
   const practiceOrTraining = manifestOnDisk.clotr_features.practice || manifestOnDisk.clotr_features.training;
   assert.equal(
     files.includes("practice-data.js"),
@@ -41,8 +43,9 @@ test("the shipped build drops only the features still held back", () => {
 test("an all-on build ships every held-back feature's files, unchanged from the shipped build's manifest otherwise", () => {
   const allOn = Object.fromEntries(HELD_BACK.map((k) => [k, true]));
   const { files, manifest } = build({ zip: false, features: allOn });
-  for (const name of HELD_BACK)
+  for (const name of HELD_BACK) {
     for (const f of FEATURE_FILES[name]) assert.ok(files.includes(f), `${f} (${name}) missing`);
+  }
   assert.ok(files.includes("practice-data.js"));
   assert.ok(manifest.content_scripts.some((c) => c.js.includes("commands.js")));
   assert.deepEqual(manifest.optional_permissions, ["management"]);
@@ -54,6 +57,7 @@ test("turning on one held-back feature ships only its own files, not another's",
   const allOff = Object.fromEntries(HELD_BACK.map((k) => [k, false]));
   const { files } = build({ zip: false, features: { ...allOff, lookback: true } });
   for (const f of FEATURE_FILES.lookback) assert.ok(files.includes(f), `${f} missing with lookback on`);
-  for (const name of HELD_BACK.filter((n) => n !== "lookback"))
+  for (const name of HELD_BACK.filter((n) => n !== "lookback")) {
     for (const f of FEATURE_FILES[name]) assert.ok(!files.includes(f), `${f} (${name}) shipped unasked`);
+  }
 });

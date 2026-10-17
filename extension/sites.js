@@ -114,16 +114,6 @@
     }
   }
 
-  async function removeEverywhere() {
-    try {
-      return Boolean(await chrome.permissions.remove({ origins: [EVERYWHERE_ORIGIN] }));
-    } catch (err) {
-      const kind = err instanceof Error ? err.constructor.name : typeof err;
-      console.warn("[Clotr] could not switch off Everywhere I type:", kind);
-      return false;
-    }
-  }
-
   // Whether the switch is on: the browser's grant is the record, nothing stored as "on" ahead of it.
   function everywhereGranted(origins) {
     return Array.isArray(origins) && origins.includes(EVERYWHERE_ORIGIN);
@@ -175,6 +165,12 @@
 
   // Whether this is a site where you write to people rather than an AI: either one from the list, or one you
   // told Clotr isn't an AI chat yourself. Your own choice always wins over the list.
+  // What the popup calls a page its check found chat-shaped: an email or chat app is never "spotted" as an AI
+  // tool, since it has its own switch (the warning there talks about people) and the spotted list is for AI tools.
+  function spotKind(host, result) {
+    return result?.looksLikeAI && !everydaySiteFor(host) ? "spotted" : "not-ai";
+  }
+
   function isEveryday(host, siteKinds = {}) {
     if (!host) return false;
     if (siteKinds[host] === "everyday") return true;
@@ -320,34 +316,87 @@
       signals.push("a send button");
     }
 
+    // A chat-shaped box, the same rule editor.js's isChatComposer uses for "Everywhere I type": a multi-line
+    // box with a send-like control or enterkeyhint="send" nearby, never one sitting in a form built for an
+    // address, a payment card, a sign-in or someone's name. This function has to be self-contained (the
+    // comment above the caller explains why: it runs inside a page Clotr's other scripts never touch), so
+    // it's a small copy of that same check rather than a reuse of it. Catches a white-labeled AI chat with no
+    // "ai" anywhere in its own address or title, which the two wording checks above both miss.
+    const FORM_FIELD_AUTOCOMPLETE =
+      /^(street-address|address-line[1-3]|address-level[1-4]|postal-code|country(-name)?|organization|cc-[a-z-]+|name|given-name|additional-name|family-name|honorific-(prefix|suffix)|nickname|email|tel(-[a-z-]+)?|username|current-password|new-password)$/i;
+    const SEND_LIKE = /\b(send|enviar)\b/i; // English and Spanish, Clotr's two languages
+    const composerShape = (el) => {
+      const form = typeof el.closest === "function" ? el.closest("form") : null;
+      if (form?.querySelector("input[type='password']")) return false;
+      const autos = form
+        ? [...form.querySelectorAll("[autocomplete]")].map((f) => f.getAttribute("autocomplete") || "")
+        : [];
+      if (autos.some((ac) => FORM_FIELD_AUTOCOMPLETE.test(ac.trim()))) return false;
+      if ((el.getAttribute("enterkeyhint") || "").toLowerCase() === "send") return true;
+      let area = el;
+      for (let i = 0; i < 4 && area?.parentElement; i++) {
+        area = area.parentElement;
+        for (const btn of area.querySelectorAll('button, [role="button"], input[type="submit"]')) {
+          if (btn === el || btn.contains(el)) continue;
+          const label = `${btn.getAttribute("aria-label") || ""} ${btn.getAttribute("title") || ""} ${btn.textContent || ""}`;
+          if (SEND_LIKE.test(label)) return true;
+        }
+      }
+      return false;
+    };
+    const chatShape = inputs.some(composerShape);
+    if (chatShape) signals.push("a chat-shaped box");
+
     const aiWording = signals.some((s) => s.startsWith("AI wording"));
-    // A prompt box alone could be any messaging app; require AI wording too.
-    return { looksLikeAI: promptBox && aiWording, signals };
+    // A prompt box alone could be any messaging app, so that still needs AI wording too. A box that actually
+    // has a chat's shape is a stronger signal on its own, the same way "Everywhere I type" trusts it without
+    // any wording at all; it still only leads to the once-only offer below, never anything built in.
+    return { looksLikeAI: (promptBox && aiWording) || chatShape, signals };
   }
 
   // What the popup tells you about a protected tab, based on what that tab's content script already reported
-  // to the background. The level is one of on, idle, warn or paused.
-  function healthText({ running = false, paused = false, editor = false, editFailed = false, uiRemoved = false } = {}) {
-    if (!running)
+  // to the background. The level is one of on, idle, warn or paused. `builtIn` is only used for the last line:
+  // on one of Clotr's own AI sites, a redesign that moved its chat box far enough that even the shape rule
+  // (content.js's fallback for built-in sites) misses it still means something can be sent there, since typing
+  // itself is checked the moment it happens, not just the look-before-you-type scan behind this line.
+  function healthText({
+    running = false,
+    paused = false,
+    editor = false,
+    editFailed = false,
+    uiRemoved = false,
+    builtIn = false,
+  } = {}) {
+    if (!running) {
       return {
         level: "warn",
         key: "hc_notRunning",
         text: "Clotr isn't running in this tab yet. Reload the page to start it.",
       };
+    }
     if (paused) return { level: "paused", key: "hc_paused", text: "Paused on this site" };
-    if (uiRemoved)
+    if (uiRemoved) {
       return {
         level: "warn",
         key: "hc_uiRemoved",
         text: "This page removed Clotr's warnings, so Clotr can't warn you here. Messages are never held on this page.",
       };
-    if (editFailed)
+    }
+    if (editFailed) {
       return {
         level: "warn",
         key: "hc_editFailed",
         text: "Clotr couldn't edit the chat box here last time. Delete flagged details by hand before sending.",
       };
+    }
     if (editor) return { level: "on", key: "hc_watching", text: "Protecting this site: watching the chat box ✓" };
+    if (builtIn) {
+      return {
+        level: "idle",
+        key: "hc_noBoxBuiltIn",
+        text: "Clotr can't find the chat box on this page. Copy and paste is still checked when you send.",
+      };
+    }
     return { level: "idle", key: "hc_noBox", text: "Protecting this site: no chat box on this page yet" };
   }
 
@@ -986,7 +1035,7 @@
     // kinds existed stays unchanged. Their order is kept as-is, since it's what decides the ids when two
     // names collide.
     const kinds = policyKinds(p);
-    if (kinds.length)
+    if (kinds.length) {
       canon.k = kinds.map((k) => [
         k.id,
         k.name,
@@ -996,6 +1045,7 @@
         k.formats.map((x) => x.toLowerCase()).sort(),
         k.near.slice().sort(),
       ]);
+    }
     return globalThis.Clotr.sha256(JSON.stringify(canon)).slice(0, 16).toUpperCase();
   }
 
@@ -1115,7 +1165,6 @@
     EVERYWHERE_ORIGIN,
     EVERYWHERE_SCRIPT_ID,
     requestEverywhere,
-    removeEverywhere,
     everywhereGranted,
     EVERYDAY_SITES,
     everydaySiteFor,
@@ -1134,6 +1183,7 @@
     removeMoreSites,
     offerAfterInstall,
     isEveryday,
+    spotKind,
     collapseBatch,
     weight,
     AI_URL_REGEX,

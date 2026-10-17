@@ -87,6 +87,57 @@
       document.getElementById("composer").requestSubmit();
       return watch(1500);
     };
+    window.__watch = watch;
+
+    // Events the browser marks trusted though nobody acted. document.execCommand("insertText") fires a trusted
+    // input event (but never a beforeinput), with no key pressed at all.
+    window.__probeExec = (text) => {
+      box.focus();
+      box.select();
+      document.execCommand("insertText", false, text);
+      return watch(1500);
+    };
+    // A made-up end of an input-method composition, which a real one follows with a fresh look at the box.
+    window.__probeCompose = (text) => {
+      box.value = text;
+      box.dispatchEvent(new CompositionEvent("compositionend", { bubbles: true, data: "" }));
+      return watch(1500);
+    };
+    // Right after a real Enter or click (any, Shift+Enter included), a submit looks like the person's. Here the
+    // page uses that moment: its guess in, a submit started by script, the person's text back.
+    window.__probeAfterGesture = (text) => {
+      const mine = box.value;
+      box.value = text;
+      document.getElementById("composer").requestSubmit();
+      box.value = mine;
+      return watch(1500);
+    };
+    // The same from the page's own click handler on Send, which runs right after Clotr has checked the real click.
+    window.__swapOnSend = (text) => {
+      document.getElementById("send").addEventListener(
+        "click",
+        (e) => {
+          e.preventDefault();
+          const mine = box.value;
+          box.value = text;
+          document.getElementById("composer").requestSubmit();
+          box.value = mine;
+        },
+        { once: true },
+      );
+    };
+    // A real file pick: the page's own listener puts its guess file in place of the person's before change fires.
+    window.__swapOnPick = (name, text) => {
+      attachInput.addEventListener(
+        "input",
+        () => {
+          const dt = new DataTransfer();
+          dt.items.add(new File([text], name, { type: "text/plain" }));
+          attachInput.files = dt.files;
+        },
+        { once: true },
+      );
+    };
   </script>
 </body>
 </html>
