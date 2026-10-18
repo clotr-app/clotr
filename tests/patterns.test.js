@@ -132,6 +132,18 @@ test("credentials", () => {
   expectOnly("maps key AIzaHvneKu6rq2gXKZtw-eOhOYwuVw6AAiq_ps- is failing", "google_api_key");
 });
 
+test("private keys: PEM matches full block including body and footer when present, or lone header", () => {
+  const fullRsa =
+    "-----BEGIN RSA PRIVATE KEY-----\nMIIEowIBAAKCAQEA0YpABC123+/=\nanotherLineOfSecretBase64==\n-----END RSA PRIVATE KEY-----";
+  expectOnly(fullRsa, "private_key", fullRsa);
+
+  const wrapped = `before\n${fullRsa}\nafter`;
+  const redacted = globalThis.Clotr.redact(wrapped, globalThis.Clotr.detect(wrapped));
+  assert.equal(redacted, "before\n[REDACTED PRIVATE KEY]\nafter");
+
+  expectOnly("-----BEGIN RSA PRIVATE KEY-----", "private_key", "-----BEGIN RSA PRIVATE KEY-----");
+});
+
 test("AWS access keys: the rarer STS (ABIA) and context (ACCA) prefixes match too, same as AKIA/ASIA", () => {
   expectOnly("key ABIA4HPQ7XZ2R6TWLJ3N here", "aws_access_key");
   expectOnly("key ACCA4HPQ7XZ2R6TWLJ3N here", "aws_access_key");

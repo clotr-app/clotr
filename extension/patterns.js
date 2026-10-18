@@ -2720,7 +2720,8 @@
     return found;
   }
 
-  const PEM_PRIVATE_KEY_RE = /-----BEGIN (?:[A-Z]+ )?PRIVATE KEY-----/g;
+  const PEM_PRIVATE_KEY_RE =
+    /-----BEGIN (?:[A-Z]+ )?PRIVATE KEY-----(?:(?:(?!-----BEGIN)[\s\S])*?-----END (?:[A-Z]+ )?PRIVATE KEY-----)?/g;
   // A PEM or OpenSSH header and a JWK private key both count as the same `private_key` kind.
   function findPrivateKeys(text) {
     return [...text.matchAll(PEM_PRIVATE_KEY_RE)].map((m) => m[0]).concat(findJwkPrivateKeys(text));
