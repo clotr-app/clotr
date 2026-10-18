@@ -30,11 +30,12 @@ module.exports = async function (env) {
           lis.map((li) => ({ name: li.querySelector("b")?.textContent, on: li.querySelector("button")?.textContent })),
         );
         expect(rows.length >= 8, `rows: ${JSON.stringify(rows)}`);
-        for (const name of ["Gmail", "Outlook", "Discord", "Slack", "WhatsApp"])
+        for (const name of ["Gmail", "Outlook", "Discord", "Slack", "WhatsApp"]) {
           expect(
             rows.some((r) => r.name === name && r.on === "Turn on"),
             `${name} missing or not off: ${JSON.stringify(rows)}`,
           );
+        }
       } finally {
         await popup.close();
       }
@@ -179,14 +180,17 @@ module.exports = async function (env) {
       5000,
     );
     await page.evaluate((list) => {
-      for (const box of document.querySelectorAll("#everyday-offer input[type=checkbox]"))
+      for (const box of document.querySelectorAll("#everyday-offer input[type=checkbox]")) {
         if (list.includes(box.value) && !box.checked) box.click();
+      }
     }, names);
   };
   const offerShots = async (page, name) => {
-    for (const width of [700, 380])
-      for (const theme of ["light", "dark"])
+    for (const width of [700, 380]) {
+      for (const theme of ["light", "dark"]) {
         await shotAt(page, `${name}-${width}-${theme}.png`, { width, height: 900, theme, selector: "#everyday-offer" });
+      }
+    }
   };
 
   await check(
@@ -550,8 +554,9 @@ module.exports = async function (env) {
         const status = await popup.$eval("#everyday-status", (p) => p.textContent.trim());
         expect(/Nothing was switched on/.test(status), `status: ${status}`);
         await popup.evaluate(() => document.getElementById("everyday-status").scrollIntoView({ block: "center" }));
-        for (const theme of ["light", "dark"])
+        for (const theme of ["light", "dark"]) {
           await shotAt(popup, `settings-everyday-no-${theme}.png`, { height: 700, theme });
+        }
         const asks = await popup.evaluate(() => window.__asks);
         expect(asks.length === 1, `asks: ${JSON.stringify(asks)}`);
         const stillOff = await popup.evaluate(() => {
@@ -792,7 +797,6 @@ module.exports = async function (env) {
     "EV12",
     "The email and chat offer's word: welcome on install, popup once after an update, shown in What Clotr stores",
     async () => {
-      const offerOf = async (c) => (await store.get(c, "everydayOffer")).everydayOffer;
       const forget = (c) => c.worker.evaluate(() => enqueue(() => chrome.storage.local.remove("everydayOffer")));
       const fresh = await withGrantedCopy(async (other) => {
         const installed = await waitFor(() => offerOf(other), 3000);
@@ -807,8 +811,9 @@ module.exports = async function (env) {
       try {
         await forget(ctx); // installed before this release, no app on
         const steps = [];
-        for (const reason of ["update", "update", "chrome_update"])
+        for (const reason of ["update", "update", "chrome_update"]) {
           steps.push(await ctx.worker.evaluate((r) => noteEverydayOffer(r), reason));
+        }
         expect(steps.join() === "popup,popup,popup", `updates with no app on: ${steps.join()}`);
         const page = await openExtPage(ctx, "stored.html");
         try {

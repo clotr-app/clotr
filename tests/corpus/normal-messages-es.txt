@@ -457,3 +457,26 @@ El CBU tiene 22 dígitos, ¿dónde lo veo en el home banking?
 Tengo en mi cuenta de ahorros 150000 pesos, ¿cómo los invierto sin riesgo?
 ---
 Mi número de pedido es 113-2846159-7730214 y el número de seguimiento es 9361289744390612445812. ¿Dónde está?
+---
+¿Cómo actualizo de la versión 2.14.3 a la 3.0.1 sin romper nada?
+---
+Mi pedido número 112-4456789-1234567 no llegó y el seguimiento dice 1Z999AA10123456784.
+---
+Añade 2 tazas de harina y 350 g de azúcar, y hornea a 180 grados durante 25 minutos. ¿Lo puedo hacer sin huevo?
+---
+La contraseña debe tener al menos 8 caracteres, ¿cómo la cambio si olvidé la anterior?
+---
+¿Por qué falla esto?
+```
+const contraseña = req.body.contraseña;
+if (!contraseña) throw new Error("falta la contraseña");
+```
+---
+El token es inválido desde ayer y la API devuelve 401. ¿Qué reviso primero?
+---
+Mi plantilla .env todavía no tiene valores:
+```
+CLAVE=
+USUARIO=admin
+```
+¿La puedo subir así al repositorio?

@@ -38,42 +38,51 @@
 
   // What to do now about something that was sent to an AI service.
   function adviceFor(type) {
-    if (type === "crypto_secret")
+    if (type === "crypto_secret") {
       return msg(
         "ad_crypto",
         "Move your funds to a new wallet. A seed phrase or key can't be changed, only left behind.",
       );
-    if (type === "otp_secret")
+    }
+    if (type === "otp_secret") {
       return msg(
         "ad_otp",
         "Turn two-step sign-in off and on again for that account. That makes a new key, and the old one stops working.",
       );
-    if (type === "backup_codes")
+    }
+    if (type === "backup_codes") {
       return msg(
         "ad_backup_codes",
         "Make a fresh set of backup codes for that account now. The old list stops working once you do.",
       );
-    if (KEYS.has(type))
+    }
+    if (KEYS.has(type)) {
       return msg(
         "ad_key",
         "Turn it off and make a new one (or change the password) now. Once it's been sent, treat it as public.",
       );
-    if (type === "card_code")
+    }
+    if (type === "card_code") {
       return msg("ad_card_code", "Call the number on your card and ask for a new one if someone else could have it.");
-    if (type === "gift_card")
+    }
+    if (type === "gift_card") {
       return msg(
         "ad_gift_card",
         "Call the gift card company on the number on the back of the card. Say a scammer got the number and PIN, and ask for your money back.",
       );
-    if (type === "credit_card")
+    }
+    if (type === "credit_card") {
       return msg("ad_card", "Watch your statements, and ask your bank for a new card if you're unsure.");
-    if (type === "bank_account")
+    }
+    if (type === "bank_account") {
       return msg("ad_bank", "Tell your bank if you didn't mean to share it, and watch for unexpected activity.");
-    if (IDS.has(type))
+    }
+    if (IDS.has(type)) {
       return msg(
         "ad_id",
         "Keep an eye out for identity theft. In the US, a free credit freeze stops anyone opening new accounts in your name.",
       );
+    }
     return msg("ad_other", "Delete that chat in the AI service if you can, and turn off training on your chats.");
   }
 
@@ -198,16 +207,18 @@
   function detailFor(branch, byService, g, said) {
     const list = kindsText(g.parts);
     let text;
-    if (branch === "near")
+    if (branch === "near") {
       text = byService
         ? msg("mp_nearService", "Clotr stopped on $1: $2", g.label, list)
         : msg("mp_nearKind", "$1, stopped by Clotr on: $2", g.label, list);
-    else
+    } else {
       text = byService
         ? msg("mp_hasService", "$1 has: $2 (riskiest: $3)", g.label, list, RISK_WORD[g.severity] || RISK_WORD.none)
         : msg("mp_hasKind", "$1 reached: $2", g.label, list);
-    if (said)
+    }
+    if (said) {
       text += ` ${msg("mp_mentionedToo", "Its replies brought up your details without you typing them ($1×).", said.count)}`;
+    }
     return text;
   }
 

@@ -99,8 +99,9 @@ function realValues(text) {
   const out = [];
   for (const m of text.matchAll(PHONE)) if (!MADE_UP_PHONE.test(m[0])) out.push(`phone ${m[0]}`);
   for (const m of text.matchAll(HOST)) if (!MADE_UP_HOST.test(m[0])) out.push(`address ${m[0]}`);
-  for (const m of text.matchAll(EMAIL_HOST))
+  for (const m of text.matchAll(EMAIL_HOST)) {
     if (!MADE_UP_HOST.test(m[1].replace(/\.$/, ""))) out.push(`email @${m[1]}`);
+  }
   return out;
 }
 
@@ -181,23 +182,74 @@ function signProblems(file) {
 }
 
 // Runs that check against all four corpora: every listed sign must be found, and no sign beyond what the label lists.
-for (const file of Object.keys(CORPORA))
+for (const file of Object.keys(CORPORA)) {
   test(`every message's signs are exactly its label's (${file})`, () => {
     assert.deepEqual(signProblems(file), []);
   });
+}
 
 test("the made-up message gives exactly its four signs, in both languages, marking their words", () => {
   const en =
     "This is the fraud team at Anytown Bank. We stopped a strange payment on your card. To cancel it, reply right away with the 6-digit code we just texted you. Don't tell anyone at the branch, they may be in on it.";
   const es =
     "Somos el equipo de fraude de Banco Ejemplo. Hemos parado un pago extraño con tu tarjeta. Para cancelarlo, responde ya con el código de 6 cifras que te acabamos de enviar. No se lo digas a nadie de la oficina, pueden estar metidos.";
-  for (const text of [en, es])
+  for (const text of [en, es]) {
     assert.deepEqual(found(text), ["asks_code", "press_rush", "press_secret", "pret_bank"], text.slice(0, 30));
+  }
   assert.deepEqual(words(en, "asks_code"), ["the 6-digit code we just texted you"]);
   assert.deepEqual(words(en, "press_rush"), ["right away"]);
   assert.deepEqual(words(en, "press_secret"), ["Don't tell anyone at the branch", "they may be in on it"]);
   assert.deepEqual(words(en, "pret_bank"), ["the fraud team at Anytown Bank"]);
   assert.deepEqual(words(es, "asks_code"), ["el código de 6 cifras que te acabamos de enviar"]);
+});
+
+// A real pressure-sell email that landed in spam: paid, fake Chrome Web Store reviews, sold with an invented
+// closing window. "Congrats on launching" used to trip prob_prize on the word "Congrats" alone, with no prize
+// anywhere in the message; the real sign here is the made-up deadline.
+const EXTENSION_BOOSTER_EMAIL = `NEW RELEASE
+Congrats on launching Clotr: clot your data leaks
+Shipping to the Chrome Web Store is the hard part, and you just did it. Now comes the window that decides how far it goes.
+Hi there, I spotted Clotr: clot your data leaks among the newest extensions on the Chrome Web Store. Congrats on the launch.
+YOUR CHROME WEB STORE STARTING LINE
+#372,078 overall rank
+Every top extension started near here. What happens in the next few weeks decides how fast you climb.
+The issue: your warm-up window is open now
+In the first weeks, the Chrome Web Store watches your early reviews and installs to decide how much to show you. A new listing with no reviews looks risky, so it stays buried, and the window cools fast.
+The fix: get genuine reviews fast, while it counts. ExtensionBooster connects you with real users who install Clotr: clot your data leaks, try it, and leave honest reviews. Real Chrome users, no bots, no policy risk, free to start.
+Boost my reviews now -> https://extensionbooster.net/
+Free to start - No credit card - Takes 2 minutes
+Rooting for Clotr: clot your data leaks,
+The ExtensionBooster Team`;
+
+test('the ExtensionBooster pitch: press_rush catches the invented window, prob_prize no longer fires on "Congrats"', () => {
+  assert.deepEqual(found(EXTENSION_BOOSTER_EMAIL), ["press_rush"]);
+  assert.deepEqual(words(EXTENSION_BOOSTER_EMAIL, "press_rush"), [
+    "decides how far it goes",
+    "decides how fast you climb",
+    "window cools fast",
+    "while it counts",
+  ]);
+});
+
+test("prob_prize: congrats about your own news isn't a prize, even next to a link", () => {
+  assert.deepEqual(found("Congrats on your new job! See the team photo at example.com/team"), []);
+  assert.deepEqual(found("Congrats, your PR was merged! See the diff at example.com/pr/42"), []);
+  // A real prize still fires: something won, free, awarded or claimed close behind "congrats", not just the
+  // praise word on its own (real prize-text SMS actually read this way: "Congrats! ... is yours").
+  assert.deepEqual(found("Congratulations! You've won a free cruise. Claim your prize at example.com"), ["prob_prize"]);
+  assert.deepEqual(found("Congrats! A 1 year cinema pass for 2 is yours. Call 555-0199 now to claim it!"), [
+    "prob_prize",
+  ]);
+  assert.deepEqual(found("Congratulations, you're awarded a $500 gift card. See example.com to redeem."), [
+    "prob_prize",
+  ]);
+});
+
+test("press_rush: an invented closing window fires, a real deadline or an open-now notice doesn't", () => {
+  assert.deepEqual(found("The early-bird window for the conference closes Friday."), []);
+  assert.deepEqual(found("The assignment window is open now through Sunday night."), []);
+  assert.deepEqual(found("Get in while it still counts."), ["press_rush"]);
+  assert.deepEqual(found("The window closes quickly once reviews start rolling in."), ["press_rush"]);
 });
 
 test("a bank's or the government's name alone isn't a sign: it needs an ask or a way to pay beside it", () => {
@@ -218,8 +270,9 @@ test("a request said as a warning against itself isn't a sign, whether it's neve
     "Anyone who asks for your Social Security number by text is a scammer.",
     "Nunca te pediremos el código de verificación.",
     "Si alguien te pide los 3 números de atrás de tu tarjeta, cuelga.",
-  ])
+  ]) {
     assert.deepEqual(found(text), [], text);
+  }
   // "If you didn't…" and "si no…" are conditions, not warnings.
   assert.deepEqual(found("If it wasn't you, reply with the code we sent to your email."), ["asks_code"]);
   assert.deepEqual(found("Si no fue usted, responda con el código que le enviamos."), ["asks_code"]);
@@ -241,8 +294,8 @@ test("scamSigns reports which kinds of your own details it saw, never the values
 });
 
 test("every sign's spans are inside the text, in order, and don't repeat", () => {
-  for (const file of Object.keys(CORPORA))
-    for (const { text } of readLabelled(file))
+  for (const file of Object.keys(CORPORA)) {
+    for (const { text } of readLabelled(file)) {
       for (const s of scamSigns(text)) {
         assert.ok(s.spans.length, `${s.id} with no words ← ${text.slice(0, 40)}`);
         let last = -1;
@@ -251,6 +304,8 @@ test("every sign's spans are inside the text, in order, and don't repeat", () =>
           last = end;
         }
       }
+    }
+  }
 });
 
 // The scam rules that recognize a told code and the signs that recognize someone asking for one share the same
@@ -299,8 +354,9 @@ test("Clotr.askLabels: the scam rules' own labels, and what detect() finds after
     "RECOVERY_LABEL",
     "ANSWER_LABEL",
     "ANSWER_LABEL_ES",
-  ])
+  ]) {
     assert.ok((src.match(new RegExp(`\\$\\{${name}\\}`, "g")) || []).length >= 1, `${name} isn't used by a rule`);
+  }
 });
 
 // A long paste, such as a whole email thread, must be read in time that grows with its length, not faster than
@@ -320,15 +376,19 @@ test("a long message is read in linear time, and hostile text in a moment", () =
       8,
       8,
     );
-    if (grewMoreThan(one, eight, 16, 1)) return `8× the text: ${one.wall.toFixed(0)} → ${eight.wall.toFixed(0)} ms`;
+    return grewMoreThan(one, eight, 16, 1)
+      ? `8× the text: ${one.wall.toFixed(0)} → ${eight.wall.toFixed(0)} ms`
+      : undefined;
   });
   // Long runs of the words the rules look for.
-  for (const text of ["code ".repeat(20000), "send me ".repeat(10000), "a".repeat(100000), "the 3 ".repeat(15000)])
+  for (const text of ["code ".repeat(20000), "send me ".repeat(10000), "a".repeat(100000), "the 3 ".repeat(15000)]) {
     retrySlow(() => {
       const t = bestOfBoth(() => scamSigns(text), 1);
-      if (t.over(3000))
-        return `${text.slice(0, 10)}…: ${t.wall.toFixed(0)} ms (${t.allowed.toFixed(0)} allowed on this computer now)`;
+      return t.over(3000)
+        ? `${text.slice(0, 10)}…: ${t.wall.toFixed(0)} ms (${t.allowed.toFixed(0)} allowed on this computer now)`
+        : undefined;
     });
+  }
 });
 
 test("nothing but text in: an empty, missing or odd input gives no signs and doesn't throw", () => {

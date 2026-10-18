@@ -13,7 +13,7 @@
 
   const msg =
     globalThis.Clotr?.msg ||
-    ((key, english, ...subs) => english.replace(/\$(\d)/g, (_, n) => String(subs[n - 1] ?? "")));
+    ((_key, english, ...subs) => english.replace(/\$(\d)/g, (_match, n) => String(subs[n - 1] ?? "")));
 
   // Brave's user agent reads as Chrome, so it shares the Chrome Web Store link; only Firefox and Edge need
   // their own. Takes a user agent string so it can be tested without a browser.

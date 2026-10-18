@@ -1,5 +1,5 @@
-// Quick exit (Privacy Check-up): one press closes every open Clotr page. Standalone from Keep nothing (out of
-// scope here): it closes tabs, nothing more, and never claims to clear memory it doesn't own.
+// Quick exit: one press closes every open Clotr page. It closes tabs, nothing more, and never claims to clear
+// memory it doesn't own.
 "use strict";
 
 const test = require("node:test");
@@ -26,8 +26,9 @@ test("Quick exit: another page's broadcast closes this page's own tab", async ()
   const other = new BroadcastChannel("clotr-quick-exit");
   other.postMessage("exit");
   // The message crosses channels on another tick; on a busy machine that can take far longer than a few ms.
-  for (const end = Date.now() + 2000; !closed.length && Date.now() < end;)
+  for (const end = Date.now() + 2000; !closed.length && Date.now() < end;) {
     await new Promise((resolve) => setTimeout(resolve, 10));
+  }
   other.close();
 
   assert.deepEqual(closed, [11], "the page should close its own tab on someone else's Quick exit");

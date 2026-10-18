@@ -114,26 +114,35 @@
     "company": "Google",
     "records": 4,
     "prompts": 3,
-    "chats": 2,
-    "grouping": "by day (My Activity has no chat id)",
+    "chats": 3,
+    "grouping": "one prompt per record",
     "found": [
       {
-        "id": "2025-05-10",
+        "id": "2025-05-10:1",
         "title": "My medicare number is 1EG4-TE5-MK73, what does it cover?",
         "shownTitle": "My medicare number is 1EG4…73, what does it cover?",
         "date": "2025-05-10",
         "link": "https://myactivity.google.com/product/gemini",
-        "kinds": { "medicare_id": 1, "email": 1 },
-        "why": "two prompts on the same day; the title is the day's first prompt, without the word Prompted, and shown with mask() over every detail in it (shownTitle): a title is never shown with a value in full"
+        "kinds": { "medicare_id": 1 },
+        "why": "only this record's prompt text is scanned and its finding stays with this prompt"
       },
       {
-        "id": "2025-08-30",
+        "id": "2025-05-10:2",
+        "title": "Write to me at jamie.rivera@example.com please, draft a short email to my landlord",
+        "shownTitle": "Write to me at jami…om please, draft a short email to my landlord",
+        "date": "2025-05-10",
+        "link": "https://myactivity.google.com/product/gemini",
+        "kinds": { "email": 1 },
+        "why": "the second prompt on the same day is its own result"
+      },
+      {
+        "id": "2025-08-30:3",
         "title": "is passport number X12345678 still valid?",
         "shownTitle": "is passport number X123…78 still valid?",
         "date": "2025-08-30",
         "link": "https://myactivity.google.com/product/gemini",
         "kinds": { "passport": 1 },
-        "why": "one prompt; the 'Used Gemini Apps' record that day holds nothing the person wrote"
+        "why": "a non-prompt activity record is skipped"
       }
     ],
     "notTheirs": ["555-555-0188", "sam.lee@example.org"],

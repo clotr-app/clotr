@@ -10,7 +10,7 @@ details of whoever sent a scam message you're quoting.
 
 ## Reporting a problem
 
-Email me at [billiambash.clotr@gmail.com](mailto:billiambash.clotr@gmail.com). I read every report, keep it private,
+Email me at [support@clotr.app](mailto:support@clotr.app). I read every report, keep it private,
 and reply within 7 days. If the problem is with me, say so in that email too, and I'll still answer it in writing.
 
 What happens next follows the Covenant's enforcement steps: a private word, then a warning, then a temporary ban, and

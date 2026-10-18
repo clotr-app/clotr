@@ -134,8 +134,9 @@ function loadBackground(browser, { chromeManifest = false } = {}) {
   ]) {
     vm.runInContext(fs.readFileSync(path.join(EXT, file), "utf8"), context, { filename: file });
   }
-  if (!manifest.background.scripts)
+  if (!manifest.background.scripts) {
     vm.runInContext(fs.readFileSync(path.join(EXT, "background.js"), "utf8"), context, { filename: "background.js" });
+  }
   // Date.now here is replaceable, so a test can move the clock with setNow. It reads the real time until one does.
   vm.runInContext("{ const real = Date.now; Date.now = () => globalThis.__now ?? real(); }", context);
   const setNow = (t) => {
@@ -353,7 +354,8 @@ test("The picture note: the background records the asking frame's own site, name
   for (let i = 0; i < 205; i++) await bg.send({ type: "clotr:pictureNoted" }, { url: `https://ai${i}.example.org/` });
   const sites = Object.keys(bg.local.data.picturesNoted);
   assert.equal(sites.length, 200);
-  assert.ok(!sites.includes("chatgpt.com") && sites.includes("ai204.example.org"));
+  const kept = new Set(sites);
+  assert.ok(!kept.has("chatgpt.com") && kept.has("ai204.example.org"));
   assert.ok(Object.values(bg.local.data.picturesNoted).every((v) => v === true));
   // A frame without an address of its own records nothing.
   assert.ok((await bg.send({ type: "clotr:pictureNoted" }, { url: "not an address" })).error);
@@ -477,8 +479,9 @@ test("From a chat page, warning less on every site waits for a yes on Clotr's ow
       bg.local.data.vault.map((e) => e.mode),
       ["protect"],
     );
-    for (const token of [first, second, "nope", undefined])
+    for (const token of [first, second, "nope", undefined]) {
       assert.deepEqual(await bg.send({ type: "clotr:askedAnswer", token, yes: true }, ours), { gone: true });
+    }
 
     // A PIN set while the question was open still wins over the yes.
     await bg.send({ type: "clotr:vaultAdd", entries: [allow] }, chat);
@@ -555,6 +558,27 @@ test("holdFiles reaches the page: on under a policy by default, off with no poli
   assert.equal((await settings({ preset: "clinic", holdFiles: false })).holdFiles, false, "an admin can opt out");
   await bg.local.set({ tourniquet: { for: "child", since: Date.now() } });
   assert.equal((await settings({})).holdFiles, false, "Tourniquet isn't an organization either");
+  assert.deepEqual(bg.calls.errors, []);
+});
+
+// A regression guard for the Team Pack pilot: an office's own kind, set to Ask before sending in the managed
+// policy, must still ask on a site the person themselves set to Just count. mergePolicy folds a custom kind's
+// response into requiredResponses, and settingsFor drops a site's "Just count" the moment any required
+// response holds (hasResponseFloor), so the content script falls back to the kind's own floored response
+// instead of the site's quieter mode winning.
+test("An office's own kind set to Ask before sending still asks on a site set to Just count", async () => {
+  const bg = loadBackground("chrome");
+  await bg.install();
+  await bg.local.set({ siteModes: { "chatgpt.com": "log" } });
+  bg.setManaged({
+    orgName: "Acme Law",
+    kinds: [{ name: "Matter number", formats: ["MAT-######"], response: "block" }],
+  });
+  const settings = await bg.send({ type: "clotr:getSettings" }, { tab });
+  const kind = settings.kinds.find((k) => k.name === "Matter number");
+  assert.ok(kind, "the office's own kind reached the page");
+  assert.equal(settings.siteMode, null, "Just count is dropped once a required response holds");
+  assert.equal(settings.responses[kind.id], "block", "the kind's own floor still asks before sending");
   assert.deepEqual(bg.calls.errors, []);
 });
 

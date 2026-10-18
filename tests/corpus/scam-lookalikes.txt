@@ -599,3 +599,27 @@ Your verification code is 112233. Enter it within 10 minutes to sign in.
 ---
 [signs: none]
 FYI the plumber only takes cash or check, so bring some cash tomorrow.
+---
+[signs: none]
+I'll buy a $50 gift card for her birthday, can you sign the card at lunch?
+---
+[signs: none]
+Should I buy a gift card for my mom, or is that too impersonal?
+---
+[signs: none]
+Congrats on your new job! When do you start?
+---
+[signs: none]
+Your Example Store order #48213 ships in 2 days. Track it anytime from your account.
+---
+[signs: none]
+Reminder: the early-bird registration window for Example Conf closes Friday. After that, the regular price applies.
+---
+[signs: none]
+Congrats, your PR was merged! Thanks for catching that bug.
+---
+[signs: none]
+Reminder from Ms. Rivera: the assignment window is open now through Sunday night. Submit it through the usual portal.
+---
+[signs: none]
+Your extension Example Widget passed review and is now live on the Chrome Web Store.

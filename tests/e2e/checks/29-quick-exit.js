@@ -1,5 +1,4 @@
-// E2E checks: QE. Quick exit, the first Privacy Check-up piece that has a visible button: one press in the popup
-// closes every open Clotr page, popup included. Standalone from Keep nothing, which isn't built yet: it only
+// E2E checks: QE. Quick exit: one press in the popup closes every open Clotr page, popup included. It only
 // closes tabs, never claims to clear anything. Run in order by ../run.js with one shared env (helpers from
 // ../lib.js).
 "use strict";

@@ -31,8 +31,9 @@ module.exports = async function (env) {
     (function walk(n) {
       if (n.nodeName === "STYLE") return;
       if (n.nodeType === 3 && n.nodeValue.trim()) texts.push(n.nodeValue.trim());
-      if (n.nodeName === "BUTTON" || n.nodeName === "SUMMARY")
+      if (n.nodeName === "BUTTON" || n.nodeName === "SUMMARY") {
         buttons.push({ text: textOf(n).trim(), nodeId: n.nodeId });
+      }
       for (const c of [...(n.children || []), ...(n.shadowRoots || [])]) walk(c);
     })(host);
     return { text: texts.join(" | "), buttons };
@@ -177,8 +178,9 @@ module.exports = async function (env) {
         });
         const manifestMatches = JSON.parse(fs.readFileSync(path.join(EXT, "manifest.json"), "utf8")).content_scripts[0]
           .matches;
-        for (const m of manifestMatches)
+        for (const m of manifestMatches) {
           expect(excludeMatches.includes(m), `built-in match missing from excludeMatches: ${m}`);
+        }
         await withSite(other, "chatgpt", async (page) => {
           await settle(500);
           const activeLines = page.logs.filter((l) => l.startsWith("[Clotr] active on"));

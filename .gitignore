@@ -4,6 +4,11 @@ dist/
 *.zip
 *.crx
 *.pem
+*.pfx
+*.p12
+*.jks
+*.keystore
+keystore.properties
 
 # Test output (screenshots, reports) and local tool reports
 tests/e2e/output/

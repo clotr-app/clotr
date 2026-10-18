@@ -131,11 +131,11 @@ module.exports = async function (env) {
 
   // A picture attached in the demo chat, written to a throwaway temp file so `#attach` can upload it.
   const attach = async (page, name, bytes) => {
-    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "clotr-ss-pic-"));
-    const file = path.join(dir, name);
+    const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "clotr-ss-pic-"));
+    const file = path.join(tmpDir, name);
     fs.writeFileSync(file, bytes);
     await (await page.$("#attach")).uploadFile(file);
-    fs.rm(dir, { recursive: true, force: true, maxRetries: 10, retryDelay: 500 }, () => {});
+    fs.rm(tmpDir, { recursive: true, force: true, maxRetries: 10, retryDelay: 500 }, () => {});
   };
 
   await check(
@@ -149,12 +149,27 @@ module.exports = async function (env) {
         await page.evaluate(() => window.__setLog([["ai", "Hi! What can I help you with today?"]]));
         await typeText(page, "What colour should I paint my kitchen?");
         await attach(page, "kitchen.jpg", fx.jpegWithGps(fx.PLACES.liberty));
-        expect(await waitForNotice(page), "no notice");
+        // Clotr holds the photo while it takes the place out, so wait for that note and for the page's own
+        // thumbnail of the copy it got, not the first note that shows.
+        expect(
+          await waitFor(async () => {
+            const notice = await readNotice(page);
+            return notice && /took the place out/.test(JSON.stringify(notice)) ? notice : null;
+          }, 8000),
+          "no note that the place was taken out",
+        );
+        await page.waitForFunction(
+          () => {
+            const img = document.getElementById("chip-img");
+            return img && img.complete && img.naturalWidth > 0;
+          },
+          { timeout: 8000 },
+        );
         const shot = await snap(page, "ai-chat.png");
         await frame(
           "1-ai-chat.png",
           "Photos carry more than you see",
-          "A phone saves the place a photo was taken inside the file. Attach one to an AI chat, and Clotr notices before it's sent.",
+          "A phone saves the place a photo was taken inside the file. Attach one to an AI chat, and Clotr takes the place out before the site gets it.",
           shot,
           740,
         );
@@ -525,6 +540,32 @@ module.exports = async function (env) {
       );
 
       return "6 new store pictures: docs/store/9-11 (English) and docs/store/es/9-11 (Spanish)";
+    },
+  );
+
+  // Download's extension card (website-test/download.html): the same photo-carries-its-place moment as Picture 1
+  // above, captured at the card's own width and height, in both themes, so Download always shows today's
+  // real warning instead of a hand-made mock. demo-chat.html's dark media query exists for exactly this.
+  await check(
+    "SS3",
+    "Download card: the real photo-location warning, light and dark (website-test/assets/hero/)",
+    async () => {
+      const heroDir = path.join(ROOT, "website-test", "assets", "hero");
+      fs.mkdirSync(heroDir, { recursive: true });
+      for (const theme of ["light", "dark"]) {
+        await withSite(ctx, "demo", async (page) => {
+          await page.setViewport({ width: 850, height: 470, deviceScaleFactor: 2 });
+          await page.emulateMediaFeatures([{ name: "prefers-color-scheme", value: theme }]);
+          await resetState(ctx, {});
+          await page.evaluate(() => window.__setLog([["ai", "Hi! What can I help you with today?"]]));
+          await typeText(page, "What colour should I paint my kitchen?");
+          await attach(page, "kitchen.jpg", fx.jpegWithGps(fx.PLACES.liberty));
+          expect(await waitForNotice(page), `no notice for the ${theme} hero shot`);
+          await sleep(300);
+          await page.screenshot({ path: path.join(heroDir, `warning-${theme}.png`) });
+        });
+      }
+      return "2 hero pictures in website-test/assets/hero/";
     },
   );
 };

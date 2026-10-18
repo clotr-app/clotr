@@ -96,13 +96,15 @@ module.exports = async function (env) {
     await popup.setViewport({ width: 380, height: 600 });
     await popup.$eval("#ss-help", (d) => (d.open = false)); // shut in case the test above left it open
     await scrollToSection(popup);
-    for (const theme of ["dark", "light"])
+    for (const theme of ["dark", "light"]) {
       await shotAt(popup, `${base}-closed-real-${theme}.png`, { width: 380, height: 600, theme });
+    }
     for (const theme of ["dark", "light"]) await shot(popup, `${base}-closed-380-${theme}.png`, theme);
     await popup.$eval("#ss-help", (d) => (d.open = true));
     await scrollToSection(popup);
-    for (const theme of ["dark", "light"])
+    for (const theme of ["dark", "light"]) {
       await shotAt(popup, `${base}-open-real-${theme}.png`, { width: 380, height: 600, theme });
+    }
     for (const theme of ["dark", "light"]) await shot(popup, `${base}-open-380-${theme}.png`, theme);
     await popup.emulateMediaFeatures([{ name: "prefers-color-scheme", value: "light" }]);
     await popup.setViewport({ width: 380, height: 700 });
@@ -633,7 +635,9 @@ module.exports = async function (env) {
         // On paper, the guide should print as before, with neither the tag nor these lines showing up in it.
         await page.emulateMediaType("print");
         const printed = await page.evaluate(() =>
-          [".ss-tag", "#open-practice", "#open-check"].some((s) => document.querySelector(s)?.getClientRects().length),
+          [".ss-tag", "#open-practice", "#open-check"].some(
+            (sel) => document.querySelector(sel)?.getClientRects().length,
+          ),
         );
         await page.emulateMediaType(null);
         expect(!printed, "the screen's scam check lines print with the guide");
@@ -938,8 +942,9 @@ module.exports = async function (env) {
           for (const line of [
             "Seis mensajes de estafa inventados para responder codo con codo, revisados por Clotr en este ordenador. Practicar juntos",
             "¿Le preocupa un mensaje? Clotr le da una segunda opinión. ¿Es una estafa?",
-          ])
+          ]) {
             expect(s.texts.includes(line), `no "${line}": ${s.texts.join(" | ")}`);
+          }
           await fitsAt380(share, "The Spanish Share page");
           await partShots(share, "section.no-print", "scam-shield-es-share");
         } finally {
@@ -1082,8 +1087,8 @@ module.exports = async function (env) {
             await sleep(200);
             await page.screenshot({ path: path.join(OUT, `who-asks-share-${size}-${theme}.png`), fullPage: true });
           }
-          const sideways = await page.evaluate(() => document.documentElement.scrollWidth > innerWidth);
-          expect(!sideways, `the Share page scrolls sideways at ${width}px`);
+          const scrolledSideways = await page.evaluate(() => document.documentElement.scrollWidth > innerWidth);
+          expect(!scrolledSideways, `the Share page scrolls sideways at ${width}px`);
         }
       } finally {
         await page.close();

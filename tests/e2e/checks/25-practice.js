@@ -307,8 +307,9 @@ module.exports = async function (env) {
               /With Bandage on, Clotr can send \[|The AI doesn't need|Ask about the message without/.test(a.reveal),
               `line: ${a.reveal}`,
             );
-            if (/landlord/.test(a.text))
+            if (/landlord/.test(a.text)) {
               expect(/send \[Address 1\] and \[Phone 1\] instead/.test(a.reveal), `landlord: ${a.reveal}`);
+            }
             if (withSome === 1) await shots(page, "practice-leak");
           } else {
             expect(/Clotr finds nothing private here/.test(a.reveal) && !a.chips.length, `nothing: ${a.reveal}`);
@@ -449,12 +450,12 @@ module.exports = async function (env) {
         const tooWide = await page.evaluate(() => {
           const shown = document.getElementById("leak-text");
           const was = shown.textContent;
-          const wide = globalThis.Clotr.practice.leaks.filter((l) => {
+          const tooWideLeaks = globalThis.Clotr.practice.leaks.filter((l) => {
             shown.textContent = l.text;
             return document.documentElement.scrollWidth > innerWidth;
           });
           shown.textContent = was;
-          return wide.map((l) => l.id);
+          return tooWideLeaks.map((l) => l.id);
         });
         expect(!tooWide.length, `sideways at 380 with: ${tooWide}`);
         expect(!(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth)), "sideways at 380");

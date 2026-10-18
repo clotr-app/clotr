@@ -343,6 +343,11 @@
   font-size: 15px;
   color: var(--ink);
   font-weight: 600;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  overflow: hidden;
+  overflow-wrap: anywhere;
 }
 .lb-card-date {
   font-size: 13px;

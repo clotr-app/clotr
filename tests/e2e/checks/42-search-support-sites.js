@@ -73,8 +73,9 @@ module.exports = async function (env) {
     (function walk(n) {
       if (n.nodeName === "STYLE") return;
       if (n.nodeType === 3 && n.nodeValue.trim()) texts.push(n.nodeValue.trim());
-      if (n.nodeName === "BUTTON" || n.nodeName === "SUMMARY")
+      if (n.nodeName === "BUTTON" || n.nodeName === "SUMMARY") {
         buttons.push({ text: textOf(n).trim(), nodeId: n.nodeId });
+      }
       for (const c of [...(n.children || []), ...(n.shadowRoots || [])]) walk(c);
     })(host);
     return { text: texts.join(" | "), buttons };
@@ -278,16 +279,18 @@ module.exports = async function (env) {
       const supportRows = await popup.$$eval("#support-sites li", (lis) =>
         lis.map((li) => ({ name: li.querySelector("b")?.textContent, on: li.querySelector("button")?.textContent })),
       );
-      for (const name of ["Google", "Bing", "DuckDuckGo", "Brave Search", "Startpage", "Ecosia", "Yahoo Search"])
+      for (const name of ["Google", "Bing", "DuckDuckGo", "Brave Search", "Startpage", "Ecosia", "Yahoo Search"]) {
         expect(
           searchRows.some((r) => r.name === name && r.on === "Turn on"),
           `${name} missing or not off: ${JSON.stringify(searchRows)}`,
         );
-      for (const { name } of SUPPORT_WIDGETS)
+      }
+      for (const { name } of SUPPORT_WIDGETS) {
         expect(
           supportRows.some((r) => r.name === name && r.on === "Turn on"),
           `${name} missing or not off: ${JSON.stringify(supportRows)}`,
         );
+      }
     } finally {
       await popup.close();
     }

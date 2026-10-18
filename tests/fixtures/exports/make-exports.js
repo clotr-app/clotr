@@ -53,8 +53,8 @@ const uuid = (label) => {
 
 const T = (iso) => Date.parse(iso) / 1000; // ChatGPT writes seconds since 1970, with a fraction
 
-function node(id, parent, children, message) {
-  return { id, message, parent, children };
+function node(id, parent, children, msg) {
+  return { id, message: msg, parent, children };
 }
 function message(id, role, content, at, extra = {}) {
   return {
@@ -409,9 +409,9 @@ const CHATGPT_HTML = `<!DOCTYPE html>
 
 const ACCOUNT = { uuid: "7e6d5c4b-3a29-4180-9f7e-6d5c4b3a2918" };
 const block = (s, at) => ({ start_timestamp: at, stop_timestamp: at, type: "text", text: s, citations: [] });
-function claudeMessage(uuid, sender, words, at, extra = {}) {
+function claudeMessage(id, sender, words, at, extra = {}) {
   return {
-    uuid,
+    uuid: id,
     text: words,
     content: extra.content ?? [block(words, at)],
     sender,
@@ -565,7 +565,7 @@ const MANIFEST_EXAMPLE = {
 // Sources: Google's Gemini Apps Help ("Download your Gemini Apps data", answer 16920332); the record keys read by
 // Gemini_Json2md4NotebookLM (github.com/minipoisson, convert_history.py: time, title, subtitles, safeHtmlItem.html,
 // header); gemini-chat-exporter (github.com/davidmalko87, gemini_export/takeout.py: the "Prompted " prefix, and
-// grouping records by day when there's no chat id); and google_takeout_parser
+// the lack of a chat id); and google_takeout_parser
 // (github.com/purarue/google_takeout_parser: My Activity JSON keys including locationInfos, and the HTML's
 // outer-cell, header-cell and content-cell classes, plus localized folder names). The full record shape is
 // under-documented, so these fixtures only use keys that at least one source names.

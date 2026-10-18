@@ -4,8 +4,12 @@
 // The unit tests alone leave the pages and content scripts mostly unmeasured, since the browser suite
 // (npm run test:e2e) is what runs them. npm run coverage:all runs that suite too, with V8's coverage switched on in
 // every page, frame, worker and service worker (tests/e2e/coverage.js), and counts a line as run when either suite
-// ran it. It takes as long as the browser suite and needs the same browser, so it stays out of the required CI
-// checks; a CI job can run it on its own and pass --min to hold the line.
+// ran it. A held-back feature's own section (tests/e2e/sections.js's SECTION_FLAGS) only runs once its flag is on,
+// so coverage:all also builds and runs the all-on copy npm run test:e2e:all-on uses, the same way npm run check
+// does, and folds its lines in too: without it, a file like lookback.js or training.js reads as untested even
+// though real checks already run it, once the feature is on.
+// It takes as long as the browser suite twice over, plus a build, and needs the same browser, so it stays out of
+// the required CI checks; a CI job can run it on its own and pass --min to hold the line.
 // Usage: npm run coverage                       every unit test, then a line per file and the total
 //        npm run coverage:all                   the unit tests and the browser suite, merged
 //        npm run coverage -- --e2e-file <file>  the unit tests merged with a browser run already saved by
@@ -139,20 +143,51 @@ function mergeBrowserRun(byFile, file) {
   return byFile;
 }
 
-// Runs the browser suite with coverage on, saving its lines to file. True when every check passed.
-function runBrowserSuite(file) {
-  console.log("\nThe browser suite, with coverage on:");
+// Folds a second saved browser run's lines (tests/e2e/coverage.js's own file format) into one already on disk at
+// targetFile, a line either run covered counting as run. Used to add the all-on build's run into the plain run's
+// file before main() reads it with mergeBrowserRun.
+function foldBrowserFile(targetFile, extraFile) {
+  const target = JSON.parse(fs.readFileSync(targetFile, "utf8"));
+  const extra = JSON.parse(fs.readFileSync(extraFile, "utf8"));
+  for (const [name, lines] of Object.entries(extra.lines)) target.lines[name] = merge(target.lines[name], lines);
+  fs.writeFileSync(targetFile, JSON.stringify(target));
+}
+
+// Runs tests/e2e/run.js once, saving its lines to out. Throws if it didn't save anything, since a silent empty
+// file would just read as "nothing ran" instead of failing loudly.
+function runOneBrowserSuite(out, ext) {
+  console.log(`\nThe browser suite${ext ? " (the all-on build)" : ""}, with coverage on:`);
   const started = Date.now();
-  const run = spawnSync(process.execPath, [path.join("tests", "e2e", "run.js")], {
+  const run = spawnSync(process.execPath, [path.join("tests", "e2e", "run.js"), ...(ext ? ["--ext", ext] : [])], {
     cwd: ROOT,
-    env: { ...process.env, CLOTR_E2E_COVERAGE: file },
+    env: { ...process.env, CLOTR_E2E_COVERAGE: out },
     stdio: ["ignore", "inherit", "inherit"],
   });
   if (run.status !== 0) console.warn("Some browser checks failed, so the numbers below may be lower than usual.");
-  if (!fs.existsSync(file) || fs.statSync(file).mtimeMs < started) {
+  if (!fs.existsSync(out) || fs.statSync(out).mtimeMs < started) {
     throw new Error("The browser suite saved no coverage.");
   }
   return run.status === 0;
+}
+
+// Runs the browser suite with coverage on, against the plain build and the all-on build npm run test:e2e:all-on
+// uses (so a held-back feature's own section counts too), saving the merged lines to file. True when every check
+// in both runs passed.
+function runBrowserSuite(file) {
+  const allOnDir = path.join(ROOT, "dist", "e2e-all-on");
+  console.log("\nBuilding the all-on copy (npm run test:e2e:all-on's own) for coverage:");
+  const build = spawnSync(
+    process.execPath,
+    [path.join("tools", "package.js"), "--no-zip", "--folder", path.relative(ROOT, allOnDir), "--features", "all-on"],
+    { cwd: ROOT, stdio: ["ignore", "inherit", "inherit"] },
+  );
+  if (build.status !== 0) throw new Error("Building the all-on copy for coverage failed.");
+  const allOnFile = `${file}.all-on.json`;
+  const plainPassed = runOneBrowserSuite(file, null);
+  const allOnPassed = runOneBrowserSuite(allOnFile, allOnDir);
+  foldBrowserFile(file, allOnFile);
+  fs.rmSync(allOnFile, { force: true });
+  return plainPassed && allOnPassed;
 }
 
 function main(args) {
@@ -216,6 +251,7 @@ module.exports = {
   readSource,
   merge,
   mergeBrowserRun,
+  foldBrowserFile,
   summary,
   collect,
 };

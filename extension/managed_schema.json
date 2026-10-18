@@ -3,7 +3,7 @@
   "properties": {
     "preset": {
       "title": "Preset",
-      "description": "A ready-made policy: keys_never (every credential kind must ask before sending), client_names (client and matter details must ask), clinic (patient and staff identifiers must ask), or tax_office (Social Security, tax ID, bank and birth-date details and client names must ask). Your other settings are added on top; an explicit requiredResponses entry beats the preset's.",
+      "description": "A ready-made policy: keys_never (every credential kind must ask before sending), client_names (configured client and matter words/formats must ask), clinic (patient and staff identifiers must ask), or tax_office (Social Security, tax ID, bank and birth-date details must ask; configured client names/formats must ask). Client names and formats must be added by the organization; the preset does not know them by itself. Your other settings are added on top; an explicit requiredResponses entry beats the preset's.",
       "type": "string",
       "enum": [
         "keys_never",
@@ -32,7 +32,7 @@
     },
     "watchWords": {
       "title": "Watch words",
-      "description": "Words or phrases (up to 4 words each) to warn about, e.g. project code names. A format with # for a digit and @ for a letter (at least 4 marks, no digits, for example EMP-#####) is watched as a format instead. Together with the words and formats in kinds: 500 words and 50 formats in all. Words are turned into scrambled fingerprints on each computer; formats travel as typed (they aren't secret).",
+      "description": "Words or phrases (up to 4 words each) added to the Watch List, e.g. project code names. Their response follows requiredResponses.watch_list; set it to warn or block to require at least a warning or ask-before-sending. Without that floor, a person's Watch List response may be quieter. A format with # for a digit and @ for a letter (at least 4 marks, no digits, for example EMP-#####) is watched as a format instead. Together with the words and formats in kinds: 500 words and 50 formats in all. Browser/OS management receives these values and may retain them in its policy source and on managed computers. Clotr fingerprints literal words locally before matching and does not write original words to its own settings/vault; this is not encryption of the managed policy. Formats are used as configured.",
       "type": "array",
       "items": {
         "type": "string"
@@ -60,19 +60,19 @@
     },
     "kinds": {
       "title": "Your own kinds",
-      "description": "Up to 20 kinds of detail your organization names itself, for example a matter number or a client name. Clotr warns about each one by its name and, with Bandage on, swaps it for its cover word, like [Matter 1]. Words and formats are shared with watchWords: 500 words and 50 formats in all. Nothing about them leaves the computer.",
+      "description": "Up to 20 kinds of detail your organization names itself, for example a matter number or a client name. Clotr warns about each one by its name and, with Bandage on, swaps it for its cover word, like [Matter 1]. Words and formats are shared with watchWords: 500 words and 50 formats in all. Literal values are present in browser/OS management policy; Clotr fingerprints words locally before matching, but does not encrypt or hide the policy values from the organization's policy administrators.",
       "type": "array",
       "items": {
         "type": "object",
         "properties": {
           "name": {
             "title": "Name",
-            "description": "Shown in warnings, up to 40 characters, e.g. Matter number.",
+            "description": "Shown in warnings, the local policy page and the optional training page, up to 40 characters, e.g. Matter number. This label is in management policy and may be visible to policy administrators; use a general label, not a real client name.",
             "type": "string"
           },
           "words": {
             "title": "Words",
-            "description": "Words or phrases of this kind (up to 4 words each), e.g. client names. Turned into scrambled fingerprints on each computer.",
+            "description": "Words or phrases of this kind (up to 4 words each), e.g. client names. Present in browser/OS management policy; Clotr fingerprints locally before matching, but the original values are not encrypted from policy administrators.",
             "type": "array",
             "items": {
               "type": "string"

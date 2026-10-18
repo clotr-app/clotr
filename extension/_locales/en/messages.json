@@ -4,5 +4,8 @@
   },
   "cmdFocusNotice": {
     "message": "Jump to Clotr's warning (Esc goes back to your message)"
+  },
+  "getClotrWindows": {
+    "message": "Get Clotr for Windows"
   }
 }

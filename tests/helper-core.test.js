@@ -66,7 +66,8 @@ test("personal switch: without a list of known kinds, the kinds of 1.2.0 count a
   assert.equal(base.length, 18);
   for (const id of base) assert.ok(PERSONAL.includes(id), `${id} is no longer a personal kind`);
   const brought = PERSONAL.filter((id) => !base.includes(id));
-  for (const known of [undefined, null, "everything", [1, 2]])
+  for (const known of [undefined, null, "everything", [1, 2]]) {
     assert.deepEqual(Helper.newPersonalToAsk(ask(base), known), brought, `known: ${JSON.stringify(known)}`);
+  }
   assert.deepEqual(Helper.newPersonalToAsk(ask(base.slice(1)), undefined), []);
 });

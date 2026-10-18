@@ -1,5 +1,5 @@
-// Quick exit (Privacy Check-up): one press closes every open Clotr page. Standalone from Keep nothing, which isn't
-// built yet: this piece only closes tabs, nothing else, and never claims to clear anything it doesn't own.
+// Quick exit: one press closes every open Clotr page. This piece only closes tabs, nothing else, and never
+// claims to clear anything it doesn't own.
 // A classic script (no import/export): shares code through
 // globalThis.Clotr, loaded on every standalone page (vault.html, lookback.html, training.html, practice.html,
 // policy.html, helper.html, tracking.html) so each one can close itself, and on the popup, where the only

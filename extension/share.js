@@ -83,8 +83,9 @@ $("print-card")?.addEventListener("click", () => {
   window.print();
 });
 window.addEventListener("afterprint", () => delete document.body.dataset.print);
-if ($("card-from"))
+if ($("card-from")) {
   $("card-from").textContent = msg(
     "sh_cardFrom",
     "This card is from Clotr. It warns before most of these go out on your computer, and it's for phone calls and texts.",
   );
+}

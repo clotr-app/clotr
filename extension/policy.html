@@ -41,7 +41,7 @@
     </div>
     <div id="pa-kinds" class="field" hidden>
       <label data-i18n="pa_kindsTitle">Kinds your organization added</label>
-      <p class="hint" data-i18n="pa_kindsLead">Clotr names these in its warnings and uses them for Bandage's cover names. Their words aren't shown here: Clotr turns them into scrambled codes on each computer and never stores them.</p>
+      <p class="hint" data-i18n="pa_kindsLead">Kind labels appear in warnings and on this page. The configured words, formats and labels are delivered in browser or device-management policy and may remain readable to policy administrators or on managed computers. Clotr fingerprints words locally before matching; this does not encrypt the original policy values. Use general labels, not real client names. The Show watch words control below can display configured words on this computer.</p>
       <table class="events" id="pa-kinds-table">
         <thead><tr><th scope="col" data-i18n="pa_kindsKind">Kind</th><th scope="col" data-i18n="pa_kindsResponse">Response</th><th scope="col" data-i18n="pa_kindsWords">Words</th><th scope="col" data-i18n="pa_kindsFormats">Formats</th></tr></thead>
         <tbody></tbody>
@@ -52,7 +52,7 @@
       <label><input id="pa-show-words" type="checkbox"> <span data-i18n="pa_showWords">Show the watch words on screen</span></label>
       <p id="pa-words" class="mono" hidden></p>
     </div>
-    <p class="lead" data-i18n="pa_scope">Clotr checks browser AI chats on this computer only. It sends and stores nothing about this page. Where a kind is set to Ask before sending, the person can still choose to send. Apps outside the browser are not covered.</p>
+    <p class="lead" data-i18n="pa_scope">Clotr checks browser AI chats on this computer only. This page shows the policy configured for this browser; it does not send a report to your organization. Where a kind is set to Ask before sending, the person can still choose to send. Apps outside the browser are not covered.</p>
     <div class="pa-fill"><span data-i18n="pa_writtenPolicy">Written policy:</span> <span class="blank"></span></div>
     <div class="pa-fill"><span data-i18n="pa_checkedBy">Checked by:</span> <span class="blank"></span></div>
     <div class="pa-fill"><span data-i18n="pa_date">Date:</span> <span class="blank"></span></div>
@@ -60,7 +60,9 @@
 
   <p class="no-print"><button id="pa-print" class="btn primary" type="button" data-i18n="pa_print">Print this page</button></p>
 
-  <p class="no-print"><a href="training.html" data-i18n="pa_officeTraining">Run the office training walkthrough</a></p>
+  <p class="no-print" data-feature="training">
+    <a href="training.html" data-i18n="pa_officeTraining">Run the office training walkthrough</a>
+  </p>
 
   <footer class="app-footer no-print">
     <div id="report-root"></div>

@@ -237,8 +237,9 @@ module.exports = async function (env) {
             "Ask before sending",
             "It's fine to share",
             "Always watch it",
-          ])
+          ]) {
             expect(!tipChoices.includes(gone), `the tip still offers "${gone}": ${tipChoices.join(" | ")}`);
+          }
           expect(!/How should Clotr handle/.test(tip.text), `the tip still asks: ${tip.text}`);
         } finally {
           await setTourniquet(ctx, null);
@@ -838,8 +839,9 @@ module.exports = async function (env) {
           return /personal details/.test(r || "") ? r : null;
         }, 2000);
         expect(child, `for a child: ${await row()}`);
-        for (const text of [adult, child])
+        for (const text of [adult, child]) {
           expect(!/child|grown-up|adult|elder/i.test(text || ""), `the row names a preset: ${text}`);
+        }
         await setTourniquet(ctx, null);
         const off = await waitFor(async () => ((await row()) === "Off" ? "Off" : null), 2000);
         expect(off, `once it's off: ${await row()}`);
@@ -1188,11 +1190,12 @@ module.exports = async function (env) {
         await setTourniquet(ctx, "child");
         const child = await read();
         expect(child && child !== adult, `child: ${child}`);
-        for (const text of [adult, child])
+        for (const text of [adult, child]) {
           expect(
             !/child|grown-up|adult|teen|elder|older/i.test(text.replace(/an adult you trust/, "")),
             `names a preset: ${text}`,
           );
+        }
         await setTourniquet(ctx, null);
         expect((await read()) === null, "the guide talks about Tourniquet while it's off");
       } finally {

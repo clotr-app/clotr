@@ -1,0 +1,26 @@
+<!doctype html>
+<!-- Stand-in for a built-in AI site after a redesign: its prompt box still sends a message, but it's now a
+     contenteditable="plaintext-only" region instead of a <textarea> or the two contenteditable values Clotr's
+     plain pre-scan selector lists. Proves the shape fallback (isChatComposer, content.js) still finds it on a
+     built-in site. -->
+<html lang="en">
+<head><meta charset="utf-8"><title>ChatGPT (Clotr test page, redesigned)</title></head>
+<body>
+  <div id="prompt-textarea" class="composer" contenteditable="plaintext-only" aria-label="Ask anything"
+       style="border:1px solid #999;min-height:60px;width:480px;padding:6px"></div>
+  <button id="send" aria-label="Send prompt">Send</button>
+  <script>
+    window.__sent = [];
+    const box = document.getElementById("prompt-textarea");
+    function send() {
+      if (!box.innerText.trim()) return;
+      window.__sent.push(box.innerText);
+      box.textContent = "";
+    }
+    document.getElementById("send").addEventListener("click", send);
+    box.addEventListener("keydown", (e) => {
+      if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); send(); }
+    });
+  </script>
+</body>
+</html>

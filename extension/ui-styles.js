@@ -162,9 +162,9 @@
     .notice.card .head { display: flex; align-items: center; gap: 8px; margin: -12px -14px 10px; padding: 10px 14px; background: ${PLUM}; border-radius: 11px 11px 0 0; }
     .notice.card .head b { margin: 0; font-size: 14px; color: ${ON_PLUM}; }
     .notice.card .head svg { flex: none; width: 15px; height: 15px; }
-    .plaster-outer { fill: none; stroke: #fff; stroke-width: 1.1; }
-    .plaster-pad { fill: #fff; opacity: .5; }
-    .plaster-stitch { stroke: #fff; stroke-width: .6; stroke-dasharray: .8 .8; opacity: .85; }
+    .plaster-ring { fill: none; stroke: #fff; stroke-width: 3; stroke-linecap: round; }
+    .plaster-outer { fill: #fff; }
+    .plaster-pad { fill: #fff; opacity: .55; }
     /* Larger warnings (settings → helping someone): easier to read and to hit */
     .notice.large { width: min(440px, calc(100vw - 32px)); font-size: 17px; padding: 16px 18px; }
     .notice.large b { font-size: 19px; }

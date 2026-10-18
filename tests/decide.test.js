@@ -31,8 +31,9 @@ const valueEntry = (type, value, mode) => ({ kind: "value", type, fp: fp(type, v
 
 test("loads with no page, no storage and no browser: patterns, detector and decide in a bare script context", () => {
   const context = vm.createContext({});
-  for (const f of ["patterns.js", "detector.js", "decide.js"])
+  for (const f of ["patterns.js", "detector.js", "decide.js"]) {
     vm.runInContext(fs.readFileSync(path.join(EXT, f), "utf8"), context, { filename: f });
+  }
   const out = vm.runInContext(
     `(() => {
       const C = globalThis.Clotr;
@@ -136,6 +137,19 @@ test("vaultMode: an address saved before 0.9.68 kept its accents in the fingerpr
   const old = { kind: "value", type: "street_address", fp: fp("street_address_accented", typed), mode: "allow" };
   assert.equal(C.vaultMode("street_address", typed, state({ vault: [old] })), "allow");
   assert.equal(C.vaultMode("street_address", "Calle Mayor 1", state({ vault: [old] })), null);
+});
+
+test("vaultMode: matches an entry under its own scheme, old (no scheme) or strengthened, without rewriting either", () => {
+  const v1 = { kind: "value", type: "phone_number", fp: fp("phone_number", PHONE), mode: "protect" };
+  assert.equal(C.vaultMode("phone_number", PHONE, state({ vault: [v1] })), "protect", "an old entry still matches");
+  const strongFp = C.fingerprintStrong(SALT, "email", "jo@example.org");
+  const v2 = { kind: "value", type: "email", fp: strongFp, scheme: 2, mode: "allow" };
+  assert.equal(C.vaultMode("email", "jo@example.org", state({ vault: [v2] })), "allow", "a strengthened entry matches");
+  // A vault can hold both at once (one saved before the upgrade, one saved after it), each still matched by
+  // its own value, neither mistaken for the other.
+  const both = state({ vault: [v1, v2] });
+  assert.equal(C.vaultMode("phone_number", PHONE, both), "protect");
+  assert.equal(C.vaultMode("email", "jo@example.org", both), "allow");
 });
 
 test("splitOwnIds: with your own ID in the vault, IDs that only share its format are named apart and rank lower", () => {
@@ -306,8 +320,9 @@ test("cleanEvent: an event keeps only its known fields, a fingerprint or nothing
   assert.deepEqual(C.cleanEvent({ ...e, via: "bandage" }), { ...e, via: "bandage" });
   assert.deepEqual(C.cleanEvent({ ...e, via: "elsewhere", value: PHONE, text: `call ${PHONE}` }), e);
   assert.equal(C.cleanEvent({ ...e, fp: PHONE }).fp, "", "a value where the fingerprint goes is dropped");
-  for (const action of ["redacted", "allowed", "suppressed", "mentioned"])
+  for (const action of ["redacted", "allowed", "suppressed", "mentioned"]) {
     assert.equal(C.cleanEvent({ ...e, action }).action, action);
+  }
   assert.equal(C.cleanEvent({ ...e, action: "sent" }), null);
   assert.equal(C.cleanEvent({ ...e, severity: "urgent" }), null);
   for (const bad of [null, "x", 5]) assert.equal(C.cleanEvent(bad), null);
@@ -446,16 +461,17 @@ test("whoAsks: the list is the two kinds, then the password kind's reasons, in t
 });
 
 test("whoAsks: each kind and reason gets its name, question, answer and what to do, in English", () => {
-  for (const [id, w] of Object.entries(ASKED))
+  for (const [id, w] of Object.entries(ASKED)) {
     assert.deepEqual(C.whoAsks(C.detect(w.text)).map(askWords), [expectedAsk(id, 0)], w.text);
+  }
 });
 
 test("whoAsks: the same words in Spanish, from the Spanish messages", () => {
   withSpanish(() => {
     for (const [id, w] of Object.entries(ASKED)) {
       // A kind's name comes from its pattern, and the content script names it in the browser's own language.
-      const found = C.detect(w.text).map((r) => (r.id === id ? { ...r, name: w.name[1] } : r));
-      assert.deepEqual(C.whoAsks(found).map(askWords), [expectedAsk(id, 1)], w.text);
+      const results = C.detect(w.text).map((r) => (r.id === id ? { ...r, name: w.name[1] } : r));
+      assert.deepEqual(C.whoAsks(results).map(askWords), [expectedAsk(id, 1)], w.text);
     }
   });
 });
@@ -472,8 +488,9 @@ test("whoAsks: nothing for a plain password, a key, a card number, an SSN or a p
     "my SSN is 078-05-1121",
     `call me at ${PHONE}`,
     "PIN: 4821",
-  ])
+  ]) {
     assert.deepEqual(C.whoAsks(C.detect(text)), [], text);
+  }
   assert.deepEqual(C.whoAsks([]), []);
 });
 
@@ -529,10 +546,10 @@ test("asShown: a password result whose every match has a reason is named by it; 
     ["Sign-in Code"],
   );
   // asShown never changes the original result, since history keeps the kind and its own name.
-  const found = C.detect("the code they texted me is 482913");
-  C.asShown(found);
-  assert.equal(found[0].name, "Password or Secret");
-  assert.deepEqual(C.noticeWords(C.asShown(found)).items, ["Sign-in Code (••••••)"]);
+  const results = C.detect("the code they texted me is 482913");
+  C.asShown(results);
+  assert.equal(results[0].name, "Password or Secret");
+  assert.deepEqual(C.noticeWords(C.asShown(results)).items, ["Sign-in Code (••••••)"]);
 });
 
 test("asShown: the reasons' names in Spanish", () => {

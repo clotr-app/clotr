@@ -45,11 +45,11 @@ function folder(name) {
 function unzip(buf) {
   const end = buf.lastIndexOf(Buffer.from([0x50, 0x4b, 0x05, 0x06]));
   assert.ok(end >= 0, "no end of central directory");
-  const count = buf.readUInt16LE(end + 10);
+  const entryCount = buf.readUInt16LE(end + 10);
   let p = buf.readUInt32LE(end + 16);
   const files = {};
   const after = [];
-  for (let n = 0; n < count; n++) {
+  for (let n = 0; n < entryCount; n++) {
     assert.equal(buf.readUInt32LE(p), 0x02014b50);
     const flags = buf.readUInt16LE(p + 8);
     const method = buf.readUInt16LE(p + 10);
@@ -70,8 +70,9 @@ test("each export is a folder and a zip holding exactly the same files", () => {
   for (const name of Object.keys(EXPORTS)) {
     const files = folder(name);
     assert.deepEqual(Object.keys(files).sort(), Object.keys(EXPORTS[name]).sort(), name);
-    for (const [rel, content] of Object.entries(EXPORTS[name]))
+    for (const [rel, content] of Object.entries(EXPORTS[name])) {
       assert.ok(files[rel].equals(Buffer.isBuffer(content) ? content : Buffer.from(content)), `${name}/${rel}`);
+    }
     const zipped = unzip(zipOf(name));
     assert.deepEqual(Object.keys(zipped.files).sort(), Object.keys(files).sort(), `${name}.zip`);
     for (const rel of Object.keys(files)) assert.ok(zipped.files[rel].equals(files[rel]), `${name}.zip: ${rel}`);
@@ -82,8 +83,9 @@ test("each export is a folder and a zip holding exactly the same files", () => {
 });
 
 test("Copilot CSV fixtures use LF line endings, as required by the repository", () => {
-  for (const name of ["copilot", "copilot-unknown-header"])
+  for (const name of ["copilot", "copilot-unknown-header"]) {
     assert.ok(!EXPORTS[name]["CopilotActivity.csv"].includes("\r"), name);
+  }
 });
 
 // These are the made-up values for each kind. Finding anything else of that kind in a fixture would be a mistake.
@@ -120,15 +122,19 @@ test("every value in the fixtures is made up", () => {
   for (const name of Object.keys(EXPORTS)) {
     for (const [rel, content] of Object.entries(folder(name))) {
       if (!/\.(json|jsonl|html|csv)$/.test(rel)) continue;
-      for (const w of words(rel, content))
-        for (const r of C.detect(w))
+      for (const w of words(rel, content)) {
+        for (const r of C.detect(w)) {
           for (const m of r.matches) if (MADE_UP[r.id]) assert.match(m, MADE_UP[r.id], `${name}/${rel}: ${r.id}`);
+        }
+      }
     }
     // Also checks every phone number in the account files, written the way each service formats it: a leading +1
     // and digits.
-    for (const [rel, content] of Object.entries(folder(name)))
-      for (const phone of content.toString("latin1").match(/\+1\d{10}/g) || [])
+    for (const [rel, content] of Object.entries(folder(name))) {
+      for (const phone of content.toString("latin1").match(/\+1\d{10}/g) || []) {
         assert.match(phone, /^\+1\d{3}555\d{4}$/, `${name}/${rel}`);
+      }
+    }
   }
 });
 
@@ -136,8 +142,9 @@ test("every value in the fixtures is made up", () => {
 // Adds the kinds and counts found in some text into `into`. Each distinct piece of text only counts once per chat,
 // since Claude's `text` field and its text block can carry the same words twice.
 function count(into, texts) {
-  for (const t of new Set(texts.filter((s) => typeof s === "string" && s.trim())))
+  for (const t of new Set(texts.filter((s) => typeof s === "string" && s.trim()))) {
     for (const r of C.detect(t)) into[r.id] = (into[r.id] || 0) + r.matches.length;
+  }
   return into;
 }
 function named(into, names) {
@@ -183,7 +190,7 @@ async function walkChatgpt(files) {
       // Checks the pictures the person uploaded, stored at the zip's root as <file id>-<name>. Only what's inside
       // the picture counts here, since the file name was already counted from the attachment list.
       for (const a of attachments) {
-        const file = Object.keys(files).find((f) => f.startsWith(`${a.id}-`));
+        const file = Object.keys(files).find((name) => name.startsWith(`${a.id}-`));
         if (!file) continue;
         const found = await C.readPicture(new File([files[file]], "IMG_0001.jpg", { type: "image/jpeg" }));
         for (const r of found) if (r.id === "photo_location") kinds.photo_location = (kinds.photo_location || 0) + 1;
@@ -226,33 +233,32 @@ function walkClaude(files) {
   });
 }
 
-// Walks a Gemini Takeout My Activity export. The right file is found by its shape, not its path, and this gives
-// one record per prompt, grouped by day, where the prompt is the title with its "Prompted " prefix stripped.
+// Walks a Gemini Takeout My Activity export. The right file is found by its shape, not its path, and each prompt
+// record keeps its own findings instead of combining a day's prompts under the first prompt's title.
 function walkGemini(files) {
   const records = Object.entries(files)
     .filter(([f]) => f.endsWith(".json"))
     .map(([, b]) => JSON.parse(b.toString("utf8")))
     .find((v) => Array.isArray(v) && v.every((r) => r && typeof r.title === "string" && typeof r.time === "string"));
   assert.ok(records, "no My Activity file found by its shape");
-  const days = new Map();
+  const chats = [];
   for (const r of records) {
     if (![r.header, ...(r.products || [])].some((h) => /gemini/i.test(h || ""))) continue;
-    if (!/^Prompted /.test(r.title)) continue;
-    const prompt = r.title.replace(/^Prompted /, "");
+    if (!/^Prompted\s+/i.test(r.title)) continue;
+    const prompt = r.title.replace(/^Prompted\s+/i, "");
     const day = r.time.slice(0, 10);
-    if (!days.has(day)) days.set(day, { title: prompt, prompts: [] });
-    days.get(day).prompts.push(prompt);
+    chats.push({
+      id: `${day}:${chats.length + 1}`,
+      title: prompt,
+      date: day,
+      link: "https://myactivity.google.com/product/gemini",
+      kinds: tidy(count({}, [prompt])),
+      prompts: 1,
+    });
   }
   return {
     records: records.length,
-    chats: [...days].map(([day, d]) => ({
-      id: day,
-      title: d.title,
-      date: day,
-      link: "https://myactivity.google.com/product/gemini",
-      kinds: tidy(count({}, d.prompts)),
-      prompts: d.prompts.length,
-    })),
+    chats,
   };
 }
 
@@ -319,6 +325,8 @@ test("Gemini: the prompts hold exactly what expected.json lists, wherever the fi
   for (const f of expected.gemini.found) {
     let shown = f.title;
     for (const r of C.detect(f.title)) for (const m of r.matches) shown = shown.split(m).join(C.mask(m));
+    shown = shown.replace(/\s+/g, " ").trim();
+    if (shown.length > 90) shown = `${shown.slice(0, 89).trimEnd()}…`;
     assert.equal(shown, f.shownTitle);
   }
 });

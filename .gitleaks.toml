@@ -20,9 +20,17 @@ regexes = [
   '''^AKIAIOSFODNN7EXAMPLE$''',
   '''^AKIAABCDEFGHIJKLMNOP$''',
   '''^AKIAZ7Q3M9WX2KD5HB8R$''',
+  # The test key under AWS's other prefixes.
+  '''^ABIA4HPQ7XZ2R6TWLJ3N$''',
+  '''^ACCA4HPQ7XZ2R6TWLJ3N$''',
+  '''^ASIA4HPQ7XZ2R6TWLJ3N$''',
   '''^FgT7s9kX2mQ4vL8pR1nZ6wB3yH5jD0cA$''',
   '''^N4XQ2ZK7PLM3RTY5$''',
   '''^\-\-\-\-\-BEGIN OPENSSH PRIVATE KEY\-\-\-\-\-$''',
+  # The Windows scan's fixture id_rsa: an OpenSSH header with no key inside it, as the
+  # file itself and as the generator's escaped string.
+  '''^\-\-\-\-\-BEGIN OPENSSH PRIVATE KEY\-\-\-\-\-\nb3BlbnNzaC1rZXktdjEAAAAABG5vbmUAAAAEbm9uZQAAAAAAAAABAAAAMwAAAAtzc2gtZWQyNTUxOQ\n\-\-\-\-\-END OPENSSH PRIVATE KEY\-\-\-\-\-$''',
+  '''^\-\-\-\-\-BEGIN OPENSSH PRIVATE KEY\-\-\-\-\-\\nb3BlbnNzaC1rZXktdjEAAAAABG5vbmUAAAAEbm9uZQAAAAAAAAABAAAAMwAAAAtzc2gtZWQyNTUxOQ\\n\-\-\-\-\-END OPENSSH PRIVATE KEY\-\-\-\-\-$''',
   '''^QK3V7WXN2HDR6TZM$''',
   '''^Zq8Lm2Xv9Rt4Kp7Wn1Bc$''',
   '''^Zq8Lm2Xv9Rt4Kp7Wn1Bc6Hy3Jd5Gf0QsAb12Cd34$''',
@@ -30,4 +38,16 @@ regexes = [
   '''^ghp_7Rk2QwZ9LmX4vB8nT1cY6pJ3sH5dF0gA2eUi$''',
   '''^sk\-proj\-Hk3Pq9Zr7Tm2Xw5Lv8Nb1Cy4Jg6Df0Sa$''',
   '''^whsec_9f8e7d6c5b4a$''',
+  # The Windows scan's fixture site/.env (a made-up Stripe-style key the scan must find).
+  '''^sk_live_realrealreal$''',
 ]
+
+# The pre-commit check's own test plants this key to prove the check catches it, so it stays out of the list above
+# (the check reads that one): gitleaks skips it only in that test file.
+[[allowlists]]
+description = "The pre-commit check's planted key, in its own test"
+condition = "AND"
+paths = ['''^tests/precommit-check\.test\.js$''']
+regexTarget = "secret"
+# Split with a group so this line isn't itself a key-shaped string to the pre-commit check.
+regexes = ['''^AKIA(?:QWERTYUIOPASDFGH)$''']

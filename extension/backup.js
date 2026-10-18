@@ -9,6 +9,7 @@
   const FORMAT = "clotr-backup";
   const VERSION = 1;
   const ITERATIONS = 600000;
+  const MAX_FILE_BYTES = 1024 * 1024;
   // What moves. Not history (events, mentions, spotted), not bookkeeping, not sites you added yourself: the
   // browser has to approve those again on the new computer. Tourniquet moves; the email and chat apps it
   // turned on are sites, so the new computer's browser asks for them again. The end of the 30 days after a scam
@@ -91,6 +92,7 @@
 
   // The settings back from a file. Throws "not-a-backup" or "wrong-password" (AES-GCM also catches a changed file).
   async function open(text, password) {
+    if (typeof text !== "string" || text.length > MAX_FILE_BYTES) throw new Error("not-a-backup");
     let file;
     try {
       file = JSON.parse(text);
@@ -98,9 +100,23 @@
       throw new Error("not-a-backup");
     }
     const it = file?.kdf?.iterations;
-    if (file?.format !== FORMAT || file.v !== VERSION || typeof file.data !== "string" || !file.cipher?.iv)
+    if (
+      file?.format !== FORMAT ||
+      file.v !== VERSION ||
+      typeof file.data !== "string" ||
+      file.data.length > MAX_FILE_BYTES ||
+      file?.kdf?.name !== "PBKDF2" ||
+      file.kdf.hash !== "SHA-256" ||
+      file?.cipher?.name !== "AES-GCM" ||
+      !Number.isInteger(it) ||
+      it !== ITERATIONS ||
+      typeof file.kdf.salt !== "string" ||
+      !/^(?:[A-Za-z0-9+/]{22}==)$/.test(file.kdf.salt) ||
+      typeof file.cipher.iv !== "string" ||
+      !/^[A-Za-z0-9+/]{16}$/.test(file.cipher.iv)
+    ) {
       throw new Error("not-a-backup");
-    if (!Number.isInteger(it) || it < 100000 || it > 10000000) throw new Error("not-a-backup");
+    }
     let plain;
     try {
       const key = await keyFor(password, fromB64(file.kdf.salt), it, "decrypt");
@@ -126,12 +142,14 @@
     if (obj(s.bandage)) out.bandage = keep(s.bandage, (h, v) => host(h) && typeof v === "boolean");
     if (obj(s.guided)) out.guided = keep(s.guided, (k, v) => kind(k) && Number.isFinite(v));
     // The AI sites the "can't read pictures" note was shown on: names only, at most 200 (the newest).
-    if (obj(s.picturesNoted))
+    if (obj(s.picturesNoted)) {
       out.picturesNoted = Object.fromEntries(
         Object.entries(keep(s.picturesNoted, (h, v) => host(h) && v === true)).slice(-200),
       );
-    for (const k of ["advanced", "replyCheck", "commandCheck", "largeText"])
+    }
+    for (const k of ["advanced", "replyCheck", "commandCheck", "largeText"]) {
       if (typeof s[k] === "boolean") out[k] = s[k];
+    }
     if ([90, 365, 730].includes(s.keepDays)) out.keepDays = s.keepDays;
     const lock = s.lock;
     if (
@@ -141,8 +159,9 @@
       Number.isInteger(lock.iterations) &&
       lock.iterations >= 1000 &&
       lock.iterations <= 10000000
-    )
+    ) {
       out.lock = { salt: lock.salt, iterations: lock.iterations, hash: lock.hash };
+    }
     if (typeof s.salt === "string" && /^[0-9a-f]{32}$/.test(s.salt)) out.salt = s.salt;
     if (Array.isArray(s.vault)) out.vault = s.vault.slice(0, 5000);
     const t = tourniquetOn(s.tourniquet, now);
@@ -150,5 +169,5 @@
     return out;
   }
 
-  C.Backup = { FORMAT, KEYS, ITERATIONS, pick, seal, open, clean };
+  C.Backup = { FORMAT, KEYS, ITERATIONS, MAX_FILE_BYTES, pick, seal, open, clean };
 })();

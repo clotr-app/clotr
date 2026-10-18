@@ -10,6 +10,11 @@ been careful about what I fed it, until the day it brought my medical status int
 feeling: what else does it know? You don't have to protect something you don't give out, so Clotr catches a password,
 a key or a personal detail on your screen and keeps it on your own device, before an AI chat ever sees it.
 
+> Privacy shouldn’t require technical knowledge, expensive tools, or opting out of modern life. It should be the
+> default.
+>
+> u/monarch-03, on r/privacy
+
 ![A warning in the corner of an AI chat about a photo that carries the place it was taken](docs/store/shots/ai-chat.png)
 
 ## Install
@@ -50,6 +55,21 @@ adds code that could send data out. Only you can see that record, in Clotr's own
 [PRIVACY.md](PRIVACY.md), and how well it does on my test set is on
 [clotr.app](https://clotr.app/how-it-works.html#results-title).
 
+## Permissions
+
+Chrome's install screen lists these by name. Here's what each one is actually for, and what it never does.
+
+| Permission | What Clotr uses it for | What it never does |
+| --- | --- | --- |
+| `storage` | Keeps your settings, your vault's scrambled entries and a history of what it caught (the kind of thing, the site, the time, your choice) on your own device. | Save the word or number it caught, or send any of that to a server, since there isn't one. |
+| `activeTab` | Lets one click on the toolbar icon check whether the site you're on looks like an AI chat worth protecting. | Read any tab you haven't clicked into, or read that same tab again on its own. |
+| `scripting` | Starts the checker on a site you've just added, and restarts it in AI chat tabs you already had open after an install or an update. | Run on a site you haven't added yourself. |
+| `declarativeContent` | Lights a small dot on the toolbar icon when a page's address matches a known AI chat, so you know there's something to turn on. | Look at anything on the page to decide that. |
+| `alarms` | Refreshes the toolbar's "today" count once a day and clears history past the age you chose to keep. | Reach the network. It only sets a timer inside the browser. |
+| The built-in AI chat sites (`host_permissions`) | Lets Clotr read the message box on the sites listed in `extension/ai-sites.json`, Gemini, ChatGPT, Claude and the rest, so it can check what you're about to send before it goes. | Read a site outside that list unless you add it yourself. |
+| `management` (optional, not asked for yet) | Held for a feature that isn't switched on yet. | Do anything in this build. Nothing asks you for it until that feature ships. |
+| Any other site (optional `https://*/*`) | Asked for only when you choose to add a site yourself, one at a time from Settings, or all at once with the "Everywhere I type" switch, which stays off until you turn it on. | Get granted when you install Clotr, or reach a site on its own. |
+
 ## Found a problem?
 
 Open an issue for a false alarm, something it missed, or a bug. Please describe the detail instead of pasting it,
@@ -64,12 +84,5 @@ and `npm run package` builds the release zip. [CONTRIBUTING.md](CONTRIBUTING.md)
 
 AGPL-3.0-or-later. If you share a changed version, or run one for other people over a network, you share its source
 too. For a closed-source product there's a commercial license, so email
-[billiambash.clotr@gmail.com](mailto:billiambash.clotr@gmail.com). The name and logo aren't covered, so a changed
+[support@clotr.app](mailto:support@clotr.app). The name and logo aren't covered, so a changed
 version needs its own.
-
-## About development
-
-I'm Alex. I was a mechanic for 12 years before switching to IT at the end of 2025, and I'm a student now. A small oil
-leak can eventually throw a rod, and little bits of us leak out the same way, so I'm trying to clot them.
-
-Clotr has no AI inside it, just pattern checks you can read. [How Clotr is built](CONTRIBUTING.md#how-clotr-is-built).

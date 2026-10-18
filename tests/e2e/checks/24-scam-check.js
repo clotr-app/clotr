@@ -68,7 +68,7 @@ module.exports = async function (env) {
         for (const c of [cs.color, cs.backgroundColor, cs.borderLeftColor, cs.fill]) {
           const m = /rgba?\((\d+), (\d+), (\d+)(?:, ([\d.]+))?\)/.exec(c || "");
           if (!m || m[4] === "0") continue;
-          const [r, g, b] = [+m[1], +m[2], +m[3]];
+          const [r, g, b] = [Number(m[1]), Number(m[2]), Number(m[3])];
           if (g > r + 40 && g > b + 40) out.push(`${el.id || el.className || el.tagName}: ${c}`);
         }
       }
@@ -314,7 +314,7 @@ module.exports = async function (env) {
         ];
         for (const [state, show] of states) {
           await show();
-          for (const width of [380, 1040])
+          for (const width of [380, 1040]) {
             for (const theme of ["dark", "light"]) {
               // The page's height at this width, so the picture holds all of it.
               await page.setViewport({ width, height: 800 });
@@ -337,6 +337,7 @@ module.exports = async function (env) {
                 problems.push(...found.map((f) => `${state} ${theme}: ${f}`));
               }
             }
+          }
         }
       } finally {
         await page.close();

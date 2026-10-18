@@ -158,19 +158,21 @@
           setOn([...next]);
         }
         const parts = [];
-        if (addFailed)
+        if (addFailed) {
           parts.push(
             msg(
               "ev_refused",
               "Nothing was switched on: the browser's question was closed or answered No. Tick and try again, or switch them on later in Settings.",
             ),
           );
-        else if (toAdd.length)
+        } else if (toAdd.length) {
           parts.push(msg("ev_onFor", "✓ On for $1, in tabs you already have open too.", listOf(toAdd)));
-        if (!removeFailed && toRemove.length)
+        }
+        if (!removeFailed && toRemove.length) {
           parts.push(
             msg("ev_offFor", "✓ Off for $1. The site keeps working, just without Clotr there.", listOf(toRemove)),
           );
+        }
         say(parts.join(" "), !addFailed && !removeFailed);
         onAnswer?.(yes, toAdd);
       });

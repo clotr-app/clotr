@@ -226,13 +226,14 @@
   function measuredFrame(svg, estimate) {
     try {
       const b = svg.getBBox();
-      if (b.width > 0 && b.height > 0)
+      if (b.width > 0 && b.height > 0) {
         return [
           Math.floor(b.x - PAD),
           Math.floor(b.y - PAD),
           Math.ceil(b.width + 2 * PAD),
           Math.ceil(b.height + 2 * PAD),
         ];
+      }
     } catch {
       /* not rendered */
     }
@@ -283,7 +284,10 @@
       for (const el of svg.querySelectorAll("[data-id]")) el.classList.toggle("lit", Boolean(ids?.has(el.dataset.id)));
     };
     const choosable = (g, n) => {
-      if (compact || !onSelect) return g.setAttribute("role", "img");
+      if (compact || !onSelect) {
+        g.setAttribute("role", "img");
+        return;
+      }
       g.setAttribute("tabindex", "0");
       g.setAttribute("role", "button");
       const choose = () => {
@@ -389,7 +393,7 @@
   // The table view: one row per AI service, kind, spotted site or "can't see" entry.
   function mindMapRows(tree) {
     const rows = [];
-    for (const branch of tree.children)
+    for (const branch of tree.children) {
       for (const n of branch.children) {
         const detail =
           n.type === "more"
@@ -404,6 +408,7 @@
           detail,
         });
       }
+    }
     return rows;
   }
 

@@ -297,7 +297,7 @@
       "Clotr's list holds only extensions reported up to $1. / It sees what your browser lets each extension read now. An extension can ask for more later. / Not on the list doesn't clear an extension: it means no one has reported it yet.",
       reportedExtensions.checked,
     ).map((line) => el("p", { textContent: line }));
-    if (isFirefox)
+    if (isFirefox) {
       limits.push(
         el("p", {
           textContent: msg(
@@ -306,6 +306,7 @@
           ),
         }),
       );
+    }
     $("limits").replaceChildren(...limits);
 
     heading.focus();

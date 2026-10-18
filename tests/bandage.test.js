@@ -130,13 +130,15 @@ test("a long chat is read in one quick pass", () => {
   assert.equal(readBandageLabels(text).length, 40000);
   retrySlow(() => {
     const t = bestOfBoth(() => readBandageLabels(text), 1);
-    if (t.over(1000)) return `took ${t.wall.toFixed(0)} ms (${t.allowed.toFixed(0)} allowed on this computer now)`;
+    return t.over(1000)
+      ? `took ${t.wall.toFixed(0)} ms (${t.allowed.toFixed(0)} allowed on this computer now)`
+      : undefined;
   });
   const plain = "nothing to see here ".repeat(100000);
   assert.deepEqual(readBandageLabels(plain), []);
   retrySlow(() => {
     const t = bestOfBoth(() => readBandageLabels(plain), 1);
-    if (t.over(200)) return `text without a bracket wasn't skipped quickly: ${t.wall.toFixed(0)} ms`;
+    return t.over(200) ? `text without a bracket wasn't skipped quickly: ${t.wall.toFixed(0)} ms` : undefined;
   });
 });
 
@@ -201,16 +203,18 @@ test("a team's cover words are read as labels while its kinds are set, and a bui
     assert.equal(readBandageLabels(long).length, 40000);
     retrySlow(() => {
       const t = bestOfBoth(() => readBandageLabels(long), 1);
-      if (t.over(1000))
-        return `a long chat with team labels took ${t.wall.toFixed(0)} ms (${t.allowed.toFixed(0)} allowed on this computer now)`;
+      return t.over(1000)
+        ? `a long chat with team labels took ${t.wall.toFixed(0)} ms (${t.allowed.toFixed(0)} allowed on this computer now)`
+        : undefined;
     });
     // A "[" before a long run of spaces, like in a code block, is read just as quickly.
     const spaced = "[" + " ".repeat(10000) + "x, then [" + " \n".repeat(5000) + "Matter 6]";
     assert.deepEqual(ids(spaced), ["team:matter 6"]);
     retrySlow(() => {
       const t = bestOfBoth(() => readBandageLabels(spaced), 1);
-      if (t.over(50))
-        return `a "[" before a long run of spaces took ${t.wall.toFixed(0)} ms (${t.allowed.toFixed(0)} allowed on this computer now)`;
+      return t.over(50)
+        ? `a "[" before a long run of spaces took ${t.wall.toFixed(0)} ms (${t.allowed.toFixed(0)} allowed on this computer now)`
+        : undefined;
     });
   } finally {
     C.setVault(null);

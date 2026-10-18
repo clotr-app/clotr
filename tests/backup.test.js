@@ -50,6 +50,18 @@ test("backup: a wrong password, a changed file or another file are refused", asy
   );
 });
 
+test("backup: oversized text, wrong salt or IV size, and unsupported KDF work are refused", async () => {
+  await assert.rejects(Backup.open(" ".repeat(1024 * 1024 + 1), "x"), /not-a-backup/);
+  const good = JSON.parse(await Backup.seal(SETTINGS, "correct horse battery"));
+  for (const bad of [
+    { ...good, kdf: { ...good.kdf, salt: "AA==" } },
+    { ...good, cipher: { ...good.cipher, iv: "AA==" } },
+    { ...good, kdf: { ...good.kdf, iterations: 600001 } },
+  ]) {
+    await assert.rejects(Backup.open(JSON.stringify(bad), "x"), /not-a-backup/);
+  }
+});
+
 test("backup: only known settings with sane values get through", () => {
   const dirty = {
     ...SETTINGS,
@@ -108,8 +120,9 @@ test("backup: the command check's switch moves; a missing one stays on, anything
   const file = await Backup.seal(Backup.pick(off), "correct horse battery");
   assert.equal(Backup.clean(await Backup.open(file, "correct horse battery")).commandCheck, false);
   assert.ok(!("commandCheck" in Backup.clean(SETTINGS)), "a file without it says nothing about it");
-  for (const bad of ["false", 0, null, { on: false }])
+  for (const bad of ["false", 0, null, { on: false }]) {
     assert.ok(!("commandCheck" in Backup.clean({ commandCheck: bad })), `kept: ${JSON.stringify(bad)}`);
+  }
 });
 
 // The "can't read pictures" note moves with the first-time tips, as the names only of the AI sites it showed on.

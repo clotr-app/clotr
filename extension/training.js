@@ -112,7 +112,7 @@
     const t = state.try;
     const children = [];
     if (t.notice) children.push(t.notice);
-    if (t.sent)
+    if (t.sent) {
       children.push(
         el("figure", { className: "chat" }, [
           el("figcaption", { className: "chat-from" }, [
@@ -121,6 +121,7 @@
           el("blockquote", { className: "bubble", textContent: training.tryAiReply() }),
         ]),
       );
+    }
     if (t.explain) {
       children.push(el("p", { className: "tw-explain", role: "status", textContent: t.explain }));
       const reset = el("button", {
@@ -198,7 +199,7 @@
   function buildWords() {
     const info = training.officeWordsDemo(policyKinds);
     const body = [stepHeading(), el("p", { className: "tw-text", textContent: info.example })];
-    if (info.active)
+    if (info.active) {
       body.push(
         el(
           "ul",
@@ -206,6 +207,7 @@
           info.kinds.map((k) => el("li", { textContent: `${k.name}: ${k.response}` })),
         ),
       );
+    }
     $("tw-body").replaceChildren(...body);
   }
 
@@ -420,7 +422,7 @@
     const flags = state.accuracy;
     flags.decoys ||= {};
     const flagged = (key) =>
-      key === "figure" ? flags.flagFigure : key === "citation" ? flags.flagCitation : !!flags.decoys[key];
+      key === "figure" ? flags.flagFigure : key === "citation" ? flags.flagCitation : Boolean(flags.decoys[key]);
     for (const btn of answerP.querySelectorAll(".flag-target")) {
       const key = btn.dataset.key;
       const show = () => {

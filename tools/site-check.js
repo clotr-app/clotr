@@ -156,15 +156,18 @@ function compareToBaseline(results, baseline, { signInField, checkEditor, notCov
       findings.push(`**${r.name}**: couldn't load (${r.error})`);
       continue;
     }
-    if (!r.covered && !r[signInField])
+    if (!r.covered && !r[signInField]) {
       findings.push(`**${r.name}** now ends up at **${r.finalHost}**, ${notCoveredHint}`);
+    }
     if (r.botCheck) continue; // a bot check says nothing about the site itself
-    if (checkEditor && r.editor !== "none" && r.clotrSees !== "yes")
+    if (checkEditor && r.editor !== "none" && r.clotrSees !== "yes") {
       findings.push(`**${r.name}**: there's a chat box (${r.editor}) but Clotr reports "${r.clotrSees}"`);
+    }
     if (!was) continue;
     if (was.finalHost !== r.finalHost) findings.push(`**${r.name}** moved: ${was.finalHost} → ${r.finalHost}`);
-    if (checkEditor && was.editor !== r.editor)
+    if (checkEditor && was.editor !== r.editor) {
       findings.push(`**${r.name}** editor changed: ${was.editor} → ${r.editor} (check Cover it on the real site)`);
+    }
   }
   return findings;
 }

@@ -105,8 +105,9 @@ test("zip bomb: a part that inflates far past the cap stops at 2 MB", async () =
   // now than the reference timing in tests/timing.js.
   await retrySlowAsync(async () => {
     const t = await timedAsync(() => readAttachment(bomb));
-    if (await t.overAsync(5000))
-      return `took ${Math.round(t.wall)} ms (${Math.round(t.allowed)} allowed on this computer now)`;
+    return (await t.overAsync(5000))
+      ? `took ${Math.round(t.wall)} ms (${Math.round(t.allowed)} allowed on this computer now)`
+      : undefined;
   });
 });
 

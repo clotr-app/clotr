@@ -135,9 +135,9 @@ async function launchFirefox({ firefox, extension, prefs = {} }) {
   // Stops every Firefox process still attached to this profile. Firefox's own pages run in separate processes
   // that can outlive the main one, so killing just the main process isn't enough.
   const stopAll = () => {
-    if (process.platform === "win32")
+    if (process.platform === "win32") {
       spawnSync("taskkill", ["/T", "/F", "/PID", String(proc.pid)], { stdio: "ignore", windowsHide: true });
-    else proc.kill("SIGKILL");
+    } else proc.kill("SIGKILL");
   };
   // Never throws. It asks Firefox to quit, falls back to killing every process it started if that doesn't work,
   // and removes the profile once nothing still holds its files, which can take a moment on a busy computer.
@@ -191,8 +191,9 @@ function driver(send) {
     });
     // A missing answer means the tab's page changed while the script was running, which happens when a new tab
     // moves from about:blank to its real page.
-    if (typeof value !== "string")
+    if (typeof value !== "string") {
       throw Object.assign(new Error("the page changed while a script ran"), { gone: true });
+    }
     const r = JSON.parse(value);
     if ("error" in r) throw new Error(r.error);
     return r.ok;

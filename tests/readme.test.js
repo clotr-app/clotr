@@ -65,6 +65,60 @@ test("README's Install section links to the stores that are live, and is honest 
   assert.doesNotMatch(README, /REPLACE-WITH|is on its way to/i, "README still has a placeholder store link");
 });
 
+// The README's Permissions table, checked against the real manifest so a permission added or dropped there
+// can't go un-mentioned: every key in manifest.json's permissions, optional_permissions and
+// optional_host_permissions needs its own row, and the AI chat site list needs one row standing in for the whole
+// host_permissions group.
+function permissionsSection() {
+  const start = README.indexOf("\n## Permissions");
+  assert.ok(start >= 0, "README has no Permissions section");
+  const rest = README.slice(start + 1);
+  const next = rest.indexOf("\n## ", 1);
+  return next >= 0 ? rest.slice(0, next) : rest;
+}
+
+test("README's Permissions table has a row for every permission manifest.json actually declares", () => {
+  const manifest = JSON.parse(fs.readFileSync(path.join(ROOT, "extension", "manifest.json"), "utf8"));
+  const section = permissionsSection();
+  for (const perm of manifest.permissions || []) {
+    assert.ok(section.includes(`\`${perm}\``), `README's Permissions table has no row for \`${perm}\``);
+  }
+  for (const perm of manifest.optional_permissions || []) {
+    assert.ok(
+      section.includes(`\`${perm}\``),
+      `README's Permissions table has no row for the optional \`${perm}\` permission`,
+    );
+  }
+  assert.ok(
+    (manifest.host_permissions || []).length > 0 && section.includes("host_permissions"),
+    "README's Permissions table has no row for the built-in AI chat sites (host_permissions)",
+  );
+  for (const host of manifest.optional_host_permissions || []) {
+    assert.ok(
+      section.includes(`\`${host}\``),
+      `README's Permissions table has no row for the optional host permission ${host}`,
+    );
+  }
+});
+
+test("README's Permissions table names no permission manifest.json has dropped", () => {
+  const manifest = JSON.parse(fs.readFileSync(path.join(ROOT, "extension", "manifest.json"), "utf8"));
+  const known = new Set([
+    ...(manifest.permissions || []),
+    ...(manifest.optional_permissions || []),
+    ...(manifest.optional_host_permissions || []),
+  ]);
+  const section = permissionsSection();
+  const rows = section.match(/^\| `([\w.:/*-]+)`/gm) || [];
+  for (const row of rows) {
+    const name = row.match(/`([\w.:/*-]+)`/)[1];
+    assert.ok(
+      known.has(name),
+      `README's Permissions table has a row for \`${name}\`, which manifest.json doesn't declare`,
+    );
+  }
+});
+
 test("README has a Scorecard badge whose workflow ships in the export", () => {
   const m = HEAD.match(/\[!\[OpenSSF Scorecard\]\(([^)]+)\)\]\(([^)]+)\)/);
   assert.ok(m, "no Scorecard badge found near the top of README.md");
