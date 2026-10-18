@@ -2877,7 +2877,7 @@
 
   // A connection string like scheme://user:password@host, matched only when the password part looks real.
   const CONN_RE =
-    /\b(?:postgres(?:ql)?|mysql|mariadb|mongodb(?:\+srv)?|redis|rediss|amqps?|mssql|sqlserver|oracle|ftp|sftp|smtp|https?):\/\/[^\s:/@]+:([^\s@/]+)@[^\s"'<>]+/gi;
+    /\b(?:postgres(?:ql)?|mysql|mariadb|mongodb(?:\+srv)?|redis|rediss|amqps?|mssql|sqlserver|oracle|ftp|sftp|smtp|https?):\/\/[^\s:/@]*:([^\s@/]+)@[^\s"'<>]+/gi;
   const PLACEHOLDER_PASSWORDS = new Set([
     "password",
     "pass",

@@ -2519,7 +2519,14 @@ test("connection strings, JWTs, .env files, internal IPs and hosts", () => {
     "postgres://admin:S3cr3tPw@db.prod.internal:5432/app",
   );
   expectOnly("mongodb+srv://app:hunter2x@cluster0.ab1cd.mongodb.net/test", "connection_string");
+  expectOnly("redis://:s3cr3tP@ss@127.0.0.1:6379/0", "connection_string", "redis://:s3cr3tP@ss@127.0.0.1:6379/0");
+  expectOnly(
+    "rediss://:s3cr3tP@ss@cache.example.com:6380",
+    "connection_string",
+    "rediss://:s3cr3tP@ss@cache.example.com:6380",
+  );
   expectNothing("format: postgres://user:password@localhost/db");
+  expectNothing("redis://:password@127.0.0.1:6379/0");
   const jwt =
     "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiI0MjQyIiwibmFtZSI6IkphbmUifQ.Xk3v9Qm2Lr7Tz5Wn8Bc1Hy4Jg6Df0SaPq";
   expectOnly(`token ${jwt}`, "jwt", jwt);
