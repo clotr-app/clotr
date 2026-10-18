@@ -140,6 +140,8 @@ test("AWS access keys: the rarer STS (ABIA) and context (ACCA) prefixes match to
 
 test("xAI API key: the xai- prefix, with the same randomness check as Anthropic and OpenAI keys", () => {
   expectOnly(`XAI_API_KEY=${FAKE.xai}`, "xai_key");
+  // A 16-character key (the minimum prefix regex length) is accepted too when random.
+  expectOnly("XAI_API_KEY=xai-Qp7Lk2Xv9Rt4Wn1B", "xai_key");
   // A documentation placeholder isn't random enough to flag.
   expectNone("XAI_API_KEY=xai-your-api-key-here");
 });
