@@ -132,6 +132,32 @@ test("credentials", () => {
   expectOnly("maps key AIzaHvneKu6rq2gXKZtw-eOhOYwuVw6AAiq_ps- is failing", "google_api_key");
 });
 
+test("private keys: PEM matches full block including body and footer when present, or lone header", () => {
+  const fullRsa =
+    "-----BEGIN RSA PRIVATE KEY-----\nMIIEowIBAAKCAQEA0YpABC123+/=\nanotherLineOfSecretBase64==\n-----END RSA PRIVATE KEY-----";
+  expectOnly(fullRsa, "private_key", fullRsa);
+
+  const wrapped = `before\n${fullRsa}\nafter`;
+  const redacted = globalThis.Clotr.redact(wrapped, globalThis.Clotr.detect(wrapped));
+  assert.equal(redacted, "before\n[REDACTED PRIVATE KEY]\nafter");
+
+  expectOnly("-----BEGIN RSA PRIVATE KEY-----", "private_key", "-----BEGIN RSA PRIVATE KEY-----");
+});
+
+// A key copied on Windows has CRLF line ends, and a header with no footer must stay quick on a huge paste.
+test("private keys: a CRLF block is covered whole, and a lone header in a long paste stays fast", () => {
+  const crlf =
+    "-----BEGIN OPENSSH PRIVATE KEY-----\r\nb3BlbnNzaC1rZXktdjEAAAAA\r\nQm9keUxpbmVUd28==\r\n-----END OPENSSH PRIVATE KEY-----";
+  const redacted = globalThis.Clotr.redact(
+    `key:\r\n${crlf}\r\nthanks`,
+    globalThis.Clotr.detect(`key:\r\n${crlf}\r\nthanks`),
+  );
+  assert.equal(redacted, "key:\r\n[REDACTED PRIVATE KEY]\r\nthanks");
+  const start = Date.now();
+  globalThis.Clotr.detect(`-----BEGIN RSA PRIVATE KEY-----\n${"A".repeat(200000)}`);
+  assert.ok(Date.now() - start < 1000, "a lone header in a long paste is checked quickly");
+});
+
 test("AWS access keys: the rarer STS (ABIA) and context (ACCA) prefixes match too, same as AKIA/ASIA", () => {
   expectOnly("key ABIA4HPQ7XZ2R6TWLJ3N here", "aws_access_key");
   expectOnly("key ACCA4HPQ7XZ2R6TWLJ3N here", "aws_access_key");
@@ -140,6 +166,8 @@ test("AWS access keys: the rarer STS (ABIA) and context (ACCA) prefixes match to
 
 test("xAI API key: the xai- prefix, with the same randomness check as Anthropic and OpenAI keys", () => {
   expectOnly(`XAI_API_KEY=${FAKE.xai}`, "xai_key");
+  // A 16-character key (the minimum prefix regex length) is accepted too when random.
+  expectOnly("XAI_API_KEY=xai-Qp7Lk2Xv9Rt4Wn1B", "xai_key");
   // A documentation placeholder isn't random enough to flag.
   expectNone("XAI_API_KEY=xai-your-api-key-here");
 });
@@ -2519,7 +2547,14 @@ test("connection strings, JWTs, .env files, internal IPs and hosts", () => {
     "postgres://admin:S3cr3tPw@db.prod.internal:5432/app",
   );
   expectOnly("mongodb+srv://app:hunter2x@cluster0.ab1cd.mongodb.net/test", "connection_string");
+  expectOnly("redis://:s3cr3tP@ss@127.0.0.1:6379/0", "connection_string", "redis://:s3cr3tP@ss@127.0.0.1:6379/0");
+  expectOnly(
+    "rediss://:s3cr3tP@ss@cache.example.com:6380",
+    "connection_string",
+    "rediss://:s3cr3tP@ss@cache.example.com:6380",
+  );
   expectNothing("format: postgres://user:password@localhost/db");
+  expectNothing("redis://:password@127.0.0.1:6379/0");
   const jwt =
     "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiI0MjQyIiwibmFtZSI6IkphbmUifQ.Xk3v9Qm2Lr7Tz5Wn8Bc1Hy4Jg6Df0SaPq";
   expectOnly(`token ${jwt}`, "jwt", jwt);

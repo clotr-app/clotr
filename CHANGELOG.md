@@ -2,6 +2,13 @@
 
 What changed in each version of Clotr. How the version numbers work is in [VERSIONING.md](VERSIONING.md).
 
+## 1.4.1 (2026-10-19)
+
+- When you choose Cover it on a pasted private key (PEM or OpenSSH), it now covers the whole key. Before, it covered
+  only the first line and left the rest in your message. Thanks to gilnett for finding and fixing it.
+- Clotr now recognizes 16-character xAI API keys.
+- A Redis URL without a username is now recognized.
+
 ## 1.4.0 (2026-10-17)
 
 - A letter stuck to a phone number or SSN, or a long run of words before a recovery phrase, can no longer slip past Clotr's check.
