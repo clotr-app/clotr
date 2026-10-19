@@ -58,13 +58,13 @@
 
   // A prefix like "sk-" can also start an ordinary word, like "sk-learn-". So I check that what follows it
   // actually looks machine-made: mixed case, digits, and long unbroken runs instead of a slug's dashes.
-  function looksRandom(body) {
+  function looksRandom(body, minLen = 20) {
     return (
-      body.length >= 20 &&
+      body.length >= minLen &&
       /\d/.test(body) &&
       /[a-z]/.test(body) &&
       /[A-Z]/.test(body) &&
-      Math.max(...body.split(/[-_]/).map((seg) => seg.length)) >= 12 &&
+      Math.max(...body.split(/[-_]/).map((seg) => seg.length)) >= Math.min(12, minLen) &&
       entropy(body) >= 3.5
     );
   }
@@ -2720,7 +2720,8 @@
     return found;
   }
 
-  const PEM_PRIVATE_KEY_RE = /-----BEGIN (?:[A-Z]+ )?PRIVATE KEY-----/g;
+  const PEM_PRIVATE_KEY_RE =
+    /-----BEGIN (?:[A-Z]+ )?PRIVATE KEY-----(?:(?:(?!-----BEGIN)[\s\S])*?-----END (?:[A-Z]+ )?PRIVATE KEY-----)?/g;
   // A PEM or OpenSSH header and a JWK private key both count as the same `private_key` kind.
   function findPrivateKeys(text) {
     return [...text.matchAll(PEM_PRIVATE_KEY_RE)].map((m) => m[0]).concat(findJwkPrivateKeys(text));
@@ -2877,7 +2878,7 @@
 
   // A connection string like scheme://user:password@host, matched only when the password part looks real.
   const CONN_RE =
-    /\b(?:postgres(?:ql)?|mysql|mariadb|mongodb(?:\+srv)?|redis|rediss|amqps?|mssql|sqlserver|oracle|ftp|sftp|smtp|https?):\/\/[^\s:/@]+:([^\s@/]+)@[^\s"'<>]+/gi;
+    /\b(?:postgres(?:ql)?|mysql|mariadb|mongodb(?:\+srv)?|redis|rediss|amqps?|mssql|sqlserver|oracle|ftp|sftp|smtp|https?):\/\/[^\s:/@]*:([^\s@/]+)@[^\s"'<>]+/gi;
   const PLACEHOLDER_PASSWORDS = new Set([
     "password",
     "pass",
@@ -3695,7 +3696,7 @@
       // Same `xai-` prefix shadow-ai-dlp matches (MIT, Erik Sanchez, see THIRD-PARTY-NOTICES), with the same
       // randomness check Clotr already runs on Anthropic and OpenAI keys on top of the prefix match.
       regex: /\bxai-[A-Za-z0-9_-]{16,}/g,
-      validate: (m) => looksRandom(m.replace(/^xai-/, "")),
+      validate: (m) => looksRandom(m.replace(/^xai-/, ""), 16),
     },
     {
       id: "google_api_key",
