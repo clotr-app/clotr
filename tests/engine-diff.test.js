@@ -9,6 +9,15 @@ const { execFileSync, spawnSync } = require("child_process");
 
 const ROOT = path.join(__dirname, "..");
 const TOOL = path.join(ROOT, "tools", "engine-diff.js");
+// Values go into the generated files as JSON, with the characters that could end a script or a line escaped too.
+const CODE_ESCAPES = {
+  "<": "\\u003C",
+  ">": "\\u003E",
+  "/": "\\u002F",
+  "\u2028": "\\u2028",
+  "\u2029": "\\u2029",
+};
+const literal = (value) => JSON.stringify(value).replace(/[<>/\u2028\u2029]/g, (c) => CODE_ESCAPES[c]);
 const engineDiff = fs.existsSync(TOOL) ? require(TOOL) : null;
 const { labelProbeRows, parseArgs } = engineDiff || {};
 
@@ -28,10 +37,10 @@ function fixture(t, text, match, replacement = match, { baseKind = "phone_number
     execFileSync("git", args, { cwd: dir, encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] });
   write(
     "extension/patterns.js",
-    `globalThis.Clotr = { PATTERNS: [{ id: ${JSON.stringify(baseKind)}, name: ${JSON.stringify(baseKind)} }] };\n`,
+    `globalThis.Clotr = { PATTERNS: [{ id: ${literal(baseKind)}, name: ${literal(baseKind)} }] };\n`,
   );
-  const detector = (value, kind) => `globalThis.Clotr.detect = (text) => text.includes(${JSON.stringify(match)}) ? [{
-    id: ${JSON.stringify(kind)}, name: ${JSON.stringify(kind)}, severity: "medium", matches: [${JSON.stringify(value)}]
+  const detector = (value, kind) => `globalThis.Clotr.detect = (text) => text.includes(${literal(match)}) ? [{
+    id: ${literal(kind)}, name: ${literal(kind)}, severity: "medium", matches: [${literal(value)}]
   }] : [];\n`;
   write("extension/detector.js", detector(match, baseKind));
   write(

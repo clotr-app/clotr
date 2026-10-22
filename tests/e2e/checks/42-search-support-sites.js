@@ -233,10 +233,7 @@ module.exports = async function (env) {
             );
             expect(frame, "Intercom: the widget's iframe never loaded");
             expect(
-              await waitFor(
-                () => page.logs.some((l) => l.includes("widget.intercom.io") && l.includes("active on")),
-                3000,
-              ),
+              await waitFor(() => page.logs.some((l) => /\bactive on widget\.intercom\.io\b/.test(l)), 3000),
               "Intercom: Clotr never ran in the widget iframe",
             );
             expect(

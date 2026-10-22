@@ -58,7 +58,7 @@ module.exports = async function (env) {
         () =>
           other.worker.evaluate(async () => {
             const [s] = await chrome.scripting.getRegisteredContentScripts({ ids: ["clotr-user-sites"] });
-            return s?.matches?.some((match) => match.includes("mail.google.com"));
+            return s?.matches?.some((match) => /^[^:/]+:\/\/mail\.google\.com\//.test(match));
           }),
         5000,
       );
