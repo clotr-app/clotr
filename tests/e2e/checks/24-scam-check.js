@@ -3,12 +3,27 @@
 "use strict";
 
 module.exports = async function (env) {
-  const { EXT, OUT, check, ctx, expect, fs, launch, openExtPage, path, shotAt, sleep, store } = env;
+  const { EXT, OUT, check, ctx, expect, fs, launch, openExtPage, path, patience, shotAt, sleep, store, waitFor } = env;
 
   const LOOKALIKE = "Your package is out for delivery today. Track it at example.com/track";
 
   // Pastes a message into the box the way a real paste would, setting the value then firing an input event, and checks it.
-  const checkMessage = async (page, text) => {
+  const clickButton = async (page, selector, onStep = () => {}, useMouse = false) => {
+    if (!useMouse) {
+      onStep(`clicking ${selector}`);
+      await page.click(selector);
+      return;
+    }
+    onStep(`waiting for ${selector}`);
+    const button = await page.waitForSelector(selector, { visible: true, timeout: 5000 * patience() });
+    onStep(`measuring ${selector}`);
+    const box = await button.boundingBox();
+    expect(box, `${selector} is not on screen`);
+    onStep(`clicking ${selector}`);
+    await page.mouse.click(box.x + box.width / 2, box.y + box.height / 2);
+  };
+  const checkMessage = async (page, text, onStep = () => {}, useMouse = false) => {
+    onStep("putting the message in the box");
     await page.$eval(
       "#message",
       (box, t) => {
@@ -17,17 +32,24 @@ module.exports = async function (env) {
       },
       text,
     );
-    await page.click("#check-it");
-    await page.waitForFunction(() => !document.getElementById("result").hidden, { timeout: 3000 });
+    await clickButton(page, "#check-it", onStep, useMouse);
+    onStep("waiting for the message result");
+    await page.waitForFunction(() => !document.getElementById("result").hidden, {
+      timeout: useMouse ? 3000 * patience() : 3000,
+    });
     await sleep(150);
   };
-  const tryMadeUp = async (page) => {
-    await page.click("#try-made-up");
-    await page.waitForFunction(() => !document.getElementById("result").hidden, { timeout: 3000 });
+  const tryMadeUp = async (page, onStep = () => {}, useMouse = false) => {
+    await clickButton(page, "#try-made-up", onStep, useMouse);
+    onStep("waiting for the made-up result");
+    await page.waitForFunction(() => !document.getElementById("result").hidden, {
+      timeout: useMouse ? 3000 * patience() : 3000,
+    });
+    onStep("settling after the made-up result");
     await sleep(150);
   };
-  const again = async (page) => {
-    await page.click("#check-another");
+  const again = async (page, onStep = () => {}, useMouse = false) => {
+    await clickButton(page, "#check-another", onStep, useMouse);
     await sleep(150);
   };
   // What the page shows after a check.
@@ -211,9 +233,27 @@ module.exports = async function (env) {
       ctx.worker.evaluate(async () =>
         JSON.stringify([await chrome.storage.local.get(null), await chrome.storage.session.get(null)]),
       );
-    const before = await snapshot();
+    let before;
     const page = await openExtPage(ctx, "check.html");
     try {
+      const initialized = await waitFor(
+        () =>
+          ctx.worker.evaluate(async () => {
+            const [local, session] = await Promise.all([
+              chrome.storage.local.get(["everydayOffer", "knownKinds", "salt"]),
+              chrome.storage.session.get("protectedTabs"),
+            ]);
+            return (
+              typeof local.everydayOffer === "string" &&
+              Array.isArray(local.knownKinds) &&
+              typeof local.salt === "string" &&
+              Boolean(session.protectedTabs)
+            );
+          }),
+        10000,
+      );
+      expect(initialized, "install-time storage setup hadn't settled before the check");
+      before = await snapshot();
       await tryMadeUp(page);
       await again(page);
       await checkMessage(page, LOOKALIKE);
@@ -259,9 +299,12 @@ module.exports = async function (env) {
   );
 
   await check("SC7", "Spanish browser: the page, the made-up message and its four signs are in Spanish", async () => {
-    const es = await launch(EXT, ["--lang=es-ES", "--accept-lang=es-ES"], { LANGUAGE: "es", LANG: "es_ES.UTF-8" });
+    let es;
+    let step = "launching the Spanish browser";
     try {
+      es = await launch(EXT, ["--lang=es-ES", "--accept-lang=es-ES"], { LANGUAGE: "es", LANG: "es_ES.UTF-8" });
       const page = await openExtPage(es, "check.html");
+      step = "reading the initial page";
       const empty = await page.evaluate(() => ({
         h1: document.querySelector("h1").textContent.trim(),
         title: document.title,
@@ -269,8 +312,10 @@ module.exports = async function (env) {
       }));
       expect(empty.h1 === "¿Es una estafa?" && empty.title === "¿Es una estafa?", `title: ${JSON.stringify(empty)}`);
       expect(empty.lang === "es", `lang: ${empty.lang}`);
+      step = "capturing the empty page";
       await shotAt(page, "scam-check-empty-es-380.png", { width: 380, height: 760, theme: "dark" });
-      await tryMadeUp(page);
+      await tryMadeUp(page, (name) => (step = name), true);
+      step = "reading the Spanish signs";
       const got = await read(page);
       expect(got.title === "Clotr encontró 4 señales de alerta", `title: ${got.title}`);
       expect(
@@ -280,16 +325,30 @@ module.exports = async function (env) {
       expect(got.cards[0].name === "Pide un código que te enviaron", `name: ${got.cards[0].name}`);
       expect(/Fuente/.test(got.cards[0].text), `source: ${got.cards[0].text}`);
       expect(!/Asks for|Rushes you|Before you answer|The message you got/.test(got.page), "English left");
+      step = "capturing the Spanish signs";
       await shotAt(page, "scam-check-signs-es-380.png", { width: 380, height: 2000, theme: "dark" });
-      await again(page);
-      await checkMessage(page, "Tu paquete sale hoy para entrega. Síguelo en example.com/envio");
+      step = "checking a message with no known signs";
+      await again(page, (name) => (step = name), true);
+      await checkMessage(
+        page,
+        "Tu paquete sale hoy para entrega. Síguelo en example.com/envio",
+        (name) => (step = name),
+        true,
+      );
+      step = "reading the no-signs result";
       const none = await read(page);
       expect(none.none && /Clotr no encontró ninguna de las señales que conoce/.test(none.page), "none-found");
+      step = "capturing the no-signs result";
       await shotAt(page, "scam-check-none-es-380.png", { width: 380, height: 1100, theme: "light" });
       await page.close();
+    } catch (err) {
+      err.message = `${step}: ${err.message}`;
+      throw err;
     } finally {
-      await es.browser.close();
-      fs.rmSync(es.profile, { recursive: true, force: true });
+      if (es) {
+        await es.browser.close();
+        fs.rmSync(es.profile, { recursive: true, force: true });
+      }
     }
   });
 

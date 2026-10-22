@@ -27,6 +27,7 @@ module.exports = async function (env) {
     store,
     typeText,
     waitFor,
+    patience,
     withSite,
   } = env;
   if (argv.includes("--stress")) {
@@ -127,7 +128,7 @@ module.exports = async function (env) {
             after.length === 10000 && after.at(-1).fp === "ffffffffffffffff",
             `after append: ${after.length} records, newest ${after.at(-1)?.fp}`,
           );
-          expect(popupMs < 3000 && dashMs < 4000, `popup ${popupMs} ms, full report ${dashMs} ms`);
+          expect(popupMs < 3000 * patience() && dashMs < 4000, `popup ${popupMs} ms, full report ${dashMs} ms`);
           return `popup ${popupMs} ms, full report ${dashMs} ms`;
         } finally {
           await store.set(ctx, { events: [] });

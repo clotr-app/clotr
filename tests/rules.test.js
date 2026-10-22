@@ -5,6 +5,7 @@
 const test = require("node:test");
 const assert = require("node:assert/strict");
 const fs = require("fs");
+const systemOs = require("os");
 const path = require("path");
 const vm = require("vm");
 
@@ -13,6 +14,38 @@ const manifest = JSON.parse(fs.readFileSync(path.join(EXT, "manifest.json"), "ut
 const scripts = fs.readdirSync(EXT).filter((f) => f.endsWith(".js"));
 const htmls = fs.readdirSync(EXT).filter((f) => f.endsWith(".html"));
 const cssFiles = fs.readdirSync(EXT).filter((f) => f.endsWith(".css"));
+
+function extensionTextFiles() {
+  const files = [];
+  const visit = (dir) => {
+    for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+      const full = path.join(dir, entry.name);
+      if (entry.isDirectory()) visit(full);
+      else if (/\.(js|css|json)$/.test(entry.name)) files.push(path.relative(EXT, full).replace(/\\/g, "/"));
+    }
+  };
+  visit(EXT);
+  return files;
+}
+
+// The exporter stays private, so the public repo's copy of this test can't load it: there the word scan is skipped
+// (null), and the internal-reference regex still runs on every shipped file.
+const EXPORTER = path.join(__dirname, "..", "tools", "export-public.js");
+function extensionPrivateWordHits(files) {
+  if (!fs.existsSync(EXPORTER)) return null;
+  const { privateWords } = require(EXPORTER);
+  const snapshot = fs.mkdtempSync(path.join(systemOs.tmpdir(), "clotr-extension-rules-"));
+  try {
+    for (const file of files) {
+      const copy = path.join(snapshot, "extension", file);
+      fs.mkdirSync(path.dirname(copy), { recursive: true });
+      fs.copyFileSync(path.join(EXT, file), copy);
+    }
+    return privateWords(snapshot);
+  } finally {
+    fs.rmSync(snapshot, { recursive: true, force: true });
+  }
+}
 
 // Strips comments out of the source first, so a rule explained in a comment doesn't trip its own scan. Has to
 // walk the source a character at a time rather than just matching /* ... */ and // against the raw text: a
@@ -126,6 +159,22 @@ test("scope: the built-in shape fallback in content.js never runs outside a buil
   assert.ok(fallback, "the fallback's isChatComposer check isn't gated on builtInSite as written");
 });
 
+test("scope: only hosts outside the listed sites use the Everywhere default before settings", () => {
+  globalThis.chrome ??= {};
+  require("../extension/sites.js");
+  const { EVERYDAY_SITES, SEARCH_SITES, SUPPORT_SITES } = globalThis.ClotrSites;
+  const expectedHosts = [...EVERYDAY_SITES, ...SEARCH_SITES, ...SUPPORT_SITES].flatMap((site) =>
+    site.matches.map((match) => new URL(match.replace(/\*$/, "")).hostname),
+  );
+  const src = code("content.js");
+  const hosts = /const LISTED_SITE_HOSTS = new Set\((\[[\s\S]*?\])\);/.exec(src);
+  assert.ok(hosts, "the content script's listed hosts are present");
+  assert.deepEqual(JSON.parse(hosts[1].replace(/,\s*\]$/, "]")).sort(), [...new Set(expectedHosts)].sort());
+  assert.match(src, /const knownSite = builtInSite \|\| LISTED_SITE_HOSTS\.has\(location\.hostname\);/);
+  assert.match(src, /let everywhere = !knownSite;/);
+  assert.match(src, /everywhere = everywhere && r\.everywhere === true;/);
+});
+
 // A permission like webRequest, declarativeNetRequest, debugger, tabs, cookies or history would let a
 // compromised copy of Clotr read or reroute traffic across the whole browser, far beyond the AI sites it
 // protects. This checks every manifest the build produces: the one Chrome and Edge ship from extension/, and
@@ -133,22 +182,28 @@ test("scope: the built-in shape fallback in content.js never runs outside a buil
 test("scope: no manifest the build produces gains a permission that can read or reroute traffic", () => {
   const { firefoxManifest, build } = require("../tools/package.js");
   const banned = ["webRequest", "webRequestBlocking", "debugger", "history", "tabs", "cookies"];
-  // Only Extension check's management permission, read-only and asked for only when someone clicks to check.
-  const allowedOptional = new Set(["management"]);
+  // Management and native messaging are optional: Extension check and One Clotr use them only when enabled.
+  const allowedOptional = new Set(["management", "nativeMessaging"]);
   for (const m of [manifest, firefoxManifest(JSON.parse(JSON.stringify(manifest)))]) {
     for (const p of m.permissions || []) {
       assert.ok(!banned.includes(p) && !p.startsWith("declarativeNetRequest"), `required permission gained: ${p}`);
     }
     for (const p of m.optional_permissions || []) assert.ok(allowedOptional.has(p), `optional permission gained: ${p}`);
   }
-  // The shipped build's optional permission follows Extension check's own flag, whichever way it's set, not a
-  // build that's hardcoded to assume it's off.
+  // Each shipped optional permission follows the flag for the feature that uses it.
   const extcheckOn = Boolean(manifest.clotr_features.extcheck);
+  const oneclotrOn = Boolean(manifest.clotr_features.oneclotr);
   const shipped = build({ zip: false }).manifest;
-  assert.deepEqual(shipped.optional_permissions ?? [], extcheckOn ? ["management"] : []);
-  // Flipping the flag the other way proves it's the flag driving this, not the build's current state.
+  assert.deepEqual(shipped.optional_permissions ?? [], [
+    ...(extcheckOn ? ["management"] : []),
+    ...(oneclotrOn ? ["nativeMessaging"] : []),
+  ]);
+  // Flipping Extension check proves its permission follows that flag, while One Clotr stays off.
   const flipped = build({ zip: false, features: { extcheck: !extcheckOn } }).manifest;
-  assert.deepEqual(flipped.optional_permissions ?? [], extcheckOn ? [] : ["management"]);
+  assert.deepEqual(flipped.optional_permissions ?? [], [
+    ...(!extcheckOn ? ["management"] : []),
+    ...(oneclotrOn ? ["nativeMessaging"] : []),
+  ]);
 });
 
 // Email and chat apps are never built in. Each one runs Clotr only after the person switches it on and the
@@ -195,7 +250,7 @@ test("scope: search and support sites are specific https hosts and never built i
   }
 });
 
-// Clotr only ever asks the browser for a new permission in six places. requestEverydayApps and requestMoreSites
+// Clotr only ever asks the browser for a new permission in its explicit click handlers. requestEverydayApps and requestMoreSites
 // in sites.js ask for listed email/chat apps or listed search/support sites by name, so they can only request
 // addresses already on those lists. requestEverywhere, also in sites.js, asks for the one broad origin the
 // manifest already lists as optional, for "Everywhere I type". protectSite in popup.js asks for the single site
@@ -210,12 +265,13 @@ const ASK_ALLOWED = {
   "popup.js": ["protectSite", "allowBuiltInHere"],
   "vault.js": ["askForAiChats"],
   "extcheck.js": ["startCheck"],
+  "one-clotr-bridge.js": ["connectFromClick"],
 };
 
 // Finds where a function's body starts and ends in a source string, counting braces and skipping over quoted
 // strings.
 function functionSpan(src, name) {
-  const m = new RegExp(`function\\s+${name}\\s*\\(`).exec(src);
+  const m = new RegExp(`(?:function\\s+|async\\s+)?${name}\\s*\\(`).exec(src);
   if (!m) return null;
   let i = src.indexOf("{", m.index);
   const start = i;
@@ -525,6 +581,47 @@ test("the HTML-comment and internal-reference check catches what it's meant to",
   }
 });
 
+test("shipped scripts, styles and locale data carry no internal references or private names", () => {
+  const files = extensionTextFiles();
+  for (const f of files) {
+    const text = fs.readFileSync(path.join(EXT, f), "utf8");
+    const hit = text.match(INTERNAL_REF);
+    assert.ok(!hit, `${f}: carries an internal reference (${hit && hit[0]})`);
+  }
+  assert.deepEqual(extensionPrivateWordHits(files) ?? [], []);
+});
+
+test("the shipped-code internal-reference check catches planted scripts, styles and locale data", () => {
+  const suffix = `${process.pid}-${Date.now()}`;
+  // The planted words are assembled at run time so this file's own text never carries them: the public export's
+  // strict word scan reads the tests too.
+  const who = ["the", "maintainer"].join(" ");
+  const bot = ["clotr", "builder"].join("-");
+  const planted = [
+    [`zz-rule-check-planted-${suffix}.js`, `// ${"D" + 123} ${bot}\n`],
+    [`zz-rule-check-planted-${suffix}.css`, `/* ${"R" + 98} ${who} */\n`],
+    [`zz-rule-check-planted-${suffix}.json`, `{"reference":"${"Q" + 98}","note":"${who}"}\n`],
+  ];
+  try {
+    for (const [file, contents] of planted) fs.writeFileSync(path.join(EXT, file), contents);
+    const files = extensionTextFiles();
+    for (const [file] of planted) {
+      assert.ok(files.includes(file), `${file}: was not scanned`);
+      assert.match(fs.readFileSync(path.join(EXT, file), "utf8"), INTERNAL_REF, file);
+    }
+    const scanned = extensionPrivateWordHits(files);
+    for (const [file] of planted) {
+      if (scanned === null) break; // the public copy has no exporter to scan with
+      assert.ok(
+        scanned.some((hit) => hit.startsWith(`extension/${file}:`)),
+        `${file}: private wording was not caught`,
+      );
+    }
+  } finally {
+    for (const [file] of planted) fs.rmSync(path.join(EXT, file), { force: true });
+  }
+});
+
 // Clotr's scripts inside an AI page share that page with the site's own code, so a message that removes or
 // loosens a protected detail, replaces every setting, clears history, or answers Clotr's own page about warning
 // less on every site only gets accepted from Clotr's own pages.
@@ -747,8 +844,7 @@ test("no invisible or bidi-control characters in shipped files", () => {
 // Logs end up in bug reports, so a log line may name kinds of data by their ids, but never a detected value, the
 // draft text, or a file name.
 test("console output never includes detected values, drafts or file names", () => {
-  const bad = [];
-  for (const f of [
+  const minimum = [
     "content.js",
     "warning-ui.js",
     "vault.js",
@@ -768,7 +864,13 @@ test("console output never includes detected values, drafts or file names", () =
     "sites.js",
     "editor.js",
     "zip.js",
-  ]) {
+  ];
+  assert.ok(
+    minimum.every((f) => scripts.includes(f)),
+    "the earlier console files remain part of the scan",
+  );
+  const bad = [];
+  for (const f of scripts) {
     const text = fs.readFileSync(path.join(EXT, f), "utf8");
     for (const m of text.matchAll(/console\.(log|info|warn|error|debug)\(/g)) {
       // Reads the whole call, even one spanning several lines, up to its closing parenthesis, skipping over strings.
@@ -797,6 +899,52 @@ test("console output never includes detected values, drafts or file names", () =
     }
   }
   assert.deepEqual(bad, []);
+});
+
+function loggedCalls(text) {
+  const calls = [];
+  for (const match of text.matchAll(/console\.(log|info|warn|error|debug)\(/g)) {
+    let depth = 0;
+    let end = match.index;
+    for (let i = match.index + match[0].length - 1, quote = null; i < text.length; i++) {
+      const c = text[i];
+      if (quote) {
+        if (c === "\\") i++;
+        else if (c === quote) quote = null;
+      } else if (c === '"' || c === "'" || c === "`") quote = c;
+      else if (c === "(") depth++;
+      else if (c === ")" && --depth === 0) {
+        end = i + 1;
+        break;
+      }
+    }
+    calls.push(text.slice(match.index, end));
+  }
+  return calls;
+}
+
+test("content scripts never log a page address, title or attached-file name", () => {
+  const files = manifest.content_scripts.flatMap((entry) => entry.js);
+  const sensitive = /\b(?:location\s*\.\s*(?:href|search)|document\s*\.\s*(?:URL|title)|file\s*\.\s*name)\b/i;
+  const issues = (names) =>
+    names.flatMap((file) =>
+      loggedCalls(fs.readFileSync(path.join(EXT, file), "utf8"))
+        .filter((call) => sensitive.test(call))
+        .map((call) => `${file}:${call.replace(/\s+/g, " ").slice(0, 100)}`),
+    );
+  const suffix = `${process.pid}-${Date.now()}`;
+  const planted = `zz-rule-check-planted-${suffix}.js`;
+  try {
+    fs.copyFileSync(path.join(EXT, "content.js"), path.join(EXT, planted));
+    fs.appendFileSync(
+      path.join(EXT, planted),
+      "\nconsole.info(LOG, location.href, document.URL, document.title, location.search, file.name);\n",
+    );
+    assert.ok(issues([planted]).length, "the planted page data log was not caught");
+    assert.deepEqual(issues(files), []);
+  } finally {
+    fs.rmSync(path.join(EXT, planted), { force: true });
+  }
 });
 
 // The picture code only reads the file the person attached, inside the page's own frame. It never loads a
@@ -906,16 +1054,29 @@ test("a box-shadow list never includes a custom property that can resolve to non
 // change what runs.
 test("CI: read-only token and actions pinned to commits", () => {
   // Every workflow is read-only by default, pins its actions to commits, and never stores checkout credentials.
-  const dir = path.join(__dirname, "..", ".github", "workflows");
-  const files = fs.readdirSync(dir).filter((f) => /\.ya?ml$/.test(f));
-  assert.ok(files.includes("test.yml"));
-  for (const f of files) {
-    const wf = fs.readFileSync(path.join(dir, f), "utf8");
-    assert.match(wf, /^permissions:\s*\n\s+contents: read/m, `${f}: default permissions must be read-only`);
+  const root = path.join(__dirname, "..");
+  const dirs = [path.join(root, ".github", "workflows")];
+  const publicOverlay = path.join(root, "public", ".github", "workflows");
+  if (fs.existsSync(publicOverlay)) dirs.push(publicOverlay);
+  const workflows = dirs.flatMap((dir) =>
+    fs
+      .readdirSync(dir)
+      .filter((f) => /\.ya?ml$/.test(f))
+      .map((file) => ({ file, path: path.join(dir, file) })),
+  );
+  assert.ok(workflows.some(({ file }) => file === "test.yml"));
+  assert.ok(
+    workflows.some(({ file }) => file === "nightly.yml"),
+    "the nightly workflow must be checked",
+  );
+  for (const { path: workflowPath } of workflows) {
+    const wf = fs.readFileSync(workflowPath, "utf8");
+    const name = path.relative(root, workflowPath);
+    assert.match(wf, /^permissions:\s*\n\s+contents: read/m, `${name}: default permissions must be read-only`);
     const uses = [...wf.matchAll(/uses:\s*([^\s#]+)/g)].map((m) => m[1]);
-    for (const u of uses) assert.match(u, /@[0-9a-f]{40}$/, `${f}: ${u} is not pinned to a commit`);
+    for (const u of uses) assert.match(u, /@[0-9a-f]{40}$/, `${name}: ${u} is not pinned to a commit`);
     if (/actions\/checkout@/.test(wf)) {
-      assert.match(wf, /persist-credentials: false/, `${f}: checkout keeps credentials`);
+      assert.match(wf, /persist-credentials: false/, `${name}: checkout keeps credentials`);
     }
   }
 });
@@ -1158,7 +1319,9 @@ test("links point to the public repo's home, clotr-app/clotr, never its old addr
   const root = path.join(__dirname, "..");
   const history =
     /^(CHANGELOG\.md|DECISIONS\.md|TESTING\.md|QUESTIONS\.md|docs[\\/]security-review\.md|docs[\\/]release-review[\\/])/;
-  const skip = /^(node_modules|dist|\.git|tests[\\/]e2e[\\/]output|extension[\\/]bravelogs)([\\/]|$)/;
+  // package.test.js creates this made-up notes file while test files run in parallel.
+  const skip =
+    /^(node_modules|dist|\.git|tests[\\/]e2e[\\/]output|extension[\\/]bravelogs|extension[\\/]zz-private-notes\.txt)([\\/]|$)/;
   const hits = [];
   const walk = (dir) => {
     for (const e of fs.readdirSync(path.join(root, dir), { withFileTypes: true })) {
@@ -1181,15 +1344,22 @@ test("the manifest's version is a release (three numbers) or a build between rel
   assert.match(manifest.version, /^\d+\.\d+\.\d+(\.[1-9]\d*)?$/);
 });
 
-// CHANGELOG.md is the public record of what changed, so its newest section has to be the version currently
-// being built. A build between releases collects its notes under "## Unreleased" until the release gives them a
-// name.
-test("CHANGELOG.md's newest section is the manifest's version, or Unreleased for a build", () => {
+// CHANGELOG.md is the public record of what changed. Browser builds and app work between releases collect notes
+// under "## Unreleased" until the next release gives them a name. A released version always has its own section:
+// at the release it's the newest one, and once app work starts again it sits right under a new Unreleased.
+test("CHANGELOG.md's newest section is the manifest's version, or Unreleased for app work", () => {
   const { version } = JSON.parse(fs.readFileSync(path.join(EXT, "manifest.json"), "utf8"));
   const log = fs.readFileSync(path.join(__dirname, "..", "CHANGELOG.md"), "utf8");
   const newest = (log.match(/^## .*/m) || [""])[0];
-  if (version.split(".").length === 4) assert.equal(newest, "## Unreleased", "a build's notes go under ## Unreleased");
-  else assert.ok(newest.startsWith(`## ${version} `), `CHANGELOG.md's newest section isn't "## ${version}"`);
+  const vscodeApp = path.join(__dirname, "..", "apps", "vscode", "package.json");
+  if (version.split(".").length === 4) {
+    assert.equal(newest, "## Unreleased", "a build's notes go under ## Unreleased");
+    return;
+  }
+  const released = log.includes(`\n## ${version} (`);
+  if (newest === "## Unreleased" && fs.existsSync(vscodeApp)) {
+    assert.ok(released, `CHANGELOG.md has no "## ${version} (date)" section under Unreleased`);
+  } else assert.ok(newest.startsWith(`## ${version} `), `CHANGELOG.md's newest section isn't "## ${version}"`);
 });
 
 // The public versioning standard has to exist, name the three kinds of release, and be linked from the public
@@ -1832,7 +2002,17 @@ test(
 // view. Each check reads a folder, so each one is proven on a planted fixture as well as run over the real apps
 // folder; a checkout without that folder simply has nothing to check, but the fixtures still run.
 const APPS = path.join(__dirname, "..", "apps");
-const NOT_SOURCE = new Set(["node_modules", ".git", "dist", "build", "target", ".gradle", ".idea", "DerivedData"]);
+const NOT_SOURCE = new Set([
+  "node_modules",
+  ".git",
+  "dist",
+  "build",
+  "target",
+  ".gradle",
+  ".intellijPlatform",
+  ".idea",
+  "DerivedData",
+]);
 
 // Lists every file under dir, skipping built output, as paths like "a/b.kt".
 function appFiles(dir) {
@@ -1867,7 +2047,15 @@ const langOf = (rel) => LANGS.find(([, re]) => re.test(rel))?.[0] || null;
 // Strips a file's comments out while keeping its line numbers lined up: // and /* */ in C-like languages,
 // <!-- --> in XML and HTML, # in TOML. That way a rule explained in a comment doesn't trip its own check.
 function appCode(dir, rel) {
-  const text = fs.readFileSync(path.join(dir, rel), "utf8");
+  let text;
+  try {
+    text = fs.readFileSync(path.join(dir, rel), "utf8");
+  } catch (err) {
+    // The editor tests build a Guard copy inside their own folder and remove it again while this walk runs in
+    // parallel; a file that was listed and is gone by the time it's read is theirs, not a shipped file.
+    if (err.code === "ENOENT") return "";
+    throw err;
+  }
   const blank = (m) => m.replace(/[^\n]/g, "");
   if (/\.(xml|plist|html?)$/i.test(rel)) return text.replace(/<!--[\s\S]*?-->/g, blank);
   if (/\.(toml|lock)$/i.test(rel)) return text.replace(/(^|\s)#.*$/gm, "$1");
@@ -2303,6 +2491,20 @@ test("apps: nothing goes online (network code, network libraries, the internet p
   }
 });
 
+test("Clotr for VS Code stays local, starts after VS Code opens, and has no runtime dependencies", () => {
+  const dir = path.join(APPS, "vscode");
+  if (!fs.existsSync(path.join(dir, "package.json"))) return;
+  const vscodeManifest = JSON.parse(fs.readFileSync(path.join(dir, "package.json"), "utf8"));
+  assert.deepEqual(vscodeManifest.dependencies || {}, {});
+  assert.ok(vscodeManifest.activationEvents.includes("onStartupFinished"));
+  assert.ok(!vscodeManifest.activationEvents.includes("*"));
+  const source = fs.readFileSync(path.join(dir, "extension.js"), "utf8");
+  assert.doesNotMatch(source, /\b(?:fetch|WebSocket|XMLHttpRequest|sendBeacon)\s*\(/);
+  assert.match(source, /new vm\.Script\(bundle\)\.runInContext/);
+  assert.match(source, /host\.check\(/);
+  assert.match(source, /host\.redact\(/);
+});
+
 test("apps: nothing detected is stored (one writer, backups off, no word learning, logs that name kinds only)", () => {
   assert.deepEqual(appsStorageOffenders(APPS), []);
   withPlanted(GOOD_APP, (dir) => assert.deepEqual(appsStorageOffenders(dir), []));
@@ -2598,4 +2800,46 @@ test("the Android upload key stays out of the repository: .gitignore covers .jks
     .split("\n")
     .map((l) => l.trim());
   for (const pattern of ["*.jks", "*.keystore", "keystore.properties"]) assert.ok(ignored.includes(pattern), pattern);
+});
+
+// Guard runs before a prompt leaves the computer, so a future network helper here would defeat the point.
+test("Clotr Guard has no network calls in its JavaScript", () => {
+  const root = path.join(__dirname, "..", "apps", "guard");
+  if (!fs.existsSync(root)) return;
+  const files = [];
+  const visit = (dir) => {
+    for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+      const file = path.join(dir, entry.name);
+      if (entry.isDirectory()) {
+        if (entry.name !== "dist") visit(file);
+      } else if (entry.isFile() && entry.name.endsWith(".js")) files.push(file);
+    }
+  };
+  visit(root);
+  const network = /\b(?:fetch|XMLHttpRequest|WebSocket)\b|node:https?|https?\.request|net\.connect|axios|got\s*\(/i;
+  const hits = files.flatMap((file) => {
+    const source = fs.readFileSync(file, "utf8").replace(/\/\*[\s\S]*?\*\/|\/\/[^\r\n]*/g, "");
+    return network.test(source) ? [path.relative(root, file)] : [];
+  });
+  assert.deepEqual(hits, []);
+});
+
+test("the local text checker stays on this computer, does not store text, and does not log it", () => {
+  const root = path.join(__dirname, "..", "apps", ["m", "cp"].join(""));
+  if (!fs.existsSync(root)) return;
+  const files = appFiles(root).filter((file) => file.endsWith(".js"));
+  const network =
+    /\b(?:fetch|XMLHttpRequest|WebSocket|EventSource|sendBeacon)\b|node:https?|https?\.request|net\.connect|axios|got\s*\(/i;
+  const storage =
+    /\b(?:writeFileSync|appendFileSync|createWriteStream|writeFile|appendFile|mkdirSync|rmSync|localStorage|sessionStorage|indexedDB)\b/;
+  const logging = /\bconsole\.(?:log|debug|info|warn|error)\s*\(/;
+  const hits = files.flatMap((file) => {
+    const source = appCode(root, file);
+    const reasons = [];
+    if (network.test(source)) reasons.push("network call");
+    if (storage.test(source)) reasons.push("text storage");
+    if (logging.test(source)) reasons.push("text logging");
+    return reasons.map((reason) => `${file}: ${reason}`);
+  });
+  assert.deepEqual(hits, []);
 });

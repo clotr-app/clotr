@@ -708,6 +708,13 @@ module.exports = async function (env) {
         for (const theme of ["light", "dark"]) {
           await page.emulateMediaFeatures([{ name: "prefers-color-scheme", value: theme }]);
           await sleep(150);
+          if (where.includes("settings") || where === "the end card") {
+            const state = where
+              .toLowerCase()
+              .replace(/[^a-z0-9]+/g, "-")
+              .replace(/^-|-$/g, "");
+            await page.screenshot({ path: path.join(OUT, `tq16-${state}-${theme}.png`), fullPage: true });
+          }
           if (!(await page.evaluate(() => typeof axe === "object"))) await page.evaluate(AXE);
           const found = await page.evaluate(async () =>
             (await axe.run(document, { resultTypes: ["violations"] })).violations

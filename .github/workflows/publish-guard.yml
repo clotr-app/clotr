@@ -1,0 +1,84 @@
+# Publishes Clotr Guard and clotr-engine to npm with provenance, a signed record of which commit and which workflow run
+# built each package, which npm shows on the package page and `npm audit signatures` checks after an install. It runs
+# only when someone starts it from the Actions tab on one of Guard's own tags (guard-v0.1.0 for Guard 0.1.0), never on
+# a push, a pull request or a schedule. Guard's tags start with "guard-", so they never start the extension's Release
+# workflow, which builds on v* tags.
+name: Publish Clotr Guard and clotr-engine
+
+on:
+  workflow_dispatch:
+
+# Read-only by default, as every workflow here is. Only the publish job gets an ID token.
+permissions:
+  contents: read
+
+jobs:
+  publish:
+    # npm signs provenance only on GitHub's own runners.
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    # The npm environment holds the publish token and asks a required reviewer to approve the run before it starts.
+    # npm's trusted publisher can be tied to it as well.
+    environment:
+      name: npm
+      url: https://www.npmjs.com/package/clotr-guard
+    permissions:
+      contents: read
+      id-token: write # the identity npm signs the provenance with, and trusted publishing's sign-in
+    steps:
+      - name: Only from one of Guard's tags
+        run: |
+          case "$GITHUB_REF" in
+            refs/tags/guard-v*) ;;
+            *) echo "Start this from one of Guard's tags (guard-v...), not $GITHUB_REF"; exit 1 ;;
+          esac
+      # Pinned to the same commits as the release workflow, so a moved tag can't change what runs.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      # Node 24 comes with npm 11, which can sign in through a trusted publisher as well as sign provenance.
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 24
+          package-manager-cache: false
+          registry-url: https://registry.npmjs.org
+      - run: npm ci
+      - run: npm test
+      - name: Guard's version is the tag's
+        run: |
+          guard="guard-v$(node -p "require('./apps/guard/package.json').version")"
+          test "$guard" = "$GITHUB_REF_NAME" || { echo "tag $GITHUB_REF_NAME but Guard says $guard"; exit 1; }
+      # Guard's package.json says "private": true, so npm refuses to publish it from anyone's clone by mistake. This
+      # run, started by hand and approved in the npm environment, is the one place it comes off, in this runner only.
+      - name: Let npm publish this copy
+        working-directory: apps/guard
+        run: npm pkg delete private
+      # prepack builds dist/clotr-engine.js from this checkout before the tarball is made. With a trusted publisher set
+      # up on npmjs.com, npm signs in through this run's ID token and NPM_TOKEN can be left unset. The first version
+      # needs the token, since a trusted publisher can only be added to a package that exists.
+      - name: Publish with provenance
+        working-directory: apps/guard
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: npm publish --provenance --access public
+      # clotr-engine goes out in the same approved run. Its prepack builds its bundle and runs its own tests, which
+      # check that the source keeps "private": true, so a dry-run pack runs it here first, while the flag is on.
+      - name: Build and test clotr-engine
+        working-directory: apps/engine
+        run: npm pack --dry-run
+      - name: Let npm publish this copy of clotr-engine
+        working-directory: apps/engine
+        run: npm pkg delete private
+      # The engine's version follows the extension's, so a later Guard tag often finds it on npm already and leaves it.
+      # Its scripts already ran above, so the publish skips them.
+      - name: Publish clotr-engine with provenance
+        working-directory: apps/engine
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: |
+          version="$(node -p "require('./package.json').version")"
+          if [ -n "$(npm view "clotr-engine@$version" version 2>/dev/null)" ]; then
+            echo "clotr-engine $version is on npm already"
+          else
+            npm publish --provenance --access public --ignore-scripts
+          fi

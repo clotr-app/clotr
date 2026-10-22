@@ -41,10 +41,15 @@
       return true;
     }
     if (/JBSW\s?Y3DP\s?EHPK\s?3PXP/i.test(m)) return true; // the two-step sign-in documentation's example secret
-    if (/(.)\1{5,}/.test(m)) return true; // six of the same character in a row
+    // An X (Twitter) bearer token starts with a run of A's, and only the rest of it says whether it's real. A Fly.io
+    // token is base64 of binary fields, whose zero bytes read as runs of A's anywhere in it, so those don't count.
+    const fly = /^FlyV1\s+fm\d_/.exec(m);
+    if (fly && m.slice(fly[0].length).replace(/A/g, "").length < 40) return true; // mostly A's: no real fields
+    const body = (fly ? m.replace(/A{6,}/g, "A") : m).replace(/^A{20,24}(?=[A-Za-z0-9%]{40})/, "");
+    if (/(.)\1{5,}/.test(body)) return true; // six of the same character in a row
     let run = 1; // a long alphabet/number sequence: ABCDEFGH, 12345678
-    for (let i = 1; i < m.length; i++) {
-      run = m.charCodeAt(i) === m.charCodeAt(i - 1) + 1 && /[A-Za-z0-9]/.test(m[i]) ? run + 1 : 1;
+    for (let i = 1; i < body.length; i++) {
+      run = body.charCodeAt(i) === body.charCodeAt(i - 1) + 1 && /[A-Za-z0-9]/.test(body[i]) ? run + 1 : 1;
       if (run >= 8) return true;
     }
     return false;
@@ -56,6 +61,19 @@
     return Object.values(counts).reduce((h, c) => h - (c / s.length) * Math.log2(c / s.length), 0);
   }
 
+  // Whether the body has a run of at least `length` characters with no dash or underscore in it. Counting in one
+  // pass keeps a value made of hundreds of thousands of dashes from overflowing the stack, as spreading its pieces
+  // into Math.max once did.
+  function hasUnbrokenRun(body, length) {
+    let run = 0;
+    for (let i = 0; i < body.length; i++) {
+      const code = body.charCodeAt(i);
+      run = code === 45 || code === 95 ? 0 : run + 1;
+      if (run >= length) return true;
+    }
+    return false;
+  }
+
   // A prefix like "sk-" can also start an ordinary word, like "sk-learn-". So I check that what follows it
   // actually looks machine-made: mixed case, digits, and long unbroken runs instead of a slug's dashes.
   function looksRandom(body, minLen = 20) {
@@ -64,9 +82,21 @@
       /\d/.test(body) &&
       /[a-z]/.test(body) &&
       /[A-Z]/.test(body) &&
-      Math.max(...body.split(/[-_]/).map((seg) => seg.length)) >= Math.min(12, minLen) &&
+      hasUnbrokenRun(body, Math.min(12, minLen)) &&
       entropy(body) >= 3.5
     );
+  }
+
+  // Hex has no case to mix, and some providers don't say which case their letters come in, so a body like that
+  // passes on its own terms: digits and letters, a long unbroken run like the one above, and about the spread of
+  // characters random hex has. Repeats like "deadbeef", a run of "abcdef" and a snake_case name all fall short.
+  function looksRandomAnyCase(body) {
+    const s = body.toLowerCase();
+    return /\d/.test(s) && /[a-z]/.test(s) && hasUnbrokenRun(s, 12) && entropy(s.replace(/[-_]/g, "")) >= 3;
+  }
+
+  function looksRandomLetters(body) {
+    return /^[A-Za-z]+$/.test(body) && entropy(body) >= 3.5;
   }
 
   // ---------- Numbers written any way ----------
@@ -636,9 +666,8 @@
           break;
         }
       }
-      // Only once no phone reading fits do I try an SSN or card, and only because of an actual "to" or "for" in
-      // the run, never an ordinary sound-alike: a run of sound-alikes alone can already be nine digits long and
-      // loose enough to pass the SSN shape by chance, which coreAllWords above guards against.
+      // A card's length, issuer and checksum make its full spelled-out value distinctive. A spelled SSN needs
+      // an autocorrect slip because its shape alone is loose enough to fit by chance.
       for (const { lead, trail, all } of combos) {
         if (pick) break;
         const simple =
@@ -697,15 +726,11 @@
     NANP10.test(d) || (d[0] === "1" && NANP10.test(d.slice(1))) || (spanish && /^[6-9]\d{8}$/.test(d));
   // An SSN's shape (same rule as findSSNs): 9 digits, area not 000/666/9xx, group not 00, serial not 0000.
   const VALID_SSN_SHAPE = /^(?!000|666|9)\d{3}(?!00)\d{2}(?!0000)\d{4}$/;
-  // Tests whether the digits alone form an SSN (9 digits, valid shape) or a card number (13 to 19 digits that
-  // start 3 to 6 and pass Luhn). This only runs inside a spelled-out run with a "to" or "for" somewhere in it,
-  // where every word is a single digit ("two", never "twenty" or "double") and nothing is set off by a comma,
-  // semicolon or full stop, so a real SSN or card reads in one breath and something like "Final scores: two
-  // to one, three to two" doesn't match by chance. "To"/"for" only ever supply an edge digit next to a fully
-  // spelled number (keepSoftUnits above), so this never catches a count or price next to "for"/"to".
+  // A full card needs its fixed length, issuer range and Luhn check. A spelled-out SSN is looser, so it also
+  // needs a clear autocorrect slip like "to" or "for" and one digit per word.
   const wholeSsnOrCard = (d, simple) =>
-    simple &&
-    ((d.length === 9 && VALID_SSN_SHAPE.test(d)) || (d.length >= 13 && d.length <= 19 && /^[3-6]/.test(d) && luhn(d)));
+    (d.length >= 13 && d.length <= 19 && /^[3-6]/.test(d) && luhn(d)) ||
+    (simple && d.length === 9 && VALID_SSN_SHAPE.test(d));
   // Toll-free numbers belong to businesses and help lines ("poison control at 1-800-222-1222"), never a person.
   const TOLL_FREE = /^1?8(?:00|33|44|55|66|77|88)/;
   // Spain's free numbers are 9 digits: 900 and 800.
@@ -858,6 +883,51 @@
     return LOCAL_SHAPES.has(sizesOf(run.groups)) || LOCAL_CONTEXT.test(text.slice(Math.max(0, start - 30), start));
   }
 
+  // Local plans use different lengths and groupings; a phone word also allows typing one without separators.
+  const EUROPEAN_NATIONAL_FORMATS = [
+    { digits: (d) => /^0[1-9]\d{8}$/.test(d), groups: new Set(["2,2,2,2,2"]) },
+    {
+      digits: (d) => /^0[2-9]\d{8,10}$/.test(d) || /^01[5-7]\d{8,9}$/.test(d),
+      groups: new Set([
+        "2,8",
+        "2,9",
+        "2,10",
+        "3,7",
+        "3,8",
+        "3,9",
+        "3,3,4",
+        "3,4,4",
+        "4,6",
+        "4,7",
+        "4,8",
+        "4,4,4",
+        "5,6",
+        "5,7",
+      ]),
+    },
+    { digits: (d) => /^04[5-9]\d{7}$/.test(d), groups: new Set(["4,2,2,2", "2,8"]) },
+    { digits: (d) => /^0[1-9]\d{7}$/.test(d), groups: new Set(["2,3,2,2", "2,7"]) },
+    { digits: (d) => /^0[1-9]\d{8}$/.test(d), groups: new Set(["2,8", "3,7", "3,3,4", "2,4,4"]) },
+    { digits: (d) => /^[6-9]\d{8}$/.test(d), groups: new Set(["3,2,2,2", "2,3,2,2", "3,3,3"]) },
+    { digits: (d) => /^(?:0[1-9]|3\d)\d{8}$/.test(d), groups: new Set(["2,4,4", "2,3,5", "3,3,4", "3,4,3"]) },
+  ];
+  const EUROPEAN_NUMBER_LABEL_BEFORE =
+    /(?<![\p{L}])(?:version|password|passcode|pin|secret|token|credential|anydesk\s+code|remote\s+access\s+code|c[oó]digo\s+de\s+anydesk|api[\s_-]*key)(?![\p{L}])[^\d\n]{0,25}$/iu;
+  function europeanNationalPhone(text, run) {
+    const digits = digitsOf(run.groups);
+    if (![9, 10, 11, 12].includes(digits.length)) return false;
+    if (hasWord(run.groups) || labelledAsOther(text, run) || ssnLabelBefore(text, run)) return false;
+    const sizes = sizesOf(run.groups);
+    const start = run.units[0].start;
+    const before = text.slice(Math.max(0, start - 30), start);
+    if (EUROPEAN_NUMBER_LABEL_BEFORE.test(before) && !PHONE_WORD.test(before)) return false;
+    const grouped = /[ .-]/.test(spanText(text, run.groups));
+    const phoneWord = PHONE_CONTEXT.test(before);
+    return EUROPEAN_NATIONAL_FORMATS.some(
+      (format) => format.digits(digits) && ((grouped && format.groups.has(sizes)) || phoneWord),
+    );
+  }
+
   // A number labelled as something else isn't read as a phone, as with "Order #445-2231987" or "meeting ID is
   // 845 2931 7710". The label can sit a few words back, like "El ID de la reunión de Zoom es …", but a phone
   // word after it wins instead, as in "about the order, call me at …".
@@ -895,8 +965,7 @@
   // The digits at the end of a VIN-shaped code aren't a phone, even together with the number right after
   // them. "1HGCM82633A004352 2003", a VIN and its year sitting side by side in a spreadsheet, isn't the
   // phone number "004352 2003".
-  function inVinCode(text, run) {
-    const at = run.units[0].start;
+  function inVinCode(text, at) {
     const back = /[A-Z\d]{0,17}$/.exec(text.slice(Math.max(0, at - 17), at))[0].length;
     if (/[A-Za-z\d]/.test(text[at - back - 1] || "")) return false;
     const code = /^[A-Z\d]*/.exec(text.slice(at - back, at - back + 18))[0];
@@ -909,20 +978,60 @@
     run.groups[0][0].digits === "1" &&
     /(?<![\p{L}\d])S-$/u.test(text.slice(Math.max(0, run.units[0].start - 3), run.units[0].start));
 
+  // Log times can look like a phone when adjacent date and clock digits are grouped together.
+  const LOG_TIMESTAMP_PATTERNS = [
+    /\b\d{4}-\d{2}-\d{2}[ T]\d{2}:\d{2}:\d{2}(?:[.,]\d{1,9})?(?:Z|[+-]\d{2}:?\d{2})?\b/gi,
+    /\[\d{2}\/[A-Za-z]{3}\/\d{4}:\d{2}:\d{2}:\d{2}\s+[+-]\d{4}\]/g,
+    /\b[A-Za-z]{3}\s+\d{1,2}\s+\d{2}:\d{2}:\d{2}\b/g,
+    /\b\d{1,2}\/\d{1,2}\/\d{4}\s+\d{1,2}:\d{2}:\d{2}(?:\.\d+)?\s*(?:AM|PM)\b/gi,
+    /\b\d{2}:\d{2}:\d{2}\.\d{3,}\b/g,
+    /(?<![\w-])["']?(?:@timestamp|ts|timestamp|time|created_at|createdAt|eventTime|timeCreated)["']?\s*:\s*["']?(\d{10}(?:\d{3})?)["']?/gi,
+    /\b(?:took|lasted|duration|elapsed)(?:\s+(?:for|of))?\s+(\d+(?:\.\d+)?)\s*(?:ms|milliseconds?)\b/gi,
+  ];
+  function logTimestampRanges(text) {
+    const ranges = [];
+    for (const pattern of LOG_TIMESTAMP_PATTERNS) {
+      pattern.lastIndex = 0;
+      for (const match of text.matchAll(pattern)) {
+        const start = match.index + (match[1] ? match[0].indexOf(match[1]) : 0);
+        const value = match[1] || match[0];
+        // An epoch field only counts as a time when it lands between 2001 and 2036 (seconds, or milliseconds), so
+        // "any time: 5558675309" still reads as the phone number it is.
+        if (/^\d{10}$/.test(value) && (value < "1000000000" || value > "2100000000")) continue;
+        if (/^\d{13}$/.test(value) && (value < "1000000000000" || value > "2100000000000")) continue;
+        ranges.push([start, start + value.length]);
+      }
+    }
+    return ranges;
+  }
+
   function findPhones(text) {
     const found = [];
-    for (const m of text.matchAll(/(?<![\p{L}])([A-Za-z])(\d{10})(?!\d)/gu)) {
-      if (/^[2-9]\d{9}$/.test(m[2])) found.push(m[2]);
+    let timestamps;
+    const addPhone = (start, end) => {
+      // Most text has no phone candidate, so don't scan it for log shapes.
+      timestamps ??= logTimestampRanges(text);
+      if (!timestamps.some(([begin, finish]) => start >= begin && end <= finish)) found.push(text.slice(start, end));
+    };
+    for (const m of text.matchAll(/(?<![\p{L}\d])([A-Za-z])(\d{10})(?![\p{L}\d])/gu)) {
+      const start = m.index + m[0].indexOf(m[2]);
+      if (/^[2-9]\d{9}$/.test(m[2]) && !inVinCode(text, start)) addPhone(start, m.index + m[0].length);
     }
     for (const run of numberRuns(text)) {
       if (labelledAsOther(text, run) || tollFree(digitsOf(run.groups)) || counting(text, run)) continue;
-      if (ndcCode(text, run) || inVinCode(text, run) || windowsSid(text, run) || inFileName(text, run)) continue;
+      if (ndcCode(text, run) || inVinCode(text, run.units[0].start) || windowsSid(text, run) || inFileName(text, run)) {
+        continue;
+      }
       if (localPhone(text, run)) {
-        found.push(spanText(text, run.groups));
+        addPhone(run.groups[0][0].start, run.groups.at(-1).at(-1).end);
+        continue;
+      }
+      if (europeanNationalPhone(text, run)) {
+        addPhone(run.groups[0][0].start, run.groups.at(-1).at(-1).end);
         continue;
       }
       if (digitsOf(run.groups).length === 9 && phoneContextBefore(text, run)) {
-        found.push(spanText(text, run.groups));
+        addPhone(run.groups[0][0].start, run.groups.at(-1).at(-1).end);
         continue;
       }
       // A dotted IPv4 address ("73.162.44.201") has phone-like digits but isn't one.
@@ -957,7 +1066,7 @@
           // Include an opening "(" or "+" right before the number, so redaction doesn't leave it behind.
           const first = g[s][0].start;
           const lead = /[(+]/.test(text[first - 1] || "") ? 1 : 0;
-          found.push(text.slice(first - lead, g[bestEnd].at(-1).end));
+          addPhone(first - lead, g[bestEnd].at(-1).end);
           s = bestEnd + 1;
         } else {
           s++;
@@ -979,11 +1088,12 @@
   // When a card number is typed in parts, it's grouped in fours, with a shorter last group for 13 or 19
   // digits, or as 4-6-5 for American Express and 4-6-4 for Diners Club, matching how it's printed on the
   // card. Amazon's order numbers, grouped 3-7-7, pass the Luhn sum about 1 time in 10 too.
-  const CARD_GROUPS = /^(?:\d+|(?:\d{4}[ -])+\d{1,4}|\d{4}[ -]\d{6}[ -]\d{4,5})$/;
+  // Some valid card numbers are split into groups of three; Luhn and the issuer prefix still have to pass.
+  const CARD_GROUPS = /^(?:\d+|(?:\d{4}[ -])+\d{1,4}|(?:\d{3}[ -]){5}\d|\d{4}[ -]\d{6}[ -]\d{4,5})$/;
   // The digits of an IBAN, or of a code shaped like one such as "es16 3435 8224 …" in any case, aren't a
   // card. An IBAN printed in groups of four has a run of digits that happens to pass the Luhn sum about 1
   // time in 10.
-  const IBAN_SHAPED = /\b[a-z]{2}\d{2}(?: ?[a-z0-9]{4}){2,7}(?: ?[a-z0-9]{1,4})?\b/gi;
+  const IBAN_SHAPED = /\b[a-z]{2}\d{2}(?:[ -]?[a-z0-9]){11,30}\b/gi;
   // The issuer prefix and length each real card network uses (IIN ranges, ISO/IEC 7812). A bare number must
   // fit one of these, since Luhn alone passes about 1 in 10 random numbers; a number a label already calls a
   // card keeps the simpler Luhn-only rule, so a network not listed here, or a new one, still counts.
@@ -1031,8 +1141,22 @@
       const d = digitsOf(run.groups);
       if (/^[3-6]/.test(d) && luhn(d)) found.push(spanText(text, run.groups));
     }
+    for (const m of /\d[^\S\n]*\n[^\S\n]*\d/.test(text) ? text.matchAll(CARD_LINES_RE) : []) {
+      const d = m[0].replace(/\D/g, "");
+      if (d.length === 16 && luhn(d) && cardNetwork(d) && cardLabelNear(text, m.index)) found.push(m[0]);
+    }
+    // Written with dots, the way some forms and receipts print it, in exactly four groups of four.
+    for (const m of text.includes(".") ? text.matchAll(CARD_DOTS_RE) : []) {
+      if (luhn(m[0]) && cardNetwork(m[0].replace(/\D/g, ""))) found.push(m[0]);
+    }
     return found;
   }
+  const CARD_DOTS_RE = /(?<![\d.])\d{4}\.\d{4}\.\d{4}\.\d{4}(?![\d.])/g;
+  // A card number typed over two or more lines in its groups of four, only with a card word near it, since a short
+  // list of four-digit numbers one to a line passes the Luhn sum about 1 time in 10. Four groups at most, so a long
+  // run of numbers costs each start only a few steps.
+  const CARD_LINES_RE =
+    /(?<![\d.])\d{4}(?:[ -]\d{4}){0,2}(?:[^\S\n]{0,4}\r?\n[^\S\n]{0,4}\d{4}(?:[ -]\d{4}){0,2}){1,3}(?![\d])/g;
 
   // Finds an SSN written in digits inside a longer list, like "555-555-5636, 219-09-9999": a 3-2-4 group set
   // off by a comma or semicolon, with no comma inside it. A comma followed by a space also joins the parts of a
@@ -1094,10 +1218,11 @@
     for (const run of numberRuns(text)) {
       const d = digitsOf(run.groups);
       if (d.length !== 9) {
-        found.push(...listedSSNs(text, run.groups));
+        for (const ssn of listedSSNs(text, run.groups)) found.push(ssn); // a long list can't be spread into one call
         continue;
       }
       if (phoneContextBefore(text, run)) continue; // "call me at …": a 9-digit phone number, not an SSN
+      if (europeanNationalPhone(text, run)) continue;
       if (counting(text, run)) continue;
       if (inFileName(text, run)) continue; // a release or file name, like "Dune.Part.Two.2024.2160p"
       // Digits need the 3-2-4 shape unless an SSN label says what they are, or the message itself does.
@@ -1152,12 +1277,13 @@
   );
 
   function findEmails(text) {
+    // .invalid is reserved for addresses deliberately made unable to resolve.
     return [
       ...(text.match(EMAIL_RE) || []),
       ...(text.match(EMAIL_BRACKETED) || []),
       ...(text.match(EMAIL_WORDED) || []),
       ...[...text.matchAll(EMAIL_NO_TLD)].map((m) => m[1]),
-    ];
+    ].filter((address) => !/\.invalid$/i.test(address));
   }
 
   // ---------- Where a sentence ends ----------
@@ -1462,7 +1588,7 @@
     for (const m of text.matchAll(ES_STREET_RE)) found.push(m[0]);
     for (const m of text.matchAll(QC_STREET_RE)) found.push(m[0]);
     for (const m of text.matchAll(HOME_COORDINATES)) found.push(m[1]);
-    found.push(...ownPostcodes(text));
+    for (const postcode of ownPostcodes(text)) found.push(postcode);
     // Reads an address all in lowercase, like "vivo en calle mayor 5", but only right after an address phrase
     // that says what follows is one.
     for (const m of text.matchAll(ES_ADDRESS_CONTEXT)) {
@@ -1701,7 +1827,7 @@
   // Reads an IBAN after its name in any case, like "iban: es26 0000 …". On its own, an IBAN must be in
   // capitals instead (see findIbans).
   const IBAN_LABELLED =
-    /(?<![\p{L}])iban(?![\p{L}])\s*(?:(?:[:=#]|(?:is|was|es|era)(?![\p{L}]))\s*)?(?:(?:el|la)\s+)?([a-z]{2}\d{2}(?: ?[a-z0-9]{4}){2,7}(?: ?[a-z0-9]{1,4})?)(?![\p{L}\d])/giu;
+    /(?<![\p{L}])iban(?![\p{L}])\s*(?:(?:[:=#]|(?:is|was|es|era)(?![\p{L}]))\s*)?(?:(?:el|la)\s+)?([a-z]{2}\d{2}(?:[ -]?[a-z0-9]){11,30})(?![\p{L}\d])/giu;
 
   // The number before its name: "1234567890 is my account number", "1234567890 es mi número de cuenta".
   const ACCOUNT_NAMED_AFTER = new RegExp(
@@ -2041,7 +2167,7 @@
 
   // An IBAN is a country's code, 2 check digits, then the account in that country's own layout. The mod-97
   // check has to pass too.
-  const IBAN_RE = /\b[A-Z]{2}\d{2}(?: ?[A-Z0-9]{4}){2,7}(?: ?[A-Z0-9]{1,4})?\b/g;
+  const IBAN_RE = /\b[A-Z]{2}\d{2}(?:[ -]?[A-Z0-9]){11,30}\b/g;
   // Each country's layout after the check digits, from SWIFT's IBAN Registry for ISO 13616 (89 countries).
   // "8n10n" means 8 digits then 10 digits, "a" is a capital letter and "c" is a letter or digit; Germany's
   // IBAN, for example, is 22 all-digit characters after "DE". A code from a country not listed, or of a
@@ -2067,7 +2193,7 @@
     ]),
   );
   function ibanValid(raw) {
-    const s = raw.replace(/ /g, "");
+    const s = raw.replace(/[ -]/g, "");
     if (!IBAN_SHAPES.get(s.slice(0, 2))?.test(s)) return false;
     const moved = (s.slice(4) + s.slice(0, 4)).replace(/[A-Z]/g, (c) => String(c.charCodeAt(0) - 55));
     let rest = 0;
@@ -2089,15 +2215,79 @@
   // Spain: DNI (8 digits + check letter) and NIE (X/Y/Z + 7 digits + check letter). Mexico: CURP
   // (18 characters with a state code and a check digit). All validated, so ordinary codes stay quiet.
   const DNI_LETTERS = "TRWAGMYFPDXBNJZSQVHLCKE";
-  const DNI_RE = /\b(\d{8})[- ]?([A-HJ-NP-TV-Z])\b/g;
-  const NIE_RE = /\b([XYZ])[- ]?(\d{7})[- ]?([A-HJ-NP-TV-Z])\b/g;
+  const SPOKEN_DIGIT_TOKEN = `(?:\\d|zoro|${[...Object.keys(NUMBER_WORDS), ...Object.keys(WEAK_WORDS), ...Object.keys(SLIP_WORDS)].sort().join("|")})`;
+  const SPOKEN_DNI_CANDIDATE = new RegExp(
+    String.raw`\b(?:[XYZ][\s-]*)?${SPOKEN_DIGIT_TOKEN}(?:[\s-]+${SPOKEN_DIGIT_TOKEN}){6,7}[\s-]*[A-HJ-NP-TV-Z]\b`,
+    "i",
+  );
+  const DNI_RE = /\b(\d{8}|\d{1,3}(?:[- ]\d{1,3}){1,2})[- ]?([A-HJ-NP-TV-Z])\b/g;
+  const NIE_RE = /\b([XYZ])[- ]?(\d{7}|\d{1,3}(?:[- ]\d{1,3}){1,2})[- ]?([A-HJ-NP-TV-Z])\b/g;
   const CURP_RE =
-    /\b[A-Z][AEIOUX][A-Z]{2}\d{2}(?:0[1-9]|1[0-2])(?:0[1-9]|[12]\d|3[01])[HMX](?:AS|BC|BS|CC|CL|CM|CS|CH|DF|DG|GT|GR|HG|JC|MC|MN|MS|NT|NL|OC|PL|QT|QR|SP|SL|SR|TC|TS|TL|VZ|YN|ZS|NE)[B-DF-HJ-NP-TV-Z]{3}[0-9A-Z]\d\b/g;
+    /\b[A-Z][AEIOUX][A-Z]{2}\d(?:-?\d){5}[HMX](?:AS|BC|BS|CC|CL|CM|CS|CH|DF|DG|GT|GR|HG|JC|MC|MN|MS|NT|NL|OC|PL|QT|QR|SP|SL|SR|TC|TS|TL|VZ|YN|ZS|NE)[B-DF-HJ-NP-TV-Z]{3}[0-9A-Z]\d\b/g;
   const CURP_CHARS = "0123456789ABCDEFGHIJKLMN\u00d1OPQRSTUVWXYZ";
   function curpValid(c) {
+    const normalized = c.replace(/-/g, "");
     let sum = 0;
-    for (let i = 0; i < 17; i++) sum += CURP_CHARS.indexOf(c[i]) * (18 - i);
-    return String((10 - (sum % 10)) % 10) === c[17];
+    for (let i = 0; i < 17; i++) sum += CURP_CHARS.indexOf(normalized[i]) * (18 - i);
+    return String((10 - (sum % 10)) % 10) === normalized[17];
+  }
+  function spokenDniNie(text) {
+    if (!SPOKEN_DNI_CANDIDATE.test(text)) return [];
+    const found = [];
+    for (const run of readNumberRuns(text, true)) {
+      if (!hasWord(run.groups)) continue;
+      const digits = digitsOf(run.groups);
+      const start = run.units[0].start;
+      const end = run.units.at(-1).end;
+      const check = /^\s*([A-HJ-NP-TV-Z])\b/.exec(text.slice(end));
+      if (!check) continue;
+      const before = text.slice(Math.max(0, start - 4), start);
+      const prefix = /([XYZ])[\s-]*$/i.exec(before);
+      const prefixStart = prefix ? start - prefix[0].length : start;
+      if (prefix && (prefixStart === 0 || !isLetter(text[prefixStart - 1]))) {
+        if (digits.length !== 7) continue;
+        const value = Number("XYZ".indexOf(prefix[1].toUpperCase()) + Number(digits));
+        if (DNI_LETTERS[value % 23] === check[1].toUpperCase()) {
+          found.push(text.slice(start - prefix[0].length, end + check[0].length));
+        }
+      } else if (digits.length === 8 && DNI_LETTERS[Number(digits) % 23] === check[1].toUpperCase()) {
+        found.push(text.slice(start, end + check[0].length));
+      }
+    }
+    return found;
+  }
+  function spokenCurps(text) {
+    const found = [];
+    const tail = String.raw`[HMX](?:AS|BC|BS|CC|CL|CM|CS|CH|DF|DG|GT|GR|HG|JC|MC|MN|MS|NT|NL|OC|PL|QT|QR|SP|SL|SR|TC|TS|TL|VZ|YN|ZS|NE)[B-DF-HJ-NP-TV-Z]{3}`;
+    const spoken = new RegExp(
+      String.raw`\b([A-Z][AEIOUX][A-Z]{2})\s*(${SPOKEN_DIGIT_TOKEN}(?:[\s-]+${SPOKEN_DIGIT_TOKEN}){5})\s*(${tail})\s*(?:([A-Z])\s*(${SPOKEN_DIGIT_TOKEN})|(${SPOKEN_DIGIT_TOKEN})\s*(${SPOKEN_DIGIT_TOKEN}))\b`,
+      "gi",
+    );
+    const toDigit = (token) =>
+      /^\d$/.test(token)
+        ? token
+        : NUMBER_WORDS[token.toLowerCase()] ||
+          WEAK_WORDS[token.toLowerCase()] ||
+          SLIP_WORDS[token.toLowerCase()] ||
+          readSlip(token, 0)?.digits ||
+          "";
+    for (const match of text.matchAll(spoken)) {
+      const date = match[2]
+        .split(/[\s-]+/)
+        .map(toDigit)
+        .join("");
+      const check = match[4] || toDigit(match[6]);
+      const last = toDigit(match[5] || match[7]);
+      if (date.length !== 6 || !/^[A-Z0-9]$/.test(check) || !/^\d$/.test(last)) continue;
+      const value = `${match[1]}${date}${match[3]}${check}${last}`.toUpperCase();
+      CURP_RE.lastIndex = 0;
+      const hasShape = CURP_RE.test(value);
+      CURP_RE.lastIndex = 0;
+      if (hasShape && curpValid(value)) {
+        found.push(match[0]);
+      }
+    }
+    return found;
   }
   // Mexico's RFC (a tax ID: 3 to 4 letters, a date, then 3 characters) and Spain's social security number
   // (12 digits) only count right after their label, since in English "RFC 7231" names an internet standard.
@@ -2122,16 +2312,24 @@
     ...numberAfter(TFN_LABELS, text, tfnValid),
     // A check letter right before a drive separator (E:\, T:/) belongs to the path, not an ID.
     ...[...text.matchAll(DNI_RE)]
-      .filter((m) => DNI_LETTERS[Number(m[1]) % 23] === m[2] && !/^:[\\/]/.test(text.slice(m.index + m[0].length)))
+      .filter(
+        (m) =>
+          m[1].replace(/\D/g, "").length === 8 &&
+          DNI_LETTERS[Number(m[1].replace(/\D/g, "")) % 23] === m[2] &&
+          !/^:[\\/]/.test(text.slice(m.index + m[0].length)),
+      )
       .map((m) => m[0]),
     ...[...text.matchAll(NIE_RE)]
       .filter(
         (m) =>
-          DNI_LETTERS[Number("XYZ".indexOf(m[1]) + m[2]) % 23] === m[3] &&
+          m[2].replace(/\D/g, "").length === 7 &&
+          DNI_LETTERS[Number("XYZ".indexOf(m[1]) + m[2].replace(/\D/g, "")) % 23] === m[3] &&
           !/^:[\\/]/.test(text.slice(m.index + m[0].length)),
       )
       .map((m) => m[0]),
+    ...spokenDniNie(text),
     ...(text.match(CURP_RE) || []).filter(curpValid),
+    ...spokenCurps(text),
     ...spanishNationalIds(text),
   ];
 
@@ -2640,11 +2838,11 @@
     close();
     return found;
   }
-  // Matches a raw private key, either 64 hex characters or a Bitcoin WIF key, written right after
-  // the words "private key" or "wallet key".
+  // Keep a raw private key's label with its value so the finding also matches when checked on its own.
+  // Told in a sentence ("my private key is 0x…") or handed to a wallet's importprivkey command.
   const CRYPTO_KEY_RE =
-    /\b(?:private|priv|wallet|secret)\s*key\b[\s:="'-]{0,6}((?:0x)?[0-9a-fA-F]{64}|[5KL][1-9A-HJ-NP-Za-km-z]{50,51})\b/gi;
-  const findCryptoSecrets = (text) => [...findSeedPhrases(text), ...[...text.matchAll(CRYPTO_KEY_RE)].map((m) => m[1])];
+    /\b(?:[A-Za-z0-9]{1,30}[_-]){0,4}(?:private|priv|wallet|secret)[\s_-]*key\b(?:\s+(?:is|was))?[\s:="'-]{0,6}((?:0x)?[0-9a-fA-F]{64}|[5KL][1-9A-HJ-NP-Za-km-z]{50,51})\b|\bimportprivkey\s+["']?[5KL][1-9A-HJ-NP-Za-km-z]{50,51}\b/gi;
+  const findCryptoSecrets = (text) => [...findSeedPhrases(text), ...[...text.matchAll(CRYPTO_KEY_RE)].map((m) => m[0])];
 
   // ---------- Private keys written as JSON Web Keys ----------
   // A private key can also show up in JWK form (RFC 7517) instead of PEM or OpenSSH, as its own object or
@@ -2715,17 +2913,120 @@
     const found = [];
     for (const span of leafJsonSpans(text)) {
       if (!span.includes("kty")) continue; // cheap skip before paying for a parse
-      if (isPrivateJwk(looseJsonParse(span))) found.push(span);
+      if (isPrivateJwk(looseJsonParse(span))) {
+        found.push(span);
+        continue;
+      }
+      const unescaped = span.replace(/\\(["\\])/g, "$1");
+      if (unescaped !== span && isPrivateJwk(looseJsonParse(unescaped))) found.push(span);
     }
     return found;
   }
 
-  const PEM_PRIVATE_KEY_RE =
-    /-----BEGIN (?:[A-Z]+ )?PRIVATE KEY-----(?:(?:(?!-----BEGIN)[\s\S])*?-----END (?:[A-Z]+ )?PRIVATE KEY-----)?/g;
+  // A missing footer must not leave the base64 body behind when the header is covered.
+  const PEM_HEADER_RE = /-----[ \t]*BEGIN ((?:[A-Z]+ )?PRIVATE KEY(?: BLOCK)?)[ \t]*-----(?!-)/g;
+  const PEM_FOOTER_RE = /-----[ \t]*END (?:[A-Z]+ )?PRIVATE KEY(?: BLOCK)?[ \t]*-----(?!-)/g;
+  function pemBodyEnd(text, from, nextHeader) {
+    const firstBreak = text.indexOf("\n", from);
+    if (firstBreak < 0 || (nextHeader >= 0 && nextHeader < firstBreak)) return from;
+    let position = firstBreak + 1;
+    let end = from;
+    let hasBody = false;
+    let blankBefore = false;
+    while (position <= text.length) {
+      const newline = text.indexOf("\n", position);
+      const rawEnd = newline < 0 ? text.length : newline;
+      const lineEnd = rawEnd > position && text.charCodeAt(rawEnd - 1) === 13 ? rawEnd - 1 : rawEnd;
+      let start = position;
+      while (start < lineEnd && (text[start] === " " || text[start] === "\t")) start++;
+      let stop = lineEnd;
+      while (stop > start && (text[stop - 1] === " " || text[stop - 1] === "\t")) stop--;
+      if (start === stop) {
+        // A chat box that keeps each line as its own paragraph reads one blank line between the key's lines.
+        if (blankBefore || newline < 0) break;
+        blankBefore = true;
+        position = newline + 1;
+        continue;
+      }
+      const line = text.slice(start, stop);
+      // Past a blank line, a plain word like "Thanks" is the message going on, not more of the key.
+      if (blankBefore && !/[\d+/=]/.test(line)) break;
+      blankBefore = false;
+      if (!hasBody && /^(?:Proc-Type:|DEK-Info:)/.test(line)) {
+        // Encrypted PEM keys list their encryption details before the base64 body.
+      } else {
+        let valid = true;
+        for (let i = start; i < stop; i++) {
+          const c = text.charCodeAt(i);
+          if (
+            !(c >= 65 && c <= 90) &&
+            !(c >= 97 && c <= 122) &&
+            !(c >= 48 && c <= 57) &&
+            c !== 43 &&
+            c !== 47 &&
+            c !== 61
+          ) {
+            valid = false;
+            break;
+          }
+        }
+        if (!valid) break;
+        hasBody = true;
+        end = lineEnd;
+      }
+      if (newline < 0) break;
+      position = newline + 1;
+    }
+    return hasBody ? end : from;
+  }
   // A PEM or OpenSSH header and a JWK private key both count as the same `private_key` kind.
   function findPrivateKeys(text) {
-    return [...text.matchAll(PEM_PRIVATE_KEY_RE)].map((m) => m[0]).concat(findJwkPrivateKeys(text));
+    const found = [];
+    const headers = [...text.matchAll(PEM_HEADER_RE)];
+    const footers = [...text.matchAll(PEM_FOOTER_RE)];
+    let footerIndex = 0;
+    for (let i = 0; i < headers.length; i++) {
+      const header = headers[i];
+      const from = header.index + header[0].length;
+      const nextHeader = headers[i + 1]?.index ?? -1;
+      while (footerIndex < footers.length && footers[footerIndex].index < from) footerIndex++;
+      const footer = footers[footerIndex];
+      if (footer && (nextHeader < 0 || footer.index < nextHeader)) {
+        found.push(text.slice(header.index, footer.index + footer[0].length));
+        footerIndex++;
+        continue;
+      }
+      const bodyEnd = pemBodyEnd(text, from, nextHeader);
+      found.push(text.slice(header.index, bodyEnd > from ? bodyEnd : from));
+    }
+    const base64Pem = [];
+    const alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+    // Decode only the recognizable prefix so arbitrary base64 data stays out of the private-key path.
+    for (const match of text.matchAll(/LS0tLS1CRUdJTi[A-Za-z0-9+/=]{40,}(?:\r?\n[ \t]*[A-Za-z0-9+/=]{8,})*/g)) {
+      let bits = 0;
+      let buffer = 0;
+      let decoded = "";
+      const prefix = match[0].replace(/[\r\n \t]/g, "").slice(0, 64);
+      for (const character of prefix) {
+        if (character === "=") break;
+        const value = alphabet.indexOf(character);
+        if (value < 0) break;
+        buffer = (buffer << 6) | value;
+        bits += 6;
+        if (bits >= 8) {
+          bits -= 8;
+          decoded += String.fromCharCode((buffer >> bits) & 255);
+        }
+      }
+      if (decoded.includes("PRIVATE KEY")) base64Pem.push(match[0]);
+    }
+    // A WireGuard config's own key and its peer's shared key (the public key beside them is meant to be shared), and
+    // an age key file's secret line.
+    for (const m of text.matchAll(OTHER_PRIVATE_KEY_RE)) found.push(m[0]);
+    return found.concat(findJwkPrivateKeys(text), base64Pem);
   }
+  const OTHER_PRIVATE_KEY_RE =
+    /\b(?:PrivateKey|PresharedKey)[^\S\n]*=[^\S\n]*[A-Za-z0-9+/]{43}=(?![A-Za-z0-9+/=])|\bAGE-SECRET-KEY-1[02-9AC-HJ-NP-Z]{58}\b/g;
 
   // ---------- Two-step sign-in keys (otp_secret) ----------
   // This is the secret an authenticator app turns into your sign-in codes, so anyone who has it can make
@@ -2877,8 +3178,11 @@
   // ---------- Developer secrets: connection strings, JWTs, internal addresses ----------
 
   // A connection string like scheme://user:password@host, matched only when the password part looks real.
-  const CONN_RE =
-    /\b(?:postgres(?:ql)?|mysql|mariadb|mongodb(?:\+srv)?|redis|rediss|amqps?|mssql|sqlserver|oracle|ftp|sftp|smtp|https?):\/\/[^\s:/@]*:([^\s@/]+)@[^\s"'<>]+/gi;
+  const CONN_SCHEME_RE =
+    /\b(?:postgres(?:ql)?|mysql|mariadb|mongodb(?:\+srv)?|redis|rediss|amqps?|mssql|sqlserver|oracle|ftp|sftp|smtp|https?):\/\//gi;
+  const CONN_USER_END = /[\s:/@]/;
+  const CONN_PASSWORD_END = /[\s@]/;
+  const CONN_HOST_END = /[\s"'<>]/;
   const PLACEHOLDER_PASSWORDS = new Set([
     "password",
     "pass",
@@ -2892,9 +3196,49 @@
     "****",
   ]);
   function findConnectionStrings(text) {
-    return [...text.matchAll(CONN_RE)]
-      .filter((m) => !PLACEHOLDER_PASSWORDS.has(m[1].toLowerCase()) && !/^[<{$[%]/.test(m[1]) && !isPlaceholder(m[1]))
-      .map((m) => trimTrailing(m[0], /[.,;)\]]/));
+    const schemes = text.matchAll(CONN_SCHEME_RE);
+    const first = schemes.next();
+    if (first.done || text.indexOf("@") < 0) return [];
+
+    // Passwords can contain slashes, so a failed candidate needs its next @ without rescanning the text.
+    const nextPasswordEnd = new Int32Array(text.length + 1);
+    let passwordEnd = text.length;
+    for (let i = text.length - 1; i >= 0; i--) {
+      if (CONN_PASSWORD_END.test(text[i])) passwordEnd = i;
+      nextPasswordEnd[i] = passwordEnd;
+    }
+    nextPasswordEnd[text.length] = text.length;
+
+    const found = [];
+    let afterMatch = 0;
+    for (let current = first; !current.done; current = schemes.next()) {
+      const scheme = current.value;
+      if (scheme.index < afterMatch) continue;
+
+      let colon = scheme.index + scheme[0].length;
+      while (colon < text.length && !CONN_USER_END.test(text[colon])) colon++;
+      if (text[colon] !== ":") continue;
+
+      const passwordStart = colon + 1;
+      const at = nextPasswordEnd[passwordStart];
+      if (at === passwordStart || text[at] !== "@") continue;
+
+      const hostStart = at + 1;
+      if (hostStart === text.length || CONN_HOST_END.test(text[hostStart])) continue;
+      let end = hostStart + 1;
+      while (end < text.length && !CONN_HOST_END.test(text[end])) end++;
+
+      const password = text.slice(passwordStart, at);
+      if (
+        !PLACEHOLDER_PASSWORDS.has(password.toLowerCase()) &&
+        !/^[<{$[%]/.test(password) &&
+        !isPlaceholder(password)
+      ) {
+        found.push(trimTrailing(text.slice(scheme.index, end), /[.,;)\]]/));
+      }
+      afterMatch = end;
+    }
+    return found;
   }
 
   // A JWT looks like header.payload.signature, where both JSON parts are base64url and start with "eyJ".
@@ -2909,6 +3253,38 @@
   // Catches hostnames on internal-only domains, like build-01.corp, printer.local or api.internal.
   const HOST_RE =
     /\b(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.){1,8}(?:internal|corp|local|lan|intranet|localdomain|home\.arpa)\b(?![.-]?\w)/gi;
+
+  // An AWS secret access key only has a recognizable shape beside its labeled access key ID.
+  const AWS_PAIR_CHARS = 200;
+  function findAwsAccessKeys(text) {
+    const readable = text.replace(/\\(["\\])/g, "$1");
+    const accessIds = [...readable.matchAll(/\b(?:AKIA|ASIA|ABIA|ACCA)[0-9A-Z]{16}\b/g)];
+    const pairedIds = [...readable.matchAll(/\bAWS_ACCESS_KEY_ID\s*=\s*((?:AKIA|ASIA|ABIA|ACCA)[0-9A-Z]{16})\b/g)];
+    const found = accessIds.map((m) => m[0]);
+    let firstNearby = 0;
+    for (const secret of readable.matchAll(
+      /\bAWS_SECRET_ACCESS_KEY\s*=\s*["']?([A-Za-z0-9/+=]{40})["']?(?![A-Za-z0-9/+=])/g,
+    )) {
+      while (firstNearby < pairedIds.length && pairedIds[firstNearby].index < secret.index - 200) firstNearby++;
+      if (pairedIds[firstNearby]?.index <= secret.index + 200 && !isPlaceholder(secret[1]) && looksRandom(secret[1])) {
+        found.push(secret[1]);
+      }
+    }
+    // People paste both halves of a key pair together, and the secret half often has no label of its own: "access
+    // key AKIA… and secret key" then the secret on the next line, the two side by side, or a table row under the
+    // ID. A 40-character value of mixed case and digits a few lines from an access key ID is that secret. One
+    // that's all hex is a commit or a checksum instead, and looksRandom leaves those out.
+    if (accessIds.length) {
+      // Both come in the order they're written, so the first ID close enough before a secret only moves forward.
+      let firstId = 0;
+      for (const secret of readable.matchAll(/(?<![A-Za-z0-9/+=])[A-Za-z0-9/+]{40}(?![A-Za-z0-9/+=])/g)) {
+        while (firstId < accessIds.length && accessIds[firstId].index < secret.index - AWS_PAIR_CHARS) firstId++;
+        const near = accessIds[firstId]?.index <= secret.index + AWS_PAIR_CHARS;
+        if (near && looksRandom(secret[0]) && !isPlaceholder(secret[0])) found.push(secret[0]);
+      }
+    }
+    return [...new Set(found)];
+  }
 
   // ---------- Your vault: things you told Clotr to protect ----------
   // Words and phrases you've added, like your name or your employer, are known only by fingerprint, a salted
@@ -3047,12 +3423,53 @@
   // backtracked quadratically on hostile text like a long run of "a-a-a-…", which CI's ReDoS fuzzing caught.
   // An "=" setting never takes its value from the next line: in an .env template, "PASSWORD=" is empty and
   // the line under it ("USERNAME=admin") is a setting of its own. "Password:" can still have it on the next line.
-  // People write a key's name with a space too, as in "API key: …", "secret key: …" or "clave de API: …".
+  // People write a key's name with a space too, as in "API key: …", "secret key: …" or "clave de API: …". Code
+  // adds a type ("apiKey: string = …") or sets it by name (os.environ["DB_PASSWORD"] = …), and psql and sshpass
+  // read PGPASSWORD and SSHPASS.
   const LABELLED_SECRET =
-    /\b(?:[A-Za-z0-9]{1,30}[_-]){0,4}(?:password|passwd|pwd|pass|pw|passcode|passphrase|pin|secret|client_secret|token(?:\sde\sacceso)?|access_token|auth_token|api[_ -]?key|secret[ -]key|contrase(?:ñ|n)a|clave(?:\s(?:de\s)?api)?)(?:_[A-Za-z0-9]+)*["']?\s*(?::\s*|=[^\S\n]*)["']?([^\s"',;]+)/gi;
+    /\b(?:[A-Za-z0-9]{1,30}[_-]){0,4}(?:password|passwd|pwd|pass|pw|passcode|passphrase|pin|secret|client_secret|token(?:\sde\sacceso)?|access_token|auth_token|api[_ -]?key|secret[ -]key|contrase(?:ñ|n)a|clave(?:\s(?:de\s)?api)?|pgpass(?:word)?|sshpass)(?:_[A-Za-z0-9]+)*["']?\]?\s*(?:\??:\s*(?:string|str)\s*=[^\S\n]*|:\s*|=[^\S\n]*)["']?([^\s"',;]+)/gi;
   // An HTTP auth header from a pasted curl command or code, like "Authorization: Bearer …".
+  // Key and token labels have a distinct kind, while password labels stay in LABELLED_SECRET.
+  const LABELLED_API_KEY =
+    /\b(?:[A-Za-z0-9]{1,30}[_-]){0,4}(?:api[ _-]?key|[A-Za-z0-9]{1,30}[ _-](?:key|token)|client[ _-]secret|token\s+de\s+acceso)["']?\]?\s*(?:\??:\s*(?:string|str)\s*=[^\S\n]*|:\s*|=[^\S\n]*)["']?([^\s"',;]+)/gi;
+  const PROVIDER_CREDENTIAL_LABEL =
+    /^(?:GITHUB|GH_APP_INSTALLATION|GITLAB|PERPLEXITY|SLACK|DIGITALOCEAN|HUGGINGFACE|HEROKU|1PASSWORD|OP_SERVICE_ACCOUNT|CLOUDFLARE|TWILIO)(?:_|$)/i;
+  // `inTwilio` is twilioLookup of the whole text, which each caller builds once: reading the pairs again for every
+  // label grew with the square of a paste full of TWILIO_ lines. `at` is where `value` starts in that text.
+  function isProviderCredentialLabel(match, inTwilio, value, at) {
+    const separator = match.search(/[:=]/);
+    if (separator < 0) return false;
+    const normalizedLabel = match.slice(0, separator).replace(/["']/g, "").replace(/[ -]/g, "_").toUpperCase();
+    if (!PROVIDER_CREDENTIAL_LABEL.test(normalizedLabel)) return false;
+    const kind = [
+      ["GH_APP_INSTALLATION", "github_token"],
+      ["GITHUB", "github_token"],
+      ["GITLAB", "gitlab_token"],
+      ["PERPLEXITY", "perplexity_key"],
+      ["SLACK", "slack_token"],
+      ["DIGITALOCEAN", "digitalocean_token"],
+      ["HUGGINGFACE", "huggingface_token"],
+      ["HEROKU", "heroku_token"],
+      ["1PASSWORD", "onepassword_token"],
+      ["OP_SERVICE_ACCOUNT", "onepassword_token"],
+      ["CLOUDFLARE", "cloudflare_origin_ca_key"],
+      ["TWILIO", "twilio_credentials"],
+    ].find(([prefix]) => normalizedLabel.startsWith(prefix))?.[1];
+    if (!kind) return false;
+    // The Twilio kind needs the SID beside the token, so a token pasted alone stays with the label finders.
+    if (kind === "twilio_credentials") {
+      const token = trimTrailing(value, /[.)\]}>]/);
+      return inTwilio(at, at + token.length);
+    }
+    const pattern = PATTERNS.find((candidate) => candidate.id === kind);
+    if (!pattern?.regex) return false;
+    const regex = new RegExp(pattern.regex.source, pattern.regex.flags.replace(/[gy]/g, ""));
+    const candidate = value.match(regex);
+    return Boolean(candidate) && candidate[0] === value && (!pattern.validate || pattern.validate(candidate[0]));
+  }
+  // Also set by name (headers["Authorization"] = …), in a Python f-string, or as nginx writes it with a space.
   const AUTH_HEADER =
-    /\b(?:proxy-)?authorization["']?\s*[:=]\s*["']?(?:bearer|basic|token|apikey)\s+([A-Za-z0-9._~+/=-]{12,})/gi;
+    /\b(?:proxy-)?authorization["']?\]?(?:\s*[:=]\s*|\s+(?=["']))(?:[fbru]{1,2}(?=["']))?["']?(?:bearer|basic|token|apikey)\s+([A-Za-z0-9._~+/=-]{12,})/gi;
   // How people write a password out to a person, as in "my password is Fluffy123" or "my password for
   // netflix is …". This also catches common misspellings like "pasword" or "passwrod".
   const TOLD_SECRET =
@@ -3094,6 +3511,192 @@
   // IBAN group like "U4PW 7VRN".
   const BARE_SECRET =
     /(?<![\p{L}\d])(?:pa?ss?(?:w(?:or|ro|ar)d|owrd|wrd|wd)|passcode|pw|pwd|contrase(?:ñ|n)a)\s+["'“‘]?([^\s"'”’,;]{4,64})/giu;
+  // More ways a password gets told, each where the words leave no doubt what the value is: German and French
+  // ("Mein Passwort ist …", "mon mot de passe est …"), a login then "and it's …", "use … as the password",
+  // "user bob pass …", mysql's -p with the password stuck to it, XML's <password>, a password box's value, and
+  // PowerShell's ConvertTo-SecureString "…" -AsPlainText. The sentence forms want a digit or a symbol in the value,
+  // since "the login is broken and it's Friday" and "use Bitwarden as the password manager" are just sentences.
+  const TOLD_SECRET_DE_FR =
+    /(?<![\p{L}])(?:(?:mein|dein|unser|das|mon|ton|notre|le)\s+)?(?:(?:wlan|e-?mail)-?\s*)?(?:passwort|kennwort|mot\s+de\s+passe)\s+(?:ist|lautet|war|est|était|etait)\s*(?::\s*)?["'“‘„«]?\s*([^\s"'”’“,;!?»]+)/giu;
+  // The same in other languages: "minha senha é …", "mijn wachtwoord is …", "мой пароль: …", "ο κωδικός μου
+  // είναι …", "senha: …". A few short words can sit between the password word and "is" ("a senha do wifi é …").
+  // Where "is" is often left out, as in Russian, Turkish or Indonesian ("şifrem …", "kata sandi saya …"), the
+  // word right before a value is enough when the value has a digit and is six characters or more. Each
+  // language's "is" or a colon wants a value with a digit or a symbol, like the German and French forms.
+  const PW_WORD_INTL = String.raw`(?:senha|wachtwoord|has[łl]o|heslo|(?<!la )parola|parolă|[şs]ifre(?:m|niz)?|parolam|пароль|kennwort|passwort|mot\s+de\s+passe|l[öo]senord(?:et)?|passord(?:et)?|adgangskoden?|kodeord(?:et)?|salasana(?:ni)?|jelsz[óo]|jelszavam|contrasenya|lozinka|geslo|κωδικ[όο]ς(?:\s+πρόσβασης)?|m[ậa]t\s+kh[ẩa]u|kata\s+sandi|كلمة\s+(?:ال)?(?:مرور|سر)|ה?סיסמ[הא]|पासवर्ड)(?![\p{L}\p{M}])`;
+  const INTL_VALUE = String.raw`["'“‘„«]?\s*([^\s"'”’“,;!?»，。、：！？]+)`;
+  const TOLD_SECRET_INTL = new RegExp(
+    String.raw`(?<![\p{L}\p{M}\d])${PW_WORD_INTL}(?:\s+[\p{L}\p{M}'’]{1,14}){0,3}?(?:\s*[:：=]|\s+(?:è|é|e|és|ist|is|est|är|er|on|je|jest|to|este|είναι|ειναι|là|adalah|ialah|هي|היא|это|—|–|-)(?![\p{L}\p{M}])\s*:?)\s*${INTL_VALUE}`,
+    "giu",
+  );
+  const BARE_SECRET_INTL = new RegExp(
+    String.raw`(?<![\p{L}\p{M}\d])${PW_WORD_INTL}(?:\s+(?:saya|ku|của\s+(?:tôi|mình)|الخاصة\s+بي|שלי|μου|mea|mia|mitt|min|ko))?[^\S\n]+${INTL_VALUE}`,
+    "giu",
+  );
+  // "Password" borrowed into Italian or Tagalog: "la mia password è …", "ang password ko ay …". English's own
+  // "is" is TOLD_SECRET's.
+  const TOLD_SECRET_LOANWORD =
+    /(?<![\p{L}\d])password(?:\s+[\p{L}'’]{1,14}){0,3}?\s+(?:è|é|ay|là|adalah|este|ist|är)(?![\p{L}])\s*:?\s*["'“‘„«]?\s*([^\s"'”’“,;!?»]+)/giu;
+  // French "mdp", lower case only, since an "MDP" in a maths or AI question is a Markov decision process.
+  const TOLD_SECRET_MDP = /(?<![\p{L}\d])[Mm]dp\s*(?:[:=]|\s+est(?![\p{L}]))\s*["'“‘„«]?\s*([^\s"'”’“,;!?»]+)/gu;
+  // Chinese, Japanese, Korean and Thai join "password" to "is" with no space, and the value ends where their
+  // own letters or punctuation start again: "我的密码是…，", "パスワードは…です", "비밀번호는 … 입니다".
+  const PW_WORD_CJK = String.raw`(?:密码|密碼|口令|パスワード|暗証番号|비밀번호|암호|รหัสผ่าน)`;
+  const CJK_VALUE = String.raw`["'“‘「『]?([^\s"'”’“,;!?»，。、：！？「」『』\p{Script=Han}\p{Script=Hiragana}\p{Script=Katakana}\p{Script=Hangul}\p{Script=Thai}]+)`;
+  const TOLD_SECRET_CJK = new RegExp(
+    String.raw`${PW_WORD_CJK}(?:ของ(?:ฉัน|ผม))?\s*(?:是|为|為|は|는|은|คือ|[:：=])\s*${CJK_VALUE}`,
+    "gu",
+  );
+  const BARE_SECRET_CJK = new RegExp(String.raw`${PW_WORD_CJK}[^\S\n]+${CJK_VALUE}`, "gu");
+  // A password given to a command: curl's -u user:password, sshpass -p, a registry or cloud login's -p, redis-cli's
+  // -a, Java keytool's -storepass, Windows' net use after /user:, and aws configure set. Each flag only means a
+  // password after its own command, so "docker run -p 8080:80" and "kubectl logs -p" stay quiet.
+  const CURL_USER =
+    /\bcurl\b(?:[^\n]|\\\r?\n){0,300}?\s(?:-u|--user)(?:=|[^\S\n]*)(?:"([^"\n:]{1,64}):([^"\n]{1,128})"|'([^'\n:]{1,64}):([^'\n]{1,128})'|([^\s"':]{1,64}):([^\s"']{1,128}))/g;
+  const COMMAND_PASSWORD = [
+    /\bsshpass\s+-p\s*(["']?)([^\s"']+)\1(?=\s|$)/g,
+    /\b(?:(?:(?:docker|podman|nerdctl|buildah|skopeo|helm|oras|crane|az|oc|cf|argocd)\b[^\n]{0,60}?\blogin\b|mongo(?:sh|dump|restore|import|export)?\b)[^\n]{0,200}?\s(?:-p|-a|--password|--pass)|redis-cli\b[^\n]{0,200}?\s(?:-a|--password|--pass))(?:=|[^\S\n]+)(["']?)([^\s"'-][^\s"']*)\1(?=\s|$)/g,
+    /(?<![\w-])-(?:src|dest)?(?:store|key)pass\s+(["']?)([^\s"']+)\1(?=\s|$)/g,
+    /\bnet\s+use\b[^\n]{0,200}?\s\/user:\S+\s+(["']?)([^\s"'/*][^\s"']*)\1(?=\s|$)/gi,
+  ];
+  const AWS_CONFIGURE_SET =
+    /\baws\s+configure\s+set\s+(?:[\w-]+\.)?(?:aws_secret_access_key|aws_session_token|[\w.-]*(?:password|secret)[\w.-]*)\s+(["']?)([^\s"']+)\1/gi;
+  // A path handed to -p ("az login … -p ./cert.pem") is a certificate file, not a password.
+  const looksLikePath = (v) => /^(?:\.{1,2}[\\/]|~[\\/]|\/)|\.(?:pem|crt|cer|pfx|p12|key|json)$/i.test(v);
+  // A secret set by its name in code or config: PHP's define('DB_PASSWORD', '…'), os.environ.setdefault(…),
+  // a web page's setItem("token", …), a Terraform variable's default, a .NET <add key="ApiKey" value="…"/> or a
+  // hidden form field, and a YAML key whose value starts on the next line ("password: >-"). The name says which
+  // kind, a password or a key whose value has to look machine-made. A form's CSRF token is part of the page.
+  const SETTING_CALL =
+    /\b(?:define|setenv|putenv|setdefault|SetEnvironmentVariable|setItem|setProperty|set|put|add)\s*\(\s*(["'])([\w.-]{1,60})\1\s*,\s*(["'])([^"'\n]{4,256})\3/gi;
+  const ATTR_PAIR =
+    /<[A-Za-z][\w:.-]*\s[^<>]{0,300}?\b(?:key|name|id)\s*=\s*(["'])([\w.:-]{1,60})\1[^<>]{0,300}?\bvalue\s*=\s*(["'])([^"'\n<>]{4,256})\3/gi;
+  const HCL_DEFAULT = /\bvariable\s+"([\w-]{1,60})"\s*\{[^{}]{0,300}?\bdefault\s*=\s*"([^"\n]{4,256})"/g;
+  const YAML_BLOCK =
+    /(?:^|\n)([^\S\n]*)([\w.-]{1,60})[^\S\n]*:[^\S\n]*[|>][+-]?\d?[^\S\n]*\r?\n([^\S\n]+)([^\s#][^\n]{3,255})/g;
+  function settingKind(name) {
+    if (/csrf|xsrf|authenticity|nonce|pub(?:lic|lishable)?[_.-]?key/i.test(name)) return null;
+    if (/password|passwd|passphrase|pwd|secret|(?:^|[_.-])pass(?:$|[_.-])/i.test(name)) return "password";
+    if (LOOKUP_KEY_NAME.test(name)) return null;
+    if (/api_?key|token|auth_?key|private_?key|salt|(?:^|[_.-])key$/i.test(name)) return "key";
+    return null;
+  }
+  function namedSettings(text) {
+    const out = [];
+    const push = (name, value) => {
+      const kind = settingKind(name);
+      if (kind) out.push({ kind, value });
+    };
+    for (const re of [SETTING_CALL, ATTR_PAIR]) for (const m of text.matchAll(re)) push(m[2], m[4]);
+    for (const m of text.matchAll(HCL_DEFAULT)) push(m[1], m[2]);
+    // A PEM key under "private_key: |" is the private key kind's, whole.
+    for (const m of text.matchAll(YAML_BLOCK)) {
+      if (m[3].length > m[1].length && !m[4].startsWith("-----")) push(m[2], m[4].trim());
+    }
+    return out;
+  }
+  // requests' auth=("user", "password") and HTTPBasicAuth("user", "password"), and SQL's IDENTIFIED BY '…'.
+  const AUTH_TUPLE =
+    /\b(?:auth\s*=\s*|HTTP(?:Basic|Digest)Auth\s*)\(\s*(["'])[^"'\n]{1,64}\1\s*,\s*(["'])([^"'\n]{4,128})\2\s*\)/g;
+  const SQL_IDENTIFIED = /\bIDENTIFIED\s+(?:WITH\s+[\w$]+\s+)?BY\s+(?:PASSWORD\s+)?(["'])([^"'\n]{1,128})\1/gi;
+  // A CSV or tab-separated paste with a password column, like a browser's or a password manager's export:
+  // "name,url,username,password" over its rows. A header cell like "password_changed" names something else, and a
+  // row has to have as many cells as the header, so a sentence with commas in it under a list doesn't count.
+  const CSV_PASSWORD_HEAD =
+    /^(?:[\p{L}\d]{1,20}[ _-])?(?:password|passwd|pwd|pass|passcode|passphrase|contrase(?:ñ|n)a|senha|passwort|kennwort|mot de passe|mdp|wachtwoord|has[łl]o|heslo|lösenord|passord|salasana|пароль|密码|パスワード|비밀번호)$/iu;
+  function csvCells(line, separator) {
+    const cells = [];
+    let cell = "";
+    let quoted = false;
+    for (let i = 0; i < line.length; i++) {
+      const c = line[i];
+      if (quoted) {
+        if (c === '"' && line[i + 1] === '"') {
+          cell += '"';
+          i++;
+        } else if (c === '"') quoted = false;
+        else cell += c;
+      } else if (c === '"' && !cell.trim()) {
+        quoted = true;
+        cell = "";
+      } else if (c === separator) {
+        cells.push(cell.trim());
+        cell = "";
+      } else cell += c;
+    }
+    cells.push(cell.trim());
+    return cells;
+  }
+  function csvPasswords(text) {
+    if (
+      !/[,;\t]/.test(text) ||
+      !/pass|pwd|mdp|contrase|senha|kennwort|wachtwoord|has[łl]o|heslo|lösenord|salasana|пароль|密码|パスワード|비밀번호/i.test(
+        text,
+      )
+    ) {
+      return [];
+    }
+    const lines = text.split(/\r?\n/);
+    const values = [];
+    for (let i = 0; i + 1 < lines.length; i++) {
+      const line = lines[i];
+      const counts = ["\t", ";", ","].map((s) => line.split(s).length - 1);
+      const separator = counts[0] ? "\t" : counts[1] > counts[2] ? ";" : counts[2] ? "," : "";
+      if (!separator) continue;
+      const head = csvCells(line, separator);
+      const column = head.findIndex((c) => CSV_PASSWORD_HEAD.test(c));
+      if (column < 0 || head.some((c) => c.length > 32)) continue;
+      let j = i + 1;
+      for (; j < lines.length; j++) {
+        // A rich chat box reads each pasted line back as its own paragraph, with a blank line between rows.
+        if (!lines[j].trim()) continue;
+        const row = csvCells(lines[j], separator);
+        if (row.length !== head.length) break;
+        if (row[column] && !/\s/.test(row[column])) values.push(row[column]);
+      }
+      i = j - 1; // each row is read once, under the nearest header above it
+    }
+    return values;
+  }
+  const LOGIN_THEN_SECRET =
+    /\b(?:log-?in|user(?:\s*name)?)\s+(?:is\s+)?["']?[^\s"']{2,64}["']?\s*(?:,\s*|\s+)(?:and\s+)?(?:it['’]s|it\s+is|the\s+password\s+is|password\s+is)\s+["'“‘]?([^\s"'”’,;!?]+)/gi;
+  const USE_AS_SECRET = new RegExp(
+    String.raw`(?<![\p{L}\d])(?:use|using|try|enter)\s+["'“‘]?([^\s"'”’]{4,64})["'”’]?\s+as\s+(?:the|my|your|a|our)\s+(?:new\s+)?${PW_WORD}(?![\p{L}]|\s+(?:manager|reset|hint|field|box|generator|vault|app|policy|rule|requirement)s?(?![\p{L}]))`,
+    "giu",
+  );
+  const USER_PASS = /\b(?:user(?:name)?|login)\s+[^\s:=]{2,64}\s+(?:pass|pw|pwd)\s+["']?([^\s"',;]+)/gi;
+  const MYSQL_FLAG =
+    /\b(?:mysql(?:dump|admin|import|show|check)?|mariadb(?:-dump)?)\b[^\n]{0,200}?\s-p(["']?)([^\s"']+)\1(?=\s|$)/g;
+  const XML_SECRET = /<(password|passwd|pwd|secret)>([^<>\s]{4,128})<\/\1>/gi;
+  const PASSWORD_BOX =
+    /<input\b(?=[^>]{0,300}\btype\s*=\s*["']?password\b)[^>]{0,300}?\bvalue\s*=\s*(["'])([^"'\n]{4,128})\1/gi;
+  const SECURE_STRING = /\bConvertTo-SecureString\s+(?:-String\s+)?(["'])([^"'\n]{4,128})\1\s+-AsPlainText\b/gi;
+  // A Markdown table with a password column, as in "| user | password |" over "| bob | Tr0ub4dor&3x |". A column
+  // of yes and no answers stays quiet, since a cell has to look like a password.
+  const TABLE_PASSWORD_HEAD = /^(?:password|passwd|pwd|pass|passcode|contrase(?:ñ|n)a|clave|passwort|mot de passe)$/i;
+  function tablePasswords(text) {
+    if (!/\|/.test(text) || !/\|[^\S\n]*(?:pass|pwd|contrase|clave|mot de passe)/i.test(text)) return [];
+    const cells = (line) =>
+      line
+        .trim()
+        .replace(/^\||\|$/g, "")
+        .split("|")
+        .map((c) => c.trim());
+    const lines = text.split("\n");
+    const values = [];
+    for (let i = 0; i + 1 < lines.length; i++) {
+      if (!lines[i].includes("|") || !/^[\s|:-]*-{3,}[\s|:-]*$/.test(lines[i + 1])) continue;
+      const column = cells(lines[i]).findIndex((c) => TABLE_PASSWORD_HEAD.test(c));
+      if (column < 0) continue;
+      let j = i + 2;
+      for (; j < lines.length && lines[j].includes("|"); j++) {
+        const cell = cells(lines[j])[column];
+        if (cell) values.push(cell);
+      }
+      i = j - 1; // each row is read once, under the nearest header above it
+    }
+    return values;
+  }
   // "login: jdoe@gmail.com / Fluffy!23": a login shared as a pair.
   const LOGIN_PAIR =
     /\b(?:login|log-?in|sign[- ]?in|credentials|creds)\b[^\n]{0,20}?\s["'“‘]?[^\s/|"']{3,64}\s*[/|]\s*["'“‘]?([^\s"'”’,;/]{4,64})(?![^\s"'”’,;])/gi; // a "/" means a path, not a password
@@ -3136,10 +3739,14 @@
   // texted me".
   const LOGIN_NAMES = String.raw`(?:verification|one[- ]time|login|log-?in|sign[- ]?in|two[- ]factor|authentication|auth|access|sms)\s+(?:code|pin|passcode)|(?:otp|2fa|mfa)(?:\s+(?:code|pin))?`;
   const CODE_THEY_SENT = String.raw`${NOT_SIGN_IN}(?<![\p{L}])(?:pass)?code\s+${SENT_TO_ME}`;
+  // The rest of the sentence names a door or a gate: "the code 4821 they gave you for the gate".
+  const NOT_AT_A_DOOR = String.raw`(?![^\n.!?]{0,40}?(?<![\p{L}])(?:gate|door|alarm|garage|lock\s*box|locker|safe|building|house|keypad)(?![\p{L}]))`;
   const LOGIN_CODE = new RegExp(
     String.raw`(?<![\p{L}\d])(?:${LOGIN_NAMES})(?![\p{L}])[^\n\d]{0,30}?(?:\b(?:is|was)\b)?\s*(?:[:=]\s*)?["'“‘]?(?<!(?<![\p{L}])(?:in|since|by|from|of|until|before|after|at|to|about|around|every)\s+)(?<![\p{L}\d])(?!(?:19|20)\d\d(?!\d))(\d{4,8}|\d{3}[\s-]\d{3})(?![\p{L}\d-]|\s\d)|(?<![\p{L}])(?:(?:texted|sent|messaged|emailed|gave)\s+(?:me|us|him|her)\s+(?:(?:the|a|that|this|my)\s+)?|ask(?:ed|ing|s)?\s+(?:me\s+)?for\s+(?:the|my|a|that)\s+)(?:\p{L}+\s+)?${NOT_SIGN_IN}code\s*(?:(?:is|was)\s*)?(?:[:=]\s*)?["'“‘]?(?<!(?<![\p{L}])(?:in|since|by|from|of|until|before|after|at|to|about|around|every)\s+)(?<![\p{L}\d])(?!(?:19|20)\d\d(?!\d))(\d{4,8}|\d{3}[\s-]\d{3})(?![\p{L}\d-]|\s\d)` +
       // "the code they texted me is 482913", "the passcode I got by text: 482913"
       String.raw`|${CODE_THEY_SENT}${IS}${SIGN_IN_VALUE}` +
+      // "enter the code 482913 we texted you", "the verification code 482913 they sent you by text"
+      String.raw`|(?<![\p{L}])(?:the|this|that|a)\s+(?:${SIGN_IN_WORD}\s+)?(?:pass)?code\s+${SIGN_IN_VALUE}${NOT_AT_A_DOOR}\s+${SENT_TO_ME}` +
       // "the code from the text is 482913", "the code in the email: 482913"
       String.raw`|${NOT_SIGN_IN}(?<![\p{L}])(?:pass)?code\s+(?:in|from|on)\s+(?:the|that|this|my|your|their|a|an)\s+(?:text(?:\s+message)?|sms|e-?mail|message|texts)\s*(?:(?:is|was|says|said|reads)\s*)?(?:[:=,]\s*)?${SIGN_IN_VALUE}` +
       // "I got a text with the code 482913", "I received a code 482913", "my code is 482913", "Your WhatsApp code: 482-913"
@@ -3333,9 +3940,14 @@
   // anything that isn't really a secret: too short or long, a word describing the secret rather than being
   // it, masked out, a placeholder, code reading the value from elsewhere, too plain when complexity is
   // required, or a value some other pattern already recognizes as its own kind of key.
+  // Most labeled values past 128 characters are something other than a secret, but an AWS session token runs to
+  // several hundred, and Google, Facebook and Dropbox access tokens are well past 128 too. One unbroken run of token
+  // characters with letters and digits in it still counts, up to a size no token reaches.
+  const longToken = (v) =>
+    v.length <= 4096 && /^[\w+/=.~:%-]+$/.test(v) && !v.includes("://") && /\d/.test(v) && /[A-Za-z]/.test(v);
   function secretValue(raw, needsComplexity, minLength = 4) {
     const v = trimTrailing(raw, /[.)\]}>]/);
-    if (v.length < minLength || v.length > 128 || NOT_A_SECRET.has(v.toLowerCase())) return null;
+    if (v.length < minLength || (v.length > 128 && !longToken(v)) || NOT_A_SECRET.has(v.toLowerCase())) return null;
     if (/^[*•x.#-]+$/i.test(v) || /^[<{$[%(]/.test(v) || isPlaceholder(v)) return null; // masked, template, placeholder
     // Code that reads the secret from somewhere else: process.env.X, os.environ[…], config.x.
     if (
@@ -3346,6 +3958,10 @@
       return null;
     }
     if (/[[(]$/.test(v)) return null; // code that continues on the next token: request.form['…'], getpass(
+    // PowerShell building or asking for the secret: the value is what comes after the cmdlet, if anything.
+    if (/^(?:ConvertTo-SecureString|ConvertFrom-SecureString|Read-Host|Get-Credential|Get-Secret)$/i.test(v)) {
+      return null;
+    }
     // End-of-sentence punctuation isn't part of a password, so "a good password manager?" reads as a question.
     const core = v.replace(/[?!:]+$/, "");
     // Needs to look like a real password: a digit, a symbol, or mixed case. An accented letter still
@@ -3360,6 +3976,58 @@
     // A recognizable key after the label is reported by its own pattern.
     if (PATTERNS.some((p) => p.secret && p.regex && new RegExp(p.regex.source).test(v))) return null;
     return v;
+  }
+
+  // The value patterns stop at punctuation that usually ends a sentence or a setting, but a password can hold the
+  // same marks, like "Tr0ub4dor&3x!Qz" or "Blue,Sky42x", and Cover it once left their tails behind. This reads a
+  // value on to the end of its word when more of it follows the mark. A comma or semicolon that starts the next
+  // setting (";Trusted_Connection=…") still ends it, and so does a contraction ("it's"). A quoted value runs to its
+  // closing quote, spaces and all, unless it reads like a sentence. A word broken after a hyphen at the end of a
+  // line, the way a mail app or a narrow window wraps, carries on with the next line when that line is one word.
+  const VALUE_STOP = /[,;!?'"”’]/u;
+  const QUOTE_CLOSE = { '"': '"', "'": "'", "“": "”", "‘": "’" };
+  const CONTRACTION = /^['’](?:s|t|re|ve|ll|d|m)(?![\p{L}\d])/iu;
+  const NEXT_SETTING = /[,;][A-Za-z_][\w.-]{0,40}\s*[=:]/;
+  // Chinese, Japanese and Korean go on with no space, so a value's word also ends where their letters or
+  // punctuation start: "我的密码是…，为什么", "パスワードは…です".
+  const WORD_END = /[\s，。、：；！？「」『』\p{Script=Han}\p{Script=Hiragana}\p{Script=Katakana}\p{Script=Hangul}]/u;
+  function wholeValue(text, at, value) {
+    const open = text[at - 1];
+    const close = QUOTE_CLOSE[open];
+    if (close) {
+      const escaped = text[at - 2] === "\\";
+      for (let i = at; i < text.length && i < at + 128 && text[i] !== "\n" && text[i] !== "\r"; i++) {
+        if (text[i] === "\\" && !(escaped && text[i + 1] === close)) {
+          i++;
+          continue;
+        }
+        const end = escaped ? text[i] === "\\" && text[i + 1] === close : text[i] === close;
+        if (!end || !/^(?:$|[\s,;.:!?)\]}>])/u.test(text.slice(i + (escaped ? 2 : 1), i + (escaped ? 3 : 2)))) continue;
+        const inner = text.slice(at, i);
+        if (!/\s/.test(inner)) return inner.length > value.length ? inner : value;
+        const words = inner.toLowerCase().split(/\s+/);
+        const sentence = words.length > 8 || words.some((w) => EVERYDAY_WORDS.has(w));
+        return sentence || words.filter((w) => NOT_A_SECRET.has(w)).length > 1 ? value : inner;
+      }
+    }
+    let end = at + value.length;
+    // A value ending in a backslash is really the \" that opens an escaped string, not a password with a quote in it.
+    if (VALUE_STOP.test(text[end] || "") && !value.endsWith("\\") && !CONTRACTION.test(text.slice(end, end + 4))) {
+      let stop = end;
+      while (stop < text.length && !WORD_END.test(text[stop])) stop++;
+      let word = text.slice(at, stop);
+      const setting = NEXT_SETTING.exec(word);
+      if (setting) word = word.slice(0, setting.index);
+      word = word.replace(/[.,;:!?'"”’)\]}>]+$/u, "");
+      const plain = word.replace(/[,;!?'"”’]/gu, "");
+      const looksLikeOne =
+        /\d/.test(plain) || /[^\p{L}\p{N}]/u.test(plain) || (/\p{Ll}/u.test(plain) && /\p{Lu}/u.test(plain));
+      if (word.length > value.length && looksLikeOne) end = at + word.length;
+    }
+    // One blank line in between is the same break read back from a box that keeps each line as a paragraph.
+    const wrapped = /^-(\r?\n(?:\r?\n)?)(\S{4,64})(?=\r?\n|$)/.exec(text.slice(end - 1, end + 72));
+    if (wrapped) end += wrapped[1].length + wrapped[2].replace(/[.,;:!?'"”’)\]}>]+$/u, "").length;
+    return text.slice(at, end);
   }
 
   // Finds a card's security code, which counts as its own money-related kind alongside the card number
@@ -3525,6 +4193,7 @@
     let text = rawText;
     const found = [];
     const reasons = new Map();
+    const inTwilio = twilioLookup(text);
     // The first reason in ASK_REASONS' order wins when two rules take the same value ("my ATM pin is 4821").
     const rank = (reason) => (reason ? ASK_REASONS.indexOf(reason) : ASK_REASONS.length);
     const because = (v, reason) => {
@@ -3532,7 +4201,13 @@
     };
     // A money detail told after its own label, like a card's security code or a gift card's code and PIN,
     // is reported as its own kind, so it's never counted as a password too.
-    const theirs = new Set([...findCardCodes(text), ...findGiftCards(text)]);
+    const theirs = new Set([
+      ...findCardCodes(text),
+      ...findGiftCards(text),
+      ...findAwsAccessKeys(text),
+      ...findServiceTokens(text),
+      ...findConnectionStrings(text),
+    ]);
     // A two-step sign-in key or link is already reported as its own otp_secret kind, even a documentation
     // example, so it's blanked out here to keep its "secret=…" from also being read as a password.
     const keys = otpFinds(text).filter((f) => !f.link);
@@ -3546,6 +4221,8 @@
       }
       text = out + text.slice(at);
     }
+    // The pairs as the label finders below see the text, with those sign-in keys blanked.
+    const labelTwilio = text === rawText ? inTwilio : twilioLookup(text);
     // Returns the value taken as a secret, or false.
     const add = (raw, needsComplexity, minLength = 4) => {
       const v = secretValue(raw, needsComplexity, minLength);
@@ -3565,6 +4242,11 @@
       return true;
     };
     const valueStart = (m) => m.index + m[0].length - m[1].length;
+    // The value read on past punctuation inside it (wholeValue), or the value as matched when that isn't a secret.
+    const addWhole = (m, needsComplexity) => {
+      const whole = wholeValue(text, valueStart(m), m[1]);
+      return add(whole, needsComplexity) || (whole !== m[1] && add(m[1], needsComplexity));
+    };
     // Reads a secret told in words, trying a passphrase first, then the word right after "is", then the
     // first password-looking word shortly after that.
     const told = (m) => {
@@ -3574,17 +4256,26 @@
       if (/^\d+[-–]\d+$/.test(m[1]) && /^\s+(?:characters|chars|letters|digits|caracteres)/i.test(after)) return;
       // A PIN is digits: "my pin is loose" is about hardware.
       if (/^(?:(?:my|the|our|his|her|their|your)\s+)?pin\b/i.test(m[0]) && !/\d/.test(m[1])) return;
-      if (add(m[1], false)) return;
+      if (addWhole(m, false)) return;
       const later = LATER_SECRET.exec(text.slice(m.index + m[0].length, m.index + m[0].length + 40));
       if (later) add(later[0], true);
     };
-    for (const m of text.matchAll(LABELLED_SECRET)) if (!add(m[1], true)) passphraseAt(valueStart(m));
-    for (const m of text.matchAll(AUTH_HEADER)) add(m[1], true);
+    for (const m of text.matchAll(LABELLED_SECRET)) {
+      const at = valueStart(m);
+      if (inTwilio(at, at + m[1].length)) continue;
+      if (isProviderCredentialLabel(m[0], labelTwilio, m[1], at)) continue;
+      if (!addWhole(m, true)) passphraseAt(at);
+    }
+    for (const m of text.matchAll(AUTH_HEADER)) {
+      // Twilio's SID and auth token are two labeled fields, so a bearer-style wrapper can capture the SID as text.
+      if (/^TWILIO_(?:ACCOUNT_SID|AUTH_TOKEN)=/i.test(m[1])) continue;
+      add(m[1], true);
+    }
     for (const m of text.matchAll(TOLD_SECRET)) told(m);
     for (const m of text.matchAll(TOLD_SECRET_ES)) told(m);
     // Not a range ("8-16 characters") or a describing word ("one-time", "case-sensitive").
     for (const m of text.matchAll(TOLD_SECRET_MORE)) {
-      if (/\p{L}/u.test(m[1]) && !/^\p{Ll}+(?:-\p{Ll}+)+$/u.test(m[1])) add(m[1], true);
+      if (/\p{L}/u.test(m[1]) && !/^\p{Ll}+(?:-\p{Ll}+)+$/u.test(m[1])) addWhole(m, true);
     }
     for (const m of text.matchAll(TOLD_KEY)) if (keyLike(trimTrailing(m[1], /[.)\]}>]/))) add(m[1], true);
     for (const m of text.matchAll(TOLD_ANSWER)) because(add(m[1], false), "security_answer");
@@ -3593,9 +4284,41 @@
       // A capital letter starting the next line belongs to that line, not the password. Otherwise "I
       // forgot my password" followed by "Drive safe!" on its own line would read "Drive" as the password.
       if (m[0].includes("\n") && /^\p{Lu}\p{Ll}*[.?!:]*$/u.test(m[1])) continue;
-      add(m[1], true);
+      addWhole(m, true);
     }
     for (const m of text.matchAll(LOGIN_PAIR)) add(m[1], true);
+    const strong = (v) => /\d|[^\p{L}\p{N}]/u.test(v.replace(/[.,;:!?]+$/, ""));
+    for (const re of [TOLD_SECRET_DE_FR, LOGIN_THEN_SECRET, USER_PASS]) {
+      for (const m of text.matchAll(re)) if (strong(wholeValue(text, valueStart(m), m[1]))) addWhole(m, true);
+    }
+    for (const m of text.matchAll(USE_AS_SECRET)) if (strong(m[1])) add(m[1], true);
+    // A range is a length rule, as in "密码是8-16位" (8 to 16 characters).
+    const range = (v) => /^\d+[-–~～]\d+$/.test(trimTrailing(v, /[.)\]}>]/));
+    for (const re of [TOLD_SECRET_INTL, TOLD_SECRET_LOANWORD, TOLD_SECRET_MDP, TOLD_SECRET_CJK]) {
+      for (const m of text.matchAll(re)) {
+        const v = wholeValue(text, valueStart(m), m[1]);
+        if (strong(v) && !range(v)) addWhole(m, true);
+      }
+    }
+    for (const re of [BARE_SECRET_INTL, BARE_SECRET_CJK]) {
+      for (const m of text.matchAll(re)) {
+        const v = wholeValue(text, valueStart(m), m[1]);
+        if (/\d/.test(v) && v.length >= 6 && !range(v)) addWhole(m, true);
+      }
+    }
+    for (const re of [MYSQL_FLAG, XML_SECRET, PASSWORD_BOX, SECURE_STRING]) {
+      for (const m of text.matchAll(re)) add(m[2], false);
+    }
+    // Docs write these commands out as "-u user:password", so the value has to look like a real one.
+    for (const m of text.matchAll(CURL_USER)) add(m[2] ?? m[4] ?? m[6], true);
+    for (const re of COMMAND_PASSWORD) for (const m of text.matchAll(re)) if (!looksLikePath(m[2])) add(m[2], true);
+    for (const m of text.matchAll(AWS_CONFIGURE_SET)) add(m[2], true);
+    // A key that isn't random enough to be its own kind, like 32 hex characters, is still a secret by its name.
+    for (const setting of namedSettings(text)) add(setting.value, true, setting.kind === "key" ? 16 : 4);
+    for (const m of text.matchAll(AUTH_TUPLE)) add(m[3], false);
+    for (const m of text.matchAll(SQL_IDENTIFIED)) add(m[2], false);
+    for (const cell of tablePasswords(text)) add(cell, true);
+    for (const cell of csvPasswords(text)) add(cell, true);
     for (const m of text.matchAll(REMOTE_CODE)) because(add(m[1], false), "remote_code");
     for (const m of text.matchAll(LOGIN_CODE)) because(add(matched(m), false), "login_code");
     for (const m of text.matchAll(SESSION_COOKIE)) {
@@ -3633,6 +4356,177 @@
 
   // `group` = the Settings section: "credentials" (keys, passwords), "personal" (info about a person),
   // or "custom" (the user's own watch list).
+  // Distinct provider prefixes share one service-token kind and one Settings row.
+  const SERVICE_TOKEN_RE = new RegExp(
+    [
+      String.raw`\bnpm_[A-Za-z0-9]{36}\b`,
+      String.raw`\bgsk_[A-Za-z0-9]{52}(?![A-Za-z0-9_-])`,
+      String.raw`\bsk-or-v1-[0-9a-f]{64}(?![A-Za-z0-9_-])`,
+      String.raw`\bsb_secret_[A-Za-z0-9_-]{22}_[A-Za-z0-9_-]{8}(?![A-Za-z0-9_-])`,
+      String.raw`\bpypi-AgEIcHlwaS5vcmc[A-Za-z0-9_-]{50,}`,
+      String.raw`\bSG\.[A-Za-z0-9_-]{22}\.[A-Za-z0-9_-]{43}(?![A-Za-z0-9_-])`,
+      String.raw`\bSK[0-9a-fA-F]{32}\b`,
+      String.raw`\bkey-[0-9a-f]{32}\b`,
+      String.raw`(?:(?<=/bot)|(?<![A-Za-z0-9_]))\d{8,10}:AA[A-Za-z0-9_-]{33}(?![A-Za-z0-9_-])`,
+      String.raw`\b[MN][A-Za-z0-9]{23,25}\.[A-Za-z0-9_-]{6}\.[A-Za-z0-9_-]{27,38}\b`,
+      String.raw`\b(?:AccountKey|SharedAccessKey)=["']?[A-Za-z0-9+/]{40,88}={0,2}["']?`,
+      String.raw`https://hooks\.slack\.com/(?:workflows|triggers)/[A-Za-z0-9/_-]{20,120}`,
+      String.raw`https://hooks\.slack\.com/services/(?!T[A-Za-z0-9_]{1,40}/B[A-Za-z0-9_]{1,40}/)[A-Za-z0-9/_-]{20,120}`,
+      String.raw`https://(?:ptb\.|canary\.)?discord(?:app)?\.com/api/webhooks/\d{5,25}/[A-Za-z0-9_-]{20,100}`,
+      String.raw`\btskey-(?:auth|api|client|scim|webhook)-[A-Za-z0-9]{8,}-[A-Za-z0-9]{16,}(?![A-Za-z0-9_-])`,
+      String.raw`\bFlyV1\s+fm\d_[A-Za-z0-9+/=_-]{40,}(?:,fm\d_[A-Za-z0-9+/=_-]{20,})*`,
+      String.raw`\bfo1_[A-Za-z0-9_-]{40,}(?![A-Za-z0-9_-])`,
+      String.raw`\boy2(?=[a-z0-9]{0,42}\d)[a-z0-9]{43}(?![A-Za-z0-9_-])`,
+      String.raw`\bcio(?=[A-Za-z0-9]{0,31}\d)(?=[A-Za-z0-9]{0,31}[A-Z])(?=[A-Za-z0-9]{0,31}[a-z])[A-Za-z0-9]{32}(?![A-Za-z0-9_-])`,
+    ].join("|"),
+    "g",
+  );
+  function findServiceTokens(text) {
+    const found = [...text.matchAll(SERVICE_TOKEN_RE)].map((m) => m[0]);
+    const awsKeys = new Set(findAwsAccessKeys(text));
+    const inTwilio = twilioLookup(text);
+    for (const m of text.matchAll(LABELLED_API_KEY)) {
+      const at = m.index + m[0].length - m[1].length;
+      // A provider label only takes this path when its value matches that provider's own token shape.
+      if (isProviderCredentialLabel(m[0], inTwilio, m[1], at)) continue;
+      if (inTwilio(at, at + m[1].length)) continue;
+      const lookupLabel = m[0].slice(0, m[0].length - m[1].length);
+      if (LOOKUP_KEY_LABEL.test(lookupLabel)) {
+        const rawValue = m[1].split(/\\[nrt]/)[0];
+        const value = trimTrailing(rawValue, /[.)\]}>]/);
+        const contextBefore = text
+          .slice(Math.max(0, m.index - 40), m.index)
+          .trimEnd()
+          .toLowerCase();
+        const duplicateDatabaseKey = contextBefore.endsWith("duplicate");
+        const primaryCredential =
+          /\bprimary[ _.-]key\b/i.test(lookupLabel) &&
+          !duplicateDatabaseKey &&
+          ((hexKey(value) && !isPlaceholder(value)) || (/^[A-Za-z0-9+/]{40,88}={0,2}$/.test(value) && keyLike(value)));
+        if (!primaryCredential) continue;
+      }
+      // A JSON string's \n or \t ends the value; what follows one is read again on its own (detector.js).
+      const raw = m[1].split(/\\[nrt]/)[0];
+      // A hex key's "sk-" also starts an OpenAI key, whose own rule turns it down for having no capitals.
+      const hex = trimTrailing(raw, /[.)\]}>]/);
+      // A public key is meant to be shared, so its label alone can't vouch for a hex value or a very long one,
+      // like an age public key joined to the secret key on the line under it.
+      const publicKey = /pub(?:lic|lishable)?[ _.-]?key/i.test(m[0].slice(0, -m[1].length));
+      if (!publicKey && hexKey(hex) && !isPlaceholder(hex)) {
+        if (!takenByItsOwnRule(hex)) found.push(hex);
+        continue;
+      }
+      const value = secretValue(raw, true, 16);
+      if (value && (!publicKey || value.length <= 128) && keyLike(value) && !awsKeys.has(value)) found.push(value);
+    }
+    for (const setting of namedSettings(text)) {
+      const value = setting.kind === "key" && secretValue(setting.value, true, 16);
+      if (value && (keyLike(value) || hexKey(value)) && !awsKeys.has(value)) found.push(value);
+    }
+    // An .npmrc line: whatever follows its _authToken= is the registry's token, whatever its length.
+    for (const m of text.matchAll(NPMRC_TOKEN)) {
+      const value = secretValue(m[1], false, 8);
+      if (value) found.push(value);
+    }
+    return [...new Set(found)];
+  }
+  const NPMRC_TOKEN = /(?<![\w-]):?_authToken\s*=\s*["']?([^\s"']+)/g;
+  // A key in hex, like DeepSeek's "sk-" and 32 hex characters, has less spread than keyLike asks of a mixed-case
+  // key, so after a key's label it only has to look like random hex. Without a label, "sk-" and hex stays quiet.
+  const hexKey = (v) =>
+    /^(?:[a-z]{2,6}[-_])?[0-9a-f]{32,64}$/i.test(v) && looksRandomAnyCase(v.replace(/^[a-z]{2,6}[-_]/i, ""));
+  // A key named for what it looks up rather than what it unlocks, like a cache, sort, partition or idempotency key or a
+  // table's primary key, holds a hash or an ID, and "Cache saved with key: …" is a line of a CI log. A primary key in
+  // an Azure portal can still be a real credential, so keep that label when its value has an Azure key shape.
+  const LOOKUP_KEY_WORD = String.raw`(?:cache|caching|sort|partition|primary|foreign|composite|object|idempotency|dedup(?:e|lication)?|lookup|row|routing|shard|range|index|search|unique|etag|checksum|with|from|by)`;
+  const LOOKUP_KEY_LABEL = new RegExp(
+    String.raw`(?:^|[^A-Za-z0-9])${LOOKUP_KEY_WORD}[ _.-]key["'\]]?[^A-Za-z0-9]*(?:(?:string|str)[^A-Za-z0-9]*)?$`,
+    "i",
+  );
+  const LOOKUP_KEY_NAME = new RegExp(String.raw`(?:^|[_.-])${LOOKUP_KEY_WORD}[_.-]key$`, "i");
+  // Whether a provider's own rule reports the value, its checks included.
+  const takenByItsOwnRule = (v) =>
+    PATTERNS.some((p) => {
+      if (!p.secret || !p.regex) return false;
+      const m = new RegExp(p.regex.source, p.regex.flags.replace(/[gy]/g, "")).exec(v);
+      return Boolean(m) && (!p.validate || p.validate(m[0]));
+    });
+
+  const TWILIO_CREDENTIALS_RE =
+    /\b(?:TWILIO_ACCOUNT_SID|accountSid)\s*[:=]\s*["']?(AC[0-9a-fA-F]{32})["']?\s*(?:\r?\n|[,; ]+)\s*(?:TWILIO_AUTH_TOKEN|authToken)\s*[:=]\s*["']?([A-Za-z0-9_-]{16,256})/gi;
+  const TWILIO_LABEL = /^(?:TWILIO_ACCOUNT_SID|accountSid|TWILIO_AUTH_TOKEN|authToken)\s*[:=]/i;
+  // A credential wrapped onto a new line is read again with the break taken out. A line that starts one of its
+  // labels is a setting of its own, not a wrap, and what the lines as written already hold wins, so the word on
+  // the line after a credential stays out of it.
+  function findTwilioCredentials(text) {
+    return twilioSpans(text).map(([start, end]) => text.slice(start, end));
+  }
+  // Whether text[start, end) lies inside one of the text's SID and token pairs, which twilio_credentials reports
+  // whole. Only that copy is left out of the label finders: the same token written again under a label of its own
+  // is theirs, or Cover it would hide the pair and leave that copy. A binary search over the pairs in order, each
+  // with the furthest end reached so far, answers it without reading the text again.
+  function twilioLookup(text) {
+    const spans = twilioSpans(text).sort((a, b) => a[0] - b[0]);
+    let furthest = -1;
+    const reach = spans.map(([, end]) => (furthest = Math.max(furthest, end)));
+    return (start, end) => {
+      let lo = 0;
+      let hi = spans.length - 1;
+      let last = -1;
+      while (lo <= hi) {
+        const mid = (lo + hi) >> 1;
+        if (spans[mid][0] <= start) {
+          last = mid;
+          lo = mid + 1;
+        } else hi = mid - 1;
+      }
+      return last >= 0 && reach[last] >= end;
+    };
+  }
+  function twilioSpans(text) {
+    const spans = [...text.matchAll(TWILIO_CREDENTIALS_RE)]
+      .filter((m) => looksRandomAnyCase(m[2]))
+      .map((m) => [m.index, m.index + m[0].length]);
+    // Only a break between two word characters is taken out. Each cut keeps where it falls in the joined text and
+    // how much has been taken out up to there, so a match maps back to the text as written. Text with no such
+    // break is never copied.
+    const pieces = [];
+    const cuts = [];
+    let from = 0;
+    let removed = 0;
+    for (const m of text.matchAll(/\r\n|\r|\n/g)) {
+      const next = m.index + m[0].length;
+      if (
+        /[A-Za-z0-9_]/.test(text[m.index - 1] || "") &&
+        /[A-Za-z0-9_]/.test(text[next] || "") &&
+        !TWILIO_LABEL.test(text.slice(next, next + 40))
+      ) {
+        pieces.push(text.slice(from, m.index));
+        cuts.push([m.index - removed, removed + m[0].length]);
+        removed += m[0].length;
+        from = next;
+      }
+    }
+    if (!cuts.length) return spans;
+    pieces.push(text.slice(from));
+    const sourceAt = (j) => {
+      let shift = 0;
+      for (const [at, total] of cuts) {
+        if (at > j) break;
+        shift = total;
+      }
+      return j + shift;
+    };
+    const asWritten = spans.length;
+    for (const m of pieces.join("").matchAll(TWILIO_CREDENTIALS_RE)) {
+      if (!looksRandomAnyCase(m[2])) continue;
+      const start = sourceAt(m.index);
+      const end = sourceAt(m.index + m[0].length - 1) + 1;
+      if (!spans.slice(0, asWritten).some(([a, b]) => a < end && start < b)) spans.push([start, end]);
+    }
+    return spans;
+  }
+
   const PATTERNS = [
     // --- Credentials (high) ---
     // `secret: true` drops placeholder matches. `validate` adds a check specific to that pattern.
@@ -3649,9 +4543,7 @@
       secret: true,
       name: "AWS Access Key",
       severity: "high",
-      // ABIA (AWS STS) and ACCA (context credentials) are rarer than AKIA/ASIA but just as real; AI-Prompt-Redaction
-      // (MIT, Aaditya Joshi, see THIRD-PARTY-NOTICES) matches all four.
-      regex: /\b(?:AKIA|ASIA|ABIA|ACCA)[0-9A-Z]{16}\b/g,
+      find: findAwsAccessKeys,
     },
     {
       id: "github_token",
@@ -3659,7 +4551,13 @@
       secret: true,
       name: "GitHub Token",
       severity: "high",
-      regex: /\b(?:gh[pousr]_[A-Za-z0-9]{36,}|github_pat_[A-Za-z0-9_]{22,})\b/g,
+      regex:
+        /\bgh[pousr]_[A-Za-z0-9]{36,}\b|\bgithub_pat_[A-Za-z0-9_]{22,}(?![A-Za-z0-9_])|\bghs_[0-9]{1,20}_[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}(?![A-Za-z0-9_.-])/g,
+      validate: (m) => {
+        if (!m.startsWith("ghs_")) return true;
+        const appIdEnd = m.indexOf("_", 4);
+        return appIdEnd < 0 || looksRandomAnyCase(m.slice(appIdEnd + 1).replace(/\./g, ""));
+      },
     },
     {
       id: "stripe_secret_key",
@@ -3667,7 +4565,8 @@
       secret: true,
       name: "Stripe Secret Key",
       severity: "high",
-      regex: /\b[sr]k_live_[A-Za-z0-9]{24,}\b/g,
+      // A webhook's signing secret (whsec_…) lets anyone forge Stripe's events to that site.
+      regex: /\b(?:[sr]k_live_[A-Za-z0-9]{24,}|whsec_[A-Za-z0-9]{32,})\b/g,
     },
     {
       id: "anthropic_key",
@@ -3684,7 +4583,7 @@
       secret: true,
       name: "OpenAI API Key",
       severity: "high",
-      regex: /\bsk-(?!ant-)(?:proj-)?[A-Za-z0-9_-]{20,}/g,
+      regex: /\bsk-(?!ant-|or-v1-)(?:proj-)?[A-Za-z0-9_-]{20,}/g,
       validate: (m) => looksRandom(m.replace(/^sk-(?:proj-)?/, "")),
     },
     {
@@ -3712,12 +4611,213 @@
       secret: true,
       name: "Slack Token",
       severity: "high",
-      regex: /\bxox[abprs]-[A-Za-z0-9-]{10,}\b/g,
+      regex:
+        /(?:\bxox[abprs]-[A-Za-z0-9-]{10,}\b|\bxoxe\.xox[abp]-[A-Za-z0-9-]{20,200}(?![A-Za-z0-9-])|\bxoxe\.xapp-\d-[A-Z0-9]+-\d+-[a-z0-9]{20,100}(?![A-Za-z0-9-])|\bxoxe-\d-[A-Za-z0-9-]{20,200}(?![A-Za-z0-9-])|\bxapp-\d-[A-Z0-9]+-\d+-[a-z0-9]{20,100}(?![A-Za-z0-9-])|\bhttps:\/\/hooks\.slack\.com\/services\/T[A-Za-z0-9_]{1,40}\/B[A-Za-z0-9_]{1,40}\/[A-Za-z0-9_]{16,100}(?![A-Za-z0-9_]))/g,
+      validate: (m) => {
+        if (m.startsWith("xoxe.xapp-")) return looksRandomAnyCase(m.slice(m.lastIndexOf("-") + 1));
+        if (m.startsWith("xapp-")) return looksRandomAnyCase(m.slice(m.lastIndexOf("-") + 1));
+        if (m.startsWith("xoxe-")) return looksRandomAnyCase(m.slice(m.lastIndexOf("-") + 1));
+        if (m.startsWith("xoxe.")) return looksRandomAnyCase(m.slice(m.lastIndexOf("-") + 1));
+        if (m.startsWith("https://hooks.slack.com/")) return looksRandomAnyCase(m.slice(m.lastIndexOf("/") + 1));
+        return true;
+      },
+    },
+    {
+      id: "gitlab_token",
+      group: "credentials",
+      secret: true,
+      name: "GitLab Token",
+      severity: "high",
+      regex:
+        /(?:\bglpat-[A-Za-z0-9_-]{20,300}(?:\.[a-z0-9]{9})?|\bgldt-[A-Za-z0-9_-]{20,300}|\bglcbt-(?:[0-9a-fA-F]{2}_)?[A-Za-z0-9_-]{20,300}|\bglrt-(?:t\d_[A-Za-z0-9_-]{27,300}\.[a-z0-9]{9}|[A-Za-z0-9_-]{20,300})|\bglft-[A-Za-z0-9_-]{20,300}|\bglsoat-[A-Za-z0-9_-]{20,300}|\bglagent-[A-Za-z0-9_-]{50,1024}|\bgloas-[A-Za-z0-9_-]{64})(?![A-Za-z0-9_-])/g,
+      validate: (m) => {
+        const body = m.replace(/^gl(?:pat|dt|cbt|rt|ft|soat|agent|oas)-?/, "");
+        const randomBody = body
+          .replace(/\.[a-z0-9]{9}$/, "")
+          .replace(/^t\d_/, "")
+          .replace(/^[0-9a-fA-F]{2}_/, "");
+        const normalizedBody = randomBody.replace(/[-_]/g, "");
+        return looksRandomAnyCase(normalizedBody) || looksRandomLetters(normalizedBody);
+      },
+    },
+    {
+      id: "perplexity_key",
+      group: "credentials",
+      secret: true,
+      name: "Perplexity API Key",
+      severity: "high",
+      regex: /\bpplx-[A-Za-z0-9]{16,128}(?![A-Za-z0-9])/g,
+      validate: (m) => looksRandomAnyCase(m.slice(5)),
+    },
+    {
+      id: "digitalocean_token",
+      group: "credentials",
+      secret: true,
+      name: "DigitalOcean Token",
+      severity: "high",
+      regex: /\bd(?:op|oo|or)_v1_[0-9a-fA-F]{64}\b/g,
+      validate: (m) => looksRandomAnyCase(m.slice(7)),
+    },
+    {
+      id: "huggingface_token",
+      group: "credentials",
+      secret: true,
+      name: "Hugging Face Token",
+      severity: "high",
+      regex: /\b(?:hf_|api_org_)[A-Za-z]{34}\b/g,
+      validate: (m) => looksRandomLetters(m.slice(m.startsWith("hf_") ? 3 : 8)),
+    },
+    {
+      id: "heroku_token",
+      group: "credentials",
+      secret: true,
+      name: "Heroku Token",
+      severity: "high",
+      regex: /\bHRKU-[A-Za-z0-9_-]{60}\b/g,
+      validate: (m) => looksRandomAnyCase(m.slice(5)),
+    },
+    {
+      id: "onepassword_token",
+      group: "credentials",
+      secret: true,
+      name: "1Password Token",
+      severity: "high",
+      regex:
+        /(?:\bops_eyJ[A-Za-z0-9+/=_-]{250,4096}(?![A-Za-z0-9+/=_-])|\bA3-[A-Z0-9]{6}-(?:[A-Z0-9]{11}|[A-Z0-9]{6}-[A-Z0-9]{5})-[A-Z0-9]{5}-[A-Z0-9]{5}-[A-Z0-9]{5}\b)/g,
+      validate: (m) => looksRandomAnyCase(m.startsWith("ops_") ? m.slice(4) : m.replace(/-/g, "").slice(2)),
+    },
+    {
+      id: "cloudflare_origin_ca_key",
+      group: "credentials",
+      secret: true,
+      name: "Cloudflare Origin CA Key",
+      severity: "high",
+      regex: /\bv1\.0-[a-f0-9]{24}-[a-f0-9]{146}\b/g,
+      validate: (m) => looksRandomAnyCase(m.slice(5).replace(/-/g, "")),
+    },
+    {
+      id: "twilio_credentials",
+      group: "credentials",
+      secret: true,
+      name: "Twilio Credentials",
+      severity: "high",
+      find: findTwilioCredentials,
+    },
+    // Developer tools' tokens, each in the shape its provider documents. A key or token label in front still
+    // names the provider, since the labelled-key check leaves out any value one of these regexes recognizes.
+    {
+      id: "sentry_token",
+      group: "credentials",
+      secret: true,
+      name: "Sentry Auth Token",
+      severity: "high",
+      // User, app and integration tokens are 64 hex. An organization token is base64 JSON about the org, then
+      // "_" and a 43-character base64 secret.
+      regex: /\bsntry(?:[uai]_[0-9a-f]{64}\b|s_eyJ[A-Za-z0-9+/]{20,1000}={0,2}_[A-Za-z0-9+/]{43}(?![A-Za-z0-9+/=_-]))/g,
+      validate: (m) => (m.startsWith("sntrys_") ? looksRandom(m.slice(-43)) : looksRandomAnyCase(m.slice(7))),
+    },
+    {
+      id: "grafana_token",
+      group: "credentials",
+      secret: true,
+      name: "Grafana Token",
+      severity: "high",
+      // A service account token ends in "_" and an 8-hex checksum. A Grafana Cloud token is one base64 run.
+      regex: /\bgl(?:sa_[A-Za-z0-9]{32}_[0-9a-f]{8}\b|c_[A-Za-z0-9+/]{32,400}={0,3}(?![A-Za-z0-9+/=]))/g,
+      validate: (m) => looksRandom(m.startsWith("glsa_") ? m.slice(5, 37) : m.slice(4).replace(/=+$/, "")),
+    },
+    {
+      id: "vault_token",
+      group: "credentials",
+      secret: true,
+      name: "HashiCorp Vault Token",
+      severity: "high",
+      // Service, batch and recovery tokens. Vault only promises 24 characters or more after the prefix.
+      regex: /\bhv[sbr]\.[A-Za-z0-9_-]{24,1000}(?![A-Za-z0-9_-])/g,
+      validate: (m) => looksRandom(m.slice(4), 24),
+    },
+    {
+      id: "replicate_token",
+      group: "credentials",
+      secret: true,
+      name: "Replicate API Token",
+      severity: "high",
+      regex: /\br8_[A-Za-z0-9]{37}\b/g,
+      validate: (m) => looksRandomAnyCase(m.slice(3)),
+    },
+    {
+      id: "linear_key",
+      group: "credentials",
+      secret: true,
+      name: "Linear API Key",
+      severity: "high",
+      regex: /\blin_api_[A-Za-z0-9]{40}\b/g,
+      validate: (m) => looksRandomAnyCase(m.slice(8)),
+    },
+    {
+      id: "postman_key",
+      group: "credentials",
+      secret: true,
+      name: "Postman API Key",
+      severity: "high",
+      regex: /\bPMAK-[0-9a-fA-F]{24}-[0-9a-fA-F]{34}\b/g,
+      validate: (m) => looksRandomAnyCase(m.slice(5).replace("-", "")),
+    },
+    {
+      id: "shopify_token",
+      group: "credentials",
+      secret: true,
+      name: "Shopify Access Token",
+      severity: "high",
+      // Admin API, custom app and delegate access tokens, and an app's shared secret.
+      regex: /\bshp(?:at|ca|pa|ss)_[0-9a-fA-F]{32}\b/g,
+      validate: (m) => looksRandomAnyCase(m.slice(6)),
+    },
+    {
+      id: "atlassian_token",
+      group: "credentials",
+      secret: true,
+      name: "Atlassian API Token",
+      severity: "high",
+      // An account's API token or an organization's admin key. Atlassian treats the body as opaque and may change
+      // its length, so the length here is a range around today's tokens, which end in "=" and an 8-character
+      // checksum.
+      regex: /\bAT[AC]TT3[A-Za-z0-9_=-]{150,250}=[A-Za-z0-9]{8}(?![A-Za-z0-9_=-])/g,
+      validate: (m) => looksRandom(m.slice(6, -9)),
+    },
+    {
+      id: "netlify_token",
+      group: "credentials",
+      secret: true,
+      name: "Netlify Access Token",
+      severity: "high",
+      // Personal, CLI, OAuth, app and build tokens.
+      regex: /\bnf[pcoub]_[A-Za-z0-9_]{36}(?![A-Za-z0-9_])/g,
+      validate: (m) => looksRandomAnyCase(m.slice(4)),
+    },
+    {
+      id: "pulumi_token",
+      group: "credentials",
+      secret: true,
+      name: "Pulumi Access Token",
+      severity: "high",
+      regex: /\bpul-[a-z0-9]{40}\b/g,
+      validate: (m) => looksRandomAnyCase(m.slice(4)),
+    },
+    {
+      id: "databricks_token",
+      group: "credentials",
+      secret: true,
+      name: "Databricks Access Token",
+      severity: "high",
+      // Some end in "-" and a digit.
+      regex: /\bdapi[0-9a-fA-F]{32}(?:-\d)?\b/g,
+      validate: (m) => looksRandomAnyCase(m.slice(4, 36)),
     },
     // Covers the keys from several other services under one Settings row: Hugging Face, npm, PyPI,
-    // GitLab, SendGrid, Twilio, Mailgun, Shopify, DigitalOcean, Telegram and Discord bots, Azure storage
-    // and service-bus keys, and Slack or Discord webhook URLs, since anyone with one of those URLs can
-    // post as the bot that owns it.
+    // GitLab, SendGrid, Twilio, Mailgun, DigitalOcean, Telegram and Discord bots, Azure storage
+    // and service-bus keys, Tailscale, Fly.io, NuGet and crates.io, and Slack or Discord
+    // webhook URLs, since anyone with one of those URLs can post as the bot that owns it.
     {
       id: "crypto_secret",
       group: "credentials",
@@ -3731,25 +4831,7 @@
       secret: true,
       name: "Service Access Token",
       severity: "high",
-      regex: new RegExp(
-        [
-          String.raw`\bhf_[A-Za-z0-9]{30,}\b`,
-          String.raw`\bnpm_[A-Za-z0-9]{36}\b`,
-          String.raw`\bpypi-AgEIcHlwaS5vcmc[A-Za-z0-9_-]{50,}`,
-          String.raw`\bglpat-[A-Za-z0-9_-]{20,}`,
-          String.raw`\bSG\.[A-Za-z0-9_-]{22}\.[A-Za-z0-9_-]{43}\b`,
-          String.raw`\bSK[0-9a-fA-F]{32}\b`,
-          String.raw`\bkey-[0-9a-f]{32}\b`,
-          String.raw`\bshp(?:at|ca|pa|ss)_[0-9a-fA-F]{32}\b`,
-          String.raw`\bdop_v1_[0-9a-f]{64}\b`,
-          String.raw`\b\d{8,10}:AA[A-Za-z0-9_-]{33}\b`,
-          String.raw`\b[MN][A-Za-z0-9]{23,25}\.[A-Za-z0-9_-]{6}\.[A-Za-z0-9_-]{27,38}\b`,
-          String.raw`\b(?:AccountKey|SharedAccessKey)=[A-Za-z0-9+/]{40,88}={0,2}`,
-          String.raw`https://hooks\.slack\.com/(?:services|workflows|triggers)/[A-Za-z0-9/_-]{20,120}`,
-          String.raw`https://(?:ptb\.|canary\.)?discord(?:app)?\.com/api/webhooks/\d{5,25}/[A-Za-z0-9_-]{20,100}`,
-        ].join("|"),
-        "g",
-      ),
+      find: findServiceTokens,
     },
 
     {
@@ -3759,7 +4841,7 @@
       severity: "high",
       find: findConnectionStrings,
     },
-    { id: "jwt", group: "credentials", name: "Login Token (JWT)", severity: "high", regex: JWT_RE },
+    { id: "jwt", group: "credentials", secret: true, name: "Login Token (JWT)", severity: "high", regex: JWT_RE },
     { id: "internal_ip", group: "credentials", name: "Internal IP Address", severity: "medium", find: findInternalIPs },
     { id: "internal_host", group: "credentials", name: "Internal Hostname", severity: "medium", regex: HOST_RE },
     {

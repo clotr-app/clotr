@@ -322,8 +322,8 @@ if (new URLSearchParams(location.search).has("welcome")) {
     await mountMoreSitesOffer($("more-sites-offer"));
     // Something in the fold is already on (the welcome page reopened by someone who'd already picked a
     // site or two): open it, so nothing someone turned on is hidden.
-    const { origins = [] } = await chrome.permissions.getAll();
-    if (Sites.grantedEverydayApps(origins).length || Sites.grantedMoreSites(origins).length) {
+    const listed = await Sites.userSitePatterns();
+    if (Sites.grantedEverydayApps(listed).length || Sites.grantedMoreSites(listed).length) {
       $("where-pick-sites").open = true;
     }
     mountWhereOffer();
@@ -405,9 +405,10 @@ async function mountMoreSitesOffer(card) {
     on = now;
     update();
   }
+  // A site switched on while Everywhere I type covered it counts (userSitePatterns), and one it covers shows On.
   async function refresh() {
-    const { origins = [] } = await chrome.permissions.getAll();
-    setOn(Sites.grantedMoreSites(origins));
+    const [{ origins = [] }, listed] = await Promise.all([chrome.permissions.getAll(), Sites.userSitePatterns()]);
+    setOn([...new Set([...Sites.grantedMoreSites(listed), ...Sites.coveredByEverywhere(Sites.MORE_SITES, origins)])]);
   }
 
   go.addEventListener("click", () => {
@@ -441,6 +442,9 @@ async function mountMoreSitesOffer(card) {
 
   chrome.permissions.onAdded?.addListener(() => refresh().catch(() => {}));
   chrome.permissions.onRemoved?.addListener(() => refresh().catch(() => {}));
+  chrome.storage.onChanged?.addListener((changes, area) => {
+    if (area === "local" && changes.siteScopes) refresh().catch(() => {});
+  });
   update();
   await refresh().catch(() => {});
 }

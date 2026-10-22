@@ -78,7 +78,7 @@ jobs:
         run: |
           for f in dist/*.zip; do
             gh attestation download "$f" -R "$GITHUB_REPOSITORY"
-            mv sha256-*.jsonl "$(basename "$f" .zip).intoto.jsonl"
+            mv sha256[-:]*.jsonl "$(basename "$f" .zip).intoto.jsonl" # gh names it sha256-… or sha256:…
           done
           gh release upload "$GITHUB_REF_NAME" ./*.intoto.jsonl
 

@@ -1,0 +1,37 @@
+# Every commit in a pull request is signed off by its author (the Developer Certificate of Origin, CONTRIBUTING.md
+# has the how). tools/dco-check.js does the checking and tests/dco-check.test.js tests it. It reads only commit
+# messages, so it runs on GitHub's own read-only token and nothing outside this repo.
+name: DCO
+
+on:
+  pull_request:
+
+# A newer push to the same pull request replaces its older run.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+# Least privilege: the check only reads the commits.
+permissions:
+  contents: read
+
+jobs:
+  dco:
+    name: dco
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      # Actions pinned to exact commits (a moved tag can't change what runs); the tag is in the comment.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          fetch-depth: 0 # the whole history, so every commit in the pull request is there to read
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 22
+      - name: Every commit is signed off by its author
+        run: node tools/dco-check.js "$BASE_SHA" "$HEAD_SHA"
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          PR_AUTHOR: ${{ github.event.pull_request.user.login }}

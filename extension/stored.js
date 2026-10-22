@@ -92,7 +92,9 @@ function renderSettings(all, granted) {
   const responses = Object.entries(all.responses || {});
   const siteModes = Object.entries(all.siteModes || {});
   const paused = Object.keys(all.paused || {}).filter((h) => all.paused[h]);
-  const everyday = everydayHosts(granted, all.siteKinds);
+  // Sites switched on while Everywhere I type covered them are kept under its key (sites.js notePicks).
+  const everyday = everydayHosts(globalThis.ClotrSites.withPicks(granted, all.siteScopes), all.siteKinds);
+  const added = Object.entries(all.siteScopes || {}).filter(([o]) => o !== globalThis.ClotrSites.EVERYWHERE_ORIGIN);
   facts("settings", [
     [
       msg("sj_changed", "Changed from the default (warn)"),
@@ -118,10 +120,8 @@ function renderSettings(all, granted) {
     ],
     [
       msg("popup_aiToolsYouAdded", "AI tools you added"),
-      Object.keys(all.siteScopes || {}).length
-        ? Object.entries(all.siteScopes)
-            .map(([o, s]) => `${o} (${s.join(", ")})`)
-            .join(" · ")
+      added.length
+        ? added.map(([o, s]) => `${o} (${s.join(", ")})`).join(" · ")
         : msg("sj_seeSettings", "See Settings → AI tools you added"),
     ],
     [

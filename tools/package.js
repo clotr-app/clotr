@@ -27,6 +27,23 @@ const ROOT = path.join(__dirname, "..");
 const EXT = path.join(ROOT, "extension");
 const SKIP = new Set(["bravelogs", ".DS_Store", "Thumbs.db", "desktop.ini"]);
 const TEXT = new Set([".js", ".json", ".html", ".css", ".md", ".txt", ".svg"]);
+// A guarded stylesheet link is void, so removing it must not look for a closing tag.
+const VOID_ELEMENTS = new Set([
+  "area",
+  "base",
+  "br",
+  "col",
+  "embed",
+  "hr",
+  "img",
+  "input",
+  "link",
+  "meta",
+  "param",
+  "source",
+  "track",
+  "wbr",
+]);
 // 1980-01-01 00:00, the earliest time a zip can hold.
 const DOS_TIME = 0;
 const DOS_DATE = (0 << 9) | (1 << 5) | 1;
@@ -46,7 +63,14 @@ const BACKGROUND_SCRIPTS = [
 // Firefox runs background scripts instead of a service worker and has no declarativeContent. It also needs
 // an add-on ID and a data-collection declaration, which here says none.
 function firefoxManifest(m) {
-  m.background = { scripts: BACKGROUND_SCRIPTS.slice() };
+  m.background = {
+    scripts: [
+      ...BACKGROUND_SCRIPTS.slice(0, -2),
+      ...(m.clotr_features?.oneclotr ? ["one-clotr-protocol.js", "one-clotr-bridge.js"] : []),
+      "sites.js",
+      "background.js",
+    ],
+  };
   delete m.storage; // managed_schema is a Chrome thing; Firefox reads its policy from policies.json instead
   m.permissions = m.permissions.filter((p) => p !== "declarativeContent");
   // The bandage's tape and keyline already read fine on a light or dark toolbar, so both entries point at
@@ -96,7 +120,7 @@ const DROP_FOR = {
 // training, so I handle it separately below.
 const FEATURE_FILES = {
   tourniquet: [],
-  checkup: [],
+  checkup: ["quick-exit.js", "quick-exit.css"],
   lookback: [
     "lookback.html",
     "lookback.css",
@@ -112,20 +136,25 @@ const FEATURE_FILES = {
   commandcheck: ["commands.js"],
   practice: ["practice.html", "practice.css", "practice.js"],
   training: ["training.html", "training.css", "training.js", "training-data.js"],
+  oneclotr: ["one-clotr-protocol.js", "one-clotr-bridge.js", "one-clotr-protocol.json"],
 };
 
 // A couple of held-back features also need something removed from the manifest itself, not just their own
 // files. Command check's copy listener is a content script, so there's nothing to toggle at runtime once
-// it isn't shipped. And since Extension check is the only reason the optional `management` permission
-// exists, that comes out too when the feature is off. A feature's name only appears here once it's shipped:
-// an off one isn't running, so there's nothing for the person's browser (or a store reviewer) to read it as.
+// it isn't shipped. Extension check and One Clotr each remove the optional permission they use when off.
+// A feature's name only appears here once it's shipped: an off one isn't running, so there's nothing for the
+// person's browser (or a store reviewer) to read it as.
 function featureManifest(base, features) {
   const m = { ...base, clotr_features: Object.fromEntries(Object.entries(features).filter(([, on]) => on)) };
   if (!features.commandcheck) {
     m.content_scripts = m.content_scripts.map((c) => ({ ...c, js: c.js.filter((f) => f !== "commands.js") }));
   }
-  if (!features.extcheck) {
-    m.optional_permissions = (m.optional_permissions || []).filter((p) => p !== "management");
+  if (!features.extcheck || !features.oneclotr) {
+    const held = new Set([
+      ...(!features.extcheck ? ["management"] : []),
+      ...(!features.oneclotr ? ["nativeMessaging"] : []),
+    ]);
+    m.optional_permissions = (m.optional_permissions || []).filter((p) => !held.has(p));
     if (!m.optional_permissions.length) delete m.optional_permissions;
   }
   return m;
@@ -167,7 +196,8 @@ function removeDataFeature(html, feature) {
     const tag = m[1];
     const start = m.index;
     const openEnd = start + m[0].length;
-    const end = m[0].endsWith("/>") ? openEnd : findMatchingClose(out, openEnd, tag);
+    const end =
+      m[0].endsWith("/>") || VOID_ELEMENTS.has(tag.toLowerCase()) ? openEnd : findMatchingClose(out, openEnd, tag);
     out = out.slice(0, start) + out.slice(end);
   }
   return out;

@@ -101,6 +101,29 @@ test("README's Permissions table has a row for every permission manifest.json ac
   }
 });
 
+// One row per permission, so the table reads as the install screen does: each row's first cell names exactly one of
+// manifest.json's permissions, optional permissions or optional host permissions in backticks (or
+// `host_permissions`, standing in for the AI chat site list), and together the rows name each of them once.
+test("README's Permissions table has exactly one row per permission manifest.json declares", () => {
+  const manifest = JSON.parse(fs.readFileSync(path.join(ROOT, "extension", "manifest.json"), "utf8"));
+  const declared = [
+    ...(manifest.permissions || []),
+    ...(manifest.optional_permissions || []),
+    ...(manifest.optional_host_permissions || []),
+    ...((manifest.host_permissions || []).length ? ["host_permissions"] : []),
+  ];
+  const rows = permissionsSection()
+    .split("\n")
+    .filter((line) => /^\| /.test(line) && !/^\| (Permission|---)/.test(line));
+  const named = rows.map((row) => {
+    const first = row.split("|")[1];
+    const keys = [...first.matchAll(/`([^`]+)`/g)].map((m) => m[1]);
+    assert.equal(keys.length, 1, `README's Permissions table: a row names ${keys.length} permissions: ${first.trim()}`);
+    return keys[0];
+  });
+  assert.deepEqual([...named].sort(), [...declared].sort());
+});
+
 test("README's Permissions table names no permission manifest.json has dropped", () => {
   const manifest = JSON.parse(fs.readFileSync(path.join(ROOT, "extension", "manifest.json"), "utf8"));
   const known = new Set([

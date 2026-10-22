@@ -2,6 +2,57 @@
 
 What changed in each version of Clotr. How the version numbers work is in [VERSIONING.md](VERSIONING.md).
 
+## 1.5.0 (2026-10-21)
+
+- Cover it now covers a pasted private key even when its last line is missing or damaged.
+- Cover it now covers a key hidden inside a web address and a header named in prose before the block.
+- Cover it now covers PRIVATE_KEY=0x<64 hex> in a .env or YAML line.
+- Cover it now covers a connection-string password holding /.
+- Cover it now covers a Telegram token inside the Bot API URL.
+- Cover it now covers SendGrid and Telegram tokens ending in -.
+- Cover it now warns about and covers an internal IP in a URL and in ping 10.0.0.5.
+- Replying to an email no longer warns about the addresses in the message you're replying to.
+- In an email reply, the first thing you type into the quoted message is checked too, a sender's own reply markers can't hide what you type below the quote, and a huge quoted message no longer slows the tab.
+- Cover it in an email now changes only what it covers, and keeps the rest of the email's formatting.
+- A long message you typed yourself no longer gets the warning meant for a large paste.
+- When a chat or support widget is slow to send, or ignores an Enter pressed right after you type, the warning no longer disappears for a second before coming back.
+- A time in a pasted log is no longer read as a phone number.
+- Large pastes stay more responsive while Clotr checks saved details, and popup buttons keep readable colors when the theme changes.
+- Clotr now catches AWS secret access keys when they appear beside their access key ID.
+- Clotr now catches an exported AWS secret access key inside a JSON string.
+- Clotr now recognizes Groq, OpenRouter and Supabase keys (thanks to gilnett for the report).
+- Clotr now catches French, German, Belgian, Dutch, Spanish and Italian phone numbers written the national way (thanks to gilnett for the report).
+- Clotr now catches a key that was wrapped onto several lines.
+- Clotr now catches base64-wrapped PEM keys in kubeconfig and Kubernetes Secret data.
+- Clotr now catches a PGP private key block.
+- Clotr now catches private keys with spaces inside PEM dashes.
+- Clotr now catches a JWK inside a JSON string.
+- Clotr now catches tokens from Sentry, Grafana, HashiCorp Vault, Replicate, Linear, Postman, Shopify, Atlassian, Netlify, Pulumi and Databricks, and names the service each one belongs to.
+- Clotr now catches GitLab, Perplexity, Slack, DigitalOcean, Hugging Face, Heroku, 1Password, Cloudflare, Twilio and GitHub keys as their own kinds.
+- Clotr now catches Slack tokens with an xoxe. prefix.
+- API keys pasted under key or token labels are named as service access tokens.
+- Clotr catches valid card numbers split into six groups of three digits.
+- Clotr catches more checksum-valid ID formats, including grouped and spoken Spanish and Mexican numbers.
+- Everywhere I type leaves sign-in, address and payment boxes alone from the first keystroke, even before your settings load.
+- While Everywhere I type is on, your email, chat and support apps show On in Settings and on the welcome page, with a line saying it covers them, and Turn on for a search engine sticks.
+- An email or chat app that an earlier version filed under AI chats can be turned on in Settings again.
+- In Firefox, switching Clotr on for a site from the toolbar popup now closes the popup, so it no longer hides Firefox's question and its Allow button.
+- Clotr's console line names the site, never the page address.
+- The extension package leaves out files that belong only to a feature that's turned off.
+- Cover it now removes all of a secret that wraps onto a second line, a password with punctuation and an AWS secret key beside its ID, and it covers what you pasted or typed just before you clicked it too.
+- Clotr now warns about a secret right after a line break written inside JSON, a key split across lines with no label in front of it, more ways of writing a password (in German and French too), an npm token in .npmrc, a Stripe webhook secret and a card number written with dots.
+- Cover it now covers a whole key in a log line's JSON when an escaped line break splits it near the start or sits right before it.
+- One very long value or a list of many thousands of numbers no longer stops Clotr from checking the rest of a paste, and some large pastes are checked much faster.
+- Clotr now catches a password told in many more languages, like "minha senha é …" or "パスワードは…", and covers all of it.
+- Clotr now catches the password column of a pasted CSV or spreadsheet, like a browser's password export.
+- Clotr now catches a password typed into a shell command, like PGPASSWORD=, sshpass -p, curl -u, docker login -p, redis-cli -a or net use.
+- Clotr now catches a password or key set in code or a config file, like PHP's define(), os.environ[...], a Terraform default, a YAML block, requests' auth=(...) or SQL's IDENTIFIED BY.
+- Clotr now catches a bearer token in a Python f-string, an nginx line or a header set in code.
+- Clotr now catches and covers a labeled token longer than 128 characters, like an AWS session token.
+- Clotr now recognizes Tailscale, Fly.io, NuGet and crates.io tokens, and a DeepSeek key after its label.
+- Clotr now catches a wallet's private key told in a sentence, a WireGuard private key and an age secret key.
+- Clotr now catches a sign-in code told before who sent it, like "enter the code 482913 we texted you".
+
 ## 1.4.1 (2026-10-19)
 
 - When you choose Cover it on a pasted private key (PEM or OpenSSH), it now covers the whole key. Before, it covered
@@ -57,9 +108,9 @@ What changed in each version of Clotr. How the version numbers work is in [VERSI
   written 1987/04/12 or 12-Apr-1987, and a spelled-out SSN with "fore" or "won" in it after "my SSN is". In Spanish
   it covers an ID after "n.º", an insurance policy number, and a routing number after "número de ruta". An empty
   line in an .env template and words like "case-sensitive" after "my password is" no longer bring up a warning.
-- Clotr's toolbar icon, popup and warnings now show the same C with the bandage across it that Clotr for Windows
-  and Clotr for Android already use, instead of the bandage on its own, so it's the one mark to look for everywhere
-  Clotr shows up.
+- Clotr's toolbar icon, popup and warnings now show the same C with the bandage across it, instead of the bandage
+  on its own. Clotr for Windows already uses it, and so does Clotr for Android in its closed test, so it's the one
+  mark to look for everywhere Clotr shows up.
 
 ## 1.3.0 (2026-10-10)
 
@@ -67,7 +118,7 @@ What changed in each version of Clotr. How the version numbers work is in [VERSI
   and until then it used Clotr's defaults, so a detail you'd marked OK to share, or a kind set to just count,
   could still bring up a warning.
 - A new page, "Is this a scam?", marks the warning signs in a message you paste in, in English or Spanish, and
-  says what each one means. It never tells you a message is safe, because no list knows every scam.
+  says what each one means. It says plainly that a message it finds nothing in can still be a scam.
 - If a command you copy on an AI chat looks like the "verify you're human, paste this" trick, Clotr warns you
   before you run it, and offers to clear it from your clipboard.
 - Tourniquet gives stronger settings to someone you set Clotr up for, a child or a grown-up. After a scam, or a

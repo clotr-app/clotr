@@ -9,14 +9,48 @@
 const { EXPORTS, zip, zipOf } = require("../../fixtures/exports/make-exports.js");
 
 module.exports = async function (env) {
-  const { EXT, Skip, check, ctx, expect, fs, launch, openExtPage, os, path, patience, settle, shotAt, sleep, waitFor } =
-    env;
+  const {
+    EXT,
+    Skip,
+    check: runCheck,
+    ctx,
+    expect,
+    fs,
+    openExtPage,
+    os,
+    path,
+    patience,
+    settle,
+    shotAt,
+    sleep,
+    spanishBrowser,
+    waitFor,
+  } = env;
+  const tempFiles = new Set();
+
+  function cleanupTempFiles() {
+    for (const file of tempFiles) removeTempFile(file);
+    tempFiles.clear();
+  }
+
+  function check(...args) {
+    const run = args.at(-1);
+    args[args.length - 1] = async (...runArgs) => {
+      try {
+        return await run(...runArgs);
+      } finally {
+        cleanupTempFiles();
+      }
+    };
+    return runCheck(...args);
+  }
 
   function tmpZip(name, bytes) {
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), "clotr-lb-"));
     const p = path.join(dir, name);
     try {
       fs.writeFileSync(p, bytes);
+      tempFiles.add(p);
       return p;
     } catch (err) {
       fs.rmSync(dir, { recursive: true, force: true, maxRetries: 3 });
@@ -31,11 +65,7 @@ module.exports = async function (env) {
   async function pickZip(page, bytes, fileName = "export.zip") {
     const input = await page.$("#file-input");
     const file = tmpZip(fileName, bytes);
-    try {
-      await input.uploadFile(file);
-    } finally {
-      removeTempFile(file);
-    }
+    await input.uploadFile(file);
   }
   // Chrome's devtools protocol can't set files on a webkitdirectory input; a real folder pick only happens
   // through the OS's own dialog, and that leaves `.files` empty here. So instead I build real `File` objects
@@ -81,12 +111,31 @@ module.exports = async function (env) {
   async function pickFiles(page, files) {
     const input = await page.$("#file-input");
     const paths = [];
+    for (const [name, bytes] of files) paths.push(tmpZip(name, bytes));
+    await input.uploadFile(...paths);
+  }
+
+  async function clickByCDP(page, selector) {
+    const session = await page.target().createCDPSession();
     try {
-      for (const [name, bytes] of files) paths.push(tmpZip(name, bytes));
-      await input.uploadFile(...paths);
+      const { root } = await session.send("DOM.getDocument");
+      const { nodeId } = await session.send("DOM.querySelector", { nodeId: root.nodeId, selector });
+      if (!nodeId) throw new Error(`No element matches ${selector}`);
+      await session.send("DOM.scrollIntoViewIfNeeded", { nodeId });
+      const { model } = await session.send("DOM.getBoxModel", { nodeId });
+      const x = (model.content[0] + model.content[2] + model.content[4] + model.content[6]) / 4;
+      const y = (model.content[1] + model.content[3] + model.content[5] + model.content[7]) / 4;
+      await page.mouse.move(x, y);
+      await page.mouse.click(x, y);
     } finally {
-      for (const file of paths) removeTempFile(file);
+      await session.detach();
     }
+  }
+
+  function geminiPromptCount() {
+    return JSON.parse(EXPORTS.gemini["Takeout/My Activity/Gemini Apps/MyActivity.json"]).filter((record) =>
+      record.title.startsWith("Prompted "),
+    ).length;
   }
 
   const readResults = (page) =>
@@ -108,12 +157,13 @@ module.exports = async function (env) {
 
   // A card's "Ask $1 to delete it" button lives in its <details>' closed-by-default body, same as a real person
   // would need to expand the card first to see it.
-  async function openFirstCardsLetter(page) {
-    await page.evaluate(() => {
-      document.querySelector("#chat-cards .lb-card-item").open = true;
-    });
+  async function openFirstCardsLetter(page, onStage = () => {}) {
+    onStage("opening the first chat card");
+    // Uses browser input so the page handles the details toggle itself.
+    await clickByCDP(page, "#chat-cards .lb-card-item > summary");
     await settle(100);
-    await page.click("#chat-cards .lb-card-item .lb-card-actions button");
+    onStage("clicking the letter button");
+    await clickByCDP(page, "#chat-cards .lb-card-item .lb-card-actions button");
     await settle(150);
   }
 
@@ -156,7 +206,7 @@ module.exports = async function (env) {
 
   // ---------- LK3: a lone JSON file ----------
 
-  await check("LK3", "Look back: a lone MyActivity.json, picked by itself, is read and grouped by day", async () => {
+  await check("LK3", "Look back: a lone MyActivity.json, picked by itself, is read", async () => {
     const page = await openExtPage(ctx, "lookback.html");
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), "clotr-lb-json-"));
     try {
@@ -168,7 +218,8 @@ module.exports = async function (env) {
       await waitSettled(page);
       const r = await readResults(page);
       expect(r.resultsShown, `lone JSON: results never showed: ${JSON.stringify(r)}`);
-      expect(r.cards.length === 2, `lone JSON: expected 2 day-groups, got ${r.cards.length}`);
+      const promptCount = geminiPromptCount();
+      expect(r.cards.length === promptCount, `lone JSON: expected ${promptCount} prompt cards, got ${r.cards.length}`);
     } finally {
       try {
         await page.close();
@@ -665,47 +716,56 @@ module.exports = async function (env) {
     "LK11",
     "Look back: the results and the letter panel read correctly in Spanish, at both widths",
     async () => {
-      const es = await launch(EXT, ["--lang=es-ES", "--accept-lang=es-ES"], { LANGUAGE: "es", LANG: "es_ES.UTF-8" });
+      let stage = "opening the Spanish page";
+      let page;
       try {
-        const page = await openExtPage(es, "lookback.html");
-        try {
-          await pickZip(page, zipOf("chatgpt"), "chatgpt.zip");
-          await waitSettled(page);
-          const text = await page.evaluate(() => ({
-            lang: document.documentElement.lang,
-            sharedRows: [...document.querySelectorAll(".lb-shared-row")].map((r) => r.textContent),
-            differentNoteShown: !document.getElementById("shared-different-note").hidden,
-          }));
-          expect(text.lang === "es", `page-i18n didn't switch to Spanish: lang=${text.lang}`);
+        const es = await spanishBrowser(ctx, EXT);
+        page = await openExtPage(es, "lookback.html");
+        stage = "uploading the export";
+        await pickZip(page, zipOf("chatgpt"), "chatgpt.zip");
+        stage = "waiting for results";
+        await waitSettled(page);
+        stage = "reading results";
+        const text = await page.evaluate(() => ({
+          lang: document.documentElement.lang,
+          sharedRows: [...document.querySelectorAll(".lb-shared-row")].map((r) => r.textContent),
+          differentNoteShown: !document.getElementById("shared-different-note").hidden,
+        }));
+        expect(text.lang === "es", `page-i18n didn't switch to Spanish: lang=${text.lang}`);
+        expect(
+          text.sharedRows.some((r) => / en \d+ chats?(\D|$)/.test(r)),
+          `no shared row read like Spanish's singular/plural: ${JSON.stringify(text.sharedRows)}`,
+        );
+        if (text.differentNoteShown) {
           expect(
-            text.sharedRows.some((r) => / en \d+ chats?(\D|$)/.test(r)),
-            `no shared row read like Spanish's singular/plural: ${JSON.stringify(text.sharedRows)}`,
+            text.sharedRows.some((r) => /distintos\)$/.test(r)),
+            "the 'different' note showed without any row actually having a different count",
           );
-          if (text.differentNoteShown) {
-            expect(
-              text.sharedRows.some((r) => /distintos\)$/.test(r)),
-              "the 'different' note showed without any row actually having a different count",
-            );
-          }
-          await shotAt(page, "lookback-results-es-light.png", { width: 380, height: 1100, theme: "light" });
-          await shotAt(page, "lookback-results-es-dark.png", { width: 1280, height: 1000, theme: "dark" });
-
-          await openFirstCardsLetter(page);
-          await page.click('input[name="letter-place"][value="eu"]');
-          await settle(100);
-          const letter = await page.evaluate(() => document.getElementById("letter-box").value);
-          expect(
-            /artículo 17/i.test(letter),
-            `Spanish EU letter should name the GDPR's article 17: ${letter.slice(0, 200)}`,
-          );
-          await shotAt(page, "lookback-letter-es-light.png", { width: 380, height: 1100, theme: "light" });
-          await shotAt(page, "lookback-letter-es-dark.png", { width: 1280, height: 1000, theme: "dark" });
-        } finally {
-          await page.close();
         }
+        stage = "taking the results screenshots";
+        await shotAt(page, "lookback-results-es-light.png", { width: 380, height: 1100, theme: "light" });
+        await shotAt(page, "lookback-results-es-dark.png", { width: 1280, height: 1000, theme: "dark" });
+
+        stage = "opening the letter panel";
+        await openFirstCardsLetter(page, (step) => {
+          stage = step;
+        });
+        stage = "choosing the EU letter";
+        await clickByCDP(page, 'input[name="letter-place"][value="eu"]');
+        await settle(100);
+        stage = "reading the letter";
+        const letter = await page.evaluate(() => document.getElementById("letter-box").value);
+        expect(
+          /artículo 17/i.test(letter),
+          `Spanish EU letter should name the GDPR's article 17: ${letter.slice(0, 200)}`,
+        );
+        stage = "taking the letter screenshots";
+        await shotAt(page, "lookback-letter-es-light.png", { width: 380, height: 1100, theme: "light" });
+        await shotAt(page, "lookback-letter-es-dark.png", { width: 1280, height: 1000, theme: "dark" });
+      } catch (err) {
+        throw new Error(`${stage}: ${err.message}`, { cause: err });
       } finally {
-        await es.browser.close();
-        fs.rmSync(es.profile, { recursive: true, force: true });
+        await page?.close();
       }
     },
   );
@@ -864,7 +924,8 @@ module.exports = async function (env) {
           EXPORTS.gemini["Takeout/My Activity/Gemini Apps/MyActivity.json"],
       });
       await waitFor(() => chats.$eval("#results", (el) => !el.hidden), 10000);
-      expect((await readResults(chats)).cards.length === 2, "Gemini Apps folder didn't show its chats");
+      const promptCount = geminiPromptCount();
+      expect((await readResults(chats)).cards.length === promptCount, "Gemini Apps folder didn't show its chats");
     } finally {
       await chats.close();
     }

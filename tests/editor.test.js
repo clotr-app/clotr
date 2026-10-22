@@ -9,7 +9,164 @@ const assert = require("node:assert/strict");
 
 require("../extension/patterns.js");
 require("../extension/editor.js");
-const { isChatComposer } = globalThis.Clotr.editor;
+const { isChatComposer, replacementSpans } = globalThis.Clotr.editor;
+
+test("email Cover it leaves an identical phone in the Outlook quote untouched", async () => {
+  const phone = "555-555-0123";
+  const oldGlobals = { Node: globalThis.Node, document: globalThis.document, window: globalThis.window };
+  class TextNode {
+    constructor(value) {
+      this.nodeType = 3;
+      this.nodeName = "#text";
+      this.nodeValue = value;
+      this.parentNode = null;
+    }
+    get parentElement() {
+      return this.parentNode;
+    }
+  }
+  class ElementNode {
+    constructor(tagName, children = []) {
+      this.nodeType = 1;
+      this.nodeName = tagName.toUpperCase();
+      this.tagName = this.nodeName;
+      this.childNodes = children;
+      this.parentNode = null;
+      this.isContentEditable = true;
+      for (const child of children) child.parentNode = this;
+    }
+    get parentElement() {
+      return this.parentNode;
+    }
+    get innerText() {
+      return this.childNodes.map((child) => (child.nodeType === 3 ? child.nodeValue : child.innerText)).join("\n");
+    }
+    focus() {}
+    contains(node) {
+      return this === node || this.childNodes.some((child) => child === node || child.contains?.(node));
+    }
+  }
+
+  const replyText = new TextNode(`Jerry, My number is ${phone}.`);
+  const quoteText = new TextNode(`Please write back. Call me at ${phone}.`);
+  const reply = new ElementNode("div", [replyText]);
+  const quoteBody = new ElementNode("div", [quoteText]);
+  const appendMarker = new ElementNode("div");
+  const signature = new ElementNode("div", [new ElementNode("p", [new TextNode("Best,")])]);
+  const history = new ElementNode("div", [
+    new ElementNode("div", [new TextNode("From: Professor Example")]),
+    quoteBody,
+  ]);
+  const spacer = new ElementNode("hr");
+  const editor = new ElementNode("div", [reply, appendMarker, spacer, signature, history]);
+  new ElementNode("body", [editor]);
+  const excluded = new Set([appendMarker, spacer, signature, history]);
+  let selected = null;
+  const listeners = new Set();
+  const range = {
+    setStart(node, offset) {
+      this.startContainer = node;
+      this.startOffset = offset;
+    },
+    setEnd(node, offset) {
+      this.endContainer = node;
+      this.endOffset = offset;
+    },
+  };
+  const selection = {
+    anchorNode: null,
+    removeAllRanges() {
+      selected = null;
+    },
+    addRange(value) {
+      selected = value;
+      this.anchorNode = value.startContainer;
+      for (const listener of listeners) listener();
+    },
+  };
+  globalThis.Node = { TEXT_NODE: 3, ELEMENT_NODE: 1 };
+  globalThis.window = { getSelection: () => selection };
+  globalThis.document = {
+    createRange: () => Object.create(range),
+    addEventListener: (type, listener) => type === "selectionchange" && listeners.add(listener),
+    removeEventListener: (type, listener) => type === "selectionchange" && listeners.delete(listener),
+    execCommand: (command, _showUI, replacement) => {
+      if (command !== "insertText" || !selected || selected.startContainer !== selected.endContainer) return false;
+      const text = selected.startContainer;
+      text.nodeValue =
+        text.nodeValue.slice(0, selected.startOffset) + replacement + text.nodeValue.slice(selected.endOffset);
+      return true;
+    },
+  };
+
+  try {
+    const { richTextMap } = globalThis.Clotr.editor;
+    assert.equal(richTextMap(editor, excluded).text, `Jerry, My number is ${phone}.`);
+    const forwardMap = richTextMap([signature, history]);
+    assert.equal(forwardMap.text, `${richTextMap(signature).text}\n${richTextMap(history).text}`);
+    assert.equal(forwardMap.positions[richTextMap(signature).text.length], null);
+    // A long forwarded thread, read as one of the parts: its map is built in a loop, since spreading 200,000
+    // positions into one call overflowed the stack and Cover it stopped before changing anything.
+    const longThread = new ElementNode("div", [new TextNode("x".repeat(200_000))]);
+    new ElementNode("div", [longThread]);
+    assert.equal(
+      richTextMap([signature, longThread]).positions.length,
+      richTextMap(signature).text.length + 1 + 200_000,
+    );
+    const result = await globalThis.Clotr.editor.replaceMatchesInPlace(editor, [
+      { root: editor, excludedNodes: excluded, pairs: [[phone, "[REDACTED PHONE NUMBER]"]] },
+    ]);
+    assert.equal(result.changed, true);
+    assert.match(replyText.nodeValue, /\[REDACTED PHONE NUMBER\]/);
+    assert.match(quoteText.nodeValue, new RegExp(phone.replaceAll("-", "\\-")));
+
+    const editedKey = "AKIA4HPQ7XZ2R6TWLJ3N";
+    const forwardedKey = "AKIAZ7Q3M9WX2KD5HB8R";
+    quoteText.nodeValue = `Edited key ${editedKey}. Forwarded key ${forwardedKey}.`;
+    const quoteLength = globalThis.Clotr.editor.richTextMap(quoteBody).text.length;
+    const overlapping = await globalThis.Clotr.editor.replaceMatchesInPlace(editor, [
+      { kind: "edit", root: quoteBody, start: 0, end: quoteLength, pairs: [[editedKey, "[edited key]"]] },
+      { kind: "forwarded", root: quoteBody, pairs: [[forwardedKey, "[forwarded key]"]] },
+    ]);
+    assert.equal(overlapping.changed, true);
+    assert.deepEqual(overlapping.uncovered, []);
+    assert.match(quoteText.nodeValue, /\[edited key\]/);
+    assert.match(quoteText.nodeValue, /\[forwarded key\]/);
+  } finally {
+    globalThis.Node = oldGlobals.Node;
+    globalThis.document = oldGlobals.document;
+    globalThis.window = oldGlobals.window;
+  }
+});
+
+// Bandage kept calling with the old { pairs, excluded } shape after the scopes came in, and got "nothing changed" back,
+// so a typed number in a Gmail reply stayed (EV18). A wrong shape is Clotr's own bug and has to be loud.
+test("in-place covering refuses anything but a list of scopes", async () => {
+  const editor = { isContentEditable: true };
+  await assert.rejects(
+    globalThis.Clotr.editor.replaceMatchesInPlace(editor, {
+      pairs: [["555-555-0123", "[phone]"]],
+      excluded: new Set(),
+    }),
+    TypeError,
+  );
+  assert.deepEqual(await globalThis.Clotr.editor.replaceMatchesInPlace(editor, []), { changed: false, uncovered: [] });
+});
+
+test("replacement planning keeps editable matches when another value is outside the editable text", () => {
+  const key = "AKIA4HPQ7XZ2R6TWLJ3N";
+  const phone = "555-555-0123";
+  assert.deepEqual(
+    replacementSpans(`Call me at ${phone}.`, [
+      [key, "[key]"],
+      [phone, "[phone]"],
+    ]),
+    {
+      spans: [{ start: 11, end: 23, replacement: "[phone]" }],
+      missing: [key],
+    },
+  );
+});
 
 test("isChatComposer: a chat composer, a multi-line box next to a Send button", () => {
   assert.equal(isChatComposer({ tag: "textarea", hasSendButton: true }), true);

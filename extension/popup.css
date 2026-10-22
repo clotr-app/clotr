@@ -222,16 +222,6 @@ a {
   font-size: 11px;
   color: var(--on-steel);
 }
-/* Quick exit: a chip that's also a button, at the top right of the popup. */
-.quick-exit-btn {
-  border: none;
-  font: inherit;
-  cursor: pointer;
-}
-.quick-exit-btn:hover,
-.quick-exit-btn:focus-visible {
-  background: color-mix(in srgb, var(--signal) 22%, var(--surface));
-}
 /* Site status card: the header field continues down through it, so the two read as one steel block. */
 .site {
   display: flex;
@@ -301,9 +291,9 @@ a {
   border: 1px solid var(--line);
   flex: none;
   background: var(--surface);
-  transition:
-    background-color 0.15s,
-    border-color 0.15s;
+  color: var(--ink);
+  /* Theme fills change with their text; fading the fill could briefly drop below AA. */
+  transition: border-color 0.15s;
 }
 .btn:hover {
   border-color: var(--brand);

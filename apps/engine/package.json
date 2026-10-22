@@ -1,0 +1,36 @@
+{
+  "name": "clotr-engine",
+  "version": "1.5.0",
+  "description": "Clotr's detection engine for credentials and personal details, as a package for scripts, hooks and tools.",
+  "private": true,
+  "license": "AGPL-3.0-or-later",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/clotr-app/clotr",
+    "directory": "apps/engine"
+  },
+  "homepage": "https://github.com/clotr-app/clotr",
+  "bugs": {
+    "url": "https://github.com/clotr-app/clotr/issues"
+  },
+  "type": "module",
+  "files": [
+    "README.md",
+    "dist/clotr-engine.js",
+    "index.cjs",
+    "index.d.ts",
+    "index.mjs",
+    "LICENSE"
+  ],
+  "exports": {
+    ".": {
+      "types": "./index.d.ts",
+      "import": "./index.mjs",
+      "require": "./index.cjs"
+    }
+  },
+  "scripts": {
+    "test": "node --test test/engine-package.test.cjs",
+    "prepack": "node ../../tools/engine-bundle.js --out dist/clotr-engine.js && node --test test/engine-package.test.cjs"
+  }
+}

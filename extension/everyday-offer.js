@@ -47,15 +47,17 @@
   }
 
   // Fills `card` (it holds #ev-groups, #ev-go and #ev-status) and wires it up. `onAnswer(yes, names)` runs once the
-  // browser has answered. Resolves, once the card shows which apps are already on, to `{ tick(names) }`: the setup
+  // browser has answered, and `afterAsk(names)` right after an ask that only switches apps on has gone out, in
+  // the same click. Resolves, once the card shows which apps are already on, to `{ tick(names) }`: the setup
   // page ticks a Tourniquet preset's own apps with it (the welcome page and the popup tick nothing for you).
-  async function mount(card, { onAnswer } = {}) {
+  async function mount(card, { onAnswer, afterAsk } = {}) {
     const groups = card.querySelector("#ev-groups");
     const go = card.querySelector("#ev-go");
     const status = card.querySelector("#ev-status");
     const hint = card.querySelector("#ev-hint");
     const rows = new Map(); // app name → { box, tag }
     let on = new Set();
+    let through = new Set(); // on only because "Everywhere I type" covers it, so there's nothing to untick here
     let asking = false;
     let lastStatus = { text: "", done: false }; // kept so any re-render repaints it, not just the call that set it
 
@@ -105,22 +107,27 @@
       update();
     }
     // Apps the browser has granted show ticked and carry an On tag; an On app can still be unticked, to
-    // ask the browser to give the site back.
+    // ask the browser to give the site back. One Everywhere I type covers is On too, and stays ticked.
     function setOn(names) {
-      const now = new Set(names);
+      const now = new Set([...names, ...through]);
       for (const [name, { box, tag }] of rows) {
         const isOn = now.has(name);
         if (isOn) box.checked = true;
         else if (on.has(name)) box.checked = false; // it was on, and was switched off elsewhere
+        box.disabled = through.has(name);
         box.parentElement.classList.toggle("on", isOn);
         tag.hidden = !isOn;
       }
       on = now;
       update();
     }
+    // Reads the switched-on apps from userSitePatterns, which also counts an app switched on while Everywhere I
+    // type already covered it: the browser lists nothing new for that one (sites.js).
     async function refresh() {
-      const { origins = [] } = await chrome.permissions.getAll();
-      setOn(Sites.grantedEverydayApps(origins));
+      const [{ origins = [] }, listed] = await Promise.all([chrome.permissions.getAll(), Sites.userSitePatterns()]);
+      const own = Sites.grantedEverydayApps(listed);
+      through = new Set(Sites.coveredByEverywhere(Sites.EVERYDAY_SITES, origins).filter((n) => !own.includes(n)));
+      setOn(own);
     }
 
     go.addEventListener("click", () => {
@@ -138,6 +145,7 @@
       const asked = toAdd.length ? Sites.requestEverydayApps(toAdd) : Promise.resolve(true);
       const removing = toRemove.length ? Sites.removeEverydayApps(toRemove) : Promise.resolve(true);
       chrome.storage.local.set({ everydayOffer: "done" }).catch(() => {});
+      if (toAdd.length && !toRemove.length) afterAsk?.(toAdd);
       asking = true;
       say("");
       Promise.all([asked, removing]).then(async ([yes, removedOk]) => {
@@ -181,6 +189,9 @@
     // Switched on or off somewhere else (Settings, the browser's own page) while this is open: show it.
     chrome.permissions.onAdded?.addListener(() => refresh().catch(() => {}));
     chrome.permissions.onRemoved?.addListener(() => refresh().catch(() => {}));
+    chrome.storage.onChanged?.addListener((changes, area) => {
+      if (area === "local" && changes.siteScopes) refresh().catch(() => {});
+    });
     update();
     await refresh().catch(() => {});
 

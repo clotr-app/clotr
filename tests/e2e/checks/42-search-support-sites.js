@@ -6,7 +6,19 @@
 
 module.exports = async function (env) {
   const { EXT, check, clotrActive, ctx, expect, expectNoUI, fs, launch, os, path } = env;
-  const { clickDialogButton, pressEnter, resetState, sentMessages, settle, sleep, store, typeText, waitFor } = env;
+  const {
+    clickDialogButton,
+    pressEnter,
+    resetState,
+    restoreBackgroundReads,
+    sentMessages,
+    settle,
+    sleep,
+    slowBackgroundReads,
+    store,
+    typeText,
+    waitFor,
+  } = env;
   const { waitForDialog, DIALOG_WAIT } = env;
   const { withSite } = env;
   const CARD = "4111 1111 1111 1111";
@@ -53,17 +65,13 @@ module.exports = async function (env) {
     ["yahooSearch", "Yahoo Search"],
   ];
 
-  // readDialog/clickDialogButton in lib.js read Clotr's UI through the top page's own CDP session, which can see
-  // into same-process iframes and closed shadow roots but not into an out-of-process iframe (what Chrome gives a
-  // cross-origin widget like Intercom's). A frame's own `.client` is its own CDP session, which does see its own
-  // document and shadow roots, and DOM.getBoxModel on that session still reports coordinates in the page's
-  // viewport, so a click through page.mouse still lands in the right spot.
-  async function readFrameDialog(frame) {
+  // A cross-origin widget's own CDP session can read its closed-root UI.
+  async function readFrameUI(frame, tag) {
     const { root } = await frame.client.send("DOM.getDocument", { depth: -1, pierce: true });
     let host = null;
     (function find(n) {
       if (host) return;
-      if (n.nodeName === "CLOTR-GUARD") host = n;
+      if (n.nodeName === tag) host = n;
       for (const c of [...(n.children || []), ...(n.shadowRoots || [])]) find(c);
     })(root);
     if (!host) return null;
@@ -80,13 +88,10 @@ module.exports = async function (env) {
     })(host);
     return { text: texts.join(" | "), buttons };
   }
-  const waitForFrameDialog = (frame) => waitFor(() => readFrameDialog(frame), DIALOG_WAIT);
-  // A mouse click needs the button's coordinates translated into the top page's viewport, which an OOPIF's own
-  // box model may not give reliably, so instead I resolve the button to a live JS object on the frame's own
-  // session and call its own .click() directly: the same effect a mouse click would have, with no coordinates
-  // involved at all.
+  const waitForFrameNotice = (frame) => waitFor(() => readFrameUI(frame, "CLOTR-NOTICE"), DIALOG_WAIT);
+  const waitForFrameDialog = (frame) => waitFor(() => readFrameUI(frame, "CLOTR-GUARD"), DIALOG_WAIT);
   async function clickFrameDialogButton(frame, label) {
-    const dialog = await readFrameDialog(frame);
+    const dialog = await readFrameUI(frame, "CLOTR-GUARD");
     const btn = dialog?.buttons.find((b) => b.text === label);
     expect(btn, `widget dialog button "${label}" not found (dialog: ${dialog?.text})`);
     const { object } = await frame.client.send("DOM.resolveNode", { nodeId: btn.nodeId });
@@ -211,61 +216,133 @@ module.exports = async function (env) {
       ),
   );
 
-  // Support-chat widgets load their conversation box in an iframe at the widget maker's own address. Clotr's
-  // content script runs there once that one host is granted, the same way it runs on any other page; Chrome
-  // pierces into the iframe for the dialog's own closed shadow root the same way it already does for Clotr's UI
-  // elsewhere, and the keyboard targets whatever element inside the iframe actually has focus. Every widget
-  // embeds the same way (its own iframe, at its own fixed address), so the same drive runs on all of them
-  // instead of trusting that by analogy from one.
+  // A widget can use a plain input for its editor, so check that the load-time default warns before settings.
   await check(
     "SX4",
     "Switched on: a card number in a support-chat widget warns like an AI chat, and the chat still goes out",
-    () =>
-      withGranted(
-        SUPPORT_WIDGETS.map((w) => w.host),
-        (other) => {
-          return (async () => {
-            const seen = [];
-            for (const { key, origin, name } of SUPPORT_WIDGETS) {
-              await withSite(other, key, async (page) => {
-                await settle(500);
-                const frame = await waitFor(() => page.frames().find((f) => f.url().startsWith(origin)), 3000);
-                expect(frame, `${name}: the widget's iframe never loaded`);
-                expect(
-                  await waitFor(() => page.logs.some((l) => l.includes(origin) && l.includes("active on")), 3000),
-                  `${name}: Clotr never ran in the widget iframe`,
-                );
-                // The iframe's own copy of content.js loads its settings over its own message round trip to
-                // background.js, separate from (and later than) the "active on" log it prints as soon as it starts.
-                // Typing before that finishes means respFor() has nothing to answer with yet, so nothing warns.
-                expect(
-                  await waitFor(() => page.logs.some((l) => l.includes("responses:")), 3000),
-                  `${name}: the widget iframe's settings never finished loading`,
-                );
-                await frame.focus("#msg");
-                await page.keyboard.sendCharacter(CARD);
-                await page.keyboard.press("Enter");
-                const dialog = await waitForFrameDialog(frame);
-                expect(dialog, `${name}: no dialog in the widget`);
-                expect(!/this AI/i.test(dialog.text), `${name}: widget dialog mentions an AI: ${dialog.text}`);
-                expect(
-                  /people who read it here/i.test(dialog.text),
-                  `${name}: widget dialog doesn't read as a chat with people: ${dialog.text}`,
-                );
-                await clickFrameDialogButton(frame, "Leave it in and send");
-                const sent = await waitFor(
-                  () => frame.evaluate(() => window.__sent.slice()).then((s) => (s.length ? s : null)),
-                  2000,
-                );
-                expect(sent?.length === 1 && sent[0].includes("4111"), `${name}: widget sent: ${JSON.stringify(sent)}`);
-                seen.push(name);
+    async () => {
+      const grantedHosts = SUPPORT_WIDGETS.map((w) => w.host);
+      await withGranted(grantedHosts, async (other) => {
+        await slowBackgroundReads(other, 15000, "responses");
+        try {
+          await withSite(other, "supportIntercom", async (page) => {
+            await sleep(3500);
+            const frame = await waitFor(
+              () => page.frames().find((f) => f.url().startsWith(SUPPORT_WIDGETS[0].origin)),
+              3000,
+            );
+            expect(frame, "Intercom: the widget's iframe never loaded");
+            expect(
+              await waitFor(() => page.logs.some((l) => /\bactive on widget\.intercom\.io\b/.test(l)), 3000),
+              "Intercom: Clotr never ran in the widget iframe",
+            );
+            expect(
+              !page.logs.some((l) => l.includes("responses:")),
+              "Intercom: settings arrived before the widget warning",
+            );
+            await frame.evaluate(() => {
+              const old = document.querySelector("#msg");
+              const input = document.createElement("input");
+              input.id = "msg";
+              old.replaceWith(input);
+              document.querySelector("#send").disabled = true;
+              window.__noticeLifecycle = [];
+              const observer = new MutationObserver((records) => {
+                for (const record of records) {
+                  for (const node of record.addedNodes) {
+                    if (node.nodeName === "CLOTR-NOTICE") window.__noticeLifecycle.push("added");
+                  }
+                  for (const node of record.removedNodes) {
+                    if (node.nodeName === "CLOTR-NOTICE") window.__noticeLifecycle.push("removed");
+                  }
+                }
               });
-              await sleep(200);
+              observer.observe(document.documentElement, { childList: true, subtree: true });
+              window.__noticeObserver = observer;
+            });
+            await frame.focus("#msg");
+            await page.keyboard.sendCharacter(CARD);
+            const attachment = waitFor(
+              () => frame.evaluate(() => window.__noticeLifecycle.includes("added")),
+              DIALOG_WAIT,
+            );
+            await page.keyboard.press("Enter");
+            const attached = await attachment;
+            if (!attached) {
+              const state = await frame.evaluate(() => ({
+                changes: window.__noticeLifecycle.slice(),
+                text: document.querySelector("#msg")?.value,
+              }));
+              expect(attached, `Intercom: no warning in the widget: ${JSON.stringify(state)} ${page.logs.join(" | ")}`);
             }
-            return `warned and still sent on ${seen.join(", ")}`;
-          })();
-        },
-      ),
+            const lifecycle = await frame.evaluate(() => ({
+              changes: window.__noticeLifecycle.slice(),
+              text: document.querySelector("#msg")?.value,
+            }));
+            expect(lifecycle.text === CARD, "Intercom: the text changed during the warning");
+            expect(
+              lifecycle.changes.length === 1 && lifecycle.changes[0] === "added",
+              `Intercom: notice attachments while the text stayed the same: ${JSON.stringify(lifecycle.changes)}`,
+            );
+            await frame.evaluate(() => window.__noticeObserver.disconnect());
+            const notice = await waitForFrameNotice(frame);
+            expect(notice && /card/i.test(notice.text), `Intercom: no card warning in the widget: ${notice?.text}`);
+            await sleep(1600);
+            await frame.evaluate(() => {
+              document.querySelector("#send").disabled = false;
+            });
+            await page.keyboard.press("Enter");
+            const sent = await waitFor(
+              () => frame.evaluate(() => window.__sent.slice()).then((s) => (s.length ? s : null)),
+              2000,
+            );
+            expect(sent?.length === 1 && sent[0].includes("4111"), `Intercom: widget sent: ${JSON.stringify(sent)}`);
+          });
+        } finally {
+          await restoreBackgroundReads(other);
+        }
+      });
+
+      return withGranted(grantedHosts, (other) =>
+        (async () => {
+          const seen = [];
+          for (const { key, origin, name } of SUPPORT_WIDGETS) {
+            await withSite(other, key, async (page) => {
+              const frame = await waitFor(() => page.frames().find((f) => f.url().startsWith(origin)), 3000);
+              expect(frame, `${name}: the widget's iframe never loaded`);
+              const widgetHost = new URL(origin).hostname;
+              expect(
+                await waitFor(() => page.logs.some((l) => l.includes(widgetHost) && l.includes("active on")), 3000),
+                `${name}: Clotr never ran in the widget iframe`,
+              );
+              expect(
+                await waitFor(() => page.logs.some((l) => l.includes("responses:")), 3000),
+                `${name}: the widget iframe's settings never finished loading`,
+              );
+              await frame.focus("#msg");
+              await page.keyboard.sendCharacter(CARD);
+              await page.keyboard.press("Enter");
+              const dialog = await waitForFrameDialog(frame);
+              expect(dialog, `${name}: no dialog in the widget`);
+              expect(!/this AI/i.test(dialog.text), `${name}: widget dialog mentions an AI: ${dialog.text}`);
+              expect(
+                /people who read it here/i.test(dialog.text),
+                `${name}: widget dialog doesn't read as a chat with people: ${dialog.text}`,
+              );
+              await clickFrameDialogButton(frame, "Leave it in and send");
+              const sent = await waitFor(
+                () => frame.evaluate(() => window.__sent.slice()).then((s) => (s.length ? s : null)),
+                2000,
+              );
+              expect(sent?.length === 1 && sent[0].includes("4111"), `${name}: widget sent: ${JSON.stringify(sent)}`);
+              seen.push(name);
+            });
+            await sleep(200);
+          }
+          return `warned and still sent on ${seen.join(", ")}`;
+        })(),
+      );
+    },
   );
 
   await check("SX5", "Settings lists the search engines and support chats, all off", async () => {

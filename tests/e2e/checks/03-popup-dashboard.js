@@ -12,6 +12,7 @@ module.exports = async function (env) {
     restoreBackgroundReads,
     seedEvents,
     shot,
+    shotAt,
     slowBackgroundReads,
     sleep,
     store,
@@ -265,6 +266,37 @@ module.exports = async function (env) {
       await store.set(ctx, { bandage: {} });
     },
   );
+  await check("C15", "One Clotr is absent from held-back builds and stays Windows-only when enabled", async () => {
+    const popup = await openPopup(ctx);
+    await popup.click("#tab-settings");
+    const card = await popup.evaluate(() => ({
+      platform: navigator.userAgentData?.platform || navigator.platform,
+      features: chrome.runtime.getManifest().clotr_features || {},
+      exists: Boolean(document.getElementById("one-clotr")),
+      hidden: document.getElementById("one-clotr")?.hidden,
+      text: document.getElementById("one-clotr")?.textContent || "",
+      connectHidden: document.getElementById("one-clotr-connect")?.hidden,
+      disconnectHidden: document.getElementById("one-clotr-disconnect")?.hidden,
+    }));
+    if (!("oneclotr" in card.features)) {
+      expect(!card.exists, "the packaged build should omit the One Clotr card: " + JSON.stringify(card));
+      await popup.close();
+      return;
+    }
+    if (!card.features.oneclotr) {
+      expect(card.exists && card.hidden, "One Clotr should stay hidden when its flag is off: " + JSON.stringify(card));
+      await popup.close();
+      return;
+    }
+    if (/^Win/i.test(card.platform)) {
+      expect(card.exists && !card.hidden && !card.connectHidden && card.disconnectHidden, JSON.stringify(card));
+      expect(/One Clotr/.test(card.text) && /Nothing it finds leaves this PC/.test(card.text), card.text);
+      await shotAt(popup, "popup-one-clotr.png", { selector: "#one-clotr" });
+    } else {
+      expect(card.hidden, "One Clotr should be Windows-only: " + JSON.stringify(card));
+    }
+    await popup.close();
+  });
   await check(
     "WL1",
     "Settings: Show the welcome page opens it again, with the author's note and the practice box",

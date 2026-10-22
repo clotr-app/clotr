@@ -1,12 +1,11 @@
-// How the browser suite's default-build sections split across CI's matrix (.github/workflows/test.yml and
-// public/.github/workflows/test.yml), so the slowest shard takes about a third of the whole suite instead of all of
-// it. Picked by summing seconds per section from a real run's tests/e2e/output/report.md: each shard below lands
-// within a few seconds of the others. sections.js's FLAG_GATED sections (--stress, --store, --website) run no
-// checks in CI either way, so none of them need a place here; one of them (40-website-shots) is also private, left
-// out of the public export entirely. Tourniquet, Command check, "Is this a scam?" and Practice are on in this
-// build, so their sections (and Scam shield, which needs all four) are default-build sections too, each placed in
-// whichever shard has room. ../../tests/e2e-shards.test.js fails if any other default-build section is missing
-// from every shard, or sits in more than one.
+// report.md, 20 Oct 2026; seconds/shard: 01-protection=81.9/3 02-toolbar=14.9/3 03-popup-dashboard=43.5/2
+// 04-scope=47.0/1 05-chat-styles=7.9/3 06-disguised-details=32.6/1 07-responses=381.5/2 08-vault=67.3/2
+// 09-updates=36.6/2 10-privacy-health=198.0/2 11-report-and-map=409.0/1 12-first-time-tips=31.4/3
+// 13-accessibility=60.4/1 14-fail-open=45.7/3 15-performance=68.1/3 18-bandage=193.6/3 19-report-button=40.1/3
+// 20-everyday-sites=129.1/1 21-tourniquet=219.5/3 22-who-asks=171.1/3 23-command-check=34.5/3 24-scam-check=29.9/3
+// 25-practice=45.4/1 26-scam-shield=163.0/2 28-truncated-warning=12.9/2 30-feature-gates=7.5/1 34-big-look=41.0/2
+// 35-clean-link=43.2/1 36-email-quotes=49.0/2 42-search-support-sites=135.9/1 43-everywhere=53.1/1
+// Totals: 963.2s, 992.8s and 938.6s; spread 54.2s.
 "use strict";
 
 const SHARDS = {
@@ -14,7 +13,6 @@ const SHARDS = {
     "04-scope",
     "06-disguised-details",
     "11-report-and-map",
-    "12-first-time-tips",
     "13-accessibility",
     "20-everyday-sites",
     "30-feature-gates",
@@ -32,6 +30,7 @@ const SHARDS = {
     "34-big-look",
     "26-scam-shield",
     "28-truncated-warning",
+    "36-email-quotes",
   ],
   3: [
     "01-protection",
@@ -41,6 +40,7 @@ const SHARDS = {
     "15-performance",
     "18-bandage",
     "19-report-button",
+    "12-first-time-tips",
     "22-who-asks",
     "21-tourniquet",
     "23-command-check",
@@ -48,8 +48,7 @@ const SHARDS = {
   ],
 };
 
-// The sections a shard runs. Throws on an unknown key, so a typo in CI's matrix fails the run loudly instead of
-// quietly skipping the whole suite.
+// Throw on unknown shard keys so a typo in CI fails loudly instead of skipping the suite.
 function sectionsForShard(key) {
   const names = SHARDS[key];
   if (!names) throw new Error(`unknown shard "${key}" (known: ${Object.keys(SHARDS).join(", ")})`);

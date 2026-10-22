@@ -1,3 +1,4 @@
+/* global Clotr */
 // The background service worker. It's the only place that writes the event log and the fingerprint salt, so
 // two AI tabs writing at once can't clobber each other, and it only ever stores metadata, never a detected
 // value. It also owns the toolbar icon and badge, and registers Clotr on AI sites the user adds themselves.
@@ -5,11 +6,28 @@
 
 // Chrome loads these with importScripts; Firefox and Safari list them before this file in the manifest instead
 // (tools/package.js --firefox, --safari).
-if (typeof importScripts === "function" && !globalThis.ClotrSites) importScripts("sites.js");
-if (typeof importScripts === "function" && !globalThis.Clotr?.fingerprint) importScripts("patterns.js", "detector.js");
-if (typeof importScripts === "function" && !globalThis.Clotr?.cleanVaultEntry) importScripts("decide.js");
-if (typeof importScripts === "function" && !globalThis.Clotr?.Helper) importScripts("helper-core.js");
-if (typeof importScripts === "function" && !globalThis.Clotr?.Backup) importScripts("backup.js");
+if (typeof importScripts === "function" && !globalThis.ClotrSites) {
+  importScripts("sites.js");
+}
+if (typeof importScripts === "function" && !globalThis.Clotr?.fingerprint) {
+  importScripts("patterns.js", "detector.js");
+}
+if (typeof importScripts === "function" && !globalThis.Clotr?.cleanVaultEntry) {
+  importScripts("decide.js");
+}
+if (typeof importScripts === "function" && !globalThis.Clotr?.Helper) {
+  importScripts("helper-core.js");
+}
+if (typeof importScripts === "function" && !globalThis.Clotr?.Backup) {
+  importScripts("backup.js");
+}
+if (
+  chrome.runtime.getManifest().clotr_features?.oneclotr &&
+  typeof importScripts === "function" &&
+  !globalThis.Clotr?.OneClotrProtocol
+) {
+  importScripts("one-clotr-protocol.js", "one-clotr-bridge.js");
+}
 
 const LOG = "[Clotr]";
 
@@ -53,6 +71,7 @@ const {
   isSearchSite,
   isSupportSite,
   everywhereGranted,
+  dropPicksWithoutEverywhere,
   SEARCH_SITES,
   tourniquetRecord,
   cleanTourniquet,
@@ -61,6 +80,8 @@ const {
   combinePolicies,
   firmKinds,
   grantedEverydayApps,
+  coveredByEverywhere,
+  EVERYDAY_SITES,
   offerAfterInstall,
   collapseBatch,
   weight,
@@ -886,6 +907,7 @@ chrome.permissions.onAdded.addListener(({ origins = [] }) => {
 
 chrome.permissions.onRemoved.addListener(() => {
   enqueue(async () => {
+    await dropPicksWithoutEverywhere(); // Everywhere I type switched off: what it alone kept on goes off too
     await syncUserSites();
     await syncEverywhere();
   }).catch((err) => console.error(LOG, "removing site failed", err));
@@ -1121,7 +1143,10 @@ chrome.alarms.onAlarm.addListener((alarm) => {
 async function noteEverydayOffer(reason) {
   const { origins = [] } = await chrome.permissions.getAll();
   const { everydayOffer } = await chrome.storage.local.get("everydayOffer");
-  const next = offerAfterInstall(reason, everydayOffer, grantedEverydayApps(origins).length > 0);
+  // Counts an app switched on while Everywhere I type covered it, and the ones it covers, as on already.
+  const anyOn =
+    grantedEverydayApps(await userSitePatterns()).length > 0 || coveredByEverywhere(EVERYDAY_SITES, origins).length > 0;
+  const next = offerAfterInstall(reason, everydayOffer, anyOn);
   if (next && next !== everydayOffer) await chrome.storage.local.set({ everydayOffer: next });
   return next;
 }
@@ -1353,3 +1378,42 @@ chrome.runtime.onConnect.addListener((port) => {
     }
   })();
 });
+
+async function oneClotrSync() {
+  const protocol = globalThis.Clotr?.OneClotrProtocol;
+  if (!protocol) return;
+  const stored = await chrome.storage.local.get([...protocol.SETTINGS, "oneClotrMeta", "oneClotrPaired"]);
+  if (!stored.oneClotrPaired || !(await chrome.permissions.contains({ permissions: ["nativeMessaging"] }))) return;
+  try {
+    const remote = await Clotr.OneClotrBridge.readSettings();
+    const now = Date.now();
+    const { set, remove } = protocol.apply(stored, remote, now);
+    await chrome.storage.local.set(set);
+    if (remove.length) await chrome.storage.local.remove(remove);
+    await Clotr.OneClotrBridge.writeSettings(protocol.settingsForWrite(stored, remote, now));
+  } catch {
+    // A missing or closed desktop app skips this sync; the next ordinary settings change tries again.
+  }
+}
+
+chrome.storage.onChanged.addListener((changes, area) => {
+  const protocol = globalThis.Clotr?.OneClotrProtocol;
+  if (!protocol) return;
+  if (area !== "local") return;
+  const keys = protocol.SETTINGS.filter((key) => changes[key]);
+  if (!keys.length) return;
+  (async () => {
+    const stored = await chrome.storage.local.get(["oneClotrPaired", "oneClotrMeta", ...keys]);
+    if (!stored.oneClotrPaired) return;
+    const meta = { ...(stored.oneClotrMeta || {}) };
+    if (!changes.oneClotrMeta) {
+      for (const key of keys) {
+        if (meta[key]?.linked !== false) meta[key] = { ...(meta[key] || {}), updatedAt: Date.now() };
+      }
+      await chrome.storage.local.set({ oneClotrMeta: meta });
+    }
+    await oneClotrSync();
+  })();
+});
+
+chrome.runtime.onStartup.addListener(oneClotrSync);

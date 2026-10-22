@@ -5,6 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title data-i18n="popup_pageTitle">Clotr</title>
   <link rel="stylesheet" href="popup.css">
+  <link rel="stylesheet" href="quick-exit.css" data-feature="checkup">
 </head>
 <body>
   <header class="top">
@@ -166,6 +167,14 @@
   </main>
 
   <main id="panel-settings" role="tabpanel" aria-labelledby="tab-settings" hidden>
+    <section id="one-clotr" class="tq-card" data-feature="oneclotr" hidden aria-labelledby="one-clotr-title">
+      <h2 id="one-clotr-title" data-i18n="oc_title">One Clotr</h2>
+      <p id="one-clotr-state" role="status" data-i18n="oc_notConnected">Not connected to Clotr for Windows</p>
+      <p class="muted" data-i18n="oc_consent">A setting changed in one will change in the other. Nothing it finds leaves this PC either way.</p>
+      <button id="one-clotr-connect" class="btn primary" type="button" data-i18n="oc_connect">Connect to Clotr for Windows</button>
+      <button id="one-clotr-disconnect" class="btn" type="button" data-i18n="oc_disconnect" hidden>Disconnect</button>
+      <p class="muted" data-i18n="oc_disconnectSub">Settings, your vault and your history stay as they are on each side.</p>
+    </section>
     <section id="tq-card" class="tq-card" data-feature="tourniquet" hidden aria-labelledby="tq-title">
       <h2 id="tq-title" tabindex="-1"><svg class="tq-shield" viewBox="0 0 16 16" aria-hidden="true"><path d="M8 1 14 3.4V8c0 3.4-2.5 6.1-6 7-3.5-.9-6-3.6-6-7V3.4Z"/></svg><span id="tq-title-text" data-i18n="pp_tqTitle">Tourniquet is on</span></h2>
       <p id="tq-since" class="muted"></p>
@@ -350,7 +359,9 @@
   <script src="everyday-offer.js"></script>
   <script src="insights.js"></script>
   <script src="mindmap.js"></script>
-  <script src="quick-exit.js"></script>
+  <script src="quick-exit.js" data-feature="checkup"></script>
+  <script src="one-clotr-protocol.js" data-feature="oneclotr"></script>
+  <script src="one-clotr-bridge.js" data-feature="oneclotr"></script>
   <script src="popup.js"></script>
 </body>
 </html>

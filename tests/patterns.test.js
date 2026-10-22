@@ -6,6 +6,7 @@ const assert = require("node:assert/strict");
 
 require("../extension/patterns.js");
 require("../extension/detector.js");
+const { SECRET_KINDS, makeGen, makeSecrets } = require("./fixtures/secrets.js");
 const { retrySlow, bestOfBoth, bestOfPair, grewMoreThan, reference, REFERENCE_MS } = require("./timing.js");
 
 // The extension's own detect(), reshaped to { patternId: [matched text, …] }
@@ -20,6 +21,19 @@ test("a speed check measures again after a slow moment, and still fails real slo
     2,
   );
   assert.throws(() => retrySlow(() => "always slow", { pauseMs: 1 }), /always slow \(slow on all 3 tries\)/);
+});
+
+test("the public export can double every timing budget", () => {
+  const old = process.env.CLOTR_TIMING_RELAXED;
+  process.env.CLOTR_TIMING_RELAXED = "1";
+  try {
+    const timing = bestOfBoth(() => {}, 1);
+    assert.equal(timing.over(7), false);
+    assert.equal(timing.allowed, 14);
+  } finally {
+    if (old === undefined) delete process.env.CLOTR_TIMING_RELAXED;
+    else process.env.CLOTR_TIMING_RELAXED = old;
+  }
 });
 
 test("a budget check counts this process's own work: waiting on a busy computer isn't over budget, real work is", () => {
@@ -107,6 +121,61 @@ function expectOnly(text, id, match) {
   if (match !== undefined) assert.deepEqual(found[id], [match]);
 }
 
+function residualRun(secret, output, min = 12) {
+  const normalize = (s) =>
+    s
+      .replace(/\[REDACTED [^\]]*\]/g, "")
+      .replace(/\b(?:PRIVATE_KEY|AWS_ACCESS_KEY_ID|AWS_SECRET_ACCESS_KEY|DATABASE_URL|SECRET|TOKEN)\s*[:=]\s*/gi, "")
+      .replace(/[\s"'\\]/g, "");
+  const body = normalize(secret);
+  const left = normalize(output);
+  for (let i = 0; i + min <= body.length; i++) if (left.includes(body.slice(i, i + min))) return body.slice(i, i + min);
+  return "";
+}
+
+function expectCovered(text, kind) {
+  const results = globalThis.Clotr.detect(text);
+  assert.ok(
+    results.some((result) => result.id === kind),
+    `${kind}: no finding for the planted secret`,
+  );
+  const left = residualRun(text, globalThis.Clotr.redact(text, results));
+  assert.equal(left, "", `${kind}: a 12-character run remains after Cover it: ${left}`);
+  return results;
+}
+
+test("every secret pattern has a seeded extent generator", () => {
+  const fixtures = makeSecrets(20261019);
+  const generated = new Set(fixtures.map((fixture) => fixture.kind));
+  const missing = globalThis.Clotr.PATTERNS.filter((pattern) => pattern.secret === true && !generated.has(pattern.id));
+  assert.deepEqual(
+    missing.map((pattern) => pattern.id),
+    [],
+  );
+  assert.deepEqual(
+    [...SECRET_KINDS].sort(),
+    globalThis.Clotr.PATTERNS.filter((pattern) => pattern.secret)
+      .map((p) => p.id)
+      .sort(),
+  );
+  for (const fixture of fixtures.filter((item) => SECRET_KINDS.includes(item.kind))) {
+    const names = new Set(fixture.shapes.map((shape) => shape.name));
+    for (const name of [
+      "bare",
+      "label",
+      "sentence",
+      "authorization",
+      "json",
+      "env",
+      "trailingDot",
+      "trailingComma",
+      "crlf",
+    ]) {
+      assert.ok(names.has(name), `${fixture.kind}: no ${name} paste shape`);
+    }
+  }
+});
+
 function expectNothing(text) {
   assert.deepEqual(detect(text), {}, `"${text}" should not match`);
 }
@@ -117,7 +186,7 @@ const FAKE = {
   aws: "AKIA4HPQ7XZ2R6TWLJ3N",
   github: "ghp_" + "7Rk2QwZ9LmX4vB8nT1cY6pJ3sH5dF0gA2eUi",
   anthropic: "sk-ant-api03-Zq8Lm2Xv9Rt4Kp7Wn1Bc6Hy3Jd5Gf0Qs",
-  openai: "sk-proj-Hk3Pq9Zr7Tm2Xw5Lv8Nb1Cy4Jg6Df0Sa",
+  openai: "sk-proj-" + "Hk3Pq9Zr7Tm2Xw5Lv8Nb1Cy4Jg6Df0Sa",
   xai: "xai-" + "Qp7Lk2Xv9Rt4Wn1Bc6Hy3Jd5Gf0Mz8As",
 };
 
@@ -144,6 +213,55 @@ test("private keys: PEM matches full block including body and footer when presen
   expectOnly("-----BEGIN RSA PRIVATE KEY-----", "private_key", "-----BEGIN RSA PRIVATE KEY-----");
 });
 
+test("wrapped tokens are found whole at 64 and 76 columns, and unrelated wrapped text stays quiet", () => {
+  const fixtures = makeSecrets(20261019);
+  for (const fixture of fixtures) {
+    for (const shape of fixture.shapes.filter((item) => /wrap/i.test(item.name))) {
+      const results = globalThis.Clotr.detect(shape.text);
+      const finding = results.find((result) => result.id === fixture.kind);
+      assert.ok(finding, fixture.kind + ":" + shape.name + " was not found");
+      assert.ok(
+        finding.matches.some((match) => match.includes(shape.value)),
+        fixture.kind + ":" + shape.name + " did not cover its wrapped value",
+      );
+      assert.equal(residualRun(shape.value, globalThis.Clotr.redact(shape.text, results)), "");
+    }
+  }
+  expectNothing("The log contains unrelated base64 lines\n" + "ABCD".repeat(16) + "\n" + "EFGH".repeat(16));
+  expectNothing(
+    "A wrapped paragraph has ordinary words joined across\n" + "the line ending in the middle of this prose.",
+  );
+  const url = "https://example.test/a-very-long-unsecret-path/that-wraps-at-a-column-boundary";
+  expectNothing(url.slice(0, 64) + "\n" + url.slice(64));
+});
+
+test("base64-wrapped private keys are covered in Kubernetes key data and Secret data", () => {
+  const fixture = makeSecrets(20261019).find((item) => item.kind === "private_key");
+  for (const shape of fixture.shapes.filter((item) => item.name.startsWith("base64"))) {
+    expectOnly(shape.text, "private_key", shape.value);
+    assert.equal(
+      residualRun(shape.value, globalThis.Clotr.redact(shape.text, globalThis.Clotr.detect(shape.text))),
+      "",
+    );
+  }
+  expectNothing("client-key-data: " + Buffer.from("-----BEGIN CERTIFICATE-----").toString("base64"));
+});
+
+test("PGP private key blocks are covered through their footer", () => {
+  const fixture = makeSecrets(20261019).find((item) => item.kind === "private_key");
+  const shape = fixture.shapes.find((item) => item.name === "pgpBlock");
+  expectOnly(shape.text, "private_key", shape.value);
+  const text = "before\n" + shape.text + "\nafter";
+  assert.equal(globalThis.Clotr.redact(text, globalThis.Clotr.detect(text)), "before\n[REDACTED PRIVATE KEY]\nafter");
+});
+
+test("PEM headers and footers may have spaces after the dashes", () => {
+  const fixture = makeSecrets(20261019).find((item) => item.kind === "private_key");
+  const shape = fixture.shapes.find((item) => item.name === "spacedPem");
+  expectOnly(shape.text, "private_key", shape.value);
+  expectNothing("----- BEGIN RSA PRIVATE KEY ------\n" + "A".repeat(80));
+});
+
 // A key copied on Windows has CRLF line ends, and a header with no footer must stay quick on a huge paste.
 test("private keys: a CRLF block is covered whole, and a lone header in a long paste stays fast", () => {
   const crlf =
@@ -153,9 +271,111 @@ test("private keys: a CRLF block is covered whole, and a lone header in a long p
     globalThis.Clotr.detect(`key:\r\n${crlf}\r\nthanks`),
   );
   assert.equal(redacted, "key:\r\n[REDACTED PRIVATE KEY]\r\nthanks");
-  const start = Date.now();
-  globalThis.Clotr.detect(`-----BEGIN RSA PRIVATE KEY-----\n${"A".repeat(200000)}`);
-  assert.ok(Date.now() - start < 1000, "a lone header in a long paste is checked quickly");
+  // A busy machine can stretch one run past the limit, so a slow moment gets two more tries; a real slowdown fails
+  // all three.
+  retrySlow(() => {
+    const start = Date.now();
+    globalThis.Clotr.detect(`-----BEGIN RSA PRIVATE KEY-----\n${"A".repeat(200000)}`);
+    const ms = Date.now() - start;
+    return ms < 1000 ? undefined : `a lone header in a long paste took ${ms} ms (1000 allowed)`;
+  });
+});
+
+test("a token too long to be wrapped stays on its original lines and scans fast", () => {
+  const text = `${"A".repeat(16)}\n${"B".repeat(200000)}`;
+  retrySlow(() => {
+    const start = Date.now();
+    globalThis.Clotr.detect(text);
+    const ms = Date.now() - start;
+    return ms < 1000 ? undefined : `an overlong wrapped token took ${ms} ms (1000 allowed)`;
+  });
+});
+
+test("private keys: a missing footer still covers all base64 lines", () => {
+  const key = makeSecrets(20261019).find((fixture) => fixture.kind === "private_key");
+  const block = key.shapes.find((shape) => shape.name === "truncated").value;
+  expectCovered(block, "private_key");
+});
+
+test("private keys: a damaged or cut-off footer stops after the base64 body", () => {
+  const key = makeSecrets(20261019).find((fixture) => fixture.kind === "private_key");
+  const body = key.shapes.find((shape) => shape.name === "truncated").value;
+  const base64Body = body.slice(body.indexOf("\n") + 1);
+  const crlfBody = body.replace(/\n/g, "\r\n");
+  const crlfBase64Body = base64Body.replace(/\n/g, "\r\n");
+  for (const footer of ["----END RSA PRIVATE KEY", "---"]) {
+    const text = `${crlfBody}\r\n${footer}`;
+    const findings = globalThis.Clotr.detect(text);
+    const match = findings
+      .find((result) => result.id === "private_key")
+      ?.matches.find((value) => value.startsWith("-----BEGIN"));
+    assert.equal(match, crlfBody, `the match should stop before ${footer}`);
+    assert.equal(residualRun(crlfBase64Body, globalThis.Clotr.redact(text, findings)), "");
+  }
+});
+
+test("Cover it replaces nested findings longest first for pasted URLs and a PEM named in prose", () => {
+  const accessId = FAKE.aws;
+  const secretKey = ["pR4mT8vQ", "zL2nH6cD", "fK9wB3xJ", "sA7qE1yU", "gM5dC0rP"].join("");
+  const url = `https://${accessId}:${secretKey}@s3.corp-demo.net/bucket`;
+  const urlFindings = globalThis.Clotr.detect(url);
+  for (const cover of [
+    globalThis.Clotr.redact,
+    (text, findings) => globalThis.Clotr.generalize(text, findings, "en-US"),
+  ]) {
+    assert.equal(residualRun(secretKey, cover(url, urlFindings)), "", "the URL password should not remain");
+  }
+
+  const key = makeSecrets(20261019).find((fixture) => fixture.kind === "private_key").value;
+  const header = key.slice(0, key.indexOf("\n"));
+  const body = key.slice(header.length + 1, key.lastIndexOf("\n"));
+  const prose = `the file starts with ${header} like this:\n${key}`;
+  const proseFindings = globalThis.Clotr.detect(prose);
+  for (const cover of [
+    globalThis.Clotr.redact,
+    (text, findings) => globalThis.Clotr.generalize(text, findings, "en-US"),
+  ]) {
+    assert.equal(residualRun(body, cover(prose, proseFindings)), "", "the PEM body should not remain");
+  }
+});
+
+test("a 0x private key after PRIVATE_KEY is caught while public 64-hex values stay quiet", () => {
+  const hex = "4c0883a69102937d6231471b5dbb6204fe5129617082792ae468d01a3f362318";
+  expectCovered(`PRIVATE_KEY=0x${hex}`, "crypto_secret");
+  const yaml = `deployer_private_key: "0x${hex}"`;
+  const found = globalThis.Clotr.detect(yaml);
+  assert.ok(found.some((result) => result.id === "crypto_secret"));
+  assert.equal(residualRun(`0x${hex}`, globalThis.Clotr.redact(yaml, found)), "");
+  expectNothing(`block hash: 0x${hex}`);
+  expectNothing(`transaction id: ${hex}`);
+  expectNothing(`SHA-256 checksum: ${hex}`);
+});
+
+test("connection strings cover URL passwords with slashes and leave plain paths alone", () => {
+  const url = "postgres://app:Ab3/pR4mT8vQzL2nH6cD@db.corp-demo.net:5432/app";
+  expectCovered(url, "connection_string");
+  expectOnly(`Authorization: Bearer ${url}`, "connection_string", url);
+  expectNothing("DATABASE_URL=postgres://db.corp-demo.net:5432/app/path");
+  expectNothing("https://example.test/path/without/credentials");
+});
+
+test("an internal IP found inside a URL is still covered where it appears on its own", () => {
+  const ip = "10.0.0.5";
+  const text = `db is postgres://app:PassW0rd!@${ip}:5432/app and ping ${ip} fails`;
+  const findings = globalThis.Clotr.detect(text);
+  assert.deepEqual(findings.find((result) => result.id === "internal_ip")?.matches, [ip]);
+  assert.ok(!globalThis.Clotr.redact(text, findings).includes(ip));
+});
+
+test("Telegram Bot API URLs and tokens ending in a dash are covered as service tokens", () => {
+  const fixtures = makeSecrets(20261019).find((fixture) => fixture.kind === "service_token");
+  const telegram = fixtures.value.slice(0, -1) + "Z";
+  expectOnly(`https://api.telegram.org/bot${telegram}/getMe`, "service_token", telegram);
+  const sendgrid = fixtures.shapes.find((shape) => shape.name === "sendgridTrailingDash").value;
+  expectOnly(sendgrid, "service_token", sendgrid);
+  expectNothing(`${telegram}A`);
+  expectNothing(`${sendgrid}A`);
+  expectNothing(`https://api.telegram.org/robot${telegram}/getMe`);
 });
 
 test("AWS access keys: the rarer STS (ABIA) and context (ACCA) prefixes match too, same as AKIA/ASIA", () => {
@@ -164,12 +384,345 @@ test("AWS access keys: the rarer STS (ABIA) and context (ACCA) prefixes match to
   expectOnly("key ASIA4HPQ7XZ2R6TWLJ3N here", "aws_access_key");
 });
 
+test("AWS secret access keys are found only beside a labeled AWS access key id", () => {
+  const accessKey = "AKIA4HPQ7XZ2R6TWLJ3N";
+  const secretKey = ["pR4mT8vQ", "zL2nH6cD", "fK9wB3xJ", "sA7qE1yU", "gM5dC0rP"].join("");
+  assert.deepEqual(detect(`AWS_ACCESS_KEY_ID=${accessKey}\nAWS_SECRET_ACCESS_KEY=${secretKey}`), {
+    aws_access_key: [accessKey, secretKey],
+  });
+  for (const nearMiss of [
+    `AWS secret access key in this example: ${secretKey}`,
+    `AWS_ACCESS_KEY_ID=${accessKey}\nAWS_SECRET_ACCESS_KEY=${"A".repeat(40)}`,
+    `AWS_ACCESS_KEY_ID=${accessKey}\nAWS_SECRET_ACCESS_KEY=${"a".repeat(40)}`,
+    `AWS_ACCESS_KEY_ID=${accessKey}\nAWS_SECRET_ACCESS_KEY=${"12345678-1234-1234-1234-123456789abc"}`,
+    `AWS_ACCESS_KEY_ID=${accessKey}\nAWS_SECRET_ACCESS_KEY=${"iVBORw0KGgoAAAANSUhEUg" + "A".repeat(18)}`,
+    `AWS_ACCESS_KEY_ID=${accessKey}\nAWS_SECRET_ACCESS_KEY=${"0123456789abcdef".repeat(2) + "01234567"}`,
+  ]) {
+    const expected = nearMiss.includes(accessKey) ? [accessKey] : undefined;
+    assert.deepEqual(detect(nearMiss).aws_access_key, expected, "no AWS secret key without the distinct shape");
+  }
+});
+
+test("an AWS secret key in an exported command inside a JSON string is covered", () => {
+  const fixture = makeSecrets(20261019).find((item) => item.kind === "aws_access_key");
+  const shape = fixture.shapes.find((item) => item.name === "awsSecretJson");
+  const results = globalThis.Clotr.detect(shape.text);
+  const finding = results.find((result) => result.id === "aws_access_key");
+  assert.ok(finding);
+  assert.ok(finding.matches.includes(shape.value));
+  assert.equal(residualRun(shape.value, globalThis.Clotr.redact(shape.text, results)), "");
+  expectNothing('{"cmd":"export AWS_SECRET_ACCESS_KEY=\\"' + shape.value + '\\""}');
+});
+
+test("Slack tokens may have the xoxe. prefix", () => {
+  const fixture = makeSecrets(20261019).find((item) => item.kind === "slack_token");
+  const shape = fixture.shapes.find((item) => item.name === "xoxePrefix");
+  expectOnly(shape.text, "slack_token", shape.value);
+  expectNothing("xoxe.xoxb-no");
+});
+
 test("xAI API key: the xai- prefix, with the same randomness check as Anthropic and OpenAI keys", () => {
   expectOnly(`XAI_API_KEY=${FAKE.xai}`, "xai_key");
   // A 16-character key (the minimum prefix regex length) is accepted too when random.
   expectOnly("XAI_API_KEY=xai-Qp7Lk2Xv9Rt4Wn1B", "xai_key");
   // A documentation placeholder isn't random enough to flag.
   expectNone("XAI_API_KEY=xai-your-api-key-here");
+});
+
+// Tokens from developer tools, which people paste into AI chats while they debug. Each provider documents a fixed
+// prefix, so each gets its own kind. The made-up tokens are split after the prefix so a secret scanner doesn't flag this file, and the encoded
+// parts are built here from made-up JSON.
+const b64json = (o) => Buffer.from(JSON.stringify(o)).toString("base64");
+const DEV = {
+  sentry_token: [
+    "sntryu_" + "7781781095c9bc37d4a2fd9c6af96edc04d27d7d6ba2a7874cd59e095e56a1b9",
+    "sntrya_" + "d5b5e50ad5c44799d137ee54052f2d81b8dcbbcfd2e69f426a39c08185bc9038",
+    "sntryi_" + "dbb330dd1d0bd1501403f949f0ad6ac2fa755a18dbdec1426157f6c9b53e8d76",
+    "sntrys_" +
+      b64json({ iat: 1760872800.123456, url: "https://sentry.io", region_url: "https://us.sentry.io", org: "acme" }) +
+      "_" +
+      "xPwCy27BSpi+5LZrEnIMQJOhxBF3UjvRKex2j0BT49w",
+  ],
+  grafana_token: [
+    "glsa_" + "DE88zD0BBa1E0pt0rqmOAkF3CG86M2kg_b6f4f427",
+    "glc_" +
+      b64json({ o: "914052", n: "stack-883917-hm-read-docs-bot", k: "Hq81Zp3XcV0mLw7RtY29BnK4", m: { r: "us" } }),
+  ],
+  vault_token: [
+    "hvs." + "D5TLBmyj7SwG1Z59BSXBjng5",
+    "hvs." + "SgozRwfDLT949c77BATsDpvyuoqwK1MEFvLXIOgKK9CIMJW7qPMTczy5vfJHoDirn4mP7rNhUxIGN2TYgGGW20Wt9nG",
+    "hvb." +
+      "fDj6Nt0zXBMTq6c3mrjDBQI2lLgCT7f2K1SiVbQfXTsUT_4_5AApMZhrNuKRY9YBxtqeHFpnE5wfiEn-x2eSwtrZvhjCfkQmxd9xZKEX42rhBdCArPFEWh1ChyvNzJF_BIOjvXP1yzaD",
+    "hvr." + "kfo3d6guNpy1FflAo4D1CZ0k",
+  ],
+  replicate_token: ["r8_" + "1nzTdzlU5dbiL2pu8qaUTw8pBnKaV7RW9frju"],
+  linear_key: ["lin_api_" + "xoGlTGh9tTOkCfAhbV6D" + "FcY9qlH5yekZhmZsNhGW"],
+  postman_key: ["PMAK-" + "9f93dd0cce240f9e05bf804b-8f19032388fb4ff6bb5f3e54cdb3297074"],
+  shopify_token: [
+    "shpat_" + "6a95c50f44a1155ac6ac299dfd3e4803",
+    "shpca_" + "d29b41c50ce500cf83b1c4da49f6b92f",
+    "shppa_" + "6c7abd2d835e3dd05b04bf11de3385af",
+    "shpss_" + "33ef3ad8f8fa84fb37a019d656c6d8af",
+  ],
+  atlassian_token: [
+    "ATATT3" +
+      "xFfG0TFj0Su8EjV3t4HlAitBND9OwxVdfn5iQQKPqARMafXTt_eAv534m6jNRyWZ6UtFOQG7u5Q4qQT7Z0jo9GUEjcADv2" +
+      "uTo33Kjbp9eP7N7mUvjdzeM6SApBzp-9RzYVVZy7-x8KRcertQPaODsfpOAyyX7Q8xq3EifcNzjkM6L_QoW=pPlyxrDL",
+    "ATCTT3" +
+      "xFfGZ536lTqb88-UPkA1ylmf8woLx0SKUmoB1lCXR-wRlFSQfbnUhlk--UvOpigzl9jG99xZ7Aqz9-H1_od9gm7awyqYi2" +
+      "OQLS0fmFFW7J9oApZR27RLCDSTWF6f7QwG1iVecpyOguuncZz3YFxpIIw6NHbhdFyKnbU7FMnFifkncbrkc=HRvwsQfl",
+  ],
+  netlify_token: ["nfp_" + "7MgO1o7JR96J_ZDAth39aUXumZyiMBLkNw9o", "nfc_" + "kfo3d6guNpy1FflAo4D1CZ0kYkREJdBaUAzN"],
+  pulumi_token: [
+    "pul-" + "42ad4a7221d32fd20501ef427be1c0628b96444f",
+    "pul-" + "z1nzte3w1ek6ryel6n94" + "ay2endzkcjnqz5bm6w06",
+  ],
+  databricks_token: ["dapi" + "c86e3077f4cee91ffb3f78319827fbd4", "dapi" + "c86e3077f4cee91ffb3f78319827fbd4-2"],
+};
+
+test("developer tokens: each provider's documented shape is found in a sentence as its own kind", () => {
+  for (const [id, tokens] of Object.entries(DEV)) {
+    for (const token of tokens) {
+      expectOnly(`here's my token ${token} can you tell why the request fails?`, id, token);
+      expectOnly(`curl -H "X-Token: ${token}" https://api.example.test/v1/me`, id, token);
+    }
+  }
+});
+
+test("Stripe publishable keys match their minimum body length", () => {
+  const key = "pk_live_" + "a1b2c3d4e5f6g7h8i9j0k1Z2";
+  expectOnly(key, "stripe_publishable_key", key);
+  expectNothing("pk_live_" + "a1b2c3d4e5f6g7h8i9j0k1Z");
+});
+
+test("developer tokens: a key or token label in front now names the provider, not a generic service token", () => {
+  expectOnly(`LINEAR_API_KEY=${DEV.linear_key[0]}`, "linear_key", DEV.linear_key[0]);
+  expectOnly(`REPLICATE_API_TOKEN=${DEV.replicate_token[0]}`, "replicate_token", DEV.replicate_token[0]);
+  expectOnly(`PULUMI_ACCESS_TOKEN=${DEV.pulumi_token[0]}`, "pulumi_token", DEV.pulumi_token[0]);
+  expectOnly(`DATABRICKS_TOKEN=${DEV.databricks_token[0]}`, "databricks_token", DEV.databricks_token[0]);
+  expectOnly(`NETLIFY_AUTH_TOKEN=${DEV.netlify_token[0]}`, "netlify_token", DEV.netlify_token[0]);
+  expectOnly(`SENTRY_AUTH_TOKEN=${DEV.sentry_token[0]}`, "sentry_token", DEV.sentry_token[0]);
+  expectOnly(`VAULT_TOKEN=${DEV.vault_token[0]}`, "vault_token", DEV.vault_token[0]);
+  expectOnly(`GRAFANA_TOKEN=${DEV.grafana_token[0]}`, "grafana_token", DEV.grafana_token[0]);
+  expectOnly(`POSTMAN_API_KEY=${DEV.postman_key[0]}`, "postman_key", DEV.postman_key[0]);
+  // A pasted auth header used to read as a password.
+  expectOnly(`Authorization: Bearer ${DEV.grafana_token[0]}`, "grafana_token", DEV.grafana_token[0]);
+  expectOnly(`export VAULT_TOKEN="${DEV.vault_token[1]}"`, "vault_token", DEV.vault_token[1]);
+  // Shopify's tokens used to fall under the catch-all service token.
+  expectOnly(`shopify admin ${DEV.shopify_token[0]}`, "shopify_token", DEV.shopify_token[0]);
+  expectOnly(`SHOPIFY_ACCESS_TOKEN=${DEV.shopify_token[0]}`, "shopify_token", DEV.shopify_token[0]);
+});
+
+test("developer tokens: a bare prefix, a short or non-random body, or a prefix inside a longer word stays quiet", () => {
+  for (const text of [
+    // The prefix on its own, as in docs or a question about it
+    "what does the sntrys_ prefix mean on a Sentry token?",
+    "Grafana tokens start with glsa_ or glc_, right?",
+    "a Vault token starts with hvs. and a batch one with hvb.",
+    "Replicate keys look like r8_ followed by letters",
+    "Linear keys begin lin_api_ and Postman keys begin PMAK-",
+    "Shopify uses shpat_ shpca_ shppa_ and shpss_ prefixes",
+    "Atlassian tokens start ATATT3, Netlify ones nfp_, Pulumi pul- and Databricks dapi",
+    // Shorter or longer than the documented length
+    "sntryu_" + "7781781095c9bc37d4a2fd9c6af96edc",
+    "sntryu_" + "7781781095c9bc37d4a2fd9c6af96edc04d27d7d6ba2a7874cd59e095e56a1b9f",
+    "r8_" + "1nzTdzlU5dbiL2pu8qaUTw8pBnKaV7RW9frju4",
+    "glsa_" + "DE88zD0BBa1E0pt0rqmO_b6f4f427",
+    "hvs." + "CAESIJlU9J",
+    "r8_" + "1nzTdzlU5dbiL2pu8",
+    "lin_api_" + "xoGlTGh9tTOkCfAhbV6D",
+    "lin_api_" + "a1a2".repeat(10),
+    "PMAK-" + "9f93dd0cce240f9e05bf804b",
+    "shpat_" + "6a95c50f44a1155a",
+    "ATATT3" + "xFfGF0Tq8vVb2Hn7Kp4L" + "w9Zr1Yc6Xm3Jd5Sg8Qa2",
+    "nfp_" + "WsnNKwHyByNq",
+    "pul-" + "42ad4a7221d32fd2",
+    "dapi" + "c86e3077f4cee91f",
+    // Inside a longer word or name
+    "the function fetchdapi" + "c86e3077f4cee91ffb3f78319827fbd4 failed",
+    "my_r8_" + "1nzTdzlU5dbiL2pu8qaUTw8pBnKaV7RW9frju",
+    "xlin_api_" + "xoGlTGh9tTOkCfAhbV6D" + "FcY9qlH5yekZhmZsNhGW",
+    "ampul-" + "42ad4a7221d32fd20501ef427be1c0628b96444f",
+    // A body that isn't random: a placeholder, a repeat, a run of the alphabet
+    "sntryu_" + "0".repeat(64),
+    "lin_api_" + "YOURAPIKEYHEREYOURAP" + "IKEYHEREYOURAPIKEY12",
+    "r8_" + "abcdefghijklmnopqrstuvwxyzabcdefghijk",
+    "pul-" + "abcdefabcdefabcdefabcdefabcdefabcdefabcd",
+    "dapi" + "deadbeefdeadbeefdeadbeefdeadbeef",
+    "shpat_" + "ab12".repeat(8),
+    "glsa_" + "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa_00000000",
+    "nfp_" + "your_netlify_token_goes_right_here12",
+    "hvs." + "your-vault-token-goes-here-in-this-spot",
+    // A snake_case name that happens to share a prefix and the length
+    "if (nfc_" + "tag_reader_enabled_on_device_v2_flag) {",
+  ]) {
+    expectNone(text);
+  }
+});
+
+function oracleCredentialCases(seed = 20261020) {
+  const g = makeGen(seed);
+  const hex = (count) => g.chars("0123456789abcdef", count);
+  const alpha = (count) => g.chars("ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz", count);
+  const alnum = (count) => g.chars(g.ALNUM, count);
+  const upper = (count) => g.chars("ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789", count);
+  const base64 = (count) => g.chars(`${g.ALNUM}+/`, count);
+  const jwt = `eyJhbGciOiJSUzI1NiJ9.${g.b64u(150)}.${g.b64u(332)}`;
+  const secretKey = `A3-${upper(6)}-${upper(6)}-${upper(5)}-${upper(5)}-${upper(5)}-${upper(5)}`;
+  const twilio = `TWILIO_ACCOUNT_SID=AC${hex(32)} TWILIO_AUTH_TOKEN=${alnum(32)}`;
+
+  return [
+    {
+      kind: "gitlab_token",
+      label: "GITLAB_TOKEN",
+      values: [
+        `glpat-${alnum(20)}`,
+        `glpat-${alnum(27)}.${g.chars("abcdefghijklmnopqrstuvwxyz0123456789", 9)}`,
+        `gldt-${alnum(20)}`,
+        `glcbt-12_${alnum(20)}`,
+        `glrt-${alnum(20)}`,
+        `glft-${alnum(20)}`,
+        `glsoat-${alnum(20)}`,
+        `glagent-${alnum(50)}`,
+        `gloas-${alnum(64)}`,
+      ],
+    },
+    { kind: "perplexity_key", label: "PERPLEXITY_API_KEY", values: [`pplx-${alnum(48)}`] },
+    {
+      kind: "slack_token",
+      label: "SLACK_TOKEN",
+      values: [
+        `xapp-1-A${upper(10)}-${g.digits(13)}-${g.chars("abcdefghijklmnopqrstuvwxyz0123456789", 32)}`,
+        `xoxe.xapp-1-A${upper(10)}-${g.digits(13)}-${g.chars("abcdefghijklmnopqrstuvwxyz0123456789", 32)}`,
+        `xoxe.xoxp-1-${upper(164)}`,
+        `xoxe-1-${upper(146)}`,
+        `https://hooks.slack.com/services/T${alnum(9)}/B${alnum(10)}/${alnum(48)}`,
+      ],
+    },
+    {
+      kind: "digitalocean_token",
+      label: "DIGITALOCEAN_ACCESS_TOKEN",
+      values: [`dop_v1_${hex(64)}`, `doo_v1_${hex(64)}`, `dor_v1_${hex(64)}`],
+    },
+    {
+      kind: "huggingface_token",
+      label: "HUGGINGFACE_TOKEN",
+      values: [`hf_${alpha(34)}`, `api_org_${alpha(34)}`],
+    },
+    { kind: "heroku_token", label: "HEROKU_API_KEY", values: [`HRKU-${alnum(60)}`] },
+    {
+      kind: "onepassword_token",
+      label: "OP_SERVICE_ACCOUNT_TOKEN",
+      values: [`ops_eyJ${base64(260)}`, secretKey],
+    },
+    {
+      kind: "cloudflare_origin_ca_key",
+      label: "CLOUDFLARE_ORIGIN_CA_KEY",
+      values: [`v1.0-${hex(24)}-${hex(146)}`],
+    },
+    { kind: "twilio_credentials", label: "TWILIO_CREDENTIALS", values: [twilio] },
+    { kind: "github_token", label: "GH_APP_INSTALLATION_TOKEN", values: [`ghs_${g.digits(8)}_${jwt}`] },
+  ];
+}
+
+test("credential-oracle misses are found alone and after a provider label in their own kind", () => {
+  for (const sample of oracleCredentialCases()) {
+    for (const value of sample.values) {
+      expectOnly(value, sample.kind, value);
+      expectOnly(`${sample.label}=${value}`, sample.kind, value);
+    }
+  }
+  const twilioFixture = makeSecrets(20261019).find((fixture) => fixture.kind === "twilio_credentials");
+  const twilio = twilioFixture.value;
+  expectOnly(`Authorization: Bearer ${twilio}`, "twilio_credentials", twilio);
+  const wrappedTwilio = twilioFixture.shapes.find((shape) => shape.name === "wrap64");
+  expectOnly(wrappedTwilio.text, "twilio_credentials", wrappedTwilio.value);
+});
+
+// A .env file keeps the account SID and the auth token on lines of their own, and a paste often has a line of text
+// before and after them, so neither line break is part of a wrapped value.
+test("Twilio credentials are found on two .env lines and between lines of text", () => {
+  const twilio = makeSecrets(20261019).find((fixture) => fixture.kind === "twilio_credentials").value;
+  const twoLines = twilio.replace(" TWILIO_AUTH_TOKEN", "\nTWILIO_AUTH_TOKEN");
+  expectOnly(twoLines, "twilio_credentials", twoLines);
+  expectOnly(`here are the keys\n${twoLines}\nthanks`, "twilio_credentials", twoLines);
+  expectOnly(`here are the keys\n${twilio}\nthanks`, "twilio_credentials", twilio);
+});
+
+test("credential-oracle near misses stay quiet", () => {
+  const g = makeGen(20261021);
+  const alphaRun = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789".repeat(4);
+  const randomHex = (n) => g.chars("0123456789abcdef", n);
+  const randomAlnum = (n) => g.chars(g.ALNUM, n);
+  const cases = [
+    "glpat-",
+    "gldt-",
+    "glcbt-",
+    "glrt-",
+    "glft-",
+    "glsoat-",
+    "glagent-",
+    "gloas-",
+    "pplx-",
+    "xapp-",
+    "xoxe.xoxp-",
+    "xoxe-",
+    "dop_v1_",
+    "doo_v1_",
+    "dor_v1_",
+    "hf_",
+    "api_org_",
+    "HRKU-",
+    "ops_eyJ",
+    "v1.0-",
+    "GH_APP_INSTALLATION_TOKEN",
+    "TWILIO_ACCOUNT_SID",
+    "TWILIO_AUTH_TOKEN",
+    `sk-${randomHex(32)}`,
+    `glpat-${randomAlnum(19)}`,
+    `glpat-${randomAlnum(301)}`,
+    `xglpat-${randomAlnum(20)}`,
+    `glpat-${"a".repeat(20)}`,
+    `glpat-${alphaRun.slice(0, 20)}`,
+    `glpat-${randomAlnum(20).replace(/[A-Za-z0-9]/g, "x")}`,
+    `pplx-${randomAlnum(15)}`,
+    `pplx-${randomAlnum(129)}`,
+    `xpplx-${randomAlnum(48)}`,
+    `pplx-${"a".repeat(48)}`,
+    `pplx-${alphaRun.slice(0, 48)}`,
+    `xapp-1-A${randomAlnum(10)}-${g.digits(5)}-short`,
+    `xoxe-1-${"A".repeat(146)}`,
+    `https://hooks.slack.com/services/T00000000/B00000000/${"X".repeat(24)}`,
+    `https://hooks.slack.com/services/T${randomAlnum(9)}/B${randomAlnum(10)}/${randomAlnum(8)}`,
+    `dop_v1_${randomHex(63)}`,
+    `doo_v1_${randomHex(65)}`,
+    `xdor_v1_${randomHex(64)}`,
+    `hf_${"a".repeat(34)}`,
+    `api_org_${alphaRun.slice(0, 34)}`,
+    `HRKU-${randomAlnum(59)}`,
+    `HRKU-${randomAlnum(61)}`,
+    `ops_eyJ${"A".repeat(260)}`,
+    `A3-${"A".repeat(6)}-${"A".repeat(6)}-${"A".repeat(5)}-${"A".repeat(5)}-${"A".repeat(5)}-${"A".repeat(5)}`,
+    `v1.0-${"ab12".repeat(6).slice(0, 23)}-${"ab12".repeat(37).slice(0, 146)}`,
+    `v1.0-${"ab12".repeat(6)}-${"ab12".repeat(37).slice(0, 147)}`,
+    `TWILIO_ACCOUNT_SID=AC${randomHex(31)} TWILIO_AUTH_TOKEN=${randomAlnum(32)}`,
+    `TWILIO_ACCOUNT_SID=AC${randomHex(32)} TWILIO_AUTH_TOKEN=${"A".repeat(32)}`,
+    `ghs_${g.digits(8)}_${"eyJhbGciOiJ9." + "A".repeat(48) + "." + "B".repeat(48)}`,
+  ];
+  for (const value of cases) {
+    // A SID one character short isn't a Twilio pair, but the random token under its own label is still a secret.
+    const shortSid = /^TWILIO_ACCOUNT_SID=AC[0-9a-f]{31} TWILIO_AUTH_TOKEN=(\S+)$/.exec(value);
+    if (shortSid) assert.deepEqual(detect(value), { service_token: [shortSid[1]] }, value);
+    else expectNothing(value);
+  }
+});
+
+test("provider labels keep the generic service-token fallback when their value has another shape", () => {
+  const g = makeGen(20261022);
+  const body = g.chars(g.ALNUM, 40);
+  for (const label of ["CLOUDFLARE_API_TOKEN", "HEROKU_API_KEY", "GITHUB_API_TOKEN", "SLACK_API_TOKEN"]) {
+    expectOnly(`${label}=${body}`, "service_token", body);
+  }
 });
 
 // A downloaded two-step backup-code file: Google's ten 8-digit codes, printed two to a line, or GitHub's
@@ -286,6 +839,13 @@ test("private keys written as JWKs: escapes inside a single-quoted value read co
   expectOnly("key = {'kty': 'oct', 'k': 'line1\\nline2'}", "private_key", "{'kty': 'oct', 'k': 'line1\\nline2'}");
 });
 
+test("private keys written as JWKs inside a JSON string are unescaped once", () => {
+  const fixture = makeSecrets(20261019).find((item) => item.kind === "private_key");
+  const shape = fixture.shapes.find((item) => item.name === "jwkJsonString");
+  expectOnly(shape.text, "private_key", shape.value);
+  expectNothing(JSON.stringify({ key: '{"kty":"OKP","crv":"Ed25519","x":"abc"}' }));
+});
+
 test("private keys written as JWKs: stay fast on huge or hostile JSON", () => {
   const detectOnly = (text) => globalThis.Clotr.detect(text);
   // This is the worst case for a scan that tries every "{" as a span's start: a huge object with no closing brace
@@ -394,6 +954,44 @@ test("a house number that looks like a year (the 10,000-message oracle run)", ()
     "2068 Oak Street, Albany, NY 12250",
   );
   expectOnly("I live at 1999 Elm Street", "street_address", "1999 Elm Street");
+});
+
+test("timestamps in logs aren't phone numbers", () => {
+  const lines = [
+    "Server log: 2026-10-19 10:22:01 connection from 203.0.113.45 refused",
+    "2026-10-19T13:45:07Z INFO server ready",
+    "2026-10-19T13:45:07.123-04:00 INFO server ready",
+    "2026-10-19 13:45:07 INFO server ready",
+    "2026-10-19 13:45:07.123 -0400 INFO server ready",
+    "2026-10-19 13:45:07,123 INFO server ready",
+    "Oct 19 13:45:07 host service[42]: started",
+    "[19/Oct/2026:13:45:07 -0400] GET /health 200",
+    '{"ts":1760881507,"level":"info"}',
+    '{"timestamp":1760881507123,"level":"info"}',
+    "worker finished at 13:45:07.123",
+    "request took 1234567 ms",
+    "TimeCreated : 10/19/2026 1:45:07 PM, Information, Service Control Manager",
+    "2026-10-19 13:45:07,123 INFO worker: request finished",
+  ];
+  for (const line of lines) {
+    const found = detect(line);
+    assert.deepEqual(found.phone_number ?? [], [], `phone number in: ${line} → ${JSON.stringify(found)}`);
+  }
+});
+
+test("real phone numbers in log lines are still caught", () => {
+  expectOnly("user called 555-867-5309 at 13:45:07", "phone_number", "555-867-5309");
+  expectOnly('{"timestamp":"2026-10-19T13:45:07Z","phone":"+14155550123"}', "phone_number", "+14155550123");
+  expectOnly("Oct 19 13:45:07 caller phone 07700 900123", "phone_number", "07700 900123");
+  expectOnly("2026-10-19 13:45:07 caller mobile 612 345 678", "phone_number", "612 345 678");
+});
+
+test("a word that only ends like a log key doesn't hide the phone number after it", () => {
+  // "contacts", "accounts", "overtime": the ts/time keys of a JSON log must stand on their own.
+  expectOnly("Emergency contacts: 5558675309", "phone_number", "5558675309");
+  expectOnly("Call me any time: 5558675309", "phone_number", "5558675309");
+  expectOnly("overtime: 5558675309", "phone_number", "5558675309");
+  expectNothing('{"ts": 1760881507, "level": "info"}');
 });
 
 test("phone numbers with misspelled digit words (the 10,000-message oracle run)", () => {
@@ -667,11 +1265,15 @@ test("phone numbers with a one-letter slip in a number word", () => {
 
 test("credit cards (Luhn)", () => {
   expectOnly("4111 1111 1111 1111", "credit_card");
+  expectOnly("UnionPay: 1425364758691021", "credit_card", "1425364758691021");
+  expectOnly("ABC16 4111111111111111", "credit_card", "4111111111111111");
+  expectOnly("AB123qmvzptklrhywbc 4111111111111111", "credit_card", "4111111111111111");
   expectNothing("0.5196377162000371");
   expectNothing('href="#G1561364t0.5196377162000371" data-pptstepid="G2425071t0.6752873899776972"');
   expectNothing("4111 1111 1111 1112");
   expectOnly("My card is 4111 1111 1111 1111.", "credit_card", "4111 1111 1111 1111");
   expectOnly("card: 4111-1111-1111-1111", "credit_card", "4111-1111-1111-1111");
+  expectOnly("Card: 412-345-678-901-234-9", "credit_card", "412-345-678-901-234-9");
   // An Amex card's first 10 digits look like a phone number, but this should report only the card.
   expectOnly("Card 3782 822463 10005", "credit_card");
   // Book numbers (ISBN-13, with the 978/979 prefix no card network uses) pass the Luhn check about one time in
@@ -691,6 +1293,11 @@ test("credit cards spelled out in words (not mistaken for a crypto seed phrase)"
     "la tarjeta es cuatro cinco tres nueve, uno cuatro ocho ocho, cero tres cuatro tres, seis cuatro seis siete",
     "credit_card",
   );
+  expectOnly(
+    "The parser should find fore sevn fiv fore won zoro won fiv thre sevn fiv nien won siks siks sevn here.",
+    "credit_card",
+  );
+  expectOnly("fore fiv eigt eigt thre siks too fiv fiv siks eigt nien sevn eigt nien siks", "credit_card");
   expectNothing("four one one one, one one one one, one one one one, one one one two"); // fails the checksum
   // A real seed phrase is still one (this phrase carries a valid BIP-39 checksum, unlike the words above)
   expectOnly("seed: abuse boss fly battle rubber wasp afraid hamster guide essence vibrant tattoo", "crypto_secret");
@@ -826,6 +1433,71 @@ test("phone numbers: things that are not phones", () => {
   expectOnly("sobre el pedido, llámame al 612 345 678", "phone_number", "612 345 678");
 });
 
+test("European phone look-alikes stay quiet", () => {
+  for (const text of [
+    "06 12 2026",
+    "06.12.2026",
+    "time 06:12",
+    "price 06,12 €",
+    "order number 06 12 34 56 78",
+    "invoice number 06-12-34-56-78",
+    "postal code 06123",
+    "IBAN fragment FR76 3000 6000 0112",
+    "version 06.12.34.56.78",
+    "log timestamp 2026-10-20 06:12:34",
+  ]) {
+    expectNothing(text);
+  }
+  assert.equal(detect("password: 612 345 678").phone_number, undefined);
+  assert.equal(detect("API token: 612 345 678").phone_number, undefined);
+  assert.equal(detect("AnyDesk code is 612 345 678").phone_number, undefined);
+  assert.equal(detect("the tech support guy asked for my remote access code 889 221 334").phone_number, undefined);
+  assert.equal(detect("el código de AnyDesk es 666 197 342").phone_number, undefined);
+});
+
+test("phone numbers: European national formats", () => {
+  const groups = [
+    ["06", "12", "34", "56", "78"],
+    ["030", "12345678"],
+    ["0151", "23456789"],
+    ["0470", "12", "34", "56"],
+    ["02", "123", "45", "67"],
+    ["06", "12345678"],
+    ["020", "1234567"],
+    ["612", "34", "56", "78"],
+    ["91", "123", "45", "67"],
+    ["333", "123", "4567"],
+    ["02", "1234", "5678"],
+    ["07700", "900123"],
+    ["020", "7946", "0958"],
+  ];
+  for (const parts of groups) {
+    for (const separator of [" ", ".", "-", ""]) {
+      const value = parts.join(separator);
+      const text = separator ? value : `mobile ${value}`;
+      expectOnly(text, "phone_number", value);
+    }
+  }
+
+  for (const phone of [
+    "+33 6 12 34 56 78",
+    "+49 151 23456789",
+    "+32 470 12 34 56",
+    "+31 6 12345678",
+    "+34 612 34 56 78",
+    "+39 333 123 4567",
+    "+44 7700 900123",
+  ]) {
+    expectOnly(phone, "phone_number", phone);
+  }
+});
+
+test("an SSN label keeps a Spanish-shaped number classified as an SSN", () => {
+  expectOnly("SSN: 612 34 56 78", "us_ssn", "612 34 56 78");
+  expectOnly("confirm who I am with 612345678", "us_ssn", "612345678");
+  expectOnly("my number is 612345678", "us_ssn", "612345678");
+});
+
 test("SSNs, including spelled out", () => {
   expectOnly("123-45-6789", "us_ssn", "123-45-6789");
   expectOnly("123 45 6789", "us_ssn", "123 45 6789");
@@ -884,6 +1556,7 @@ test("emails, including spelled out", () => {
   expectOnly("bob [at] example [dot] com", "email", "bob [at] example [dot] com");
   expectOnly("bob @ gmail . com", "email", "bob @ gmail . com");
   expectNothing("I work at google dot com");
+  expectNothing("sample.user@not-a-domain.invalid"); // .invalid is reserved for deliberately invalid addresses
   // URL-encoded in a pasted link
   assert.deepEqual(detect("https://example.com/signup?email=ann%40gmail.com&ref=x").email, ["ann%40gmail.com"]);
   // ...and it matches the plain address in the vault (same normalized form and fingerprint)
@@ -1248,6 +1921,8 @@ test("gift card codes: a gift card's word, then its numbers (and its PIN)", () =
     gift_card: ["7KQ2-9PMX-4RT8", "4471"],
   });
   expectOnly("the gift card code is 7KQ2-9PMX-4RT8", "gift_card", "7KQ2-9PMX-4RT8");
+  expectOnly("the gift card code is 7KQ2A9PMX4", "gift_card", "7KQ2A9PMX4");
+  expectOnly("the gift card code is 9783141592651", "gift_card", "9783141592651");
   expectOnly("the gift card code is 7kq2-9pmx-4rt8", "gift_card", "7kq2-9pmx-4rt8");
   expectOnly("my Amazon gift card claim code is AQ7X-9KMRT2-XL4P", "gift_card", "AQ7X-9KMRT2-XL4P");
   expectOnly("claim code: AQ7X-9KMRT2-XL4P", "gift_card", "AQ7X-9KMRT2-XL4P");
@@ -1263,6 +1938,8 @@ test("gift card codes: a gift card's word, then its numbers (and its PIN)", () =
   // The FTC's own words for what scammers ask: "the numbers off the back of the card".
   expectOnly("the numbers off the back of the card are 7KQ2 9PMX 4RT8", "gift_card", "7KQ2 9PMX 4RT8");
   expectOnly("the numbers on the back of the gift card: 7KQ2-9PMX-4RT8", "gift_card", "7KQ2-9PMX-4RT8");
+  expectOnly("the gift card code is 7KQ2-9PMX-4RT8 and pin x4471", "gift_card", "7KQ2-9PMX-4RT8");
+  expectOnly("the gift card code is 7KQ2-9PMX-4RT8 and the pin is 123", "gift_card", "7KQ2-9PMX-4RT8");
   // The word in the sentence before.
   assert.deepEqual(
     detect("I bought two Steam cards for the man from the IRS. The codes are 7K2PQ-9MXR4-T8WZ3 and 4M8RT-2KQ9X-PW7N3."),
@@ -1292,6 +1969,9 @@ test("gift card codes: a gift, a balance, the last four, an order or a link stay
     "redeem it at amazon.com/redeem",
     "the gift card code didn't work",
     "the gift card code didn't work, it says the code is invalid",
+    "eegiftcard code 7KQ2-9PMX-4RT8",
+    "gift card code 7KQ2z9PMX4",
+    "gift card code AB 12 CD 34 EF",
     "I bought 3 Roblox gift cards. Season 4 just dropped.",
     "Use promo code SAVE20 with your gift card",
     "can the Apple gift card pay for an iPhone15ProMax?",
@@ -1455,7 +2135,7 @@ test("session cookies in pasted headers", () => {
     "FgT7s9kX2mQ4vL8pR1nZ6wB3yH5jD0cA",
   );
   expectOnly("curl -b connect.sid=s%3AkJ8h2Lq9mX4vT7rP1wZ6nB3yF5dG0cS https://app.example.com", "password");
-  expectOnly("aws_secret_access_key = Zq8Lm2Xv9Rt4Kp7Wn1Bc" + "6Hy3Jd5Gf0QsAb12Cd34", "password");
+  expectOnly("aws_secret_access_key = Zq8Lm2Xv9Rt4Kp7Wn1Bc" + "6Hy3Jd5Gf0QsAb12Cd34", "service_token");
   expectNothing("the session cookie was invalid after logout; Cookie: theme=dark; lang=en");
 });
 
@@ -1503,7 +2183,7 @@ test("passwords and secrets written with context words", () => {
   expectNothing("api_key=your-api-key");
   expectNothing("pin: this message to the top");
   // A key after a label is reported as the key, not twice
-  expectOnly("OPENAI_API_KEY=sk-proj-Hk3Pq9Zr7Tm2Xw5Lv8Nb1Cy4Jg6Df0Sa", "openai_key");
+  expectOnly("OPENAI_API_KEY=sk-proj-" + "Hk3Pq9Zr7Tm2Xw5Lv8Nb1Cy4Jg6Df0Sa", "openai_key");
 });
 
 test("street addresses, however they're written", () => {
@@ -1608,6 +2288,12 @@ test("UK, Indian and Australian IDs: NHS, NI, Aadhaar, TFN, Medicare (checksum-v
   expectOnly("my tax file number is 123 456 782", "national_id", "123 456 782");
   expectOnly("my medicare card number is 2123 45670 1", "medicare_id", "2123 45670 1");
   expectNothing("my aadhaar is 2345 6789 0123"); // wrong check digit
+  expectNothing("my NHS number is 943 476 5918"); // wrong check digit
+  expectNothing("my TFN is 123 456 783"); // wrong check digit
+  expectNothing("order 240376949398"); // an Aadhaar-shaped order number needs a label
+  assert.equal(detect("call 9434765919").medical_record, undefined); // an NHS-shaped phone number needs a label
+  assert.equal(detect("call 123456782").national_id, undefined); // a TFN-shaped phone number needs a label
+  expectNothing("order AB 12 34 56 C"); // an NI-shaped code needs an NI label
   expectNothing("the NHS number has 10 digits");
 });
 
@@ -2559,7 +3245,10 @@ test("connection strings, JWTs, .env files, internal IPs and hosts", () => {
     "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiI0MjQyIiwibmFtZSI6IkphbmUifQ.Xk3v9Qm2Lr7Tz5Wn8Bc1Hy4Jg6Df0SaPq";
   expectOnly(`token ${jwt}`, "jwt", jwt);
   const env = "DB_HOST=localhost\nDB_PASSWORD=Pr0dPassw0rd!\nSTRIPE_WEBHOOK_SECRET_KEY=whsec_9f8e7d6c5b4a\nPORT=3000";
-  assert.deepEqual(detect(env), { password: ["Pr0dPassw0rd!", "whsec_9f8e7d6c5b4a"] });
+  assert.deepEqual(detect(env), {
+    password: ["Pr0dPassw0rd!"],
+    service_token: ["whsec_9f8e7d6c5b4a"],
+  });
   expectOnly("the server is 10.0.4.21 now", "internal_ip", "10.0.4.21");
   expectOnly("router at 192.168.1.1", "internal_ip", "192.168.1.1");
   expectOnly("docker gave it 172.20.0.5", "internal_ip", "172.20.0.5");
@@ -2596,6 +3285,83 @@ test("detection stays fast on long drafts and big pastes (no quadratic patterns)
         : undefined;
     });
   }
+});
+
+// Text that looks machine-made but is the same every run, so a slow case stays slow.
+const madeUp = (alphabet, length, seed) => {
+  let out = "";
+  for (let i = 0, x = seed >>> 0; i < length; i++) {
+    x = (x * 1103515245 + 12345) >>> 0;
+    out += alphabet[(x >>> 8) % alphabet.length];
+  }
+  return out;
+};
+const HEX = "0123456789abcdef";
+const ALNUM = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
+
+// Each of these once took about ten times longer for four times the text. Every wrapped value, every value of a kind
+// and every key ID searched the whole text again, or every line break, so a paste a few hundred kilobytes long took
+// seconds where 1.4.1 took a fifth of one.
+test("many wrapped values, many values of one kind and many key pairs scan in linear time", () => {
+  const blocks = (unit, n, block) => Array.from({ length: n }, (_, i) => block(unit, i * 3)).join("");
+  const shapes = {
+    wraps: (unit, i) => `${unit}${madeUp(HEX, 10, i)}\n${madeUp(HEX, 6, i + 1)}\n${madeUp(HEX, 6, i + 2)}\nthanks\n`,
+    addresses: (unit, i) => `${unit}${(i >> 16) & 255}.${(i >> 8) & 255}.${i & 255}, `,
+    pairs: (unit, i) => `${unit}${madeUp("ABCDEFGHIJKLMNOPQRSTUVWXYZ234567", 16, i)} ${madeUp(ALNUM, 40, i + 1)} `,
+  };
+  for (const [name, unit, n] of [
+    ["wraps", "ghp_", 1400],
+    ["addresses", "10.", 3500],
+    ["pairs", "AKIA", 1500],
+  ]) {
+    assertLinear(
+      (text) => globalThis.Clotr.detect(text),
+      (u, size) => blocks(u, size, shapes[name]),
+      [unit],
+      n,
+      1000,
+    );
+  }
+});
+
+// Every value under a TWILIO_ label looked for Twilio's SID and token pairs through the whole text again, so 256 KB
+// of such lines ran past detect()'s time limit and every kind after them went unchecked.
+test("many Twilio labels and pairs scan in linear time", () => {
+  const blocks = (unit, n, block) => Array.from({ length: n }, (_, i) => block(unit, i * 3)).join("");
+  const shapes = {
+    tokens: (unit, i) => `${unit}_TOKEN=${madeUp(ALNUM, 16, i)}\n`,
+    passwords: (unit, i) => `${unit}_PASSWORD=${madeUp(ALNUM, 16, i)}\n`,
+    pairs: (unit, i) => `${unit}_ACCOUNT_SID=AC${madeUp(HEX, 32, i)}\n${unit}_AUTH_TOKEN=${madeUp(HEX, 32, i + 1)}\n`,
+  };
+  for (const [name, n] of [
+    ["tokens", 1000],
+    ["passwords", 1000],
+    ["pairs", 400],
+  ]) {
+    assertLinear(
+      (text) => globalThis.Clotr.detect(text),
+      (u, size) => blocks(u, size, shapes[name]),
+      ["TWILIO"],
+      n,
+      1000,
+    );
+  }
+});
+
+// Spreading a list as big as the text into one call overflows the stack past about 120,000 items, and that stopped
+// every warning for the whole text. A key-shaped value made of dashes, a value pasted 130,000 times and a list of
+// 130,000 numbers each did it.
+test("a value or a list big enough to overflow the stack doesn't stop the scan", () => {
+  const key = `AKIA4HPQ7XZ2R6TWLJ3N`;
+  const kindsIn = (text) => globalThis.Clotr.detect(`${text}\n${key}`).map((result) => result.id);
+  for (const value of [`ghs_1_a1${"-".repeat(200_000)}.bbbbbbbb.cccccccc`, `sk-a1B2${"-".repeat(200_000)}c3D4`]) {
+    assert.ok(kindsIn(value).includes("aws_access_key"), value.slice(0, 8));
+  }
+  const repeated = kindsIn("postgres://u:Xy9pQ2wZ@h.io ".repeat(130_000));
+  assert.ok(repeated.includes("connection_string") && repeated.includes("aws_access_key"), "a repeated value");
+  const ssns = Array.from({ length: 130_000 }, (_, i) => `${100 + (i % 600)}-${10 + (i % 80)}-${1000 + (i % 8999)}`);
+  const listed = kindsIn(`SSNs: ${ssns.join(", ")}`);
+  assert.ok(listed.includes("us_ssn") && listed.includes("aws_access_key"), "a list");
 });
 
 // A wall-clock timing couldn't tell this apart from noise. The pairwise bug's extra iterations are so cheap, just a
@@ -2839,6 +3605,38 @@ test("not phones: digits inside IDs and hashes, lists of small numbers", () => {
 // Page text is attacker-controlled, so no pattern may backtrack badly on hostile input, the ReDoS bug class. Each
 // pattern here gets 10,000 characters of repeated fragments it cares about. Before it was fixed, the email pattern
 // took about 3 seconds on 20,000 characters of "a-a-a-…".
+for (const id of ["connection_string", "password"]) {
+  test(`${id} stays linear on repeated URL schemes`, () => {
+    const make = (length) => "postgres://".repeat(Math.ceil(length / 11)).slice(0, length);
+    const smallText = make(20000);
+    const largeText = make(80000);
+
+    const pattern = globalThis.Clotr.PATTERNS.find((candidate) => candidate.id === id);
+    const read = (text) => pattern.find(text);
+
+    retrySlow(() => {
+      const [small, large] = bestOfPair(
+        () => read(smallText),
+        () => read(largeText),
+        4,
+        3,
+      );
+      const misses = [];
+      if (grewMoreThan(small, large, 8, 0.5)) {
+        misses.push(
+          `${id} on repeated URL schemes: ${small.wall.toFixed(1)} → ${large.wall.toFixed(1)} ms for 4× the text`,
+        );
+      }
+      if (large.over(100)) {
+        misses.push(
+          `${id} on 80,000 repeated URL characters: ${large.wall.toFixed(1)} ms (${large.allowed.toFixed(0)} allowed)`,
+        );
+      }
+      return misses.length ? misses.join("; ") : undefined;
+    });
+  });
+}
+
 test("no pattern is slow on hostile text (ReDoS fuzz)", () => {
   const N = 10000;
   const units = [
@@ -3004,34 +3802,81 @@ test("leak corpus: common service tokens, auth headers and password labels are c
   const rnd = () => (seed = (seed * 1103515245 + 12345) % 2147483648) / 2147483648;
   const gen = (n, set = "ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789") =>
     Array.from({ length: n }, () => set[Math.floor(rnd() * set.length)]).join("");
+  const alpha = (n) => gen(n, "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz");
   const hex = (n) => gen(n, "0123456789abcdef");
   const digits = (n) => gen(n, "0123456789");
   const cases = [
-    ["service_token", `my Hugging Face token is hf_${gen(34)}`],
+    ["huggingface_token", `my Hugging Face token is hf_${alpha(34)}`],
     ["service_token", `//registry.npmjs.org/:_authToken=npm_${gen(36)}`],
     ["service_token", `twine upload -u __token__ -p pypi-AgEIcHlwaS5vcmc${gen(60)}`],
-    ["service_token", `GITLAB=glpat-${gen(20)}`],
+    ["gitlab_token", `GITLAB=glpat-${gen(20)}`],
     ["service_token", `sendgrid: SG.${gen(22)}.${gen(43)}`],
     ["service_token", `twilio api key SK${hex(32)}`],
     ["service_token", `mailgun key-${hex(32)}`],
-    ["service_token", `shopify admin shpat_${hex(32)}`],
-    ["service_token", `do token dop_v1_${hex(64)}`],
+    ["shopify_token", `shopify admin shpat_${hex(32)}`],
+    ["digitalocean_token", `do token dop_v1_${hex(64)}`],
     ["service_token", `bot: ${digits(10)}:AA${gen(33)}`],
     ["service_token", `discord bot token M${gen(25)}.${gen(6)}.${gen(38)}`],
     ["service_token", `AccountName=acct;AccountKey=${gen(86)}==;EndpointSuffix=core.windows.net`],
-    ["service_token", `post to https://hooks.slack.com/services/T${digits(9)}/B${digits(11)}/${gen(24)}`],
+    ["slack_token", `post to https://hooks.slack.com/services/T${digits(9)}/B${digits(11)}/${gen(24)}`],
     ["service_token", `https://discord.com/api/webhooks/${digits(19)}/${gen(68)}`],
     ["password", `curl -H "Authorization: Bearer ${gen(32)}" https://api.example.com/v1`],
-    ["password", `curl -H "x-api-key: ${gen(40)}" https://api.example.com`],
+    ["service_token", `curl -H "x-api-key: ${gen(40)}" https://api.example.com`],
     ["password", "login: jdoe / pass: Tr0ub4dor&3"],
   ];
   const missed = cases.filter(([id, text]) => !detect(text)[id]).map(([id, text]) => `${id} ← ${text.slice(0, 60)}`);
   assert.deepEqual(missed, []);
 });
 
+test("Groq, OpenRouter and Supabase keys are covered whole at their documented lengths", () => {
+  const fixture = makeSecrets(20261019).find((item) => item.kind === "service_token");
+  for (const name of ["groqBare", "openrouterBare", "supabaseBare"]) {
+    const token = fixture.shapes.find((shape) => shape.name === name).value;
+    expectOnly(token, "service_token", token);
+    const findings = globalThis.Clotr.detect(token);
+    for (const cover of [
+      globalThis.Clotr.redact,
+      (text, results) => globalThis.Clotr.generalize(text, results, "en-US"),
+    ]) {
+      assert.equal(residualRun(token, cover(token, findings)), "");
+    }
+  }
+
+  const openrouter = fixture.shapes.find((shape) => shape.name === "openrouterBare").value;
+  assert.equal(detect(openrouter).openai_key, undefined);
+
+  const g = makeGen(20261020);
+  const b64u = (n) => g.chars(`${g.ALNUM}-_`, n);
+  const hex = (n) => g.chars("0123456789abcdef", n);
+  const expectNoProviderKey = (text) => {
+    const findings = detect(text);
+    assert.equal(findings.service_token, undefined, text);
+    assert.equal(findings.openai_key, undefined, text);
+  };
+  expectNoProviderKey(`gsk_${g.chars(g.ALNUM, 51)}`);
+  expectNoProviderKey(`gsk_${g.chars(g.ALNUM, 53)}`);
+  expectNoProviderKey(`${fixture.shapes.find((shape) => shape.name === "groqBare").value}A`);
+  expectNoProviderKey(`${fixture.shapes.find((shape) => shape.name === "groqBare").value}_`);
+  expectNoProviderKey(`sk-or-v1-${hex(63)}`);
+  expectNoProviderKey(`sk-or-v1-${hex(65)}`);
+  expectNoProviderKey(`${openrouter}a`);
+  expectNoProviderKey(`${openrouter}G`);
+  expectNoProviderKey(`sb_secret_${b64u(21)}_${b64u(8)}`);
+  expectNoProviderKey(`sb_secret_${b64u(23)}_${b64u(8)}`);
+  expectNoProviderKey(`sb_secret_${b64u(22)}_${b64u(7)}`);
+  expectNoProviderKey(`sb_secret_${b64u(22)}_${b64u(9)}`);
+  expectNoProviderKey(`${fixture.shapes.find((shape) => shape.name === "supabaseBare").value}A`);
+  expectNoProviderKey(`${fixture.shapes.find((shape) => shape.name === "supabaseBare").value}_`);
+});
+
 test("not a phone: a dotted IP address", () => {
   assert.equal(detect("my home IP is 73.162.44.201, how do I port forward")["phone_number"], undefined);
   assert.equal(detect("ping 24.199.103.87 from the router")["phone_number"], undefined);
+});
+
+test("not a phone: a ten-digit run inside a VIN-shaped code", () => {
+  expectNothing("What could X8234567890A12345 be in this spreadsheet column?");
+  expectNothing("The truck tracker app crashed at build f8234567890ba7d, what do I check first?");
 });
 
 test("not a secret: references to environment/config variables in code", () => {
@@ -3079,6 +3924,50 @@ test("not a leak: a git SHA, a UUID, a hex colour, a docker image tag, and a pac
   expectNone("docker run -p 8080:80 nginx:1.25");
   expectNone("border: 1px solid #ccc; color: #1F2A2E;");
   expectNone("npm install react@18.3.1 lodash@4.17.21");
+});
+
+// Any "<word> key" vouched for a hex value, so a CI log's "Cache saved with key: …", a cache_key in code and a
+// database's sort or primary key warned as a service token. A key named for what it unlocks still does.
+test("a hex key named for what it looks up stays quiet, one named for what it unlocks still warns", () => {
+  const hex = "5d41402abc4b2a76b9719d911017c592";
+  expectOnly(`Primary key: ${hex}`, "service_token", hex);
+  expectOnly("Primary key: RjN3QnZ5TUt2VjJ4cEw0" + "c1Y4Z0pOQkY3dHd1R2x5", "service_token");
+  const azureKey = Buffer.from(Array.from({ length: 64 }, (_, i) => i)).toString("base64");
+  assert.equal(azureKey.length, 88);
+  expectOnly(`Primary key: ${azureKey}`, "service_token", azureKey);
+  expectNone("database primary key: id");
+  expectNone("The column is named primary key.");
+  expectNone("Postgres says duplicate primary key: eccbc87e4b5ce2fe28308fd9f2a7baf3 when I insert the second row.");
+  for (const label of [
+    "cache key:",
+    "Cache saved with key:",
+    "Cache restored from key:",
+    "sort key:",
+    "partition key:",
+  ]) {
+    expectNone(`${label} ${hex}`);
+  }
+  for (const text of [
+    `idempotency-key: ${hex}`,
+    `CACHE_KEY=${hex}`,
+    `REDIS_CACHE_KEY=${hex}`,
+    `cache_key: str = "${hex}"`,
+    `localStorage.setItem("cache_key", "${hex}")`,
+    `<add key="app.cache.key" value="${hex}" />`,
+  ]) {
+    expectNone(text);
+  }
+  for (const text of [
+    `license key: ${hex}`,
+    `encryption key: ${hex}`,
+    `signing key: ${hex}`,
+    `DD_API_KEY=${hex}`,
+    `CACHE_API_KEY=${hex}`,
+    `deepseek key: sk-${hex}`,
+    `localStorage.setItem("auth_key", "${hex}")`,
+  ]) {
+    assert.ok(globalThis.Clotr.detect(text).length, text);
+  }
 });
 
 // Text copied from web pages, documents and chat apps can carry invisible or look-alike characters. They must
@@ -3433,10 +4322,15 @@ test("PDF page text: literal strings, TJ arrays and ToUnicode-mapped fonts; host
   // in. 20,000 of them this wide, the shape of a real 2 MB PDF, would mean about 100 million map.set calls with
   // no total budget, which took several seconds unpatched.
   const many = "begincmap beginbfrange " + "<0000><ffff><0000> ".repeat(20000) + "endbfrange endcmap";
-  const started = Date.now();
-  pdfPageText([many]);
-  const elapsed = Date.now() - started;
-  assert.ok(elapsed < 300, `took ${elapsed} ms for ranges that would otherwise expand to about 100 million codes`);
+  // Three tries, like the file's other timing checks: a busy machine once read 313 ms here while the engine was fine.
+  retrySlow(() => {
+    const started = Date.now();
+    pdfPageText([many]);
+    const elapsed = Date.now() - started;
+    return elapsed < 300
+      ? undefined
+      : `took ${elapsed} ms for ranges that would otherwise expand to about 100 million codes`;
+  });
 });
 
 // Office documents are attacker-controlled too, so stripping their tags must stay linear. The first tag stripper,
@@ -3688,13 +4582,23 @@ test("Spanish and Mexican ID numbers (checksum-validated)", () => {
   expectOnly("mi DNI es 12345678Z", "national_id", "12345678Z");
   expectOnly("NIE X1234567L por favor", "national_id", "X1234567L");
   expectOnly("CURP: GODE561231HDFRRN00", "national_id", "GODE561231HDFRRN00");
+  expectOnly("TEST010-101HNEGGD77", "national_id", "TEST010-101HNEGGD77");
+  expectOnly("MOCK zero one zero one zero one MNEFGG six four", "national_id");
+  expectOnly("MOCK zoro won zoro won zoro won HNEDGF zoro nien", "national_id");
   expectNothing("GODE561231HDFRRN04"); // wrong check digit
+  expectNothing("TEST010-101HNEGGD76"); // wrong check digit
+  expectNothing("MOCK zero one zero one zero one MNEFGG six five"); // wrong check digit
+  expectNothing("MOCK zoro won zoro won zoro won HNEDGF zoro eight"); // wrong check digit
   expectNothing("12345678A"); // wrong DNI letter
   expectNothing("12345678Z:\\");
   expectNothing("X1234567L:/folder");
   expectOnly("DNI: 12345678Z", "national_id", "12345678Z");
   expectOnly("12345678-Z", "national_id", "12345678-Z");
   expectOnly("12345678 Z", "national_id", "12345678 Z");
+  expectOnly("875-362-04K", "national_id", "875-362-04K");
+  expectOnly("Z873-651-6V", "national_id", "Z873-651-6V");
+  expectOnly("six six three six zero six zero seven H", "national_id", "six six three six zero six zero seven H");
+  expectOnly("X seven eight nine two four zero one C", "national_id", "X seven eight nine two four zero one C");
   expectNothing("referencia 87654321B del pedido"); // wrong letter too
   // Mexico's RFC and Spain's social security number: only after their label
   expectOnly("mi RFC es PEPJ800101AB3", "national_id", "PEPJ800101AB3");
@@ -4139,6 +5043,7 @@ test("bank accounts in Spanish: número de cuenta, cuenta bancaria, CLABE and CB
     // An IBAN after its name, in any case
     ["iban: es26 0000 1234 5612 3456 7890", "es26 0000 1234 5612 3456 7890"],
     ["mi IBAN es ES26 0000 1234 5612 3456 7890", "ES26 0000 1234 5612 3456 7890"],
+    ["DE936-967-883-189-272-697-43", "DE936-967-883-189-272-697-43"],
   ]) {
     expectOnly(text, "bank_account", value);
   }
@@ -4146,6 +5051,7 @@ test("bank accounts in Spanish: número de cuenta, cuenta bancaria, CLABE and CB
   for (const text of ["mi CLABE es 999180001234567890", "mi CBU es 9990001800001234567892"]) {
     assert.equal(detect(text).bank_account, undefined, text);
   }
+  assert.equal(detect("DE936-967-883-189-272-697-42").bank_account, undefined);
 });
 
 test("sign-in codes and Spanish bank accounts stay fast on hostile text", () => {
@@ -4285,10 +5191,13 @@ test("a pattern that runs long can't drag the next one with it: detect() stops o
   const after = { id: "test_after_stuck", severity: "low", name: "after", find: () => ["seen"] };
   PATTERNS.push(slow, after);
   try {
-    const started = Date.now();
-    const found = globalThis.Clotr.detect("anything");
-    const elapsed = Date.now() - started;
-    assert.ok(elapsed < stuck * 1.8, `took ${elapsed} ms: the pattern after the stuck one still ran`);
+    let found;
+    retrySlow(() => {
+      const started = Date.now();
+      found = globalThis.Clotr.detect("anything");
+      const elapsed = Date.now() - started;
+      return elapsed < stuck * 1.8 ? undefined : `took ${elapsed} ms: the pattern after the stuck one still ran`;
+    });
     assert.ok(!found.some((r) => r.id === "test_after_stuck"), "the pattern after the stuck one still ran");
   } finally {
     PATTERNS.splice(PATTERNS.indexOf(slow), 1);
@@ -4499,28 +5408,79 @@ test("an .env template's empty setting doesn't take the next line's setting as i
   expectOnly("Password:\nHunter2!", "password", "Hunter2!");
 });
 
-test("an API key, secret key or access token after its name written with a space, in English and Spanish", () => {
+test("password in an Italian sentence stays quiet while the Romanian word still works", () => {
+  expectNone("la parola COVID-19 è scritta qui");
+  expectOnly("parola mea este Kx9!mQ2vLr", "password", "Kx9!mQ2vLr");
+  expectOnly("parolă: SoareVara2026", "password", "SoareVara2026");
+});
+
+test("command password flags are read after command options, including Redis's port flag", () => {
+  const loginCommands = [
+    "docker",
+    "podman",
+    "nerdctl",
+    "buildah",
+    "skopeo",
+    "helm",
+    "oras",
+    "crane",
+    "az",
+    "oc",
+    "cf",
+    "argocd",
+  ];
+  for (const command of loginCommands) {
+    expectOnly(`${command} login --username alice -p S3cr3tPass!`, "password", "S3cr3tPass!");
+  }
+  for (const command of ["mongo", "mongosh", "mongodump", "mongorestore", "mongoimport", "mongoexport"]) {
+    expectOnly(`${command} --host db.example -p S3cr3tPass!`, "password", "S3cr3tPass!");
+  }
+  expectOnly("redis-cli -h cache.example -p 6379 -a S3cr3tPass!", "password", "S3cr3tPass!");
+  expectOnly("sshpass -p S3cr3tPass! ssh alice@host", "password", "S3cr3tPass!");
+  expectOnly("curl https://host -u alice:S3cr3tPass!", "password", "S3cr3tPass!");
+  expectOnly("keytool -importkeystore -srcstorepass S3cr3tPass!", "password", "S3cr3tPass!");
+  expectOnly("net use \\\\host\\share /user:alice S3cr3tPass!", "password", "S3cr3tPass!");
+  expectOnly("aws configure set aws_secret_access_key S3cr3tPass!", "password", "S3cr3tPass!");
+  expectNone("redis-cli -h cache.example -p 6379");
+});
+
+test("an API key, secret key or access token after its name is reported as a service token", () => {
   const key = "a8F3kL9mQ2xR7vT4pZ1nB6cY";
   for (const text of [
     `API key: ${key}`,
     `Api Key = ${key}`,
     `secret key: ${key}`,
-    `clave de API: ${key}`,
-    `Clave API: ${key}`,
-    `token de acceso: ${key}`,
+    `API_KEY=${key}`,
+    `apikey=${key}`,
+    `X_API_KEY=${key}`,
+    `SECRET_KEY=${key}`,
+    `ACCESS_TOKEN=${key}`,
+    `AUTH_TOKEN=${key}`,
+    `CLIENT_SECRET=${key}`,
+    `PRIVATE_TOKEN=${key}`,
+    `api_key: ${key}`,
+    `x_api_key: ${key}`,
+    `client_secret: ${key}`,
   ]) {
-    expectOnly(text, "password", key);
+    expectOnly(text, "service_token", key);
   }
+  expectOnly("DB_PASSWORD=Sunflower!2024", "password", "Sunflower!2024");
   for (const text of [
     "API key: see the dashboard",
     "API key: required",
     "API key: YOUR_API_KEY",
     "API key: <your key>",
+    "API_KEY=your-api-key-here",
+    "API_KEY=changeme",
+    "API_KEY=xxx",
+    "API_KEY=<key>",
     "Secret key: ********",
-    "clave de API: obligatoria",
   ]) {
     expectNone(text);
   }
+  // Provider formats keep their own kind when the same label accepts them.
+  expectOnly("API_KEY=sk-proj-" + "Hk3Pq9Zr7Tm2Xw5Lv8Nb1Cy4Jg6Df0Sa", "openai_key");
+  expectOnly(`API_KEY=${FAKE.github}`, "github_token");
 });
 
 test("an API key or token told in a sentence, in English and Spanish, when it looks machine-made", () => {
@@ -4711,5 +5671,110 @@ test("the key, password, birth date, SSN, policy and routing labels above stay f
       "número de ruta ",
     ],
     5000,
+  );
+});
+
+// The readings and phrasings added for the leaks an outside tester found in Cover it.
+test("passwords with punctuation, wrapped and escaped keys, and the other password phrasings stay fast on hostile text", () => {
+  const detectOnly = (text) => globalThis.Clotr.detect(text);
+  assertLinear(
+    detectOnly,
+    (u, n) => u.repeat(n),
+    [
+      "password: a!",
+      'my password is "a ',
+      "password: a-\n",
+      "AKIA4HPQ7X\n",
+      "AKIA4HPQ7X=\n",
+      "sk_live_51Hq7Lw2Xc\\\n",
+      "\\nAKIA",
+      "card number\n4539\n",
+      "4539 1488\n",
+      "Mein Passwort ist ",
+      "login is a and it's ",
+      "use a1 as the password ",
+      "user a pass ",
+      "mysql -p",
+      "<input type=password ",
+      "<input ",
+      "<password>a",
+      "ConvertTo-SecureString '",
+      "| password |\n|---|\n",
+      "|---|\n",
+    ],
+    5000,
+  );
+});
+
+test("Cover it stays fast when the same secret is on every line of a long log", () => {
+  const token = "ghp_" + "Ab3dE5fG7hJ9kL1mN3pQ5rS7tU9vW1xY3zA5";
+  const coverOnly = ({ text, results }) => globalThis.Clotr.redact(text, results);
+  const makeInput = (unit, n) => {
+    const text = unit.repeat(n);
+    return { text, results: globalThis.Clotr.detect(text) };
+  };
+  assertLinear(
+    coverOnly,
+    makeInput,
+    [`GET /api/items Authorization: token ${token} 200\n`, "-----BEGIN PRIVATE KEY-----\n"],
+    2000,
+  );
+});
+
+test("other languages' passwords, CSV columns, commands and named settings stay fast on hostile text", () => {
+  const detectOnly = (text) => globalThis.Clotr.detect(text);
+  assertLinear(
+    detectOnly,
+    (u, n) => u.repeat(n),
+    [
+      "senha ",
+      "senha a ",
+      "parolă ",
+      "parola mea ",
+      "la parola ",
+      "пароль это ",
+      "kata sandi saya ",
+      "password di ",
+      "mdp ",
+      "密码是",
+      "パスワード ",
+      "a,password\n",
+      "x,y\n",
+      '"a","',
+      "curl ",
+      "curl -u ",
+      "sshpass -p ",
+      "docker login ",
+      "redis-cli ",
+      "redis-cli -h cache.example -p 6379 -a ",
+      "docker login --username alice -p ",
+      "mongosh --host db.example -p ",
+      "-storepass ",
+      "net use /user:a ",
+      "define('password', ",
+      '<add key="password" ',
+      "<a ",
+      'variable "password" {',
+      "password: |\n",
+      "auth=(",
+      "IDENTIFIED BY ",
+      "Authorization ",
+      "the code 482913 ",
+      "AAAAAAAAAAAAAAAAAAAAA",
+      "PrivateKey = ",
+    ],
+    5000,
+  );
+});
+
+test("Azure primary key credential-shape checks stay fast on repeated labels", () => {
+  const sample = "Primary key: RjN3QnZ5TUt2VjJ4cEw0" + "c1Y4Z0pOQkY3dHd1R2x5 \n";
+  const duplicate = "Postgres says duplicate primary key: eccbc87e4b5ce2fe28308fd9f2a7baf3 \n";
+  assertLinear(
+    (text) => globalThis.Clotr.detect(text),
+    (unit, n) => unit.repeat(n),
+    [sample, duplicate],
+    100,
+    400,
   );
 });

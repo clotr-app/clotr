@@ -166,13 +166,16 @@ module.exports = async function (env) {
       m.host_permissions = [...m.host_permissions, "https://mail.google.com/*"];
       fs.writeFileSync(path.join(copy, "manifest.json"), JSON.stringify(m, null, 2));
       other = await launch(copy);
+      // Installation queues this registration with the worker's other startup work. Calling syncUserSites here
+      // would race that queue instead of checking the path a person's browser uses.
       await waitFor(
         () =>
-          other.worker.evaluate(async () => {
-            const [s] = await chrome.scripting.getRegisteredContentScripts({ ids: ["clotr-user-sites"] });
-            if (!s) await syncUserSites();
-            return Boolean(s);
-          }),
+          other.worker
+            .evaluate(async () => {
+              const [s] = await chrome.scripting.getRegisteredContentScripts({ ids: ["clotr-user-sites"] });
+              return Boolean(s);
+            })
+            .catch(() => false),
         5000,
       );
       await resetState(other, {});

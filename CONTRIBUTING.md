@@ -1,80 +1,142 @@
 # Contributing to Clotr
 
-Thanks for helping people keep their private details out of AI chats.
+Teamwork makes the dream work. Like every apocalyptic refuge, it starts with real people banding together to solve real problems. The real person is you, and the real problem is having your identity sold or manipulated.
+
+Everything you share with Clotr remains free and open-source, for everyone. Always.
+
+I'm a Navy veteran, Clotr is my contribution to those who paved my way, and gave me the opportunity to help others. Clotr is me saying 'thank you for your service' to everyone I can reach.
 
 ## The rules Clotr never breaks
+
 These are checked automatically (`npm test`); a change that breaks one won't be merged.
-- Only AI chat sites, never all websites. New AI sites go in `extension/ai-sites.json`.
+
+- AI chat sites by default, and nowhere else unless the person adds a site themselves or turns on "Everywhere I type", which starts off. New AI sites go in `extension/ai-sites.json`.
 - Everything runs on the device, with no network requests of any kind from the extension.
-- Never store what someone typed. Only the kind of thing found, the site, the time, what they chose, and a scrambled
-  code, never the words themselves.
+- Never store what someone typed. Only the kind of thing found, the site, the time, what they chose and a scrambled code.
 - Never break the chat. Clotr informs and offers edits; if it fails, the message still goes through.
-- Build the page with `createElement` and `textContent`; it never uses `innerHTML`, remote code or `eval`.
 
 ## Good first contributions
-- Found a missing AI site? Add `{ "name", "matches" }` to `extension/ai-sites.json`, run `npm run sites`, and check
-  the exact address the chat lives on.
-- Found a missed detail or a false alarm? Add a test to `tests/patterns.test.js` that fails, then make it pass,
-  using made-up values of the same shape instead of a real person's data or a real key.
+
+- Found a missing AI site? Add `{ "name", "matches" }` to `extension/ai-sites.json`, run `npm run sites`, and check the exact address the chat lives on.
+- Found a missed detail or a false alarm? Add a test to `tests/patterns.test.js` that fails, then make it pass, using made-up values of the same shape instead of a real person's data or a real key.
+- Using "Everywhere I type" and hit a false alarm, or a form it handles badly? Report it, or add a test that fails and then make it pass.
 
 ## Working on the code
+
+Here's the short version of getting set up:
+
 ```
 npm install
 npm test            # detection tests and the rule checks above
-npm run format      # formats JavaScript and CSS (Prettier); npm run lint checks formatting and lint
+npm run format      # tidies JavaScript and CSS (Prettier); npm run lint checks it
 npm run test:e2e    # a real browser (Brave, Chrome or Edge) with Clotr loaded, against local test pages
 npm run package     # the release zip (reproducible) and its SHA-256
 ```
-- `extension/` is the extension (load it unpacked in `chrome://extensions` with Developer mode on).
-- [docs/architecture.md](docs/architecture.md) covers how the parts fit together, what's stored and which checks guard it.
-- Content scripts are classic scripts sharing code through `globalThis.Clotr` (no `import`/`export`).
-- Every bug fix comes with a test that failed before the fix.
+
+- The extension lives in `extension/`. Load it unpacked from `chrome://extensions` with Developer mode on.
+- [docs/architecture.md](docs/architecture.md) shows how the parts fit together, what's stored, and which checks guard it.
+- Content scripts are plain classic scripts that share code through `globalThis.Clotr`, so no `import` or `export` there.
+- Every bug fix comes with a test that failed before the fix. No exceptions, that's how old bugs stay gone.
 
 ## Code style
-The JavaScript follows Prettier's style, with the settings in `.prettierrc.json` (120 columns), and ESLint's
-recommended rules from `@eslint/js`. Code in `extension/` also has to pass about thirty stricter rules listed in
-`eslint.config.js`, which refuse things like `eval`, `==` and HTML written as a string. `npm run format` fixes the
-formatting, and `npm run lint` has to pass before a pull request is merged, since CI runs it on every one. If a line
-really needs an exception, it gets an `eslint-disable-next-line` comment naming the rule and saying why, and there's
-one of those in the whole extension today.
+
+Prettier and ESLint do the arguing so we don't have to. The settings are in `.prettierrc.json` (120 columns) and `eslint.config.js`. Code in `extension/` also has to pass about thirty stricter rules that refuse things like `eval`, `==` and HTML written as a string. `npm run format` fixes the formatting, and `npm run lint` has to pass before anything merges, since CI runs it on every pull request. If a line really needs an exception, it gets an `eslint-disable-next-line` comment naming the rule and saying why. There's exactly one in the whole extension today, and I'd like to keep it that way.
 
 ## Tests for new features
-A new feature comes with automated tests in the same pull request, unit tests in `tests/` and a browser check in
-`tests/e2e/checks/` when it changes what you see on a page. A pull request that adds a feature without tests won't be
-merged. `npm run coverage` shows how much of `extension/` the unit tests run, file by file.
+
+A new feature brings its tests in the same pull request: unit tests in `tests/`, and a browser check in `tests/e2e/checks/` if it changes what you see on a page. A feature without tests won't be merged. `npm run coverage` shows how much of `extension/` the unit tests actually run, file by file.
 
 ## Dependencies
-The extension itself has no dependencies, so nothing outside this repo ships inside it. The dev tools (ESLint,
-Prettier, puppeteer-core and axe-core) are listed in `package.json` with exact versions locked in
-`package-lock.json`, and `npm ci` installs exactly those. Dependabot checks them and the GitHub Actions once a month
-and opens a pull request when something needs updating, and GitHub's security alerts flag a known vulnerability in
-between.
+
+The extension ships with zero dependencies, so nothing from outside this repo ends up inside it. The dev tools (ESLint, Prettier, puppeteer-core and axe-core) are pinned in `package.json` and locked in `package-lock.json`, and `npm ci` installs exactly those. Dependabot checks them and the GitHub Actions once a month and opens a pull request when something needs an update, and GitHub's security alerts flag anything known to be bad in between.
 
 ## Accessibility and languages
-Clotr's pages and the on-page warning are checked with axe-core in the browser suite, in light and dark themes, and
-a serious problem fails the build. Charts and the Activity table don't rely on color alone. Clotr's own words are
-looked up through the browser's translation system, `chrome.i18n`, with English as the default and a full Spanish
-translation in `extension/_locales/es/`, so another language starts as one more messages file.
 
-## How the project is run
-[GOVERNANCE.md](GOVERNANCE.md) explains who decides what, [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md) how everyone is
-expected to treat each other, and [docs/plans.md](docs/plans.md) what's planned for the next year.
-[docs/assurance-case.md](docs/assurance-case.md) explains why Clotr's security promises hold.
+Clotr is for everyone, so accessibility isn't optional. Clotr's pages and the on page warning are checked with axe-core in the browser suite, in light and dark themes, and a serious problem fails the build. Charts and the Activity table never rely on color alone. Clotr's words go through the browser's own translation system, `chrome.i18n`, with English as the default and a full Spanish translation in `extension/_locales/es/`. Want to add a language? It starts as one more messages file.
 
-## How Clotr is built
-I started Clotr in November 2025, first on my own, then with LM Studio's local models from around March 2026. In
-September I began questioning the difference in application and deployment of Claude Code and Cline. One of my biggest
-hurdles is Git management, or really Git at all, and none of my courses have introduced it yet. Since September I use
-Claude Code, and it does a lot of the writing with me. I review and test everything before it ships, and I answer for
-all of it. This is my way of bringing a helpful tool I use to bear for everyone.
+## How your contribution is licensed
 
-## Your contribution and the license
-Clotr is licensed under the [GNU AGPL-3.0-or-later](LICENSE), and its maintainer also offers a commercial license
-to companies that want to use the code in closed products; that is how the project can pay for itself. So before
-your first pull request is merged, you'll be asked to agree to the [Contributor License Agreement](CLA.md) (one
-click, once). You keep the copyright to your work, and the agreement promises that everything contributed stays
-available under the AGPL.
+Everything you contribute is licensed under AGPL-3.0-or-later, the same as Clotr. **You keep your copyright.** There's no agreement to sign and nothing is signed over. Instead, you certify the Developer Certificate of Origin (below) by signing off each commit. I don't take the right to relicense your work, and what I promise in return is in [COMMITMENTS.md](COMMITMENTS.md).
+
+### How to sign off
+
+Add `-s` when you commit:
+
+```
+git commit -s -m "Fix a phone number false alarm"
+```
+
+That adds a line like this to your commit message, using your own name and email:
+
+```
+Signed-off-by: Your Name <you@example.com>
+```
+
+Forgot on your last commit? Run `git commit --amend -s --no-edit`. A check runs on every pull request and fails if a commit has no sign-off.
+
+### Developer Certificate of Origin, version 1.1
+
+```
+Developer Certificate of Origin
+Version 1.1
+
+Copyright (C) 2004, 2006 The Linux Foundation and its contributors.
+
+Everyone is permitted to copy and distribute verbatim copies of this
+license document, but changing it is not allowed.
+
+Developer's Certificate of Origin 1.1
+
+By making a contribution to this project, I certify that:
+
+(a) The contribution was created in whole or in part by me and I
+    have the right to submit it under the open source license
+    indicated in the file; or
+
+(b) The contribution is based upon previous work that, to the best
+    of my knowledge, is covered under an appropriate open source
+    license and I have the right under that license to submit that
+    work with modifications, whether created in whole or in part
+    by me, under the same open source license (unless I am
+    permitted to submit under a different license), as indicated
+    in the file; or
+
+(c) The contribution was provided directly to me by some other
+    person who certified (a), (b) or (c) and I have not modified
+    it.
+
+(d) I understand and agree that this project and the contribution
+    are public and that a record of the contribution (including all
+    personal information I submit with it, including my sign-off) is
+    maintained indefinitely and may be redistributed consistent with
+    this project or the open source license(s) involved.
+```
+
+## What's not accepted here
+
+Everything in this repository is free and stays free. Any paid tools I offer live somewhere else, I write them alone, and they don't take outside contributions. See [COMMITMENTS.md](COMMITMENTS.md).
+
+## Using AI tools
+
+Use AI tools if they help. I do. You're still the one certifying the sign-off, so only send what you've read please. Saying in the pull request when AI wrote a meaningful part is encouraged, but not required. And please don't paste real keys, passwords or personal details into any tool while working on Clotr. That would defeat the point.
+
+## Test values
+
+Use made-up values only. Never a real person's data or a real key. Split fake keys in two in tests so secret scanners don't flag them.
+
+## If you signed the earlier agreement
+
+If you contributed under the earlier Contributor License Agreement, those contributions stay covered by it, but I won't use the relicensing right it gave me (see [COMMITMENTS.md](COMMITMENTS.md)). From here on, new contributions use the sign-off above. You don't need to sign anything new.
 
 ## Reporting problems
+
 Use the issue forms (*False alarm*, *Missed something*, *Bug*). Describe the shape of a value, never the value itself.
-For security problems, see [SECURITY.md](SECURITY.md).
+
+## How the project is run
+
+[GOVERNANCE.md](GOVERNANCE.md) explains who decides what, [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md) how we all treat each other, and [docs/plans.md](docs/plans.md) what's planned for the next year. [docs/assurance-case.md](docs/assurance-case.md) explains why Clotr's security promises actually hold up.
+
+
+## Security problems
+
+Please don't open a public issue for these. Use [SECURITY.md](SECURITY.md).

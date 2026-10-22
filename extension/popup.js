@@ -1,4 +1,5 @@
 // The toolbar popup, also used as a mini dashboard.
+/* global Clotr */
 // Reads settings and event history from chrome.storage.local. The only things it writes back are the user's
 // own settings, like pausing or per-pattern responses, plus clearing history when asked.
 "use strict";
@@ -57,6 +58,7 @@ let state = {
   siteModes: {},
   advanced: false,
   userSites: [],
+  grants: [], // the browser's own site grants, as it lists them
   builtInTools: [],
   lock: null,
   largeText: false,
@@ -65,6 +67,7 @@ let state = {
   siteScopes: {},
   tourniquet: null,
 };
+let firefoxPanel = false; // Firefox's toolbar popup on a computer (leavesForQuestion), set by init()
 let site = { kind: "none" }; // none | protected | spotted | not-ai
 let rangeDays = readPref("rangeDays", 7);
 let siteFilter = readPref("siteFilter", ""); // "" = all AI tools
@@ -223,6 +226,27 @@ async function noteSpotted(host) {
   await chrome.storage.local.set({ spotted }).catch(() => {});
 }
 
+// Firefox's question about a site opens under its toolbar popup and covers its own Allow button, so there the
+// popup closes as soon as an ask has gone out in the click's own turn, and the question is left in front.
+// Firefox keeps the question and the grant once the popup is gone, and background.js sets the site up when the
+// grant arrives. A site already granted, or covered by Everywhere I type, gets a yes with no question, so the
+// popup stays for those. Firefox for Android shows the popup as a tab, and Chrome's question sits on top.
+function leavesForQuestion(origins) {
+  if (!firefoxPanel) return false;
+  const broad = Sites.everywhereGranted(state.grants);
+  return origins.some((o) => !state.grants.includes(o) && !(broad && o.startsWith("https://")));
+}
+
+async function isFirefoxPanel() {
+  if (!chrome.runtime.getManifest().browser_specific_settings?.gecko) return false;
+  try {
+    const [{ os }, tab] = await Promise.all([chrome.runtime.getPlatformInfo(), chrome.tabs.getCurrent()]);
+    return os !== "android" && !tab;
+  } catch {
+    return false;
+  }
+}
+
 // `kind`: "ai" for an AI tool, "everyday" for an email or chat app.
 async function protectSite(url, kind = "ai") {
   // Both the storage write and the permission ask happen in the same click, before anything is awaited: the
@@ -239,15 +263,23 @@ async function protectSite(url, kind = "ai") {
   const siteKinds = { ...state.siteKinds, [new URL(url).hostname]: kind };
   Object.assign(state, { siteScopes, siteKinds });
   chrome.storage.local.set({ siteScopes, siteKinds }).catch(() => {});
-  const granted = await chrome.permissions.request({ origins: [perm] }).catch(() => false);
-  if (granted) await refreshSites();
+  const asked = chrome.permissions.request({ origins: [perm] }).catch(() => false);
+  if (leavesForQuestion([perm])) window.close();
+  const granted = await asked;
+  if (granted) {
+    await Sites.notePicks([scope]); // a yes Everywhere I type already covered is never recorded by the browser
+    await refreshSites();
+  }
 }
 
 // Asks for exactly this built-in site's access, when the browser withheld it: Firefox does that at every install,
 // and Chrome's own per-site "On click" setting does the same by hand. The ask has to come first, in the click's
 // own turn, like protectSite above, since Firefox refuses it once anything has been awaited.
 async function allowBuiltInHere(url) {
-  const granted = await chrome.permissions.request({ origins: Sites.builtInMatchesFor(url) }).catch(() => false);
+  const origins = Sites.builtInMatchesFor(url);
+  const asked = chrome.permissions.request({ origins }).catch(() => false);
+  if (leavesForQuestion(origins)) window.close();
+  const granted = await asked;
   if (granted) await detectSite();
   return granted;
 }
@@ -264,20 +296,34 @@ async function setSiteKinds(hosts, kind) {
 
 async function refreshSites() {
   state.userSites = await Sites.userSitePatterns();
-  state.everywhereOn = Sites.everywhereGranted((await chrome.permissions.getAll()).origins);
+  state.grants = (await chrome.permissions.getAll()).origins || [];
+  state.everywhereOn = Sites.everywhereGranted(state.grants);
   await detectSite();
   renderSite();
   renderSettings();
 }
 
 // Settings' "Also on your email and chat apps": one switch per app, asking the browser for exactly its sites.
-// Switching on asks first, in the same click (sites.js explains why), and doesn't write anything itself: a
-// listed app counts as an email or chat app either way, and the browser remembers the grant on its own.
-// Switching off also clears the note an older version wrote for it.
+// Switching on asks first, in the same click (sites.js explains why). A listed app counts as an email or chat
+// app on its own, and the browser remembers the grant, so the only thing written after a yes is clearing an
+// old note that called the app an AI chat, which would keep it out of this list. Switching off also clears
+// the note an older version wrote for it.
 async function setEverydaySite(s, on) {
+  const hosts = s.matches.map((p) => new URL(p.replace(/\*$/, "")).hostname);
+  say("everyday-status", "");
   if (on) {
-    say("everyday-status", "");
-    const yes = await Sites.requestEverydayApps([s.name]);
+    const asked = Sites.requestEverydayApps([s.name]);
+    if (leavesForQuestion(s.matches)) {
+      // No popup is left to clear the old note after a yes, so it goes now, the way protectSite writes ahead.
+      // Clotr only runs on the app once the browser says yes, so after a No the note made no difference anyway.
+      if (hosts.some((h) => state.siteKinds[h] === "ai")) {
+        const siteKinds = { ...state.siteKinds };
+        for (const h of hosts) delete siteKinds[h];
+        chrome.storage.local.set({ siteKinds }).catch(() => {});
+      }
+      window.close();
+    }
+    const yes = await asked;
     // A closed prompt or a No used to leave this silent; say so instead, the same way the welcome page does.
     if (!yes) {
       say(
@@ -287,15 +333,40 @@ async function setEverydaySite(s, on) {
           "Nothing was switched on: the browser's question was closed or answered No. Tick and try again, or switch them on later in Settings.",
         ),
       );
+    } else if (hosts.some((h) => state.siteKinds[h] === "ai")) {
+      await setSiteKinds(hosts, null);
     }
   } else {
-    say("everyday-status", "");
-    const hosts = s.matches.map((p) => new URL(p.replace(/\*$/, "")).hostname);
-    await chrome.permissions.remove({ origins: s.matches });
+    if (!(await switchedOffHere(s, Sites.removeEverydayApps))) {
+      say("everyday-status", keptOnByEverywhere());
+      return;
+    }
     await setSiteKinds(hosts, null);
   }
   await refreshSites();
+  if (!on && switchOf(s, state.userSites).on) say("everyday-status", keptOnByEverywhere());
 }
+
+// How one listed site's switch reads. `listed` holds the sites switched on by themselves (userSitePatterns):
+// their own grants, and any noted while "Everywhere I type" covered them. A site can also be on only because
+// Everywhere I type covers it, and `through` says it's on only thanks to that switch, so it goes off with it.
+function switchOf(s, listed) {
+  const own = s.matches.some((p) => state.grants.includes(p));
+  const picked = s.matches.some((p) => listed.includes(p));
+  const on = picked || Sites.coveredByEverywhere([s], state.grants).length > 0;
+  return { on, through: on && !own, picked };
+}
+
+// Switching off a site Clotr runs on only through Everywhere I type has nothing of its own to hand back, so
+// it stays on. Hands back whatever the site does have, through `remove` (sites.js), and says whether it did.
+async function switchedOffHere(s, remove) {
+  if (!switchOf(s, state.userSites).picked) return false;
+  await remove([s.name]);
+  return true;
+}
+
+const keptOnByEverywhere = () =>
+  msg("pp_keptOnByEverywhere", "Everywhere I type keeps Clotr on here. Switch it off first to pick sites one by one.");
 
 async function setPaused(host, value) {
   const { paused = {} } = await chrome.storage.local.get("paused");
@@ -998,16 +1069,6 @@ function groupValue(ids) {
   return values.size === 1 ? [...values][0] : "custom";
 }
 
-// Quick exit: tells every other open Clotr page to close itself, then closes the popup, the
-// one page that isn't a tab (closeThisTab() no-ops there). window.close() waits a tick so the click itself
-// finishes first: closing the popup's execution context mid-click can leave the broadcast half-sent.
-if ($("quick-exit")) {
-  $("quick-exit").addEventListener("click", () => {
-    globalThis.Clotr.broadcastQuickExit();
-    setTimeout(() => window.close(), 0);
-  });
-  $("quick-exit").hidden = !FEATURES.checkup;
-}
 $("open-vault").addEventListener("click", () => chrome.tabs.create({ url: chrome.runtime.getURL("vault.html") }));
 $("open-watch").addEventListener("click", () => chrome.tabs.create({ url: chrome.runtime.getURL("vault.html#watch") }));
 $("open-stored").addEventListener("click", () => chrome.tabs.create({ url: chrome.runtime.getURL("stored.html") }));
@@ -1019,6 +1080,7 @@ for (const id of ["open-dashboard", "digest-open", "mini-map-open"]) {
 // Removes one protected section; the host's permission goes when none are left.
 async function removeUserSite(pattern) {
   const perm = Sites.permissionFor(pattern);
+  await Sites.forgetPicks([pattern]); // in case it was switched on while Everywhere I type covered it
   const { siteScopes = {} } = await chrome.storage.local.get("siteScopes");
   const rest = (siteScopes[perm] || []).filter((s) => s !== pattern);
   if (rest.length && pattern !== perm) {
@@ -1240,7 +1302,7 @@ $("unlock-pin").addEventListener("keydown", (e) => {
 // section heading says what they are instead of a per-row label.
 function renderMoreSites(listId, statusId, sites, granted) {
   const rows = sites.map((s) => {
-    const on = s.matches.some((p) => granted.includes(p));
+    const { on, through } = switchOf(s, granted);
     const btn = el("button", {
       className: on ? "btn switch on" : "btn switch",
       textContent: on ? msg("pp_on", "On") : msg("pp_turnOn", "Turn on"),
@@ -1249,7 +1311,8 @@ function renderMoreSites(listId, statusId, sites, granted) {
     btn.setAttribute("aria-pressed", String(on));
     btn.setAttribute("aria-label", msg("pp_everydayFor", "Clotr on $1", s.name));
     btn.addEventListener("click", () => setMoreSite(s, !on, statusId));
-    return el("li", {}, [el("span", { className: "grow" }, [el("b", { textContent: s.name })]), btn]);
+    const why = through ? [el("span", { className: "why", textContent: throughEverywhere() })] : [];
+    return el("li", {}, [el("span", { className: "grow" }, [el("b", { textContent: s.name }), ...why]), btn]);
   });
   $(listId).replaceChildren(...rows);
 }
@@ -1259,7 +1322,9 @@ function renderMoreSites(listId, statusId, sites, granted) {
 async function setMoreSite(s, on, statusId) {
   if (on) {
     say(statusId, "");
-    const yes = await Sites.requestMoreSites([s.name]);
+    const asked = Sites.requestMoreSites([s.name]);
+    if (leavesForQuestion(s.matches)) window.close();
+    const yes = await asked;
     if (!yes) {
       say(
         statusId,
@@ -1271,9 +1336,13 @@ async function setMoreSite(s, on, statusId) {
     }
   } else {
     say(statusId, "");
-    await chrome.permissions.remove({ origins: s.matches });
+    if (!(await switchedOffHere(s, Sites.removeMoreSites))) {
+      say(statusId, keptOnByEverywhere());
+      return;
+    }
   }
   await refreshSites();
+  if (!on && switchOf(s, state.userSites).on) say(statusId, keptOnByEverywhere());
 }
 
 // "Everywhere I type": one switch for the broad permission itself, not a list, so it reads the browser's own
@@ -1287,11 +1356,14 @@ function renderEverywhereSwitch(on) {
 }
 
 // Same shape as setMoreSite, for the one broad origin: the ask comes first, in the same click, and switching off
-// just removes the grant Clotr asked for.
+// just removes the grant Clotr asked for. Every switch below that read "Through Everywhere I type" goes off
+// with it.
 async function setEverywhere(on) {
   say("everywhere-status", "");
   if (on) {
-    const yes = await Sites.requestEverywhere();
+    const asked = Sites.requestEverywhere();
+    if (leavesForQuestion([Sites.EVERYWHERE_ORIGIN])) window.close();
+    const yes = await asked;
     if (!yes) {
       say(
         "everywhere-status",
@@ -1307,11 +1379,14 @@ async function setEverywhere(on) {
   await refreshSites();
 }
 
+const throughEverywhere = () => msg("pp_throughEverywhere", "Through Everywhere I type");
+
 // Email and chat apps: a switch per app on the list, then any other site you switched on as "not an AI".
 function renderEverydaySites(granted) {
   const listed = new Set(Sites.EVERYDAY_SITES.flatMap((s) => s.matches));
   const rows = Sites.EVERYDAY_SITES.map((s) => {
-    const on = s.matches.some((p) => granted.includes(p));
+    const { on, through } = switchOf(s, granted);
+    const kind = s.kind === "email" ? msg("pp_kindEmail", "Email") : msg("pp_kindChat", "Chat app");
     const btn = el("button", {
       className: on ? "btn switch on" : "btn switch",
       textContent: on ? msg("pp_on", "On") : msg("pp_turnOn", "Turn on"),
@@ -1325,7 +1400,7 @@ function renderEverydaySites(granted) {
         el("b", { textContent: s.name }),
         el("span", {
           className: "why",
-          textContent: s.kind === "email" ? msg("pp_kindEmail", "Email") : msg("pp_kindChat", "Chat app"),
+          textContent: through ? msg("pp_kindThroughEverywhere", "$1, through Everywhere I type", kind) : kind,
         }),
       ]),
       btn,
@@ -1868,14 +1943,22 @@ async function showEverydayOffer() {
   const { everydayOffer } = await chrome.storage.local.get("everydayOffer");
   if (everydayOffer !== "popup" || isLocked()) return false;
   const { origins = [] } = await chrome.permissions.getAll();
-  if (Sites.grantedEverydayApps(origins).length) {
-    // One was switched on another way in the meantime: the offer has done its job.
+  const listed = await Sites.userSitePatterns();
+  if (Sites.grantedEverydayApps(listed).length || Sites.coveredByEverywhere(Sites.EVERYDAY_SITES, origins).length) {
+    // One was switched on another way in the meantime, or Everywhere I type covers them: the offer has done its job.
     await chrome.storage.local.set({ everydayOffer: "done" });
     return false;
   }
   if (!offerMounted) {
     offerMounted = true;
-    await globalThis.ClotrEverydayOffer.mount($("everyday-offer"), { onAnswer: closeEverydayOffer });
+    await globalThis.ClotrEverydayOffer.mount($("everyday-offer"), {
+      onAnswer: closeEverydayOffer,
+      // A switch-off waits on storage before the browser hands the site back, so the popup only closes for a
+      // click that just switches apps on.
+      afterAsk: (names) => {
+        if (leavesForQuestion(Sites.everydayOrigins(names))) window.close();
+      },
+    });
   }
   $("whats-new").hidden = true;
   $("everyday-offer").hidden = false;
@@ -1951,6 +2034,7 @@ async function init() {
     spotted: stored.spotted || {},
     bandage: stored.bandage || {},
     userSites: await Sites.userSitePatterns(),
+    grants: (await chrome.permissions.getAll()).origins || [],
     everywhereOn: Sites.everywhereGranted((await chrome.permissions.getAll()).origins),
     builtInTools: await loadBuiltInTools(),
     siteKinds: stored.siteKinds || {},
@@ -1959,6 +2043,7 @@ async function init() {
     tourniquetEnded: stored.tourniquetEnded || null,
     tourniquetSeen: stored.tourniquetSeen ?? null,
   };
+  firefoxPanel = await isFirefoxPanel();
   await detectSite();
   renderAll();
   renderTopCard();
@@ -1996,6 +2081,91 @@ chrome.storage.onChanged.addListener((changes, area) => {
 });
 
 $("advanced").addEventListener("change", (e) => chrome.storage.local.set({ advanced: e.target.checked }));
+
+if (FEATURES.oneclotr) {
+  const oneClotrPlatform = navigator.userAgentData?.platform || navigator.platform;
+  $("one-clotr").hidden = !/^Win/i.test(oneClotrPlatform);
+
+  $("one-clotr-connect").addEventListener("click", async () => {
+    const status = $("one-clotr-state");
+    status.textContent = msg("oc_waiting", "Waiting for you to say yes in Clotr for Windows…");
+    try {
+      const ua = navigator.userAgent;
+      const browser = ua.includes("Firefox")
+        ? "Firefox"
+        : ua.includes("Edg/")
+          ? "Edge"
+          : ua.includes("Vivaldi")
+            ? "Vivaldi"
+            : ua.includes("OPR/")
+              ? "Opera"
+              : navigator.brave
+                ? "Brave"
+                : "Chrome";
+      const result = await Clotr.OneClotrBridge.connectFromClick(browser);
+      if (result.type !== "connected") {
+        status.textContent = msg(
+          result.type === "waiting" ? "oc_waiting" : "oc_notInstalled",
+          result.type === "waiting"
+            ? "Waiting for you to say yes in Clotr for Windows…"
+            : "Clotr for Windows isn't installed yet",
+        );
+        return;
+      }
+      const current = await chrome.storage.local.get([
+        ...Clotr.OneClotrProtocol.SETTINGS,
+        "oneClotrMeta",
+        "oneClotrPaired",
+      ]);
+      const remote = await Clotr.OneClotrBridge.readSettings();
+      const now = Date.now();
+      const { set, remove } = Clotr.OneClotrProtocol.apply(current, remote, now);
+      await chrome.storage.local.set({ ...set, oneClotrPaired: true });
+      if (remove.length) await chrome.storage.local.remove(remove);
+      await Clotr.OneClotrBridge.writeSettings(Clotr.OneClotrProtocol.settingsForWrite(current, remote, now));
+      status.textContent = msg("oc_connected", "Connected to Clotr for Windows");
+      $("one-clotr-connect").hidden = true;
+      $("one-clotr-disconnect").hidden = false;
+    } catch (error) {
+      status.textContent =
+        error?.message === "not_running"
+          ? msg("oc_notRunning", "Open Clotr for Windows to connect your browser.")
+          : msg("oc_notInstalled", "Clotr for Windows isn't installed yet");
+    }
+  });
+
+  $("one-clotr-disconnect").addEventListener("click", async () => {
+    try {
+      await Clotr.OneClotrBridge.disconnect();
+    } catch {
+      await chrome.permissions.remove({ permissions: ["nativeMessaging"] }).catch(() => {});
+    }
+    await chrome.storage.local.set({ oneClotrPaired: false });
+    $("one-clotr-state").textContent = msg("oc_notConnected", "Not connected to Clotr for Windows");
+    $("one-clotr-connect").hidden = false;
+    $("one-clotr-disconnect").hidden = true;
+  });
+
+  chrome.storage.local.get(["oneClotrPaired"]).then(({ oneClotrPaired }) => {
+    if (oneClotrPaired) {
+      $("one-clotr-state").textContent = msg("oc_connected", "Connected to Clotr for Windows");
+      $("one-clotr-connect").hidden = true;
+      $("one-clotr-disconnect").hidden = false;
+    }
+  });
+
+  chrome.storage.onChanged.addListener((changes, area) => {
+    if (area !== "local" || !changes.oneClotrPaired) return;
+    const paired = changes.oneClotrPaired.newValue === true;
+    $("one-clotr-state").textContent = msg(
+      paired ? "oc_connected" : "oc_notConnected",
+      paired ? "Connected to Clotr for Windows" : "Not connected to Clotr for Windows",
+    );
+    $("one-clotr-connect").hidden = paired;
+    $("one-clotr-disconnect").hidden = !paired;
+  });
+}
+
 $("tips-again").addEventListener("click", async () => {
   await chrome.storage.local.remove(["guided", "picturesNoted"]); // the "can't read pictures" note too
   $("tips-again").textContent = msg("pp_tipsAgain", "Tips will show again");

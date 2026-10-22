@@ -51,3 +51,109 @@ paths = ['''^tests/precommit-check\.test\.js$''']
 regexTarget = "secret"
 # Split with a group so this line isn't itself a key-shaped string to the pre-commit check.
 regexes = ['''^AKIA(?:QWERTYUIOPASDFGH)$''']
+
+# The credential oracle's cache holds three public scanners' rule sets with their own made-up sample keys (base64 in
+# the file), fetched by hand and never shipped: scanning it only finds the samples the scanners publish themselves.
+[[allowlists]]
+description = "The credential oracle's cached scanner rules and samples"
+paths = [
+  '''^tools/oracle/cache/gitleaks-b58d3f1\.json$''',
+  '''^tools/oracle/cache/trufflehog-3ffc6fa\.json$''',
+  '''^tools/oracle/cache/detect-secrets-5e14193\.json$''',
+]
+
+[[allowlists]]
+description = "Made-up fixture values in tools/oracle/make-corpus.js"
+condition = "AND"
+paths = ['''^tools/oracle/make-corpus\.js$''']
+regexTarget = "secret"
+regexes = [
+  '''^-----BEGIN RSA PRIVATE KEY-----\\n\$\{body\}\\n-----END RSA PRIVATE KEY-----`;\n      return \["private_key", "pasted", "en", "", key, ""\];\n    \},\n    (?:\(\) => \{\n      const body = Array\.from\(\{ length: 32 \}, \(\) => g\.chars\(PEM_BODY, 64\)\)\.join\("\\n"\);\n      const key = `-----BEGIN RSA PRIVATE KEY-----)$''',
+  '''^-----BEGIN RSA PRIVATE KEY-----\\n\$\{body\}`;\n      return \["private_key", "pasted", "en", "", key, "\\n----END RSA PRIVATE KEY"\];\n    \},\n    \(\) (?:=> \{\n      const body = Array\.from\(\{ length: 32 \}, \(\) => g\.chars\(PEM_BODY, 64\)\)\.join\("\\n"\);\n      const key = `-----BEGIN RSA PRIVATE KEY-----)$'''
+]
+
+[[allowlists]]
+description = "The detector's made-up fixture file"
+paths = ['''^tests/fixtures/secrets\.js$''']
+
+[[allowlists]]
+description = "Made-up fixture values in docs/engine/credential-oracle-report.md"
+condition = "AND"
+paths = ['''^docs/engine/credential-oracle-report\.md$''']
+regexTarget = "secret"
+regexes = [
+  '''^privat(?:e_key-1)$''',
+  '''^privat(?:e_key-2)$''',
+  '''^privat(?:e_key-3)$''',
+  '''^privat(?:e_key-4)$''',
+  '''^privat(?:e_key-5)$''',
+  '''^privat(?:e_key-6)$''',
+  '''^privat(?:e_key-7)$''',
+  '''^privat(?:e_key-8)$'''
+]
+
+[[allowlists]]
+description = "Made-up fixture values in tools/oracle/credential-scorecard.json"
+condition = "AND"
+paths = ['''^tools/oracle/credential-scorecard\.json$''']
+regexTarget = "secret"
+regexes = [
+  '''^privat(?:e_key-1)$''',
+  '''^privat(?:e_key-2)$''',
+  '''^privat(?:e_key-3)$''',
+  '''^privat(?:e_key-4)$''',
+  '''^privat(?:e_key-5)$''',
+  '''^privat(?:e_key-6)$''',
+  '''^privat(?:e_key-7)$''',
+  '''^privat(?:e_key-8)$'''
+]
+
+[[allowlists]]
+description = "Made-up fixture values in docs/releases/1.5.0-release-plan.md"
+condition = "AND"
+paths = ['''^docs/releases/1\.5\.0-release-plan\.md$''']
+regexTarget = "secret"
+regexes = [
+  '''^pR4mT8vQzL2nH6cDfK9w(?:B3xJsA7qE1yUgM5dC0rP)$''',
+  '''^a8F3kL9mQ2xR(?:7vT4pZ1nB6cY)$'''
+]
+
+[[allowlists]]
+description = "Made-up fixture values in tests/mcp.test.js"
+condition = "AND"
+paths = ['''^tests/mcp\.test\.js$''']
+regexTarget = "secret"
+regexes = [
+  '''^eyJhbGciOiJIUzI1NiJ9\.eyJzdWIiOiJmaWN0(?:aXRpb3VzLXVzZXIifQ\.c2VhbGVkLWZpeHR1cmU)$'''
+]
+
+[[allowlists]]
+description = "Made-up fixture values in tests/patterns.test.js"
+condition = "AND"
+paths = ['''^tests/patterns\.test\.js$''']
+regexTarget = "secret"
+regexes = [
+  '''^-----BEGIN OPENSSH PRIVATE KEY-----\\r\\nb3BlbnNzaC1rZXktdjEAA(?:AAA\\r\\nQm9keUxpbmVUd28==\\r\\n-----END OPENSSH PRIVATE KEY-----)$''',
+  '''^xai-Qp7Lk2(?:Xv9Rt4Wn1B)$''',
+  '''^-----BEGIN RSA PRIVATE KEY-----\\nMIIEowIBAAKCAQEA0YpABC123\+/(?:=\\nanotherLineOfSecretBase64==\\n-----END RSA PRIVATE KEY-----)$''',
+  '''^a8F3kL9mQ2xR(?:7vT4pZ1nB6cY)$'''
+]
+
+[[allowlists]]
+description = "Made-up fixture values in apps/jetbrains/src/test/kotlin/app/clotr/jetbrains/ClotrInspectionTest.kt"
+condition = "AND"
+paths = ['''^apps/jetbrains/src/test/kotlin/app/clotr/jetbrains/ClotrInspectionTest\.kt$''']
+regexTarget = "secret"
+regexes = [
+  '''^AKIA5HPQ7X(?:Z2R6TWLJ3N)$''',
+  '''^AKIA3HPQ7X(?:Z2R6TWLJ3N)$'''
+]
+
+# A builder once pinned the extension's ID with the manifest's `key`, an RSA public key (SPKI header MIIBIjANBgkq),
+# removed before 1.4.1 shipped. A public key is not a secret, and the line lives in history only.
+[[allowlists]]
+description = "The extension manifest's former public key, in history"
+condition = "AND"
+paths = ['''^extension/manifest\.json$''']
+regexTarget = "secret"
+regexes = ['''^MIIBIjANBgkq''']

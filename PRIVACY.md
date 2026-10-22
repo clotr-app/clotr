@@ -1,6 +1,6 @@
 # Privacy policy
 
-Last updated 2026-10-17, for Clotr 1.4.0 and Clotr for Windows 1.0.
+Last updated 2026-10-19, for Clotr 1.4.1 and Clotr for Windows 1.0.1.
 
 Clotr checks what you type into AI chats, on your computer, and warns you before a private detail goes out. The text
 and files Clotr checks stay on your computer, and it never stores what you type. This covers the browser extension
@@ -31,7 +31,8 @@ On Clotr's own pages, it also reads:
   real warning would say.
 
 On email and chat sites, search engines and support chats you switched on, it reads only what you type or attach. It
-leaves other people's messages alone, and the reply check and Bandage stay off there. If your organization set a
+leaves other people's messages alone, and the reply check and Bandage stay off there. The message you're answering in
+a reply counts as theirs, so if it quotes a card number or address of your own, that goes through without a word. If your organization set a
 browser policy for Clotr, it reads that policy.
 
 With "Everywhere I type" on, it reads what you type into a chat-style box, a `<textarea>` or an editable region with
@@ -45,10 +46,9 @@ Everything is in your browser's storage on this computer:
 
 - your settings, including the sites you added and where you paused it;
 - whether Tourniquet is on, for a child, a grown-up, or the 30 days after a scam, and since when;
-- your list of details, as a scrambled code, never the details themselves, or only the format of an ID like
-  `AB-######`;
+- your list of details, each as a scrambled code, or for an ID only its format, like `AB-######`;
 - a history of what it found: the time, the site, the kind of detail (like "Phone Number"), what you did, and a
-  scrambled code so it can tell when the same thing comes up again, without storing what it was. Never the text, the
+  scrambled code so it can tell when the same thing comes up again, without storing what it was, the text, the
   picture or the place. It keeps a year by default, or 3 months or 2 years if you choose, at most 10,000 records, and
   a long list sent at once becomes one record with a count after the first 10 of a kind;
 - replies that mentioned your details, with the same time, site, kind and fingerprint, but not the reply itself;
@@ -100,19 +100,19 @@ computer.
 
 ## Clotr for Windows
 
-Clotr for Windows watches beside the AI apps on your computer instead of in a browser tab: ChatGPT, Claude, Gemini
-and Copilot's own windows, once you've opened one. The text and files Clotr checks stay on your computer.
+Clotr for Windows watches beside the ChatGPT, Claude and Copilot apps on your computer, once you've opened one,
+instead of in a browser tab. The text and files Clotr checks stay on your computer.
 
 ### What it reads
 
 While one of those apps is the window in front of you, it reads what you copy to the clipboard, once, the moment you
-copy it, the same check the extension runs on what you paste. Anything a password manager marks private is never
-read, only noticed as being there.
+copy it, the same check the extension runs on what you paste. When a password manager marks what you copied as
+private, Clotr notices it's there and leaves it unread.
 
 While one of those apps is in front and you're typing in its message box, Clotr also reads that box through
 Windows' accessibility interface, the one a screen reader uses, about half a second after you pause, and checks it
-the way it checks what you copy. It reads only that app's message box, never a password box and never another
-program, and lets go of the text as soon as the check is done. If it can't read an app's box, Home says so. You can
+the way it checks what you copy. It reads only that app's message box, leaves password boxes and other programs
+alone, and lets go of the text as soon as the check is done. If it can't read an app's box, Home says so. You can
 turn this off on Home with "Check what I type in AI apps".
 
 Clotr also checks a command you've copied when you're about to paste it into the Run box, the same check it runs on
@@ -126,11 +126,16 @@ scan only what's new or changed, unless you choose to read everything again. A Q
 Documents and Pictures, and after your first Full scan only what's new or changed there. Both leave out code projects
 (a folder with `.git`, `package.json` or another project file) and files made to hold a key or password, like a
 `.env`, an SSH key or an `.npmrc`, unless you turn on "Check code projects and secret files too" in Settings. You can
-also pick folders yourself. It finds files by name and size, and reads a file's contents only once you start the scan. A shortcut, a
-hidden or system file, and a cloud file not yet downloaded to this computer are skipped and never opened. If you turn on the once-a-week check in Settings, Clotr quietly runs that same Quick scan on its own while
-it's running, and tells you only if you've also left "tell me when it finds something" on. Once a check my files scan
-finishes, it also reads which browser extensions are installed on this computer, from each browser's own files, never
-a browser's history, cookies or saved passwords, to tell you which ones could reach an AI chat page you have open.
+also pick folders yourself. It finds files by name and size, and reads a file's contents only once you start the
+scan. A shortcut, a hidden or system file, and a cloud file not yet downloaded to this computer are skipped and never
+opened.
+
+If you turn on the once-a-week check in Settings, Clotr quietly runs that same Quick scan on its own while it's
+running, and tells you what it found only while "tell me when it finds something" is on.
+
+Once a Check my files scan finishes, it also reads which browser extensions are installed on this computer, from
+each browser's own files, to tell you which ones could reach an AI chat page you have open. It leaves your browsers'
+history, cookies and saved passwords alone.
 
 A scan also passes by folders that only hold program and developer files, like a project's downloaded packages or a
 Python environment, and the vault files of password managers such as KeePass and Bitwarden, whose whole job is keeping
@@ -138,34 +143,40 @@ passwords encrypted. It opens nothing inside them and tells you how many it pass
 add to Leave out of scans in Settings is never opened either.
 
 Check my files will also look inside a zip file you have on disk, within a size limit, and call an encrypted one "not
-read" rather than clean, and will offer to move any file that needs a look -- a password, a code or a key, an ID, a
-photo that shows where it was taken, or a card or bank number -- to the Recycle Bin, with Undo, so the only time a
-file changes is when you press that button yourself. For a photo or document with an ID in it, it can also move the
-file itself into a folder you choose, or OneDrive's Personal Vault when you have one, with Undo there too.
+read" rather than clean. It offers to move any file that needs a look to the Recycle Bin, with Undo, so the only time
+a file changes is when you press that button yourself. A file that needs a look is one with a password, a code or a
+key, an ID, a photo that shows where it was taken, or a card or bank number. For a photo or document with an ID in
+it, it can also move the file itself into a folder you choose, or OneDrive's Personal Vault when you have one, with
+Undo there too.
 
 When you open Look back, it reads the one export file you choose, from ChatGPT, Claude, Google Takeout (for Gemini)
 or Copilot, for the same kinds of detail the extension looks for in a chat. Nothing about it reaches Clotr until you
 choose that file yourself.
 
-It reads nothing from any other app, website or file, and nothing unless you've opened Check my files or Look back
-or an AI app, the Run box or a terminal is the window in front of you.
+When you choose Connect to Clotr for your browser in its Settings, Clotr for Windows registers a local connection
+point with Chrome, Brave, Edge, Vivaldi and Firefox, and the browser extension and Clotr for Windows keep a few
+settings the same on this computer, like how Clotr responds to each kind of detail. Pages, and the details either one
+found, never pass through that connection, and turning it off removes the connection point again.
+
+Outside that settings exchange, it reads nothing from another app, website or file. File and text checks happen only
+when you open Check my files or Look back, or an AI app, the Run box or a terminal is in front of you.
 
 ### What it stores
 
-Everything stays on this computer, under `%LOCALAPPDATA%\Clotr\Desktop`, never a roaming profile that could follow
-you to another PC:
+Everything it keeps stays in Clotr's own folder under your Windows profile, on this PC only:
 
 - your settings: which AI apps are paused, your look, motion and language, your Protection preset if one is on, and
   whether Clotr starts with Windows;
 - a history of what the copy check, Check my files and Look back found, the same shape the extension keeps, naming
-  only the time, the app, the kind of detail, what happened and a scrambled code. A path, a filename, a chat or the
+  only the time, the app, the kind of detail, what happened and a fingerprint. A path, a filename, a chat or the
   detail itself is never part of it;
+- Each history fingerprint uses 1,000 rounds of SHA-256 and the salt.
 - a scrambled code for a file or a browser extension you told Clotr to stop mentioning, never which one it was;
 - after a Full scan, for each file it read, a scrambled code made from where the file is, with the file's size and
   when it last changed, so the next Quick scan can tell what's new, plus one yes-or-no for whether that file had
   something worth a look, so a later Full scan that only reads what changed can still check those files again and
-  show their current finds. It's kept in a file of its own, never holds a path, a filename, a kind of detail or
-  anything inside a file, and Clear history or Show them again deletes it;
+  show their current finds. It's kept in a file of its own that holds no path, filename, kind of detail or
+  anything from inside a file, and Clear history or Show them again deletes it;
 - the folders, files and file types you chose to leave out of scans, with each one's full path so Clotr can pass it
   by. This list is the one place Clotr keeps a path, it never goes into your history, and clearing your history keeps
   it until you remove an entry in Settings;
@@ -173,6 +184,11 @@ you to another PC:
   detail and whether it's yours, a project's or a secret file's, never the file, its name, its place or the value
   found in it. Settings shows how many answers are kept, with Export and Clear of its own, apart from Clear history;
 - the random secret those scrambled codes are made from.
+- `one-clotr-settings.json` keeps the settings exchanged with the paired browser extension;
+- `one-clotr-browsers.json` keeps the names of paired browsers;
+- `one-clotr-paired` records that a browser is paired;
+- `one-clotr-pair-pending` records a browser pairing request waiting for an answer;
+- `one-clotr-pair-declined` records that a browser pairing request was declined.
 
 Turning on Start with Windows adds Clotr to the list of programs Windows starts when you sign in, and turning it off
 takes it back out.
@@ -187,14 +203,7 @@ or call on Windows' own internet libraries, and a test reads the program Windows
 a network call is ever found in it.
 
 *Report a problem*, from a Check my files or Look back result, opens the same GitHub page the extension does, in
-whatever browser you normally use, and never carries a detail it found.
-
-<!-- Draft, not shipped yet. Move each line below out of this comment only once that piece of the app does what it
-     says, each on its own.
-
-- A further check on who else, beyond your browser extensions, might be able to reach your AI chats (another app, an
-  account, or a switch on this computer), reading names and settings only.
--->
+whatever browser you normally use, with no detail it found in the address.
 
 ## Changes and questions
 

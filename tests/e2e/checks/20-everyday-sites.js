@@ -5,8 +5,8 @@
 
 module.exports = async function (env) {
   const { EXT, check, clotrActive, ctx, expect, expectNoUI, fs, launch, openExtPage, openPopup, os, path } = env;
-  const { readNotice } = env;
-  const { resetState, shotAt, sleep, store, typeText, waitFor, withSite } = env;
+  const { clickDialogButton, evalInClotr, readDialog, readNotice } = env;
+  const { editorText, resetState, shotAt, sleep, store, typeText, waitFor, withSite } = env;
   const PHONE = "555-555-0123";
 
   await check("EV1", "Email and chat apps: Clotr stays off until you switch one on", async () => {
@@ -51,14 +51,30 @@ module.exports = async function (env) {
 
   // A script can't click the browser's own permission prompt, so I stand in for "you switched them on" with a
   // copy of the extension whose manifest already grants the two sites. A granted host behaves the same either way.
-  async function withGrantedCopy(fn) {
+  async function withGrantedCopy(fn, extraPermissions = [], emailBandage = false) {
     const copy = fs.mkdtempSync(path.join(os.tmpdir(), "clotr-ext-"));
     let other;
     try {
       fs.cpSync(EXT, copy, { recursive: true });
       const m = JSON.parse(fs.readFileSync(path.join(copy, "manifest.json"), "utf8"));
-      m.host_permissions = [...m.host_permissions, "https://mail.google.com/*", "https://discord.com/*"];
+      m.host_permissions = [
+        ...m.host_permissions,
+        "https://mail.google.com/*",
+        "https://discord.com/*",
+        ...extraPermissions,
+      ];
       fs.writeFileSync(path.join(copy, "manifest.json"), JSON.stringify(m, null, 2));
+      if (emailBandage) {
+        // The copied test build opens the guarded path only so the email editor behavior can be checked.
+        const backgroundFile = path.join(copy, "background.js");
+        const background = fs.readFileSync(backgroundFile, "utf8").replace(/\r\n/g, "\n");
+        const disabled =
+          'function bandageFor(everyday, host, r) {\n  return everyday ? false : host && typeof r.bandage?.[host] === "boolean" ? r.bandage[host] : undefined;\n}';
+        const enabled =
+          'function bandageFor(everyday, host, r) {\n  return host && typeof r.bandage?.[host] === "boolean" ? r.bandage[host] : undefined;\n}';
+        expect(background.includes(disabled), "the fake email Bandage setup couldn't find the guarded setting");
+        fs.writeFileSync(backgroundFile, background.replace(disabled, enabled));
+      }
       other = await launch(copy);
       await waitFor(
         () =>
@@ -99,6 +115,401 @@ module.exports = async function (env) {
       }
       return `warned on ${seen.join(" and ")}, no cover names`;
     }),
+  );
+
+  await check(
+    "EV18",
+    "Email replies leave quoted contact details out; forwards check added text and credentials in the forwarded message",
+    () =>
+      withGrantedCopy(
+        async (other) => {
+          const providers = [
+            {
+              name: "Gmail",
+              host: "mail.google.com",
+              origin: "https://mail.google.com",
+              reply: "email-gmail-reply.html",
+              forward: "email-gmail-forward.html",
+            },
+            {
+              name: "Outlook",
+              host: "outlook.office.com",
+              origin: "https://outlook.office.com",
+              reply: "email-outlook-reply.html",
+              forward: "email-outlook-forward.html",
+            },
+            {
+              name: "Yahoo Mail",
+              host: "mail.yahoo.com",
+              origin: "https://mail.yahoo.com",
+              reply: "email-yahoo-reply.html",
+              forward: "email-yahoo-forward.html",
+            },
+          ];
+
+          await store.set(other, {
+            siteKinds: Object.fromEntries(providers.map((p) => [p.host, "everyday"])),
+          });
+          await other.worker.evaluate(() => syncUserSites());
+          await waitFor(
+            () =>
+              other.worker.evaluate(async () => {
+                const [s] = await chrome.scripting.getRegisteredContentScripts({ ids: ["clotr-user-sites"] });
+                return s?.matches?.some((m) => /^[^:/]+:\/\/mail\.yahoo\.com\//.test(m));
+              }),
+            5000,
+          );
+
+          async function withFixture(provider, file, fn, variant = "reply") {
+            const url = `${provider.origin}/clotr-test?variant=${variant}`;
+            const page = await other.browser.newPage();
+            page.site = { url, editor: 'document.querySelector("#body")', send: 'document.querySelector("#send")' };
+            page.logs = [];
+            page.on("console", async (entry) => {
+              const text = (await Promise.all(entry.args().map((a) => a.jsonValue().catch(() => "")))).join(" ");
+              page.logs.push(text);
+              if (text.includes("[Clotr]") && ["error", "warn"].includes(entry.type())) {
+                other.problems.push(`${provider.name} page ${entry.type()}: ${text}`);
+              }
+            });
+            page.on("pageerror", (err) => other.problems.push(`${provider.name} page error: ${err.message}`));
+            await page.setRequestInterception(true);
+            page.on("request", (req) => {
+              if (req.resourceType() === "document" && req.url().startsWith(provider.origin + "/")) {
+                return req.respond({
+                  status: 200,
+                  contentType: "text/html; charset=utf-8",
+                  body: fs.readFileSync(path.join(__dirname, "..", "pages", file)),
+                });
+              }
+              return req.abort();
+            });
+            try {
+              await page.goto(url, { waitUntil: "load" });
+              await waitFor(() => page.logs.some((line) => line.includes("[Clotr] responses:")), 5000);
+              expect(clotrActive(page), `Clotr did not run on ${provider.name}`);
+              await evalInClotr(
+                page,
+                `(() => {
+                const detect = globalThis.Clotr.detect;
+                globalThis.__emailScanTexts = [];
+                globalThis.Clotr.detect = (text) => {
+                  globalThis.__emailScanTexts.push(text);
+                  return detect(text);
+                };
+                return true;
+              })()`,
+              );
+              await page.evaluate(() => {
+                const reply = document.querySelector("#reply");
+                const range = document.createRange();
+                range.selectNodeContents(reply);
+                range.collapse(false);
+                const selection = getSelection();
+                selection.removeAllRanges();
+                selection.addRange(range);
+                document.querySelector("#body").focus();
+              });
+              return await fn(page);
+            } finally {
+              await page.close();
+            }
+          }
+
+          async function rememberEmailStatic(page) {
+            await page.evaluate(() => {
+              const snapshot = (node) => ({
+                node,
+                type: node.nodeType,
+                name: node.nodeName,
+                value: node.nodeValue,
+                attributes:
+                  node.nodeType === Node.ELEMENT_NODE ? [...node.attributes].map((a) => [a.name, a.value]) : [],
+                children: [...node.childNodes].map(snapshot),
+              });
+              window.__emailStaticSnapshot = ["#signature", "#email-history"].map((selector) =>
+                snapshot(document.querySelector(selector)),
+              );
+            });
+          }
+
+          async function emailStaticUnchanged(page) {
+            return page.evaluate(() => {
+              const same = (before, node) =>
+                Boolean(node) &&
+                before.node === node &&
+                before.type === node.nodeType &&
+                before.name === node.nodeName &&
+                before.value === node.nodeValue &&
+                JSON.stringify(before.attributes) ===
+                  JSON.stringify(
+                    node.nodeType === Node.ELEMENT_NODE ? [...node.attributes].map((a) => [a.name, a.value]) : [],
+                  ) &&
+                before.children.length === node.childNodes.length &&
+                before.children.every((child, i) => same(child, node.childNodes[i]));
+              return ["#signature", "#email-history"].every((selector, i) =>
+                same(window.__emailStaticSnapshot[i], document.querySelector(selector)),
+              );
+            });
+          }
+
+          const richEditFailures = [];
+          async function recordRichFailure(provider, action, run) {
+            try {
+              await run();
+            } catch (err) {
+              richEditFailures.push(`${provider.name} ${action}: ${err.message}`);
+            }
+          }
+
+          for (const provider of providers) {
+            await withFixture(provider, provider.reply, async (page) => {
+              await page.evaluate(() => {
+                const reply = document.querySelector("#reply");
+                const range = document.createRange();
+                range.selectNodeContents(reply);
+                getSelection().removeAllRanges();
+                getSelection().addRange(range);
+              });
+              await typeText(page, "Jerry,");
+              await sleep(700);
+              const notice = await readNotice(page);
+              expect(!notice, `${provider.name} reply warned about the quoted header: ${notice?.text}`);
+            });
+
+            await withFixture(provider, provider.reply, async (page) => {
+              await typeText(page, "Please email me at reply@example.test.");
+              const notice = await waitFor(() => readNotice(page), 3000);
+              expect(notice && /Email Address/.test(notice.text), `${provider.name} did not warn for my address`);
+            });
+
+            await withFixture(provider, provider.reply, async (page) => {
+              await typeText(page, "My phone is 555-555-0123.");
+              const notice = await waitFor(() => readNotice(page), 3000);
+              expect(notice && /Phone Number/.test(notice.text), `${provider.name} did not warn for my phone`);
+              await clickDialogButton(page, "Send as is", readNotice);
+              await typeText(page, " Thanks for the note.");
+              await sleep(700);
+              const repeated = await readNotice(page);
+              expect(
+                !repeated || /Warn less about/.test(repeated.text),
+                `${provider.name} repeated the same warning after I kept typing: ${repeated?.text}; ${await editorText(page)}`,
+              );
+              if (repeated) await clickDialogButton(page, "Keep warning", readNotice);
+              await typeText(page, " Please email me at new@example.test.");
+              const added = await waitFor(() => readNotice(page), 3000);
+              expect(added && /Email Address/.test(added.text), `${provider.name} missed the new email address`);
+            });
+
+            await withFixture(provider, provider.reply, async (page) => {
+              await typeText(page, "API key: AKIA4HPQ7XZ2R6TWLJ3N");
+              const notice = await waitFor(async () => (await readNotice(page)) || (await readDialog(page)), 3000);
+              expect(notice && /AWS Access Key/.test(notice.text), `${provider.name} did not warn for my key`);
+            });
+
+            await withFixture(
+              provider,
+              provider.forward,
+              async (page) => {
+                await page.evaluate(() => {
+                  const reply = document.querySelector("#reply");
+                  const range = document.createRange();
+                  range.selectNodeContents(reply);
+                  range.collapse(false);
+                  getSelection().removeAllRanges();
+                  getSelection().addRange(range);
+                });
+                await typeText(page, "Hi,");
+                const notice = await waitFor(async () => (await readNotice(page)) || (await readDialog(page)), 3000);
+                expect(
+                  notice && /AWS Access Key/.test(notice.text),
+                  `${provider.name} did not warn for the forwarded key`,
+                );
+                expect(!/Email Address/.test(notice.text), `${provider.name} warned about a forwarded address`);
+              },
+              "forward",
+            );
+
+            await recordRichFailure(provider, "Cover it", () =>
+              withFixture(provider, provider.reply, async (page) => {
+                await rememberEmailStatic(page);
+                await typeText(page, "Call me at 555-555-0123.");
+                const notice = await waitFor(() => readNotice(page), 3000);
+                expect(
+                  notice && /Phone Number/.test(notice.text),
+                  `${provider.name} did not warn for the typed number`,
+                );
+                await clickDialogButton(page, "Cover it", readNotice);
+                const covered = await waitFor(async () => {
+                  const text = await editorText(page);
+                  return text.includes("[REDACTED PHONE NUMBER]") ? text : null;
+                }, 4000);
+                expect(covered, `${provider.name} did not cover the typed number: ${await editorText(page)}`);
+                const parts = await page.evaluate(() => ({
+                  reply: document.querySelector("#reply")?.innerText || "",
+                  quote: document.querySelector("#quote-body")?.innerText || "",
+                }));
+                expect(!parts.reply.includes("555-555-0123"), `${provider.name} left the typed number in the reply`);
+                expect(parts.quote.includes("555-555-0123"), `${provider.name} changed the same number in the quote`);
+                expect(await emailStaticUnchanged(page), `${provider.name} changed the quote or signature nodes`);
+              }),
+            );
+
+            await recordRichFailure(provider, "split number", () =>
+              withFixture(provider, provider.reply, async (page) => {
+                await rememberEmailStatic(page);
+                await typeText(page, "Call me at 555-555-");
+                await page.keyboard.down("Control");
+                await page.keyboard.press("b");
+                await page.keyboard.up("Control");
+                await typeText(page, "0123");
+                await page.keyboard.down("Control");
+                await page.keyboard.press("b");
+                await page.keyboard.up("Control");
+                const split = await page.evaluate(() => ({
+                  reply: document.querySelector("#reply")?.innerText || "",
+                  bold: [...document.querySelectorAll("#reply b, #reply strong")].some((node) =>
+                    node.textContent.includes("0123"),
+                  ),
+                }));
+                expect(
+                  split.reply.includes("555-555-0123") && split.bold,
+                  `${provider.name} did not split the number at bold text`,
+                );
+                const notice = await waitFor(() => readNotice(page), 3000);
+                expect(
+                  notice && /Phone Number/.test(notice.text),
+                  `${provider.name} missed the number split by bold text`,
+                );
+                await clickDialogButton(page, "Cover it", readNotice);
+                const covered = await waitFor(async () => {
+                  const text = await editorText(page);
+                  return text.includes("[REDACTED PHONE NUMBER]") ? text : null;
+                }, 4000);
+                expect(covered, `${provider.name} did not cover the split number: ${await editorText(page)}`);
+                const quote = await page.$eval("#quote-body", (node) => node.innerText);
+                expect(quote.includes("555-555-0123"), `${provider.name} changed the phone number in the quote`);
+                expect(await emailStaticUnchanged(page), `${provider.name} changed the quote or signature nodes`);
+              }),
+            );
+
+            const previousBandage = (await store.get(other, "bandage")).bandage || {};
+            await store.set(other, { bandage: { ...previousBandage, [provider.host]: true } });
+            try {
+              await recordRichFailure(provider, "Bandage", () =>
+                withFixture(provider, provider.reply, async (page) => {
+                  await rememberEmailStatic(page);
+                  await typeText(page, "Call me at 555-555-0123.");
+                  const text = await waitFor(async () => {
+                    const value = await editorText(page);
+                    return value.includes("[Phone 1]") ? value : null;
+                  }, 4000);
+                  const notice = await readNotice(page);
+                  const debug = JSON.stringify({
+                    bandage: (await store.get(other, "bandage")).bandage?.[provider.host],
+                    notice: notice?.text || "",
+                    logs: page.logs.filter((line) => line.includes("Bandage") || line.includes("rich message")),
+                  });
+                  expect(
+                    text,
+                    `${provider.name} Bandage did not cover the typed number: ${await editorText(page)}; debug=${debug}`,
+                  );
+                  expect(!(await readNotice(page)), `${provider.name} warned after Bandage covered the number`);
+                  const quote = await page.$eval("#quote-body", (node) => node.innerText);
+                  expect(
+                    quote.includes("555-555-0123"),
+                    `${provider.name} Bandage changed the phone number in the quote`,
+                  );
+                  expect(
+                    await emailStaticUnchanged(page),
+                    `${provider.name} Bandage changed the quote or signature nodes`,
+                  );
+                }),
+              );
+            } finally {
+              await store.set(other, { bandage: previousBandage });
+            }
+          }
+          expect(!richEditFailures.length, richEditFailures.join(" | ") || "a rich email edit failed");
+
+          await withFixture(providers[0], providers[0].reply, async (page) => {
+            await typeText(page, "Hello ");
+            expect(
+              await waitFor(() => evalInClotr(page, "globalThis.__emailScanTexts.at(-1)?.includes('Hello')"), 3000),
+              "Gmail did not scan the reply before the quote edit",
+            );
+            await page.evaluate(() => {
+              const text = document.querySelector(".quote-body").firstChild;
+              const range = document.createRange();
+              range.selectNodeContents(text);
+              const selection = getSelection();
+              selection.removeAllRanges();
+              selection.addRange(range);
+              document.querySelector("#body").focus();
+            });
+            await typeText(page, "Call me at 555-555-0134.");
+            expect(
+              await waitFor(
+                () => evalInClotr(page, "globalThis.__emailScanTexts.at(-1)?.includes('555-555-0134')"),
+                3000,
+              ),
+              "Gmail did not scan the changed quote text",
+            );
+            const notice = await waitFor(() => readNotice(page), 3000);
+            expect(notice && /Phone Number/.test(notice.text), `Gmail did not check text edited inside the quote`);
+          });
+
+          const lines = Array.from({ length: 25 }, (_, i) => `Contact person${i + 1}@example.test.`).join("\n");
+          await withFixture(providers[0], providers[0].reply, async (page) => {
+            await page.evaluate((value) => {
+              const button = document.createElement("button");
+              button.id = "copy-test-text";
+              button.textContent = "Copy test text";
+              button.addEventListener("click", async () => {
+                try {
+                  await navigator.clipboard.writeText(value);
+                  window.__clipboardWritten = true;
+                } catch (error) {
+                  window.__clipboardError = error.message;
+                }
+              });
+              document.body.append(button);
+            }, lines);
+            await page.click("#copy-test-text");
+            await waitFor(() => page.evaluate(() => window.__clipboardWritten || window.__clipboardError), 3000);
+            const clipboardError = await page.evaluate(() => window.__clipboardError);
+            expect(!clipboardError, `test clipboard write failed: ${clipboardError}`);
+            await page.evaluate(() => {
+              const reply = document.querySelector("#reply");
+              const range = document.createRange();
+              range.selectNodeContents(reply);
+              range.collapse(false);
+              getSelection().removeAllRanges();
+              getSelection().addRange(range);
+              document.querySelector("#body").focus();
+            });
+            await page.keyboard.down("Control");
+            await page.keyboard.press("v");
+            await page.keyboard.up("Control");
+            const notice = await waitFor(() => readNotice(page), 5000);
+            expect(
+              notice && /Large paste: \d+ lines, with Email Address ×25/.test(notice.text),
+              `real paste wording: ${notice?.text}`,
+            );
+          });
+
+          await withFixture(providers[0], providers[0].reply, async (page) => {
+            await typeText(page, lines);
+            const notice = await waitFor(() => readNotice(page), 5000);
+            expect(notice && /This message has/.test(notice.text), `typed message wording: ${notice?.text}`);
+            expect(!/Large paste/.test(notice.text), `typed text was called a paste: ${notice.text}`);
+          });
+
+          return "reply headers stayed quiet, typed details and forwarded keys warned, paste wording followed how text arrived";
+        },
+        ["https://outlook.office.com/*", "https://mail.yahoo.com/*"],
+        true,
+      ),
   );
 
   // The welcome page offers the email and chat apps in a card right after "Pin Clotr": nothing ticked, one button
@@ -972,5 +1383,154 @@ module.exports = async function (env) {
         }
       });
     },
+  );
+
+  // While "Everywhere I type" is on, the browser already covers every site, so asking for one more gets a yes with
+  // no question and nothing added to its grants. The switches read only the grants, so Turn on did nothing there.
+  // A copy whose manifest already grants the broad origin stands in for having switched it on.
+  async function withBroadGrant(fn) {
+    const copy = fs.mkdtempSync(path.join(os.tmpdir(), "clotr-ext-"));
+    let other;
+    try {
+      fs.cpSync(EXT, copy, { recursive: true });
+      const m = JSON.parse(fs.readFileSync(path.join(copy, "manifest.json"), "utf8"));
+      m.host_permissions = [...m.host_permissions, "https://*/*"];
+      fs.writeFileSync(path.join(copy, "manifest.json"), JSON.stringify(m, null, 2));
+      other = await launch(copy);
+      await resetState(other);
+      return await fn(other);
+    } finally {
+      if (other) {
+        await other.browser.close();
+        fs.rmSync(other.profile, { recursive: true, force: true });
+      }
+      fs.rmSync(copy, { recursive: true, force: true });
+    }
+  }
+
+  await check(
+    "EV19",
+    "Everywhere I type on: covered apps read On and say why, and a search engine still turns on and stays on",
+    () =>
+      withBroadGrant(async (other) => {
+        const sw = (list, name) => `#${list} button[aria-label="Clotr on ${name}"]`;
+        const openSettings = async () => {
+          const p = await openPopup(other);
+          await p.click("#tab-settings");
+          await p.evaluate(() => (document.getElementById("pick-sites").open = true));
+          return p;
+        };
+        const reads = (p, sel) => p.$eval(sel, (b) => b.textContent);
+        const row = (p, sel) => p.$eval(sel, (b) => b.closest("li").textContent);
+        const said = (p, id) => p.$eval(`#${id}`, (s) => s.textContent);
+        const google = sw("search-sites", "Google");
+        let popup = await openSettings();
+        try {
+          for (const [list, name] of [
+            ["everyday-sites", "Gmail"],
+            ["everyday-sites", "Outlook"],
+            ["support-sites", "Intercom"],
+          ]) {
+            expect((await reads(popup, sw(list, name))) === "On", `${name} isn't On under Everywhere I type`);
+            const why = await row(popup, sw(list, name));
+            expect(/through Everywhere I type/i.test(why), `${name}'s row says ${JSON.stringify(why)}`);
+          }
+          expect((await reads(popup, google)) === "Turn on", "a search engine reads On before it was switched on");
+
+          // Clicking a covered app has nothing to ask for, so it stays On and says why.
+          await popup.click(sw("everyday-sites", "Gmail"));
+          const kept = await waitFor(
+            async () => /keeps Clotr on here/.test(await said(popup, "everyday-status")),
+            5000,
+          );
+          expect(kept, `clicking Gmail said ${JSON.stringify(await said(popup, "everyday-status"))}`);
+          expect(
+            (await reads(popup, sw("everyday-sites", "Gmail"))) === "On",
+            "Gmail went off under Everywhere I type",
+          );
+
+          // A search engine: the browser says yes with nothing to ask, and the switch still turns on.
+          await popup.click(google);
+          const on = await waitFor(async () => (await reads(popup, google)) === "On", 5000);
+          expect(on, `Google reads ${await reads(popup, google)} (status: ${await said(popup, "search-status")})`);
+          const own = await waitFor(
+            () =>
+              other.worker.evaluate(async () => {
+                const [mine] = await chrome.scripting.getRegisteredContentScripts({ ids: ["clotr-user-sites"] });
+                const [wide] = await chrome.scripting.getRegisteredContentScripts({ ids: ["clotr-everywhere"] });
+                const o = "https://www.google.com/*";
+                return mine?.matches.includes(o) && (!wide || wide.excludeMatches.includes(o));
+              }),
+            5000,
+          );
+          expect(own, "Google isn't set up as a site of its own");
+          await popup.close();
+          popup = await openSettings();
+          expect((await reads(popup, google)) === "On", "Google isn't On in the popup opened again");
+          await popup.click(google);
+          const off = await waitFor(async () => (await reads(popup, google)) === "Turn on", 5000);
+          expect(off, `Google reads ${await reads(popup, google)} after switching it off`);
+        } finally {
+          await popup.close();
+        }
+
+        // The welcome page's card, the same way: Slack shows On and can't be unticked there, and DuckDuckGo
+        // switches on.
+        const page = await other.browser.newPage();
+        page.on("pageerror", (err) => other.problems.push(`welcome page error: ${err.message}`));
+        await page.setViewport({ width: 700, height: 900 });
+        try {
+          await page.goto(`chrome-extension://${new URL(other.swTarget.url()).host}/vault.html?welcome=1`);
+          const slack = await waitFor(
+            () =>
+              page.evaluate(() => {
+                const box = document.querySelector("#everyday-offer input[value=Slack]");
+                return box?.checked && box.disabled && box.parentElement.classList.contains("on");
+              }),
+            10000,
+          );
+          expect(slack, "Slack isn't On on the card under Everywhere I type");
+          await page.evaluate(() => (document.getElementById("where-pick-sites").open = true));
+          await page.click("#more-sites-offer label.ev-app:has(input[value=DuckDuckGo])");
+          await page.click("#ms-go");
+          const on = await waitFor(
+            () =>
+              page.evaluate(async () =>
+                (await globalThis.ClotrSites.userSitePatterns()).includes("https://duckduckgo.com/*"),
+              ),
+            5000,
+          );
+          expect(
+            on,
+            `DuckDuckGo isn't on after the card said: ${await page.$eval("#ms-status", (s) => s.textContent)}`,
+          );
+        } finally {
+          await page.close();
+        }
+      }),
+  );
+
+  await check(
+    "EV20",
+    "An app an older version noted as an AI chat turns on from the popup when it's already granted",
+    () =>
+      withGrantedCopy(async (other) => {
+        await store.set(other, { siteKinds: { "mail.google.com": "ai" } });
+        const gmail = 'button[aria-label="Clotr on Gmail"]';
+        const popup = await openPopup(other);
+        try {
+          await popup.click("#tab-settings");
+          await popup.evaluate(() => (document.getElementById("pick-sites").open = true));
+          const reads = () => popup.$eval(gmail, (b) => b.textContent);
+          expect((await reads()) === "Turn on", `Gmail reads ${await reads()} with the old note`);
+          await popup.click(gmail);
+          const on = await waitFor(async () => (await reads()) === "On", 5000);
+          expect(on, `Gmail reads ${await reads()} after Turn on`);
+          const { siteKinds = {} } = await store.get(other, ["siteKinds"]);
+          expect(!siteKinds["mail.google.com"], `the old note is still there: ${JSON.stringify(siteKinds)}`);
+        } finally {
+          await popup.close();
+        }
+      }),
   );
 };

@@ -131,6 +131,119 @@
       .trim();
   const sameText = (a, b) => plain(a) === plain(b);
 
+  const BLOCK_TEXT_TAGS = new Set([
+    "ADDRESS",
+    "ARTICLE",
+    "BLOCKQUOTE",
+    "DIV",
+    "LI",
+    "OL",
+    "P",
+    "PRE",
+    "SECTION",
+    "TABLE",
+    "TR",
+  ]);
+
+  // Builds the same text stream the email check scans, with each character pointing back to its text node.
+  function richTextMap(editor, excludedNodes = new Set()) {
+    if (Array.isArray(editor)) {
+      let text = "";
+      const mapped = [];
+      for (const root of editor) {
+        const part = richTextMap(root, excludedNodes);
+        if (!part.text) continue;
+        if (text) {
+          text += "\n";
+          mapped.push(null);
+        }
+        text += part.text;
+        // One at a time: a long forwarded thread has more positions than a call can take as arguments.
+        for (const position of part.positions) mapped.push(position);
+      }
+      return { text, positions: mapped };
+    }
+    let raw = "";
+    const positions = [];
+    const pointBefore = (node) => ({ node: node.parentNode, offset: [...node.parentNode.childNodes].indexOf(node) });
+    const pointAfter = (node) => ({ node: node.parentNode, offset: [...node.parentNode.childNodes].indexOf(node) + 1 });
+    const lineBreak = (point) => {
+      if (raw && !raw.endsWith("\n")) {
+        raw += "\n";
+        positions.push(point);
+      }
+    };
+    const walk = (node) => {
+      if (excludedNodes.has(node)) return;
+      if (node.nodeType === Node.TEXT_NODE) {
+        const value = node.nodeValue || "";
+        for (let i = 0; i < value.length; i++) {
+          raw += value[i];
+          positions.push({ node, offset: i });
+        }
+        return;
+      }
+      if (node.nodeType !== Node.ELEMENT_NODE) return;
+      if (node.tagName === "BR") {
+        lineBreak(pointAfter(node));
+        return;
+      }
+      const block = BLOCK_TEXT_TAGS.has(node.tagName);
+      if (block) lineBreak(pointBefore(node));
+      for (const child of node.childNodes) walk(child);
+      if (block) lineBreak(pointAfter(node));
+    };
+    walk(editor);
+
+    let text = "";
+    const mapped = [];
+    for (let i = 0; i < raw.length;) {
+      if (raw[i] !== "\n") {
+        text += raw[i];
+        mapped.push(positions[i]);
+        i++;
+        continue;
+      }
+      let end = i + 1;
+      while (end < raw.length && raw[end] === "\n") end++;
+      for (let j = i; j < Math.min(end, i + 2); j++) {
+        text += "\n";
+        mapped.push(positions[j]);
+      }
+      i = end;
+    }
+    while (text.startsWith("\n")) {
+      text = text.slice(1);
+      mapped.shift();
+    }
+    while (text.endsWith("\n")) {
+      text = text.slice(0, -1);
+      mapped.pop();
+    }
+    return { text, positions: mapped };
+  }
+
+  function replacementSpans(text, pairs) {
+    const spans = [];
+    const missing = [];
+    const seen = new Set();
+    for (const [value, replacement] of pairs) {
+      const match = String(value);
+      if (!match || seen.has(match)) continue;
+      seen.add(match);
+      let found = false;
+      for (let start = text.indexOf(match); start >= 0; start = text.indexOf(match, start + match.length)) {
+        found = true;
+        const end = start + match.length;
+        if (!spans.some((span) => start < span.end && end > span.start)) {
+          spans.push({ start, end, replacement: String(replacement) });
+        }
+      }
+      if (!found) missing.push(match);
+    }
+    return { spans, missing };
+  }
+
   const wait = (ms) => new Promise((r) => setTimeout(r, ms));
   // Resolves once the editor's text differs from `before` (or after `ms`): some editors
   // (Lexical on Kimi) apply an edit a moment after the input event, not straight away.
@@ -211,11 +324,85 @@
     return false;
   }
 
+  function scopedTextMap(scope) {
+    const mapped = richTextMap(scope.root, scope.excludedNodes || new Set());
+    if (scope.start === undefined || scope.end === undefined) return mapped;
+    return {
+      text: mapped.text.slice(scope.start, scope.end),
+      positions: mapped.positions.slice(scope.start, scope.end),
+    };
+  }
+
+  // Replaces findings in the same DOM parts the email check scanned, preserving every excluded part and format.
+  async function replaceMatchesInPlace(editor, scopes) {
+    // A caller passing anything but a list of scopes is a bug in Clotr, not a box that won't change, so it says so
+    // rather than looking like nothing needed covering.
+    if (!Array.isArray(scopes)) throw new TypeError("replaceMatchesInPlace takes a list of scopes");
+    if (!editor?.isContentEditable || !scopes.length) return { changed: false, uncovered: [] };
+    const before = getText(editor);
+    const states = scopes.map((scope) => ({ ...scope, end: scope.end, expected: scopedTextMap(scope).text }));
+    editing = true;
+    try {
+      for (const state of states) {
+        try {
+          // Earlier scopes can edit the same root, as an edited email quote can also be forwarded. Plan each
+          // scope against the text that's there now instead of its stale snapshot from the start of the send.
+          state.expected = scopedTextMap(state).text;
+          const plan = replacementSpans(state.expected, state.pairs || []);
+          plan.spans.sort((a, b) => b.start - a.start);
+          for (const span of plan.spans) {
+            const current = scopedTextMap(state);
+            if (current.text !== state.expected) break;
+            const points = current.positions.slice(span.start, span.end);
+            if (points.some((point) => !point?.node)) continue;
+            const first = points[0];
+            const last = points[points.length - 1];
+            const beforeSpan = getText(editor);
+            const range = document.createRange();
+            range.setStart(first.node, first.offset);
+            range.setEnd(last.node, last.offset + 1);
+            editor.focus();
+            const selection = window.getSelection();
+            const seenSelection = selectionSeen();
+            selection.removeAllRanges();
+            selection.addRange(range);
+            await seenSelection;
+            await wait(0);
+            const accepted = command("insertText", span.replacement);
+            if (accepted) await settled(editor, beforeSpan);
+            else await wait(0);
+            const next = state.expected.slice(0, span.start) + span.replacement + state.expected.slice(span.end);
+            const after = scopedTextMap(state).text;
+            if (after === state.expected) continue;
+            state.expected = next;
+            if (state.end !== undefined) state.end += span.replacement.length - (span.end - span.start);
+            if (scopedTextMap(state).text !== state.expected) break;
+          }
+        } catch {
+          console.warn(LOG, "editing part of the rich message failed");
+        }
+      }
+    } finally {
+      editing = false;
+    }
+    const uncovered = [];
+    for (const scope of states) {
+      const text = scopedTextMap(scope).text;
+      for (const [value] of scope.pairs || []) {
+        if (value && text.includes(String(value)) && !uncovered.includes(value)) uncovered.push(value);
+      }
+    }
+    return { changed: getText(editor) !== before, uncovered };
+  }
+
   globalThis.Clotr.editor = {
     realTarget,
     findEditor,
     getText,
     replaceText,
+    replaceMatchesInPlace,
+    replacementSpans,
+    richTextMap,
     isEditing: () => editing,
     isChatComposer,
     composerInfo,

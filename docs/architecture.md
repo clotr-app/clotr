@@ -102,6 +102,7 @@ since Firefox can take a few seconds to wake a background worker it had suspende
   `confirm.js`'s "Warn you less on every site?" page, exists because a chat page could otherwise restyle or cover a
   warning and steer a click onto a looser response: the background holds the choice (`askOnClotrPage`) and only a
   yes typed on this separate page actually applies it.
+- The popup asks for optional `nativeMessaging` when you click Connect, and the browser talks only to the Windows app's pinned host.
 - `_locales/` holds the Spanish strings; pages mark text with `data-i18n` and keep the English readable in the HTML.
 - `icons/` is generated from the brand tile in `tools/brand.js`. The README image, social card and store pictures
   come from that same tile, through `npm run brand`.

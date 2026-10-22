@@ -9,9 +9,10 @@
 // Firefox's automation can't see inside Clotr's closed shadow roots, so most checks here look at the warning's host
 // element instead and save a screenshot of what a person would actually see. FF5 through FF8 attach files, since
 // Firefox keeps a page's uploaded files away from content scripts in a way Chrome doesn't, so that path needs its
-// own coverage. FF9 through FF16 drive Clotr's welcome page and popup with real clicks over Marionette, because
+// own coverage. FF9 through FF20 drive Clotr's welcome page and popup with real clicks over Marionette, because
 // Firefox only lets an add-on ask for a site in the same click that triggered the ask, and the popup broke that
-// rule once. FF16 also needs a real https page, since Tourniquet's storage only exists in an extension page's own
+// rule once. FF19 and FF20 open the real toolbar popup, since only there can Clotr's panel cover Firefox's
+// question. FF16 also needs a real https page, since Tourniquet's storage only exists in an extension page's own
 // world and has to be set from a moz-extension:// tab that the other checks can't open.
 "use strict";
 
@@ -298,77 +299,6 @@ async function main() {
         await tab.close();
       }
     });
-    await check("FF4", "Bandage: cover a phone number and show the peek bubble (Firefox)", async () => {
-      await page.focus("#prompt-textarea");
-      await page.keyboard.type("call me at 555-555-0123 ");
-      let host = false;
-      for (let t = 0; t < 5000 && !host; t += 250) {
-        await sleep(250);
-        host = await page.evaluate(() => Boolean(document.querySelector("clotr-notice")));
-      }
-      if (!host) throw new Error("no notice for the Bandage offer");
-      // The offer's buttons are drawn a moment after the notice appears, later still on a busy computer, so this
-      // waits until the notice's size stops changing before tabbing through its buttons.
-      let size = "";
-      for (let t = 0, same = 0; t < 6000 && same < 3; t += 250) {
-        await sleep(250);
-        const now = await page.evaluate(() => {
-          const r = document.querySelector("clotr-notice")?.getBoundingClientRect();
-          return r ? `${Math.round(r.width)}x${Math.round(r.height)}` : "";
-        });
-        same = now && now === size ? same + 1 : 0;
-        size = now;
-      }
-      // Tab into the notice (lands on "Cover it"), then in DOM order: Send as is, More choices,
-      // No thanks, Yes, use cover names (blind, like FF1b: no shadow access).
-      let inside = false;
-      for (let i = 0; i < 8 && !inside; i++) {
-        await page.keyboard.press("Tab");
-        inside = await page.evaluate(() => document.activeElement?.tagName === "CLOTR-NOTICE");
-      }
-      if (!inside) throw new Error("couldn't reach the notice with Tab");
-      for (let i = 0; i < 4; i++) await page.keyboard.press("Tab");
-      await sleep(1200); // past the 0.6 s Enter guard, with room for a busy computer
-      await page.keyboard.press("Enter");
-      // Waits for the cover name to land once the choice is saved, rather than a fixed delay: 0.5 s wasn't always
-      // enough on a slow CI runner. It still fails if the cover name never shows up.
-      let text = "";
-      for (let t = 0; t < 5000 && !text.includes("[Phone 1]"); t += 250) {
-        await sleep(250);
-        text = await page.$eval("#prompt-textarea", (el) => el.value);
-      }
-      if (!text.includes("[Phone 1]")) throw new Error(`box after "Yes, use cover names": ${JSON.stringify(text)}`);
-      await page.keyboard.press("Enter"); // send it
-      await sleep(500);
-      await page.evaluate(() => window.__reply("Sure, I'll call [Phone 1] soon."));
-      // Waits for the hotspot, which appears once the reply has sat quietly for about 3 s.
-      let spots = false;
-      for (let t = 0; t < 8000 && !spots; t += 250) {
-        await sleep(250);
-        spots = await page.evaluate(() => Boolean(document.querySelector("clotr-spots")));
-      }
-      if (!spots) throw new Error("no hotspot over the label");
-      const point = await page.evaluate(() => {
-        const t = document.querySelector(".reply").firstChild;
-        const r = document.createRange();
-        const i = t.nodeValue.indexOf("[Phone 1]");
-        r.setStart(t, i);
-        r.setEnd(t, i + "[Phone 1]".length);
-        const b = r.getBoundingClientRect();
-        return { x: b.left + b.width / 2, y: b.top + b.height / 2 };
-      });
-      // Starts outside the label and moves in, since Firefox won't treat a hotspot that appears under an
-      // already-still mouse as a hover.
-      await page.mouse.move(point.x - 60, point.y - 30);
-      await page.mouse.move(point.x, point.y, { steps: 4 });
-      let peek = false;
-      for (let t = 0; t < 3000 && !peek; t += 250) {
-        await sleep(250);
-        peek = await page.evaluate(() => Boolean(document.querySelector("clotr-peek")));
-      }
-      await page.screenshot({ path: path.join(OUT, "firefox-peek.png") });
-      if (!peek) throw new Error("no peek bubble appeared");
-    });
     // A lone photo (nothing else attached alongside it) is rebuildable, so Clotr takes its place out before the
     // site ever sees the file, instead of warning after the fact the way scanFiles does for text files (FF6-8):
     // that's "removed the place from attached pictures", not "attached file … contains", so this doesn't reuse
@@ -432,7 +362,7 @@ async function main() {
   try {
     await ownPageChecks(check, firefox, ext);
   } catch (err) {
-    results.push(`  FF9-FF16 Clotr's own pages … FAIL\n       → couldn't run: ${err.message}`);
+    results.push(`  FF9-FF18 Clotr's own pages … FAIL\n       → couldn't run: ${err.message}`);
   } finally {
     fs.rmSync(ext, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 });
   }
@@ -442,9 +372,24 @@ async function main() {
   process.exitCode = failed ? 1 : 0;
 }
 
-// FF9 through FF16 cover Clotr's own pages: the welcome page it opens on install, and the popup. They run in a
+// FF9 through FF20 cover Clotr's own pages: the welcome page it opens on install, and the popup. They run in a
 // separate Firefox driven over Marionette with real clicks and typing. `ext` is the unpacked Firefox build.
-const OWN_PAGES = ["FF9", "FF10", "FF11", "FF12", "FF13", "FF14", "FF15", "FF16"];
+const OWN_PAGES = [
+  "FF4",
+  "FF9",
+  "FF10",
+  "FF11",
+  "FF12",
+  "FF13",
+  "FF14",
+  "FF15",
+  "FF16",
+  "FFMAIL1",
+  "FF17",
+  "FF18",
+  "FF19",
+  "FF20",
+];
 const SITE = "https://chat.newtool.example/"; // an AI chat Clotr doesn't recognize; this suite never touches the network
 
 // FF15 needs a page that actually loads over https, since the popup only calls a site spotted once it's checked a
@@ -540,6 +485,64 @@ async function trustFixtureCert(ff, url) {
   if (trusted !== true) throw new Error(`couldn't trust the fixture's certificate: ${trusted}`);
 }
 
+async function clickShadowButtonByLabel(ff, hostSelector, label) {
+  const host = Object.values(
+    (
+      await ff.send("WebDriver:FindElement", {
+        using: "css selector",
+        value: hostSelector,
+      })
+    ).value,
+  )[0];
+  const shadowRoot = Object.values((await ff.send("WebDriver:GetShadowRoot", { id: host })).value)[0];
+  const buttons = await ff.send("WebDriver:FindElementsFromShadowRoot", {
+    shadowRoot,
+    using: "css selector",
+    value: "button",
+  });
+  let button;
+  for (const item of buttons) {
+    const id = Object.values(item)[0];
+    const text = (await ff.send("WebDriver:GetElementText", { id })).value;
+    if (text.trim().replace(/\s+/g, " ") === label) button = id;
+  }
+  if (!button) throw new Error(`no button labeled ${JSON.stringify(label)} inside ${hostSelector}`);
+  await ff.send("WebDriver:ElementClick", { id: button });
+}
+
+// Answers Firefox's own question about a site for the Clotr page whose address ends in `page`, the way a person
+// clicks Allow, and says whether Firefox asked at all within `ms`. Only FF17 and FF18 see a question, since they
+// switch Firefox's prompts back on. Earlier checks can leave another popup tab open, so every tab at that
+// address is looked at.
+async function answerPrompt(ff, page, ms) {
+  const script = `
+    const win = Services.wm.getMostRecentWindow("navigator:browser");
+    const n = win.gBrowser.tabs
+      .filter((t) => t.linkedBrowser.currentURI.spec.endsWith(${JSON.stringify(page)}))
+      .map((t) => win.PopupNotifications.getNotification("addon-webext-permissions", t.linkedBrowser))
+      .find(Boolean);
+    if (!n) return false;
+    n.mainAction.callback();
+    n.remove();
+    return true;`;
+  for (const until = Date.now() + ms; Date.now() < until; await sleep(150)) {
+    if (await ff.inBrowser(script)) return true;
+  }
+  return false;
+}
+
+// The sites FF17 and FF18 switch on and off, and the broad origin "Everywhere I type" asks for.
+const SWITCHED = [
+  "https://mail.google.com/*",
+  "https://outlook.live.com/*",
+  "https://outlook.office.com/*",
+  "https://www.google.com/*",
+  "https://duckduckgo.com/*",
+  "https://widget.intercom.io/*",
+  "https://discord.com/*",
+  "https://*/*",
+];
+
 async function ownPageChecks(check, firefox, ext) {
   if (!OWN_PAGES.some(wanted)) return;
   const manifestFile = path.join(ext, "manifest.json");
@@ -548,7 +551,7 @@ async function ownPageChecks(check, firefox, ext) {
   // FF16 needs Clotr to treat a local https fixture the way it treats a built-in AI site. A host permission
   // pattern never names a port, so it matches the fixture whichever free port it happens to get. Only this run's
   // throwaway build gets the extra permission, never the real manifest.
-  if (wanted("FF16")) {
+  if (wanted("FF4") || wanted("FF16") || wanted("FFMAIL1")) {
     manifest.content_scripts[0].matches.push("https://127.0.0.1/*");
     manifest.host_permissions.push("https://127.0.0.1/*");
     fs.writeFileSync(manifestFile, JSON.stringify(manifest));
@@ -573,6 +576,85 @@ async function ownPageChecks(check, firefox, ext) {
         await ff.click("#where-pick-sites summary");
       }
     };
+
+    await check("FF4", "Bandage: cover a phone number and show the peek bubble (Firefox)", async () => {
+      const fixture = await startHttpsFixture(
+        fs.readFileSync(path.join(__dirname, "pages", "textarea-chat.html"), "utf8"),
+      );
+      try {
+        await trustFixtureCert(ff, fixture.url);
+        await onWelcome();
+        await ff.exec('await chrome.storage.local.set({ siteKinds: { "127.0.0.1": "ai" } });');
+        const tab = await ff.newTab(() =>
+          ff.exec(`await chrome.tabs.create({ url: ${JSON.stringify(fixture.url)} });`),
+        );
+        if (!tab) throw new Error("the fixture chat's tab didn't open");
+        await ff.switchTo(tab);
+        const loaded = await ff.waitFor('return document.querySelector("#prompt-textarea") ? true : null;', 10000);
+        if (!loaded) throw new Error("the fixture chat didn't load");
+        await ff.click("#prompt-textarea");
+        await ff.type("#prompt-textarea", "call me at 555-555-0123 ");
+        const host = await ff.waitFor('return Boolean(document.querySelector("clotr-notice")) || null;', 8000);
+        if (!host) throw new Error("no notice for the Bandage offer");
+
+        await ff.exec('document.querySelector("#composer button").focus();');
+        await ff.send("WebDriver:PerformActions", {
+          actions: [
+            {
+              type: "key",
+              id: "keyboard",
+              actions: [
+                { type: "keyDown", value: "\uE004" },
+                { type: "keyUp", value: "\uE004" },
+              ],
+            },
+          ],
+        });
+        const inside = await ff.waitFor('return document.activeElement?.tagName === "CLOTR-NOTICE" || null;', 3000);
+        if (!inside) throw new Error("couldn't reach the notice with Tab");
+        await clickShadowButtonByLabel(ff, "clotr-notice", "Yes, use cover names");
+
+        const covered = await ff.waitFor(
+          'const text = document.querySelector("#prompt-textarea")?.value || ""; return text.includes("[Phone 1]") ? text : null;',
+          5000,
+        );
+        if (!covered) throw new Error('box after "Yes, use cover names" did not show [Phone 1]');
+        await ff.type("#prompt-textarea", "\uE007");
+        const sent = await ff.waitFor("return window.__sent?.length === 1 || null;", 3000);
+        if (!sent) throw new Error("the covered message was not sent");
+        await ff.exec('window.__reply("Sure, I\'ll call [Phone 1] soon.");');
+        const spots = await ff.waitFor('return Boolean(document.querySelector("clotr-spots")) || null;', 8000);
+        if (!spots) throw new Error("no hotspot over the label");
+        const point = await ff.exec(`
+          const text = document.querySelector(".reply")?.firstChild;
+          if (!text) return null;
+          const range = document.createRange();
+          const start = text.nodeValue.indexOf("[Phone 1]");
+          if (start < 0) return null;
+          range.setStart(text, start);
+          range.setEnd(text, start + "[Phone 1]".length);
+          const rect = range.getBoundingClientRect();
+          return { x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 };`);
+        if (!point) throw new Error("no point for the cover name");
+        await ff.send("WebDriver:PerformActions", {
+          actions: [
+            {
+              type: "pointer",
+              id: "mouse",
+              parameters: { pointerType: "mouse" },
+              actions: [
+                { type: "pointerMove", duration: 0, x: point.x - 60, y: point.y - 30 },
+                { type: "pointerMove", duration: 250, x: point.x, y: point.y },
+              ],
+            },
+          ],
+        });
+        const peek = await ff.waitFor('return Boolean(document.querySelector("clotr-peek")) || null;', 3000);
+        if (!peek) throw new Error("no peek bubble appeared");
+      } finally {
+        await fixture.close();
+      }
+    });
 
     await check(
       "FF9",
@@ -859,6 +941,118 @@ async function ownPageChecks(check, firefox, ext) {
     );
 
     await check(
+      "FFMAIL1",
+      "Outlook reply: three quoted addresses stay quiet, and a typed phone is covered in place (Firefox)",
+      async () => {
+        const fixture = await startHttpsFixture(
+          fs.readFileSync(path.join(__dirname, "pages", "email-outlook-reply.html"), "utf8"),
+        );
+        try {
+          await trustFixtureCert(ff, fixture.url);
+          await onWelcome();
+          await ff.exec('await chrome.storage.local.set({ siteKinds: { "127.0.0.1": "everyday" } });');
+
+          const openReply = async () => {
+            const tab = await ff.newTab(() =>
+              ff.exec(`await chrome.tabs.create({ url: ${JSON.stringify(fixture.url)} });`),
+            );
+            if (!tab) throw new Error("the Outlook reply fixture didn't open");
+            await ff.switchTo(tab);
+            const loaded = await ff.waitFor('return document.querySelector("#reply") ? true : null;', 10000);
+            if (!loaded) throw new Error("the Outlook reply fixture didn't load");
+          };
+          const placeAtReplyEnd = () =>
+            ff.exec(`
+              const editor = document.querySelector("#body");
+              const reply = document.querySelector("#reply");
+              const range = document.createRange();
+              range.selectNodeContents(reply);
+              range.collapse(false);
+              const selection = getSelection();
+              selection.removeAllRanges();
+              selection.addRange(range);
+              editor.focus();`);
+
+          await openReply();
+          await placeAtReplyEnd();
+          await ff.type("#body", "Thanks.");
+          await sleep(1200);
+          if (await ff.exec('return Boolean(document.querySelector("clotr-notice"));')) {
+            throw new Error("the reply warned about the three addresses in its quoted header");
+          }
+
+          await onWelcome();
+          await openReply();
+          await ff.exec(`
+            const snapshot = (node) => ({
+              node,
+              type: node.nodeType,
+              name: node.nodeName,
+              value: node.nodeValue,
+              attributes: node.nodeType === Node.ELEMENT_NODE ? [...node.attributes].map((a) => [a.name, a.value]) : [],
+              children: [...node.childNodes].map(snapshot),
+            });
+            window.__emailPreserved = ["#signature", "#email-history"].map((selector) =>
+              snapshot(document.querySelector(selector)),
+            );`);
+          await placeAtReplyEnd();
+          await ff.type("#body", "My number is 555-555-0123.");
+          const warned = await ff.waitFor('return Boolean(document.querySelector("clotr-notice")) || null;', 8000);
+          if (!warned) throw new Error("the phone typed above the quote did not warn");
+
+          let inside = false;
+          for (let i = 0; i < 12 && !inside; i++) {
+            await ff.send("WebDriver:PerformActions", {
+              actions: [
+                {
+                  type: "key",
+                  id: "keyboard",
+                  actions: [
+                    { type: "keyDown", value: "\uE004" },
+                    { type: "keyUp", value: "\uE004" },
+                  ],
+                },
+              ],
+            });
+            inside = await ff.exec('return document.activeElement?.tagName === "CLOTR-NOTICE";');
+          }
+          if (!inside) throw new Error("couldn't reach the warning with Tab");
+          await sleep(1200);
+          await ff.send("WebDriver:PerformActions", {
+            actions: [
+              {
+                type: "key",
+                id: "keyboard",
+                actions: [
+                  { type: "keyDown", value: "\uE007" },
+                  { type: "keyUp", value: "\uE007" },
+                ],
+              },
+            ],
+          });
+          const covered = await ff.waitFor(
+            'return document.querySelector("#reply")?.innerText.includes("[REDACTED PHONE NUMBER]") || null;',
+            5000,
+          );
+          if (!covered) throw new Error("Cover it did not replace the typed phone in the reply");
+          const unchanged = await ff.exec(`
+            const same = (before, node) => Boolean(node) && before.node === node && before.type === node.nodeType &&
+              before.name === node.nodeName && before.value === node.nodeValue &&
+              JSON.stringify(before.attributes) === JSON.stringify(node.nodeType === Node.ELEMENT_NODE ? [...node.attributes].map((a) => [a.name, a.value]) : []) &&
+              before.children.length === node.childNodes.length && before.children.every((child, i) => same(child, node.childNodes[i]));
+            return ["#signature", "#email-history"].every((selector, i) =>
+              same(window.__emailPreserved[i], document.querySelector(selector)));
+          `);
+          if (!unchanged) throw new Error("Cover it changed the quote or signature formatting");
+          const quote = await ff.exec('return document.querySelector("#quote-body")?.innerText || "";');
+          if (!quote.includes("555-555-0123")) throw new Error("Cover it changed the number in the quoted message");
+        } finally {
+          await fixture.close();
+        }
+      },
+    );
+
+    await check(
       "FF16",
       "Tourniquet (adult): a phone number still gets a corner note, with the money line (Firefox)",
       async () => {
@@ -896,6 +1090,437 @@ async function ownPageChecks(check, firefox, ext) {
           await fixture.close();
         }
       },
+    );
+
+    // FF17 and FF18 switch Firefox's own prompts back on, the way a real profile has them. With them off, Firefox
+    // records every site it's asked for, so it never takes the path that broke here: a site something already
+    // granted covers gets a yes with no question and nothing recorded, and the switch stayed off.
+    const withPrompts = async (fn) => {
+      const set = (on) =>
+        ff.inBrowser(`Services.prefs.setBoolPref("extensions.webextOptionalPermissionPrompts", ${on}); return true;`);
+      await set(true);
+      try {
+        return await fn();
+      } finally {
+        await set(false);
+        await onWelcome().catch(() => {});
+        await ff
+          .exec(
+            `await chrome.permissions.remove({ origins: ${JSON.stringify(SWITCHED)} }); await chrome.storage.local.remove("siteScopes");`,
+          )
+          .catch(() => {});
+      }
+    };
+    // Grants these the way an earlier session would have, with no question, from the browser's side.
+    const grantedEarlier = (origins) =>
+      ff.inBrowserAsync(`
+        const { ExtensionParent } = ChromeUtils.importESModule("resource://gre/modules/ExtensionParent.sys.mjs");
+        const { ExtensionPermissions } = ChromeUtils.importESModule("resource://gre/modules/ExtensionPermissions.sys.mjs");
+        const ext = ExtensionParent.GlobalManager.getExtension(${JSON.stringify(addon)});
+        await ExtensionPermissions.add(ext.id, { permissions: [], origins: ${JSON.stringify(origins)}, data_collection: [] }, ext);
+        return true;`);
+    const appSwitch = (list, name) => `#${list} button[aria-label="Clotr on ${name}"]`;
+    const reads = (sel) => ff.exec(`return document.querySelector(${JSON.stringify(sel)})?.textContent ?? null;`);
+    async function openPopupSettings() {
+      // The tab is in the page before popup.js runs, so a click that early does nothing: click until it shows.
+      const shown = await ff.waitFor('return document.querySelector("#tab-settings") ? true : null;');
+      if (!shown) throw new Error("the popup didn't load");
+      const onTab = await ff.waitFor(
+        'document.getElementById("tab-settings").click(); return document.body.dataset.tab === "settings" || null;',
+      );
+      if (!onTab) throw new Error("the Settings tab didn't open");
+      const ready = await ff.waitFor('return document.querySelectorAll("#everyday-sites li").length >= 8 || null;');
+      if (!ready) throw new Error("Settings' email and chat apps didn't load");
+      if (!(await ff.exec('return document.querySelector("#pick-sites").open;'))) await ff.click("#pick-sites summary");
+    }
+    // Clicks a switch, answers Firefox's question if it asks (`asks` says whether it should), and waits for the
+    // switch to read `want`.
+    async function flip(sel, label, want, asks) {
+      await ff.exec(`document.querySelector(${JSON.stringify(sel)}).scrollIntoView({ block: "center" });`);
+      await ff.click(sel);
+      if (asks !== undefined) {
+        const asked = await answerPrompt(ff, "/popup.html", asks ? 5000 : 1500);
+        if (asked !== asks) {
+          throw new Error(asks ? `Firefox didn't ask about ${label}` : `Firefox asked about ${label}, already covered`);
+        }
+      }
+      const done = await ff.waitFor(
+        `return document.querySelector(${JSON.stringify(sel)})?.textContent === ${JSON.stringify(want)} || null;`,
+        5000,
+      );
+      if (!done) {
+        const said = await ff.exec(
+          'return [...document.querySelectorAll(".ev-status")].map((p) => p.textContent).join(" ");',
+        );
+        throw new Error(
+          `${label} reads ${JSON.stringify(await reads(sel))}, not ${want} (status: ${JSON.stringify(said)})`,
+        );
+      }
+    }
+
+    // Clicks a switch Everywhere I type keeps on: Firefox doesn't ask, the switch still reads On, and the line
+    // under its list says why instead of the click doing nothing.
+    async function keptOn(sel, label, statusId) {
+      await ff.exec(`document.querySelector(${JSON.stringify(sel)}).scrollIntoView({ block: "center" });`);
+      await ff.exec(`document.getElementById(${JSON.stringify(statusId)}).textContent = "";`);
+      await ff.click(sel);
+      if (await answerPrompt(ff, "/popup.html", 1500)) throw new Error(`Firefox asked about ${label}, already covered`);
+      const said = await ff.waitFor(
+        `const t = document.getElementById(${JSON.stringify(statusId)}).textContent; return /keeps Clotr on here/.test(t) ? t : null;`,
+        5000,
+      );
+      if (!said) throw new Error(`clicking ${label} said nothing (reads ${JSON.stringify(await reads(sel))})`);
+      if ((await reads(sel)) !== "On") throw new Error(`${label} reads ${JSON.stringify(await reads(sel))}, not On`);
+    }
+    // What the row under a switch says about it, like "Email, through Everywhere I type".
+    const why = (sel) => ff.exec(`return document.querySelector(${JSON.stringify(sel)}).closest("li").textContent;`);
+
+    await check(
+      "FF17",
+      "Popup Settings: Turn on works for Gmail and Outlook fresh, with an earlier grant, and under Everywhere I type (Firefox)",
+      () =>
+        withPrompts(async () => {
+          await onWelcome();
+          await ff.exec(`await chrome.permissions.remove({ origins: ${JSON.stringify(SWITCHED)} });`);
+          const popup = await ff.newTab(() =>
+            ff.exec('await chrome.tabs.create({ url: chrome.runtime.getURL("popup.html") });'),
+          );
+          if (!popup) throw new Error("the popup didn't open");
+          await ff.switchTo(popup);
+          await openPopupSettings();
+          const gmail = appSwitch("everyday-sites", "Gmail");
+          const outlook = appSwitch("everyday-sites", "Outlook");
+          // Fresh: Firefox asks about each app, and a yes switches it on.
+          await flip(gmail, "Gmail (fresh)", "On", true);
+          await flip(outlook, "Outlook (fresh)", "On", true);
+
+          // Granted in an earlier session: the popup opened again reads both as On straight away.
+          await ff.send("WebDriver:Refresh");
+          await openPopupSettings();
+          for (const [sel, app] of [
+            [gmail, "Gmail"],
+            [outlook, "Outlook"],
+          ]) {
+            const now = await reads(sel);
+            if (now !== "On") throw new Error(`${app} reads ${JSON.stringify(now)} with its grant already there`);
+          }
+
+          // Everywhere I type on. Gmail's own grant goes back, and Gmail stays On, through Everywhere I type,
+          // which is what a profile that had both looked like. Switching it on there has nothing to ask for, so
+          // the click says so. A support chat reads On the same way, and a search engine, which Everywhere I type
+          // never covers, turns on with no question.
+          await flip("#everywhere-switch", "Everywhere I type", "On", true);
+          if (/through Everywhere I type/.test(await why(outlook))) {
+            throw new Error("Outlook's own grant reads as covered");
+          }
+          await keptOn(gmail, "Gmail with its own grant", "everyday-status");
+          if (!/through Everywhere I type/.test(await why(gmail))) {
+            throw new Error(`Gmail's row says ${JSON.stringify(await why(gmail))}`);
+          }
+          await keptOn(gmail, "Gmail under Everywhere I type", "everyday-status");
+          const intercom = appSwitch("support-sites", "Intercom");
+          if ((await reads(intercom)) !== "On") throw new Error("Intercom isn't On under Everywhere I type");
+          await keptOn(intercom, "Intercom under Everywhere I type", "support-status");
+          await flip(appSwitch("search-sites", "Google"), "Google under Everywhere I type", "On", false);
+          const setUp = `
+            const [mine] = await chrome.scripting.getRegisteredContentScripts({ ids: ["clotr-user-sites"] });
+            const [wide] = await chrome.scripting.getRegisteredContentScripts({ ids: ["clotr-everywhere"] });
+            const own = ["https://outlook.live.com/*", "https://www.google.com/*"];`;
+          const runs = await ff.waitFor(
+            `${setUp} return (own.every((o) => mine?.matches.includes(o) && wide?.excludeMatches.includes(o)) &&
+              !mine.matches.includes("https://mail.google.com/*") && !wide.excludeMatches.includes("https://mail.google.com/*")) || null;`,
+            8000,
+          );
+          if (!runs) {
+            throw new Error(
+              `set up wrong: ${JSON.stringify(await ff.exec(`${setUp} return { mine: mine?.matches, wide: wide?.excludeMatches };`))}`,
+            );
+          }
+          await ff.send("WebDriver:Refresh");
+          await openPopupSettings();
+          for (const [sel, app] of [
+            [gmail, "Gmail"],
+            [outlook, "Outlook"],
+            [appSwitch("search-sites", "Google"), "Google"],
+          ]) {
+            const now = await reads(sel);
+            if (now !== "On") throw new Error(`${app} reads ${JSON.stringify(now)} after the popup opened again`);
+          }
+
+          // Google off again, then Everywhere I type off: Gmail and Intercom were on only through it, and Outlook
+          // keeps its own grant.
+          await flip(appSwitch("search-sites", "Google"), "Google", "Turn on");
+          await flip("#everywhere-switch", "Everywhere I type", "Turn on");
+          for (const [sel, app, want] of [
+            [gmail, "Gmail", "Turn on"],
+            [intercom, "Intercom", "Turn on"],
+            [outlook, "Outlook", "On"],
+          ]) {
+            const now = await reads(sel);
+            if (now !== want) throw new Error(`${app} reads ${JSON.stringify(now)} with Everywhere I type off`);
+          }
+        }),
+    );
+
+    await check(
+      "FF18",
+      "Welcome page under Everywhere I type: covered apps show On, and DuckDuckGo switches on and sticks (Firefox)",
+      () =>
+        withPrompts(async () => {
+          await onWelcome();
+          await ff.exec(`await chrome.permissions.remove({ origins: ${JSON.stringify(SWITCHED)} });`);
+          // The shape of a real profile: Everywhere I type on, Discord granted by itself, Outlook not.
+          await grantedEarlier(["https://*/*", "https://discord.com/*"]);
+          await ff.send("WebDriver:Refresh");
+          await onWelcome();
+          const app = (name) => `#everyday-offer label.ev-app:has(input[value="${name}"])`;
+          const shown = await ff.waitFor(
+            `return !document.querySelector("#everyday-offer").hidden && document.querySelector(${JSON.stringify(app("Outlook"))})?.classList.contains("on") || null;`,
+          );
+          if (!shown) throw new Error("Outlook isn't On on the card under Everywhere I type");
+          const boxes = await ff.exec(`
+            const box = (n) => document.querySelector(${JSON.stringify(app("X"))}.replace("X", n) + " input");
+            return { outlook: box("Outlook").disabled && box("Outlook").checked, discord: box("Discord").checked };`);
+          if (!boxes.outlook || !boxes.discord) throw new Error(`the card's ticks are wrong: ${JSON.stringify(boxes)}`);
+
+          const ddg = '#more-sites-offer label.ev-app:has(input[value="DuckDuckGo"])';
+          await ff.exec(`document.querySelector(${JSON.stringify(ddg)}).scrollIntoView({ block: "center" });`);
+          await ff.click(ddg);
+          await ff.click("#ms-go");
+          if (await answerPrompt(ff, "/vault.html?welcome=1", 1500)) throw new Error("Firefox asked about DuckDuckGo");
+          const on = await ff.waitFor(`
+            const on = await globalThis.ClotrSites.userSitePatterns();
+            return on.includes("https://duckduckgo.com/*") || null;`);
+          if (!on) {
+            throw new Error(
+              `not on: ${JSON.stringify(await ff.exec("return await globalThis.ClotrSites.userSitePatterns();"))}`,
+            );
+          }
+          // The card opened again shows DuckDuckGo as On.
+          await ff.send("WebDriver:Refresh");
+          await onWelcome();
+          const tagged = await ff.waitFor(
+            `return document.querySelector(${JSON.stringify(ddg)})?.classList.contains("on") || null;`,
+          );
+          if (!tagged) throw new Error("DuckDuckGo isn't On on the card opened again");
+        }),
+    );
+
+    // FF19 and FF20 use the real toolbar popup, the panel a click on Clotr's button opens, because a popup opened
+    // as a tab can never cover Firefox's question. In a fresh profile Clotr sits in the extensions (puzzle) menu,
+    // so this clicks that button and then Clotr's entry, both from the browser side. The popup's own page has no
+    // window handle, so the checks read it through chrome.extension.getViews from the welcome page and click into
+    // it with a real pointer at the button's spot.
+    const openPanel = `
+      const win = Services.wm.getMostRecentWindow("navigator:browser");
+      const clotr = [...win.document.querySelectorAll('browser[webextension-view-type="popup"]')].find(
+        (b) => b.closest("panel")?.state === "open",
+      );`;
+    // Also drops any question of Firefox's left unanswered, so a check that failed doesn't leave the next one a
+    // question it never asked.
+    const closeToolbarPopup = () =>
+      ff.inBrowser(`${openPanel}
+        clotr?.closest("panel").hidePopup();
+        for (const b of win.gBrowser.browsers) win.PopupNotifications.getNotification("addon-webext-permissions", b)?.remove();
+        return true;`);
+    // `body` runs in the popup's page as `d`, its document, and is polled until it returns something.
+    const inPopup = async (body, ms) => {
+      await ff.switchTo(welcome);
+      return ff.waitFor(
+        `const [pop] = chrome.extension.getViews({ type: "popup" }); const d = pop?.document; if (!d) return null; ${body}`,
+        ms,
+      );
+    };
+    async function openToolbarPopup() {
+      await closeToolbarPopup();
+      await ff.clickInBrowser("#unified-extensions-button");
+      await ff.clickInBrowser(`.unified-extensions-item-action-button[data-extensionid="${addon}"]`);
+      // The page can be ready while its panel is still sliding open, so this waits for both.
+      let open = false;
+      for (const until = Date.now() + 10000; !open && Date.now() < until; await sleep(150)) {
+        open = await ff.inBrowser(`${openPanel} return Boolean(clotr);`);
+      }
+      if (!open || !(await inPopup('return d.getElementById("tab-settings") ? true : null;'))) {
+        throw new Error("Clotr's toolbar popup didn't open");
+      }
+    }
+    async function clickInPopup(sel, label) {
+      const at = await inPopup(`
+        const b = d.querySelector(${JSON.stringify(sel)});
+        if (!b) return null;
+        b.scrollIntoView({ block: "center" });
+        const r = b.getBoundingClientRect();
+        return { x: r.left + r.width / 2, y: r.top + r.height / 2 };`);
+      if (!at) throw new Error(`no ${label} in the toolbar popup`);
+      const box = await ff.inBrowser(
+        `${openPanel} const r = clotr?.getBoundingClientRect(); return r ? { x: r.left, y: r.top } : null;`,
+      );
+      if (!box) throw new Error("Clotr's toolbar popup closed before the click");
+      await ff.clickInBrowserAt(box.x + at.x, box.y + at.y);
+    }
+    // Waits for Firefox's question about `label` and checks a person can reach its Allow button, which means
+    // Clotr's panel has closed or at least isn't over the button, then clicks Allow, or Don't allow if `yes` is
+    // false.
+    async function answerFromToolbar(label, yes = true) {
+      const look = `${openPanel}
+        const asked = win.PopupNotifications.panel;
+        const allow = asked.state === "open" && asked.querySelector("#addon-webext-permissions-notification")?.button;
+        if (!allow) return { asked: false };
+        const r = allow.getBoundingClientRect();
+        const a = { left: r.left + win.mozInnerScreenX, top: r.top + win.mozInnerScreenY };
+        Object.assign(a, { right: a.left + r.width, bottom: a.top + r.height });
+        const c = clotr?.closest("panel").getOuterScreenRect();
+        const over = Boolean(c) && a.left < c.right && c.left < a.right && a.top < c.bottom && c.top < a.bottom;
+        return { asked: true, over, allow: [a.left, a.top, r.width, r.height].map(Math.round), clotr: c && [c.left, c.top, c.width, c.height].map(Math.round) };`;
+      let seen = { asked: false };
+      for (const until = Date.now() + 5000; Date.now() < until; await sleep(150)) {
+        seen = await ff.inBrowser(look);
+        if (seen.asked && !seen.over) break;
+      }
+      if (!seen.asked) throw new Error(`Firefox didn't ask about ${label}`);
+      if (seen.over) {
+        throw new Error(
+          `Clotr's popup covers the Allow button of Firefox's question about ${label} (Allow at ${seen.allow}, popup at ${seen.clotr})`,
+        );
+      }
+      await ff.inBrowser(
+        `Services.wm.getMostRecentWindow("navigator:browser").PopupNotifications.panel.querySelector("#addon-webext-permissions-notification").${yes ? "button" : "secondaryButton"}.click(); return true;`,
+      );
+    }
+    // What a switch in the popup's Settings reads.
+    const switchReads = (list, app) =>
+      inPopup(`
+        d.getElementById("tab-settings").click();
+        if (d.body.dataset.tab !== "settings" || d.querySelectorAll("#everyday-sites li").length < 8) return null;
+        d.querySelector("#pick-sites").open = true;
+        return d.querySelector(${JSON.stringify(appSwitch(list, app))})?.textContent || null;`);
+    const granted = (origins) =>
+      ff.waitFor(`return (await chrome.permissions.contains({ origins: ${JSON.stringify(origins)} })) || null;`, 5000);
+
+    await check(
+      "FF19",
+      "Toolbar popup: the email apps offer and Turn on for Gmail and a search engine leave Firefox's Allow button reachable, Allow switches each on, and Don't allow leaves Outlook off (Firefox)",
+      () =>
+        withPrompts(async () => {
+          await onWelcome();
+          await ff.exec(`await chrome.permissions.remove({ origins: ${JSON.stringify(SWITCHED)} });`);
+          // An old note calling Gmail an AI chat, which switching it on clears, popup or no popup.
+          const gmailNote = (kind) => `
+            const { siteKinds = {} } = await chrome.storage.local.get("siteKinds");
+            ${kind ? `siteKinds["mail.google.com"] = "${kind}"; await chrome.storage.local.set({ siteKinds });` : ""}
+            return siteKinds["mail.google.com"] ?? "none";`;
+          await ff.exec(gmailNote("ai"));
+          try {
+            // The popup's own offer of the email and chat apps, shown while none is on yet, asks the same way.
+            await ff.exec('await chrome.storage.local.set({ everydayOffer: "popup" });');
+            await openToolbarPopup();
+            const offered = await inPopup(`
+              const box = d.querySelector('#everyday-offer input[value="Discord"]');
+              if (d.getElementById("everyday-offer").hidden || !box) return null;
+              if (!box.checked) box.click();
+              return !d.getElementById("ev-go").hidden || null;`);
+            if (!offered) throw new Error("the popup's offer of the email and chat apps didn't show");
+            await clickInPopup("#ev-go", "the offer's Switch on");
+            await answerFromToolbar("Discord");
+            if (!(await granted(["https://discord.com/*"]))) throw new Error("Discord wasn't granted from the offer");
+
+            for (const [list, app, origins, yes] of [
+              ["everyday-sites", "Gmail", ["https://mail.google.com/*"], true],
+              ["search-sites", "Google", ["https://www.google.com/*"], true],
+              ["everyday-sites", "Outlook", ["https://outlook.live.com/*", "https://outlook.office.com/*"], false],
+            ]) {
+              await openToolbarPopup();
+              const ready = await switchReads(list, app);
+              if (ready !== "Turn on") throw new Error(`${app} reads ${JSON.stringify(ready)} in the toolbar popup`);
+              await clickInPopup(appSwitch(list, app), `${app}'s Turn on`);
+              await answerFromToolbar(app, yes);
+              if (yes) {
+                if (!(await granted(origins))) throw new Error(`${app} wasn't granted after Allow`);
+                // Clotr is set up there with no popup left to do it.
+                const runs = await ff.waitFor(
+                  `const [s] = await chrome.scripting.getRegisteredContentScripts({ ids: ["clotr-user-sites"] });
+                  return ${JSON.stringify(origins)}.every((o) => s?.matches.includes(o)) || null;`,
+                  5000,
+                );
+                if (!runs) throw new Error(`Clotr isn't set up on ${app} after Allow`);
+                const note = await ff.exec(gmailNote());
+                if (note !== "none") throw new Error(`Gmail's old note still says ${JSON.stringify(note)}`);
+              } else if (
+                await ff.exec(`return chrome.permissions.contains({ origins: ${JSON.stringify(origins)} });`)
+              ) {
+                throw new Error(`${app} was granted after Don't allow`);
+              }
+              // The popup opened again reads the answer.
+              await openToolbarPopup();
+              const now = await switchReads(list, app);
+              const want = yes ? "On" : "Turn on";
+              if (now !== want) throw new Error(`${app} reads ${JSON.stringify(now)} when the popup opens again`);
+            }
+          } finally {
+            await closeToolbarPopup();
+          }
+        }),
+    );
+
+    await check(
+      "FF20",
+      "Toolbar popup: Allow Clotr on this site, and Turn Clotr on here, leave Firefox's Allow button reachable, and Allow sets each site up (Firefox)",
+      () =>
+        withPrompts(async () => {
+          await onWelcome();
+          const chat = "https://chatgpt.com/";
+          const builtIn = await ff.exec(`return globalThis.ClotrSites.builtInMatchesFor(${JSON.stringify(chat)});`);
+          const other = "https://notes.newtool.example/";
+          const otherOrigin = `${other}*`;
+          const setUp = `
+            const [s] = await chrome.scripting.getRegisteredContentScripts({ ids: ["clotr-user-sites"] });
+            const { siteKinds = {} } = await chrome.storage.local.get("siteKinds");
+            const kind = siteKinds[${JSON.stringify(new URL(other).hostname)}];
+            const runs = Boolean(s?.matches.includes(${JSON.stringify(otherOrigin)}));`;
+          // The way Firefox installs Clotr: a built-in site's access withheld until someone allows it. The other
+          // site is one Clotr doesn't know, switched on as an everyday site, which the popup notes before it asks.
+          await ff.exec(`await chrome.permissions.remove({ origins: ${JSON.stringify(builtIn)} });`);
+          try {
+            for (const [url, button, origins, done] of [
+              [chat, "Allow Clotr on this site", builtIn, ""],
+              [other, "Turn Clotr on here", [otherOrigin], `${setUp} return (runs && kind === "everyday") || null;`],
+            ]) {
+              const tab = await ff.newTab(() => ff.exec(`await chrome.tabs.create({ url: ${JSON.stringify(url)} });`));
+              if (!tab) throw new Error(`${url}'s tab didn't open`);
+              try {
+                const front =
+                  'return Services.wm.getMostRecentWindow("navigator:browser").gBrowser.selectedBrowser.currentURI.spec;';
+                let at = "";
+                for (let t = 0; t < 12000 && at !== url; t += 150) {
+                  at = await ff.inBrowser(front);
+                  if (at !== url) await sleep(150);
+                }
+                if (at !== url) throw new Error(`the tab in front is on ${JSON.stringify(at)}, not ${url}`);
+                await openToolbarPopup();
+                const offered = await inPopup('return d.querySelector("#site .btn.primary")?.textContent || null;');
+                if (offered !== button) throw new Error(`the popup offers ${JSON.stringify(offered)}, not ${button}`);
+                await clickInPopup("#site .btn.primary", button);
+                await answerFromToolbar(new URL(url).hostname);
+                if (!(await granted(origins))) throw new Error(`${url} wasn't granted after Allow`);
+                if (done && !(await ff.waitFor(done, 5000))) {
+                  throw new Error(
+                    `${url} isn't set up: ${JSON.stringify(await ff.exec(`${setUp} return { runs, kind };`))}`,
+                  );
+                }
+              } finally {
+                await closeToolbarPopup();
+                await ff.switchTo(tab);
+                await ff.send("WebDriver:CloseWindow");
+                await ff.switchTo(welcome);
+              }
+            }
+          } finally {
+            if (!(await ff.exec(`return chrome.permissions.contains({ origins: ${JSON.stringify(builtIn)} });`))) {
+              await grantedEarlier(builtIn);
+            }
+            await ff.exec(`await chrome.permissions.remove({ origins: ${JSON.stringify([otherOrigin])} });`);
+          }
+        }),
     );
   } finally {
     await ff.close();

@@ -7,5 +7,16 @@
   },
   "getClotrWindows": {
     "message": "Get Clotr for Windows"
-  }
+  },
+  "oc_title": { "message": "One Clotr" },
+  "oc_notConnected": { "message": "Not connected to Clotr for Windows" },
+  "oc_notInstalled": { "message": "Clotr for Windows isn't installed yet" },
+  "oc_notRunning": { "message": "Open Clotr for Windows to connect your browser." },
+  "oc_connect": { "message": "Connect to Clotr for Windows" },
+  "oc_connectBrowser": { "message": "Connect to Clotr for your browser" },
+  "oc_consent": { "message": "A setting changed in one will change in the other. Nothing it finds leaves this PC either way." },
+  "oc_waiting": { "message": "Waiting for you to say yes in Clotr for Windows…" },
+  "oc_connected": { "message": "Connected to Clotr for Windows" },
+  "oc_disconnect": { "message": "Disconnect" },
+  "oc_disconnectSub": { "message": "Settings, your vault and your history stay as they are on each side." }
 }

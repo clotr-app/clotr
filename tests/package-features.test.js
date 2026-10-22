@@ -2,7 +2,7 @@
 // not just the manifest, whenever its flag in extension/manifest.json's clotr_features is off. Nothing is
 // removed from the source tree, though: running npm run test:e2e:all-on turns every flag on and ships the
 // same files unchanged. Scam check, Command check, Tourniquet and Practice are on in this build; Look back,
-// Extension check and Office training stay held back.
+// Extension check, Office training and One Clotr stay held back.
 "use strict";
 
 const test = require("node:test");
@@ -15,6 +15,11 @@ const STILL_OFF = HELD_BACK.filter((k) => !manifestOnDisk.clotr_features[k]);
 
 test("the shipped build drops only the features still held back", () => {
   const { files, manifest } = build({ zip: false });
+  assert.strictEqual(manifestOnDisk.clotr_features.oneclotr, false, "One Clotr must stay off in this build");
+  assert.deepEqual(FEATURE_FILES.oneclotr, ["one-clotr-protocol.js", "one-clotr-bridge.js", "one-clotr-protocol.json"]);
+  const firefox = build({ zip: false, firefox: true });
+  for (const file of FEATURE_FILES.oneclotr) assert.ok(!firefox.files.includes(file), `${file} shipped in Firefox`);
+  assert.ok(!(firefox.manifest.optional_permissions || []).includes("nativeMessaging"));
   for (const name of STILL_OFF) {
     for (const f of FEATURE_FILES[name]) assert.ok(!files.includes(f), `${f} (${name}) shipped while held back`);
   }
@@ -32,12 +37,23 @@ test("the shipped build drops only the features still held back", () => {
     Boolean(manifestOnDisk.clotr_features.commandcheck),
     "commands.js as a content script should match Command check's flag",
   );
-  assert.deepEqual(manifest.optional_permissions ?? [], manifestOnDisk.clotr_features.extcheck ? ["management"] : []);
+  assert.deepEqual(manifest.optional_permissions ?? [], [
+    ...(manifestOnDisk.clotr_features.extcheck ? ["management"] : []),
+    ...(manifestOnDisk.clotr_features.oneclotr ? ["nativeMessaging"] : []),
+  ]);
   // A held-back feature's key is dropped from the shipped manifest, not set to false.
   assert.deepEqual(
     manifest.clotr_features,
     Object.fromEntries(Object.entries(manifestOnDisk.clotr_features).filter(([, on]) => on)),
   );
+});
+
+test("the shipped zip does not carry Quick exit while its flag is off", () => {
+  if (manifestOnDisk.clotr_features.checkup) return;
+  const { files } = build({ zip: false });
+  for (const file of ["quick-exit.js", "quick-exit.css"]) {
+    assert.ok(!files.includes(file), `${file} shipped while its feature flag is off`);
+  }
 });
 
 test("an all-on build ships every held-back feature's files, unchanged from the shipped build's manifest otherwise", () => {
@@ -48,7 +64,7 @@ test("an all-on build ships every held-back feature's files, unchanged from the 
   }
   assert.ok(files.includes("practice-data.js"));
   assert.ok(manifest.content_scripts.some((c) => c.js.includes("commands.js")));
-  assert.deepEqual(manifest.optional_permissions, ["management"]);
+  assert.deepEqual(manifest.optional_permissions, ["management", "nativeMessaging"]);
   assert.deepEqual(manifest.clotr_features, allOn);
 });
 

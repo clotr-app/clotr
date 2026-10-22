@@ -30,7 +30,8 @@
   } = globalThis.Clotr;
   // Looked up fresh at each call, like readAttachment below, so a test can stand in a result that was cut short.
   const detect = (text) => globalThis.Clotr.detect(text);
-  const { realTarget, findEditor, getText, replaceText, isChatComposer, composerInfo } = globalThis.Clotr.editor;
+  const { realTarget, findEditor, getText, replaceText, replaceMatchesInPlace, isChatComposer, composerInfo } =
+    globalThis.Clotr.editor;
   const IS_TOP = window === window.top;
   // Which held-back features this build ships (`clotr_features` in manifest.json).
   const FEATURES = chrome.runtime.getManifest().clotr_features || {};
@@ -55,7 +56,36 @@
   }
   const builtInSite = isBuiltInSite();
 
-  console.info(LOG, "active on", location.href, IS_TOP ? "(top frame)" : "(iframe)");
+  // Page frames do not load sites.js, so keep its fixed opt-in hosts available at startup here.
+  const LISTED_SITE_HOSTS = new Set([
+    "mail.google.com",
+    "outlook.live.com",
+    "outlook.office.com",
+    "mail.yahoo.com",
+    "discord.com",
+    "app.slack.com",
+    "web.whatsapp.com",
+    "www.messenger.com",
+    "teams.microsoft.com",
+    "teams.live.com",
+    "www.google.com",
+    "www.bing.com",
+    "duckduckgo.com",
+    "search.brave.com",
+    "www.startpage.com",
+    "www.ecosia.org",
+    "search.yahoo.com",
+    "widget.intercom.io",
+    "widget.drift.com",
+    "wchat.freshchat.com",
+    "client.crisp.chat",
+    "secure.livechatinc.com",
+    "embed.tawk.to",
+    "widget-v4.tidiochat.com",
+  ]);
+  const knownSite = builtInSite || LISTED_SITE_HOSTS.has(location.hostname);
+
+  console.info(LOG, "active on", location.hostname, IS_TOP ? "(top frame)" : "(iframe)");
 
   // ---------- Fail open ----------
   // After an update, this page's copy of Clotr keeps running but is cut off from the extension: every call
@@ -121,6 +151,8 @@
   // ---------- Self-check: does Clotr see the chat box here, and did its last edit work? ----------
   // Reported to the background (per tab, any frame), which the popup and toolbar read.
   const health = { editor: false, editFailed: false, uiRemoved: false };
+  let currentScanText = "";
+  let currentScanWasPaste = false;
 
   // ---------- The warning UI (warning-ui.js) ----------
   // It draws what the person sees. The callbacks below are what each of their choices does. I create it
@@ -131,6 +163,8 @@
     orphaned,
     retired: () => retired,
     editor: () => activeEditor,
+    messageText: () => currentScanText,
+    largeInput: () => currentScanWasPaste,
     largeText: () => largeText,
     everyday: () => everyday,
     search: () => search,
@@ -342,43 +376,56 @@
   const vaultQueue = new Map(); // "type\0match" → [type, match], waiting to be worked out
   let vaultRunning = false;
   let vaultRescanned = null; // the draft vaultLater last scanned again, so it never loops on one text
+  let vaultLatestScan = null; // detected matches to reuse after catch-up when the draft stayed the same
 
-  function vaultLater(missed, draft) {
+  function vaultLater(missed, draft, raw, scannedDraft) {
     if (draft === vaultRescanned) {
       // Even the scan after catching up ran out of time (more values than the cache holds): they keep their
       // usual response.
       console.info(LOG, "too many details to check against your vault; they keep their usual warning");
       return;
     }
+    vaultLatestScan = { draft, raw, scannedDraft };
     for (const [id, m] of missed) vaultQueue.set(`${id}\0${m}`, [id, m]);
     if (!vaultRunning) vaultCatchUp().catch((err) => console.warn(LOG, "could not finish the vault check", err));
   }
 
   async function vaultCatchUp() {
     vaultRunning = true;
+    const allowed = [];
+    let needsOwnIdScan = false;
+    let needsResponseScan = false;
     try {
       console.info(LOG, "checking", vaultQueue.size, "details against your vault in the background");
-      let turn = performance.now();
       while (vaultQueue.size) {
         const [key, [id, m]] = vaultQueue.entries().next().value;
         vaultQueue.delete(key);
-        // About 30 ms of work, then the page's turn: one value at a time on a slow computer.
-        if (performance.now() - turn > 30) {
-          await pageTurn();
-          turn = performance.now();
-        }
+        // A saved detail can take longer on a busy computer, so let the page handle input between values.
+        await pageTurn();
         if (retired) return;
-        globalThis.Clotr.vaultMode(id, m, known()); // no budget outside a scan: worked out in full, then cached
+        const mode = globalThis.Clotr.vaultMode(id, m, known()); // no budget here: worked out in full, then cached
+        if (mode === "allow") allowed.push([id, m]);
+        if (id === "my_id") needsOwnIdScan = true;
+        if (mode === "protect" && responseOf(id) === "log") needsResponseScan = true;
       }
     } finally {
       vaultRunning = false;
+      if (retired) vaultLatestScan = null;
     }
+    const latest = vaultLatestScan;
+    vaultLatestScan = null;
     const editor = activeEditor;
     if (!editor?.isConnected || isPaused() || ui.isDialogOpen() || composing || bandaging) return;
     const draft = getText(editor);
     if (!draft.trim()) return;
     vaultRescanned = draft;
-    scan(editor);
+    if (latest?.draft !== draft || latest.scannedDraft !== draft || !latest.raw) {
+      scan(editor);
+    } else if (needsOwnIdScan || needsResponseScan) {
+      scan(editor, latest.raw);
+    } else if (allowed.length) {
+      applyAllowedVaultValues(allowed, Boolean(latest.raw.truncated));
+    }
   }
 
   function applyVault() {
@@ -412,7 +459,7 @@
   let search = false; // a search engine you switched on: what you type becomes a search, not a message
   // A page with no dedicated setup of its own, covered only by "Everywhere I type": here Clotr has to tell a
   // chat box from an ordinary form field itself (isChatComposer), instead of trusting any box it finds.
-  let everywhere = false;
+  let everywhere = !knownSite;
   let pictureNoted = false; // the "can't read pictures" note was already shown on this site
   // Tourniquet mode: "child", "adult", or "after_scam" for the 30 days after a scam, while it's on. Whatever
   // kinds it or an organization's policy holds, and whether settings are locked, the warning never offers a
@@ -465,7 +512,7 @@
         safely(watchLabels)(); // turns the label watch on (picking up labels from a reload) or off
         everyday = r.everyday === true;
         search = r.search === true;
-        everywhere = r.everywhere === true;
+        everywhere = everywhere && r.everywhere === true;
         pictureNoted = r.pictureNoted === true;
         teamHold = r.teamHold === true;
         holdFiles = r.holdFiles === true;
@@ -599,6 +646,7 @@
     truncatedNoted = false;
   }
   let activeEditor = null; // the chat input the user last typed in
+  const pastedEditors = new WeakMap(); // text actually pasted or dropped into an editor, used for honest wording
   let pending = []; // "block" detections the user hasn't answered yet
   let warnings = []; // "warn" detections shown in the notice, not yet answered
   let fileWarnings = []; // detections in attached files, not yet acknowledged
@@ -900,32 +948,81 @@
     for (const [m, label] of pairs) next = next.split(m).join(label);
     // A swap that changes nothing, or keeps finding more to swap, would never end: warn instead.
     const stuck = next === text || bandageRounds.length > 5;
+    const inPlace = editor?.isContentEditable && everyday ? emailParts(editor, text) : null;
+    const targetText = inPlace ? inPlace.text : text;
+    const targets = results.flatMap((r) => r.matches).filter((value) => targetText.includes(value));
+    const scopes = inPlace ? bandagePlan(results, inPlace, editor) : null;
     bandaging = true;
-    let ok = false;
+    let edit = { changed: false, uncovered: [] };
     try {
-      ok = !stuck && (await setText(editor, next));
+      if (!stuck) edit = await setText(editor, next, scopes);
     } catch (err) {
       console.warn(LOG, "Bandage couldn't edit the chat box", err);
     } finally {
       bandaging = false;
     }
-    if (ok) {
+    const after = getText(editor);
+    const remainingText = inPlace ? emailParts(editor, after).text : after;
+    const uncovered = new Set([...edit.uncovered, ...targets.filter((value) => remainingText.includes(value))]);
+    const covered = targets.filter((value) => !uncovered.has(value) && !remainingText.includes(value));
+    const complete = edit.changed && targets.length > 0 && !uncovered.size && covered.length === targets.length;
+    if (covered.length) {
+      report(
+        filterMatches(results, (_r, value) => covered.includes(value)),
+        "redacted",
+        "bandage",
+      );
+    }
+    if (complete) {
       console.info(
         LOG,
         "Bandage covered",
         results.map((r) => r.id),
       );
-      report(results, "redacted", "bandage");
       if (bandageHeldSend) {
         bandageHeldSend = false;
         ui.tellCovered();
       }
-    } else if (stuck || getText(editor) === text) {
+    } else {
       bandageHeldSend = false;
-      for (const r of results) for (const m of r.matches) bandageFailed.add(m);
-      if (!stuck) reportHealth({ editFailed: true });
+      for (const value of uncovered) bandageFailed.add(value);
+      if (uncovered.size && !stuck) reportHealth({ editFailed: true });
     }
     if (editor.isConnected) scan(editor);
+  }
+
+  function bandagePlan(results, parts, editor) {
+    const scopes = [];
+    const scopeFor = (kind, root, excludedNodes, start, end, match, replacement) => {
+      let scope = scopes.find(
+        (item) =>
+          item.kind === kind &&
+          item.root === root &&
+          item.excludedNodes === excludedNodes &&
+          item.start === start &&
+          item.end === end,
+      );
+      if (!scope) {
+        scope = { kind, root, excludedNodes, start, end, pairs: [] };
+        scopes.push(scope);
+      }
+      if (!scope.pairs.some(([value]) => value === match)) scope.pairs.push([match, replacement]);
+    };
+
+    for (const result of results) {
+      for (const match of result.matches) {
+        const replacement = bandageLabel(result, match);
+        if (parts.main.includes(match)) {
+          scopeFor("main", editor, parts.excluded, undefined, undefined, match, replacement);
+        }
+        for (const edit of parts.edits) {
+          if (edit.text.includes(match)) {
+            scopeFor("edit", edit.root, undefined, edit.start, edit.end, match, replacement);
+          }
+        }
+      }
+    }
+    return scopes;
   }
 
   function setBandageHere(on) {
@@ -957,34 +1054,355 @@
     return results.map((r) => ({ ...r, matches: r.matches.filter((m) => keep(r, m)) })).filter((r) => r.matches.length);
   }
 
+  const quoteOrigins = new WeakMap();
+  const EMAIL_QUOTE_SELECTOR = ".gmail_quote, .gmail_attr, .yahoo_quoted, blockquote[type='cite']";
+  const EMAIL_HISTORY_SELECTOR =
+    '[id*="appendonsend" i], [id*="divRplyFwdMsg" i], [id*="mail-editor-reference-message-container" i]';
+  const BLOCK_TEXT_TAGS = new Set([
+    "ADDRESS",
+    "ARTICLE",
+    "BLOCKQUOTE",
+    "DIV",
+    "LI",
+    "OL",
+    "P",
+    "PRE",
+    "SECTION",
+    "TABLE",
+    "TR",
+  ]);
+  const GMAIL_FORWARD_HEADER = /^-+\s*(?:forwarded message|mensaje reenviado)\s*-+$/i;
+  // Both run on the whole quoted message, which the sender wrote, so neither may crawl on any input: a line
+  // start followed by whitespace that can't cross into the next line keeps this one linear on blank lines.
+  const FORWARD_WORDS =
+    /forwarded message|begin forwarded message|mensaje reenviado|subject\s*:\s*(?:fw|fwd)\s*:|(?:^|\n)[^\S\n]*(?:fw|fwd)\s*:/i;
+
+  // Collects pieces and joins them once: asking a growing string whether it ends with a line break flattens it
+  // every time, which made this walk quadratic on a message of tens of thousands of blank lines.
+  function plainText(node, excluded = new Set()) {
+    const pieces = [];
+    let atLineStart = true; // nothing yet, or the last piece ended a line: no break needed before a block
+    const lineBreak = () => {
+      if (atLineStart) return;
+      pieces.push("\n");
+      atLineStart = true;
+    };
+    const walk = (current) => {
+      if (excluded.has(current)) return;
+      if (current.nodeType === 3) {
+        if (!current.nodeValue) return;
+        pieces.push(current.nodeValue);
+        atLineStart = current.nodeValue.endsWith("\n");
+        return;
+      }
+      if (current.nodeType !== 1) return;
+      if (current.tagName === "BR") {
+        lineBreak();
+        return;
+      }
+      const blockElement = BLOCK_TEXT_TAGS.has(current.tagName);
+      if (blockElement) lineBreak();
+      for (const child of current.childNodes) walk(child);
+      if (blockElement) lineBreak();
+    };
+    walk(node);
+    return pieces
+      .join("")
+      .replace(/\n{3,}/g, "\n\n")
+      .replace(/^\n+|\n+$/g, "");
+  }
+
+  function editedPiece(before, now) {
+    let start = 0;
+    while (start < before.length && start < now.length && before[start] === now[start]) start++;
+    let oldEnd = before.length;
+    let newEnd = now.length;
+    while (oldEnd > start && newEnd > start && before[oldEnd - 1] === now[newEnd - 1]) {
+      oldEnd--;
+      newEnd--;
+    }
+    if (start === newEnd) return null;
+    while (start > 0 && !/[\s<>,'";!?]/.test(now[start - 1])) start--;
+    while (newEnd < now.length && !/[\s<>,'";!?]/.test(now[newEnd])) newEnd++;
+    return { text: now.slice(start, newEnd), start, end: newEnd };
+  }
+
+  // The parts of a reply box that hold the message being answered: the email app's own quote blocks, the
+  // header line before a cited quote, and everything after the app's reply marker or a forwarded-message
+  // header. A marker that sits inside a part already left out is the sender's own text, not the app's, so it
+  // never widens the quote to what's typed after it.
+  function quoteRoots(editor) {
+    const excluded = new Set(editor.querySelectorAll(EMAIL_QUOTE_SELECTOR));
+    const insideExcluded = (node) => {
+      for (let parent = node.parentNode; parent && parent !== editor; parent = parent.parentNode) {
+        if (excluded.has(parent)) return true;
+      }
+      return false;
+    };
+    const addFollowing = (marker) => {
+      if (insideExcluded(marker)) return;
+      excluded.add(marker);
+      let branch = marker;
+      while (branch.parentNode && branch.parentNode !== editor) {
+        for (let sibling = branch.nextSibling; sibling; sibling = sibling.nextSibling) excluded.add(sibling);
+        branch = branch.parentNode;
+      }
+      if (branch.parentNode === editor) {
+        for (let sibling = branch.nextSibling; sibling; sibling = sibling.nextSibling) excluded.add(sibling);
+      }
+    };
+    for (const marker of editor.querySelectorAll(EMAIL_HISTORY_SELECTOR)) addFollowing(marker);
+    for (const quote of editor.querySelectorAll("blockquote[type='cite']")) {
+      let header = quote.previousSibling;
+      while (
+        header &&
+        ((header.nodeType === 3 && !header.nodeValue.trim()) || (header.nodeType === 1 && header.tagName === "BR"))
+      ) {
+        header = header.previousSibling;
+      }
+      const headerText = header?.nodeType === 3 ? header.nodeValue.trim() : header ? plainText(header).trim() : "";
+      if (/\bwrote:\s*$|(?:forwarded|original) message/i.test(headerText)) excluded.add(header);
+    }
+    // A forward header inside a part already left out changes nothing, so those parts aren't read at all: a
+    // quoted message can run to tens of thousands of blocks.
+    const blocks = document.createTreeWalker(editor, NodeFilter.SHOW_ELEMENT, (node) =>
+      excluded.has(node)
+        ? NodeFilter.FILTER_REJECT
+        : node.tagName === "DIV" || node.tagName === "P"
+          ? NodeFilter.FILTER_ACCEPT
+          : NodeFilter.FILTER_SKIP,
+    );
+    for (let marker = blocks.nextNode(); marker; marker = blocks.nextNode()) {
+      if (GMAIL_FORWARD_HEADER.test(marker.textContent.trim())) addFollowing(marker);
+    }
+    const roots = [...excluded].filter((node) => !insideExcluded(node));
+    return { excluded, roots };
+  }
+
+  // Before the first edit lands in a reply box, remember the quoted message as it was, so the first thing
+  // typed into it counts as an edit like everything typed into it later.
+  const quoteSeeded = new WeakSet();
+  function seedQuoteOrigins(editor) {
+    if (!everyday || !editor.isContentEditable || quoteSeeded.has(editor)) return;
+    quoteSeeded.add(editor);
+    for (const root of quoteRoots(editor).roots) {
+      if (!quoteOrigins.has(root)) quoteOrigins.set(root, plainText(root));
+    }
+  }
+
+  function emailParts(editor, draft) {
+    if (!everyday || !editor.isContentEditable) {
+      return { text: draft, main: draft, edits: [], forwarded: "", forwardedRoots: [], excluded: new Set() };
+    }
+    const { excluded, roots } = quoteRoots(editor);
+    const quoteTexts = roots.map((root) => ({ root, text: plainText(root) })); // one walk per part, read twice below
+    const quoteText = quoteTexts
+      .map(({ text }) => text)
+      .filter(Boolean)
+      .join("\n");
+    const edits = [];
+    roots.forEach((root, i) => {
+      const now = quoteTexts[i].text;
+      const before = quoteOrigins.get(root);
+      if (before === undefined) quoteOrigins.set(root, now);
+      else if (before !== now) {
+        const edit = editedPiece(before, now);
+        if (edit) edits.push({ root, ...edit });
+      }
+    });
+    const forwarded = FORWARD_WORDS.test(quoteText) || FORWARD_WORDS.test(draft);
+    const main = plainText(editor, excluded);
+    const editedText = edits.map((edit) => `${edit.text}\n`).join("");
+    const text = [main, editedText].filter(Boolean).join("\n");
+    return {
+      text,
+      main,
+      edits,
+      forwarded: forwarded ? quoteText : "",
+      forwardedRoots: forwarded ? quoteTexts.filter(({ text: quotePart }) => quotePart) : [],
+      excluded,
+    };
+  }
+
+  // Adds the values `list` doesn't have yet, one at a time: a spread into push() overflows the stack on a long
+  // enough list, and includes() on each one grows with the square of it.
+  function appendNew(list, values) {
+    const have = new Set(list);
+    for (const m of values) {
+      if (have.has(m)) continue;
+      have.add(m);
+      list.push(m);
+    }
+  }
+
+  function addForwardCredentials(results, text) {
+    if (!text) return { results, truncated: false };
+    const quoted = detect(text);
+    for (const found of quoted) {
+      if (found.group !== "credentials") continue;
+      const existing = results.find((r) => r.id === found.id);
+      if (existing) {
+        appendNew(existing.matches, found.matches);
+      } else results.push(found);
+    }
+    return { results, truncated: Boolean(quoted.truncated) };
+  }
+
   // ---------- Editor helpers (editor.js) ----------
 
   // Replaces the chat box's text, returning true only if it really changed. Clotr's own edit isn't
   // something to rescan, and nothing in it counts as removed by hand.
-  async function setText(editor, text) {
+  async function setText(editor, text, inPlace = null) {
     try {
-      return await replaceText(editor, text);
+      if (inPlace) {
+        return await replaceMatchesInPlace(editor, inPlace);
+      }
+      return { changed: await replaceText(editor, text), uncovered: [] };
     } finally {
       clearTimeout(scanTimer);
       flagged.clear();
     }
   }
 
+  function coverPlan(results, parts, general, editor) {
+    const scopes = [];
+    const targets = [];
+    const forwardedRoots = parts.forwardedRoots.map(({ root }) => root);
+    const targetFor = (result, match) => {
+      let target = targets.find((item) => item.result.id === result.id && item.match === match);
+      if (!target) {
+        target = { result, match, sources: [] };
+        targets.push(target);
+      }
+      return target;
+    };
+    const scopeFor = (kind, root, excludedNodes, start, end, match, replacement) => {
+      let scope = scopes.find(
+        (item) =>
+          item.kind === kind &&
+          item.root === root &&
+          item.excludedNodes === excludedNodes &&
+          item.start === start &&
+          item.end === end,
+      );
+      if (!scope) {
+        scope = { kind, root, excludedNodes, start, end, pairs: [] };
+        scopes.push(scope);
+      }
+      if (!scope.pairs.some(([value]) => value === match)) scope.pairs.push([match, replacement]);
+    };
+
+    for (const result of results) {
+      for (const match of result.matches) {
+        const one = { ...result, matches: [match] };
+        const replacement = general ? generalize(match, [one], navigator.language) : redact(match, [one]);
+        if (parts.main.includes(match)) {
+          scopeFor("main", editor, parts.excluded, undefined, undefined, match, replacement);
+        }
+        for (const edit of parts.edits) {
+          if (edit.text.includes(match)) {
+            scopeFor("edit", edit.root, undefined, edit.start, edit.end, match, replacement);
+          }
+        }
+        if (result.group === "credentials" && parts.forwarded.includes(match)) {
+          scopeFor("forwarded", forwardedRoots, undefined, undefined, undefined, match, replacement);
+        }
+        if (parts.text.includes(match)) targetFor(result, match).sources.push({ kind: "text" });
+        if (result.group === "credentials" && parts.forwarded.includes(match)) {
+          targetFor(result, match).sources.push({ kind: "forwardedText" });
+        }
+      }
+    }
+    scopes.sort((a, b) => Number(a.kind === "forwarded") - Number(b.kind === "forwarded"));
+    return { scopes, targets };
+  }
+
+  function coverOutcome(results, plan, parts) {
+    const covered = new Set();
+    const uncovered = new Set();
+    const stillInSource = (source, match) => {
+      if (source.kind === "main") return parts.main.includes(match);
+      if (source.kind === "edit") {
+        return parts.edits.some((edit) => edit.root === source.root && edit.text.includes(match));
+      }
+      if (source.kind === "text") return parts.text.includes(match);
+      if (source.kind === "forwardedText") return parts.forwarded.includes(match);
+      return parts.forwardedRoots.some((quote) => quote.root === source.root && quote.text.includes(match));
+    };
+    for (const result of results) {
+      for (const match of result.matches) {
+        const target = plan.targets.find((item) => item.result.id === result.id && item.match === match);
+        if (!target) continue;
+        const key = `${result.id}\0${match}`;
+        if (target.sources.some((source) => stillInSource(source, match))) uncovered.add(key);
+        else covered.add(key);
+      }
+    }
+    return {
+      covered: filterMatches(results, (result, match) => covered.has(`${result.id}\0${match}`)),
+      uncovered: filterMatches(results, (result, match) => uncovered.has(`${result.id}\0${match}`)),
+    };
+  }
+
   // Hides the found items in the chat box. With `general` set, a birth date becomes just its month and year
   // and an address becomes just its town, with everything else still hidden outright. This only counts as
   // hidden once the text actually changed; if it didn't, I say so plainly, so nobody sends a detail believing
   // it's gone. Either way, the exact detail itself never goes out.
-  async function coverIn(editor, results, general = false) {
+  async function coverIn(editor, shown, general = false) {
     const text = editor ? getText(editor) : "";
+    // Typed or pasted since the warning showed, the box hasn't been scanned again yet, and the edit below cancels
+    // the scan waiting on it, so it's checked now and covered with the rest. A value since edited away isn't hidden.
+    const parts = editor ? emailParts(editor, text) : null;
+    const unscanned = Boolean(parts) && parts.text !== currentScanText;
+    const results = unscanned ? filterMatches(withNewFinds(shown, parts), (_r, m) => text.includes(m)) : shown;
     const next = general ? generalize(text, results, navigator.language) : redact(text, results);
-    const ok = Boolean(editor) && (await setText(editor, next));
-    if (ok) {
-      report(results, "redacted");
-      if (health.editFailed) reportHealth({ editFailed: false });
+    const inPlace = editor?.isContentEditable && everyday ? parts : null;
+    const plan = inPlace ? coverPlan(results, inPlace, general, editor) : null;
+    if (editor) await setText(editor, next, plan ? plan.scopes : null);
+    const afterText = editor ? getText(editor) : "";
+    if (plan) {
+      const outcome = coverOutcome(results, plan, emailParts(editor, afterText));
+      if (outcome.covered.length) report(outcome.covered, "redacted");
+      if (outcome.uncovered.length) {
+        reportHealth({ editFailed: true });
+        ui.tellCoverFailed(outcome.uncovered);
+        return;
+      }
+      if (outcome.covered.length) {
+        if (health.editFailed) reportHealth({ editFailed: false });
+        if (unscanned && editor.isConnected) scan(editor);
+      }
       return;
     }
-    reportHealth({ editFailed: true });
-    ui.tellCoverFailed(results);
+    const originalValues = new Set(results.flatMap((r) => r.matches).filter((value) => text.includes(value)));
+    const remainingValues = new Set(results.flatMap((r) => r.matches).filter((value) => afterText.includes(value)));
+    const covered = filterMatches(results, (_r, value) => originalValues.has(value) && !remainingValues.has(value));
+    const uncovered = filterMatches(results, (_r, value) => originalValues.has(value) && remainingValues.has(value));
+    if (covered.length) report(covered, "redacted");
+    if (uncovered.length) {
+      reportHealth({ editFailed: true });
+      ui.tellCoverFailed(uncovered);
+      return;
+    }
+    if (covered.length) {
+      if (health.editFailed) reportHealth({ editFailed: false });
+      // Bandage and the warning still get their look at what was just added.
+      if (unscanned && editor.isConnected) scan(editor);
+    }
+  }
+
+  // `results` with what a scan of `parts` would warn or ask about now added, leaving Bandage's share to Bandage.
+  function withNewFinds(results, parts) {
+    const raw = detect(parts.text);
+    addForwardCredentials(raw, parts.forwarded);
+    const open = (r, m) => respFor(r, m) !== "log" && !allowedValues.has(m) && !(bandageOn() && coverable(r, m));
+    const out = results.map((r) => ({ ...r, matches: [...r.matches] }));
+    for (const r of filterMatches(splitOwnIds(raw), open)) {
+      const same = out.find((o) => o.id === r.id);
+      if (!same) out.push(r);
+      else appendNew(same.matches, r.matches);
+    }
+    return out;
   }
 
   // ---------- What the person's choices do (warning-ui.js draws them) ----------
@@ -1335,22 +1753,63 @@
 
   // ---------- Scanning & blocking ----------
 
-  function scan(editor) {
+  function scan(editor, cachedRaw = null) {
     if (scanBudget) {
-      scanNow(editor); // a scan from inside a scan shares its budget
+      scanNow(editor, cachedRaw); // a scan from inside a scan shares its budget
       return;
     }
     const budget = { until: performance.now() + VAULT_SCAN_MS, missed: [] };
     scanBudget = budget;
+    let raw;
+    const scannedDraft = getText(editor);
     try {
-      scanNow(editor);
+      raw = scanNow(editor, cachedRaw);
     } finally {
       scanBudget = null;
-      if (budget.missed.length) vaultLater(budget.missed, getText(editor));
+      if (budget.missed.length) vaultLater(budget.missed, getText(editor), raw, scannedDraft);
     }
   }
 
-  function scanNow(editor) {
+  function applyAllowedVaultValues(values, truncated) {
+    const suppressed = [];
+    const resolved = new Set();
+    let changed = false;
+    const keys = new Set(values.map(([id, match]) => `${id}\0${match}`));
+    const remove = (results) =>
+      results.flatMap((r) => {
+        const matches = [];
+        for (const match of r.matches) {
+          if (!keys.has(`${r.id}\0${match}`)) {
+            matches.push(match);
+            continue;
+          }
+          changed = true;
+          resolved.add(match);
+          if (!loggedSilenced.has(match)) {
+            loggedSilenced.add(match);
+            suppressed.push({ ...r, matches: [match] });
+          }
+        }
+        if (matches.length === r.matches.length) return [r];
+        return matches.length ? [{ ...r, matches }] : [];
+      });
+    warnings = remove(warnings);
+    pending = remove(pending);
+    if (!changed) return;
+    // Flags key by text alone, so another kind may still need its warning.
+    const stillWarned = new Set(warnings.concat(pending).flatMap((r) => r.matches));
+    for (const match of resolved) if (!stillWarned.has(match)) flagged.delete(match);
+    if (suppressed.length) report(suppressed, "suppressed");
+    if (pending.length) {
+      askFirst(pending.concat(warnings), truncated);
+    } else {
+      if (ui.isDialogOpen() && ui.dialogKind() === "ask") ui.closeDialog();
+      if (warnings.length) warn(warnings, null, truncated);
+      else if (ui.isNoticeOpen() && ui.noticeKind() === "warn") ui.closeNotice();
+    }
+  }
+
+  function scanNow(editor, cachedRaw = null) {
     activeEditor = editor;
     const lost = orphaned(); // after an update: warn only, record nothing
     if (lost) {
@@ -1358,13 +1817,22 @@
       // No updated copy took over: ask for a reload.
       if (!ui.reloadAsked()) setTimeout(safely(ui.showReloadPrompt), 0);
     }
-    if (isPaused()) return;
+    if (isPaused()) return null;
     const draft = getText(editor);
-    if (!draft.trim()) newMessage();
+    if (!draft.trim()) {
+      newMessage();
+      pastedEditors.delete(editor);
+    }
+    const paste = pastedEditors.get(editor);
+    const normalizeLines = (text) => text.replace(/\r\n?/g, "\n");
+    currentScanWasPaste = Boolean(paste && (!paste.text || normalizeLines(draft).includes(normalizeLines(paste.text))));
+    const parts = emailParts(editor, draft);
+    currentScanText = parts.text;
     // Read off detect()'s own return value: splitOwnIds and everything after it build new arrays that don't
     // carry this along.
-    const raw = detect(draft);
-    const truncated = Boolean(raw.truncated);
+    const raw = cachedRaw || detect(currentScanText);
+    const forwarded = addForwardCredentials(raw, parts.forwarded);
+    const truncated = Boolean(raw.truncated || forwarded.truncated);
     const all = splitOwnIds(raw);
     noteTyped(all);
 
@@ -1434,6 +1902,7 @@
         ui.tellTruncated();
       }
     }
+    return raw;
   }
 
   // Re-checks right before a send, in case the debounced scan hasn't run yet. Block-level items stop the
@@ -1558,28 +2027,34 @@
   // say what went, right after, and offer to ask first next time.
   const SEEN_MS = 1500;
   const CONFIRM_MS = 1200;
-  // Only say "Just sent", and record it, once the message really left. Some sites ignore an Enter pressed
-  // too soon, Gemini among them, so if the text is still sitting in the box, I show the normal warning
-  // instead, now that there's time to read it.
+  const CONFIRM_POLL_MS = 100;
+  // Only say "Just sent", and record it, once the message really left. Some sites ignore an Enter pressed too
+  // soon, Gemini among them, and a support widget can take its time, so the warning stays on screen while I
+  // find out: an empty box means it went, and "Just sent" takes the warning's place at once; text still there
+  // after CONFIRM_MS means it didn't, and the warning is refreshed in place. Closing it at Enter and showing it
+  // again made it vanish for a second on a send that didn't go.
   function confirmSent(editor, results, tell = true) {
     const before = getText(editor).replace(/\s+/g, " ").trim();
-    ui.closeNotice(); // the half-shown warning, which comes back if the message didn't go
+    const started = Date.now();
     warnings = [];
-    setTimeout(
-      safely(() => {
-        const now = editor.isConnected ? getText(editor).replace(/\s+/g, " ").trim() : "";
-        if (now === before) {
-          scan(editor);
-          return;
-        } // not sent
-        report(results, "allowed");
-        for (const r of results) for (const m of r.matches) allowedValues.add(m);
-        flagged.clear();
-        newMessage();
-        if (tell) justSent(results);
-      }),
-      CONFIRM_MS,
-    );
+    const check = safely(() => {
+      const now = editor.isConnected ? getText(editor).replace(/\s+/g, " ").trim() : "";
+      if (now && Date.now() - started < CONFIRM_MS) {
+        setTimeout(check, CONFIRM_POLL_MS);
+        return;
+      }
+      if (now === before) {
+        scan(editor);
+        return;
+      } // not sent
+      ui.closeNotice(); // the warning about what just went
+      report(results, "allowed");
+      for (const r of results) for (const m of r.matches) allowedValues.add(m);
+      flagged.clear();
+      newMessage();
+      if (tell) justSent(results);
+    });
+    setTimeout(check, CONFIRM_POLL_MS);
   }
 
   // When "Leave it in and send" answers a dialog that stopped a send, I send the message the same way it
@@ -1648,11 +2123,22 @@
   // every real edit fires first; otherwise a page could type guesses by script and watch for the warning.
   const REAL_EDIT_MS = 1000;
   let realEditAt = 0;
+  const isBulkInput = (type) => /^insertFrom(?:Paste|Drop)/i.test(type || "");
   const onTyping = safely((e) => {
-    if (e.type === "beforeinput" && e.isTrusted) realEditAt = Date.now();
+    let editor;
+    if (e.type === "beforeinput" && e.isTrusted) {
+      realEditAt = Date.now();
+      if (isBulkInput(e.inputType) || everyday) {
+        editor = qualifyingEditor(realTarget(e));
+        if (editor && isBulkInput(e.inputType)) {
+          pastedEditors.set(editor, { text: typeof e.data === "string" && e.data ? e.data : null });
+        }
+        if (editor) seedQuoteOrigins(editor); // before this edit lands
+      }
+    }
     if (e.type === "input" && Date.now() - realEditAt > REAL_EDIT_MS) return;
     if (isPaused() || globalThis.Clotr.editor.isEditing() || !byUser(e)) return;
-    const editor = qualifyingEditor(realTarget(e));
+    editor ??= qualifyingEditor(realTarget(e));
     if (!editor) return;
     activeEditor = editor;
     noteEditor();
@@ -1667,6 +2153,19 @@
   // input. The scan still works, since it waits for typing to pause, so the edit has already landed by the
   // time it reads the text.
   window.addEventListener("beforeinput", onTyping, true);
+  for (const type of ["paste", "drop"]) {
+    window.addEventListener(
+      type,
+      safely((e) => {
+        if (!e.isTrusted) return;
+        const editor = qualifyingEditor(realTarget(e));
+        if (!editor) return;
+        const text = type === "paste" ? e.clipboardData?.getData("text/plain") : e.dataTransfer?.getData("text/plain");
+        if (text || !pastedEditors.has(editor)) pastedEditors.set(editor, { text: text || null });
+      }),
+      true,
+    );
+  }
 
   let enterDown = false; // true while Enter is physically down, so its own check decides, not the new line it types
   // A real Enter or a real click on something that could send is the evidence the submit check at the end needs:
@@ -2064,7 +2563,7 @@
     const out = a.map((r) => ({ ...r, matches: [...r.matches] }));
     for (const r of b) {
       const same = out.find((o) => o.id === r.id);
-      if (same) same.matches.push(...r.matches);
+      if (same) for (const m of r.matches) same.matches.push(m);
       else out.push({ ...r, matches: [...r.matches] });
     }
     return out;
