@@ -1,0 +1,19 @@
+{
+  "v": 1,
+  "settings": ["responses", "largeText", "keepDays", "tourniquet", "replyCheck", "commandCheck", "advanced"],
+  "messages": {
+    "hello": { "from": "extension", "fields": ["v", "type", "role", "browser"] },
+    "hello_ack": { "from": "host", "fields": ["v", "type", "appVersion", "paired"] },
+    "pair_request": { "from": "extension", "fields": ["v", "type"] },
+    "pair_pending": { "from": "host", "fields": ["v", "type", "paired"] },
+    "pair_done": { "from": "host", "fields": ["v", "type", "paired"] },
+    "read_settings": { "from": "extension", "fields": ["v", "type"] },
+    "settings": { "from": "host", "fields": ["v", "type", "settings"] },
+    "write_settings": { "from": "extension", "fields": ["v", "type", "settings"] },
+    "settings_ack": { "from": "host", "fields": ["v", "type"] },
+    "forget": { "from": "extension", "fields": ["v", "type"] },
+    "forgotten": { "from": "host", "fields": ["v", "type"] },
+    "unknown": { "from": "host", "fields": ["type"] },
+    "not_running": { "from": "host", "fields": ["type"] }
+  }
+}

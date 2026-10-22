@@ -6,7 +6,20 @@
 
 module.exports = async function (env) {
   const { EXT, check, clotrActive, ctx, expect, expectNoUI, fs, launch, os, path } = env;
-  const { resetState, sentMessages, settle, store, typeText, waitFor, waitForNotice, DIALOG_WAIT } = env;
+  const {
+    resetState,
+    restoreBackgroundReads,
+    sentMessages,
+    settle,
+    sleep,
+    slowBackgroundReads,
+    store,
+    typeText,
+    waitFor,
+    waitForDialog,
+    waitForNotice,
+    DIALOG_WAIT,
+  } = env;
   const { withSite } = env;
   const PHONE = "555-555-0123";
 
@@ -256,5 +269,40 @@ module.exports = async function (env) {
         await refused.close();
       }
     },
+  );
+
+  await check("EW8", "Before settings arrive, a shipping form stays quiet and the chat box still warns", () =>
+    withEverywhere(async (other) => {
+      // Keep the settings answer pending past the ready wait so the content script uses its load-time default.
+      await slowBackgroundReads(other, 9000, "responses");
+      try {
+        await withSite(other, "everywhereChat", async (page) => {
+          await sleep(3500);
+          await page.evaluate(() => {
+            const form = document.createElement("form");
+            const street = document.createElement("input");
+            street.autocomplete = "street-address";
+            const address = document.createElement("textarea");
+            address.id = "shipping-address";
+            const card = document.createElement("input");
+            card.autocomplete = "cc-number";
+            form.append(street, address, card);
+            document.body.prepend(form);
+          });
+
+          const chatEditor = page.site.editor;
+          page.site.editor = 'document.querySelector("#shipping-address")';
+          await typeText(page, "4111 1111 1111 1111");
+          await expectNoUI(page, "a shipping-address form warned while settings were pending");
+          expect((await store.events(other)).length === 0, "the shipping-address form recorded an event");
+          page.site.editor = chatEditor;
+
+          await typeText(page, "4111 1111 1111 1111");
+          expect(await waitForDialog(page), "the chat box did not warn while settings were pending");
+        });
+      } finally {
+        await restoreBackgroundReads(other);
+      }
+    }),
   );
 };

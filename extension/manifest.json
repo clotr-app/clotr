@@ -2,7 +2,7 @@
   "manifest_version": 3,
   "name": "Clotr: AI chat privacy, clot your data leaks",
   "short_name": "Clotr",
-  "version": "1.4.1",
+  "version": "1.5.0",
   "description": "__MSG_extDescription__",
   "icons": {
     "16": "icons/icon-on-16.png",
@@ -45,7 +45,8 @@
     "https://duck.ai/*"
   ],
   "optional_permissions": [
-    "management"
+    "management",
+    "nativeMessaging"
   ],
   "optional_host_permissions": [
     "https://*/*"
@@ -58,7 +59,8 @@
     "commandcheck": true,
     "practice": true,
     "training": false,
-    "checkup": false
+    "checkup": false,
+    "oneclotr": false
   },
   "content_security_policy": {
     "extension_pages": "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; font-src 'self'; connect-src 'self'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'; form-action 'none'"

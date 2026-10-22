@@ -6,6 +6,7 @@
 
 const test = require("node:test");
 const assert = require("node:assert/strict");
+const { bestOfBoth } = require("./timing");
 
 require("../extension/patterns.js");
 require("../extension/detector.js");
@@ -58,27 +59,32 @@ function oldRespFor(r, m, s) {
 const RANK = { log: 0, warn: 1, block: 2 };
 
 test("respFor: 600 phone numbers with a saved phone to protect are decided in well under a second", () => {
-  const s = state({ vault: [strong("phone_number", "(555) 555-5636", "protect")] });
   const r = found("phone_number", phones(600));
-  const t0 = performance.now();
-  const answers = r.matches.map((m) => C.respFor(r, m, s));
-  const ms = performance.now() - t0;
+  const savedPhone = strong("phone_number", "(555) 555-5636", "protect");
+  let answers;
+  const timing = bestOfBoth(() => {
+    const s = state({ vault: [savedPhone] });
+    answers = r.matches.map((m) => C.respFor(r, m, s));
+  });
   assert.ok(answers.every((a) => a === "warn"));
   // Before the fix: 600 strong fingerprints, about 9 seconds.
-  assert.ok(ms < 500, `took ${Math.round(ms)} ms`);
+  assert.ok(!timing.over(500), `took ${Math.round(timing.wall)} ms`);
 });
 
 test("respFor: 600 emails with a saved email marked OK to share stay within a host's time budget", () => {
   const mine = "jo@example.org";
-  const s = state({ vault: [strong("email", mine, "allow")] });
   const list = [...emails(599), mine];
   const r = found("email", list);
-  s.budget = { until: performance.now() + 50, missed: [] };
-  const t0 = performance.now();
-  const answers = r.matches.map((m) => C.respFor(r, m, s));
-  const ms = performance.now() - t0;
+  const savedEmail = strong("email", mine, "allow");
+  let s;
+  let answers;
+  const timing = bestOfBoth(() => {
+    s = state({ vault: [savedEmail] });
+    s.budget = { until: performance.now() + 50, missed: [] };
+    answers = r.matches.map((m) => C.respFor(r, m, s));
+  });
   // One slow fingerprint can start just before the budget ends; anything past that is left for later.
-  assert.ok(ms < 50 + 100, `took ${Math.round(ms)} ms with a 50 ms budget`);
+  assert.ok(!timing.over(50 + 100), `took ${Math.round(timing.wall)} ms with a 50 ms budget`);
   assert.ok(s.budget.missed.length > 500, `only ${s.budget.missed.length} left for later`);
   // Not known yet means the kind's usual warning, so the saved email is warned about until it's worked out.
   assert.equal(answers.at(-1), "warn");

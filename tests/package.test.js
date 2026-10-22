@@ -101,12 +101,18 @@ test("release zip holds exactly the shipped files, sorted, manifest at the root,
       assert.ok(data.equals(disk), `${name} differs`);
     }
   }
-  // The shipped manifest carries the held-back features' flags exactly as the source manifest has them: no
-  // optional permission unless Extension check is on, no Command check listener unless Command check is on,
-  // and no off feature's name at all (an off feature's key is dropped, not set to false).
+  // The shipped manifest carries the held-back features' flags exactly as the source manifest has them: each
+  // optional permission follows its feature, no Command check listener unless Command check is on, and no off
+  // feature's name at all (an off feature's key is dropped, not set to false).
   const shipped = JSON.parse(entries.find(([n]) => n === "manifest.json")[1].toString("utf8"));
   const disk = JSON.parse(fs.readFileSync(path.join(EXT, "manifest.json"), "utf8"));
-  if (!disk.clotr_features.extcheck) delete disk.optional_permissions;
+  if (!disk.clotr_features.extcheck) {
+    disk.optional_permissions = disk.optional_permissions.filter((permission) => permission !== "management");
+  }
+  if (!disk.clotr_features.oneclotr) {
+    disk.optional_permissions = disk.optional_permissions.filter((permission) => permission !== "nativeMessaging");
+  }
+  if (!disk.optional_permissions.length) delete disk.optional_permissions;
   if (!disk.clotr_features.commandcheck) {
     disk.content_scripts = disk.content_scripts.map((c) => ({ ...c, js: c.js.filter((f) => f !== "commands.js") }));
   }
@@ -124,9 +130,7 @@ test("Firefox zip gets the Firefox manifest; checksums of both builds sit side b
       .find(([n]) => n === "manifest.json")[1]
       .toString("utf8"),
   );
-  assert.deepStrictEqual(m.background, {
-    scripts: ["patterns.js", "detector.js", "decide.js", "helper-core.js", "backup.js", "sites.js", "background.js"],
-  });
+  assert.deepStrictEqual(m.background, { scripts: FIREFOX_BACKGROUND_SCRIPTS });
   assert.ok(!m.storage, "Chrome's managed_schema key stays out of the Firefox manifest");
   assert.ok(!m.permissions.includes("declarativeContent"));
   assert.strictEqual(m.browser_specific_settings.gecko.id, "clotr@billiambash");
@@ -155,6 +159,12 @@ const BACKGROUND_SCRIPTS = [
   "sites.js",
   "background.js",
 ];
+const FIREFOX_BACKGROUND_SCRIPTS = [
+  ...BACKGROUND_SCRIPTS.slice(0, -2),
+  ...(sourceManifest().clotr_features.oneclotr ? ["one-clotr-protocol.js", "one-clotr-bridge.js"] : []),
+  "sites.js",
+  "background.js",
+];
 
 // Adding a Safari build must leave the other two builds exactly as they were. The Chrome zip carries the manifest
 // as written, and the Firefox manifest is the source manifest with only its five known changes, including the
@@ -162,10 +172,20 @@ const BACKGROUND_SCRIPTS = [
 test("Chrome and Firefox builds stay as they were: their manifests, exactly", () => {
   const dir = tmp();
   const source = sourceManifest();
-  // Features still held back in source drop their trace from the manifest too: no optional permission unless
-  // Extension check is on, no Command check listener unless Command check is on.
+  // Features still held back in source drop their trace from the manifest too: each optional permission and the
+  // Command check listener only ship while their feature is on.
   const noHeldBack = { ...source };
-  if (!source.clotr_features.extcheck) delete noHeldBack.optional_permissions;
+  if (!source.clotr_features.extcheck) {
+    noHeldBack.optional_permissions = noHeldBack.optional_permissions.filter(
+      (permission) => permission !== "management",
+    );
+  }
+  if (!source.clotr_features.oneclotr) {
+    noHeldBack.optional_permissions = noHeldBack.optional_permissions.filter(
+      (permission) => permission !== "nativeMessaging",
+    );
+  }
+  if (!noHeldBack.optional_permissions.length) delete noHeldBack.optional_permissions;
   if (!source.clotr_features.commandcheck) {
     noHeldBack.content_scripts = source.content_scripts.map((c) => ({
       ...c,
@@ -177,7 +197,7 @@ test("Chrome and Firefox builds stay as they were: their manifests, exactly", ()
   const expected = { ...noHeldBack };
   delete expected.storage;
   expected.permissions = source.permissions.filter((p) => p !== "declarativeContent");
-  expected.background = { scripts: BACKGROUND_SCRIPTS };
+  expected.background = { scripts: FIREFOX_BACKGROUND_SCRIPTS };
   expected.action = {
     ...source.action,
     theme_icons: [

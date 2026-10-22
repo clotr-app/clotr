@@ -1,0 +1,9 @@
+**
+!extension.js
+!package.json
+!package.nls.json
+!package.nls.es.json
+!README.md
+!LICENSE
+!guard/
+!guard/**

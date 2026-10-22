@@ -80,7 +80,9 @@
     const origins = everydayOrigins(names);
     if (!origins.length) return false;
     try {
-      return Boolean(await chrome.permissions.request({ origins }));
+      const yes = Boolean(await chrome.permissions.request({ origins }));
+      if (yes) await notePicks(origins);
+      return yes;
     } catch (err) {
       const kind = err instanceof Error ? err.constructor.name : typeof err;
       console.warn("[Clotr] could not ask for email and chat apps:", kind);
@@ -93,13 +95,100 @@
   async function removeEverydayApps(names) {
     const origins = everydayOrigins(names);
     if (!origins.length) return false;
+    const forgot = await forgetPicks(origins);
     try {
-      return Boolean(await chrome.permissions.remove({ origins }));
+      return Boolean(await chrome.permissions.remove({ origins })) || forgot;
     } catch (err) {
       const kind = err instanceof Error ? err.constructor.name : typeof err;
       console.warn("[Clotr] could not switch off email and chat apps:", kind);
+      return forgot && (await stillUnlisted(origins));
+    }
+  }
+
+  // While "Everywhere I type" is on, the browser's broad grant already covers every https site. Asked for one
+  // more, Firefox and Chrome both answer yes at once, with no question, and add nothing to the grants they
+  // list, so a switch that read only those grants stayed off. A site switched on by itself then gets noted
+  // under the broad origin's own entry in `siteScopes`, and it counts as switched on by itself for as long
+  // as the broad grant lasts. Only a single https site ever counts, whatever the entry holds.
+  const isOneSite = (p) => typeof p === "string" && /^https:\/\/[\w.:-]+\/\S*$/.test(p);
+
+  function picksUnderEverywhere(origins, siteScopes) {
+    if (!everywhereGranted(origins)) return [];
+    const picks = siteScopes?.[EVERYWHERE_ORIGIN];
+    return Array.isArray(picks) ? picks.filter(isOneSite) : [];
+  }
+
+  // Whether "Everywhere I type" already runs Clotr on this host by itself. It covers every https site except the
+  // built-in AI tools and the search engines, which keep a switch of their own (background.js's
+  // dedicatedMatches), so an email or chat app or a support chat reads On there without a grant of its own.
+  function everywhereCovers(host, origins) {
+    return Boolean(host) && everywhereGranted(origins) && !isSearchSite(host);
+  }
+
+  // The sites on `list` that Everywhere I type covers by itself, by name.
+  function coveredByEverywhere(list, origins) {
+    return list.filter((s) => s.matches.some((p) => everywhereCovers(hostOf(p), origins))).map((s) => s.name);
+  }
+
+  // The browser's grants plus those noted sites, for code that reads what's on straight from the grants.
+  function withPicks(origins, siteScopes) {
+    const list = Array.isArray(origins) ? origins : [];
+    return [...new Set([...list, ...picksUnderEverywhere(list, siteScopes)])];
+  }
+
+  // Runs once the browser has said yes, never before the ask. A site the browser lists itself isn't noted.
+  async function notePicks(patterns) {
+    try {
+      const { origins = [] } = await chrome.permissions.getAll();
+      if (!everywhereGranted(origins)) return;
+      const missing = patterns.filter((p) => isOneSite(p) && !origins.includes(permissionFor(p)));
+      if (!missing.length) return;
+      const { siteScopes = {} } = await chrome.storage.local.get("siteScopes");
+      const picks = new Set(picksUnderEverywhere(origins, siteScopes));
+      if (missing.every((p) => picks.has(p))) return;
+      for (const p of missing) picks.add(p);
+      await chrome.storage.local.set({ siteScopes: { ...siteScopes, [EVERYWHERE_ORIGIN]: [...picks].sort() } });
+    } catch (err) {
+      const kind = err instanceof Error ? err.constructor.name : typeof err;
+      console.warn("[Clotr] could not note a site switched on:", kind);
+    }
+  }
+
+  // Takes sites off that note when they're switched off, and says whether any were on it.
+  async function forgetPicks(patterns) {
+    try {
+      const { siteScopes = {} } = await chrome.storage.local.get("siteScopes");
+      const picks = siteScopes[EVERYWHERE_ORIGIN];
+      if (!Array.isArray(picks) || !picks.some((p) => patterns.includes(p))) return false;
+      const rest = picks.filter((p) => !patterns.includes(p));
+      const next = { ...siteScopes, [EVERYWHERE_ORIGIN]: rest };
+      if (!rest.length) delete next[EVERYWHERE_ORIGIN];
+      await chrome.storage.local.set({ siteScopes: next });
+      return true;
+    } catch (err) {
+      const kind = err instanceof Error ? err.constructor.name : typeof err;
+      console.warn("[Clotr] could not forget a site switched off:", kind);
       return false;
     }
+  }
+
+  // Whether the browser lists none of these, for a switch-off whose own removal failed: a site that was only
+  // noted is off once the note is gone.
+  async function stillUnlisted(origins) {
+    const { origins: listed = [] } = await chrome.permissions.getAll().catch(() => ({}));
+    return !origins.some((o) => listed.includes(o));
+  }
+
+  // Once the broad grant is gone, so is what it covered: those sites are off now, and a later Everywhere I type
+  // starts from nothing. The background runs this whenever a grant is taken back.
+  async function dropPicksWithoutEverywhere() {
+    const { origins = [] } = await chrome.permissions.getAll();
+    if (everywhereGranted(origins)) return;
+    const { siteScopes = {} } = await chrome.storage.local.get("siteScopes");
+    if (!(EVERYWHERE_ORIGIN in siteScopes)) return;
+    const next = { ...siteScopes };
+    delete next[EVERYWHERE_ORIGIN];
+    await chrome.storage.local.set({ siteScopes: next });
   }
 
   // Everywhere I type: same shape as requestEverydayApps, for the one broad origin. The ask has to come
@@ -243,15 +332,17 @@
   }
 
   // Where Clotr runs on the sites someone added themselves: for each granted host that isn't already built in,
-  // either the sections they chose, or the whole host if the grant predates per-section scoping.
+  // either the sections they chose, or the whole host if the grant predates per-section scoping. Sites switched
+  // on one by one under "Everywhere I type" come from its own entry (picksUnderEverywhere says why).
   async function userSitePatterns() {
     const builtIn = new Set(builtInMatches());
     const { origins = [] } = await chrome.permissions.getAll();
     const { siteScopes = {} } = await chrome.storage.local.get("siteScopes");
-    return origins
+    const granted = origins
       .filter((o) => !builtIn.has(o) && o !== EVERYWHERE_ORIGIN)
-      .flatMap((o) => (siteScopes[o]?.length ? siteScopes[o] : [o]))
-      .sort();
+      .flatMap((o) => (siteScopes[o]?.length ? siteScopes[o] : [o]));
+    const picked = picksUnderEverywhere(origins, siteScopes).filter((p) => !builtIn.has(p));
+    return [...new Set([...granted, ...picked])].sort();
   }
 
   // ---------- Automatic spotting (browser-side, no page access needed) ----------
@@ -429,6 +520,25 @@
           "xai_key",
           "google_api_key",
           "slack_token",
+          "sentry_token",
+          "grafana_token",
+          "vault_token",
+          "replicate_token",
+          "linear_key",
+          "postman_key",
+          "shopify_token",
+          "atlassian_token",
+          "netlify_token",
+          "pulumi_token",
+          "databricks_token",
+          "gitlab_token",
+          "perplexity_key",
+          "digitalocean_token",
+          "huggingface_token",
+          "heroku_token",
+          "onepassword_token",
+          "cloudflare_origin_ca_key",
+          "twilio_credentials",
           "crypto_secret",
           "service_token",
           "connection_string",
@@ -637,6 +747,25 @@
     "xai_key",
     "google_api_key",
     "slack_token",
+    "sentry_token",
+    "grafana_token",
+    "vault_token",
+    "replicate_token",
+    "linear_key",
+    "postman_key",
+    "shopify_token",
+    "atlassian_token",
+    "netlify_token",
+    "pulumi_token",
+    "databricks_token",
+    "gitlab_token",
+    "perplexity_key",
+    "digitalocean_token",
+    "huggingface_token",
+    "heroku_token",
+    "onepassword_token",
+    "cloudflare_origin_ca_key",
+    "twilio_credentials",
     "crypto_secret",
     "service_token",
     "connection_string",
@@ -1115,7 +1244,9 @@
     const origins = moreSiteOrigins(names);
     if (!origins.length) return false;
     try {
-      return Boolean(await chrome.permissions.request({ origins }));
+      const yes = Boolean(await chrome.permissions.request({ origins }));
+      if (yes) await notePicks(origins);
+      return yes;
     } catch (err) {
       const kind = err instanceof Error ? err.constructor.name : typeof err;
       console.warn("[Clotr] could not ask for a search or support site:", kind);
@@ -1126,12 +1257,13 @@
   async function removeMoreSites(names) {
     const origins = moreSiteOrigins(names);
     if (!origins.length) return false;
+    const forgot = await forgetPicks(origins);
     try {
-      return Boolean(await chrome.permissions.remove({ origins }));
+      return Boolean(await chrome.permissions.remove({ origins })) || forgot;
     } catch (err) {
       const kind = err instanceof Error ? err.constructor.name : typeof err;
       console.warn("[Clotr] could not switch off a search or support site:", kind);
-      return false;
+      return forgot && (await stillUnlisted(origins));
     }
   }
 
@@ -1166,6 +1298,13 @@
     EVERYWHERE_SCRIPT_ID,
     requestEverywhere,
     everywhereGranted,
+    picksUnderEverywhere,
+    everywhereCovers,
+    coveredByEverywhere,
+    withPicks,
+    notePicks,
+    forgetPicks,
+    dropPicksWithoutEverywhere,
     EVERYDAY_SITES,
     everydaySiteFor,
     everydayOrigins,

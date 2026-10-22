@@ -5,7 +5,7 @@ Clotr handles the most sensitive thing people type: what they almost sent. Its d
 ## What Clotr guarantees
 - The extension makes no network requests. Its own pages run under a policy that blocks connections
   (`connect-src 'self'`), and automated checks fail the build if network code appears.
-- Nothing you type is stored. Only metadata and a scrambled code, never the words themselves, are kept, on your computer.
+- Nothing you type is stored, only metadata and a scrambled code, on your computer.
 - It runs only on the built-in AI chat sites and on sites you add one by one.
 - Storage belongs to Clotr's own pages, and the part running inside AI pages gets only what it needs, by message.
 - Releases are reproducible. `npm run package` rebuilds any release byte for byte, so you can compare it with the
@@ -43,7 +43,7 @@ there's no private key sitting anywhere that serves the downloads. To check a zi
 [GitHub CLI](https://cli.github.com/) and run
 
 ```
-gh attestation verify clotr-1.3.0.zip -R clotr-app/clotr
+gh attestation verify clotr-1.4.1.zip -R clotr-app/clotr
 ```
 
 It confirms the zip was built by this repo's release workflow from the tagged commit. `sha256sum -c SHA256SUMS.txt`

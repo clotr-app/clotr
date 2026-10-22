@@ -255,9 +255,15 @@ module.exports = async function (env) {
   await check("BN9", "Copy with real names: the bubble copies the whole answer with the label swapped back", () =>
     withSite(ctx, "chatgpt", async (page) => {
       await coveredReply(page);
-      const { x, y } = await labelPoint(page);
-      await page.mouse.move(x, y);
-      const peek = await waitFor(() => readUI(page, "CLOTR-PEEK"), 3000);
+      let point = await labelPoint(page);
+      await page.mouse.move(point.x, point.y);
+      let peek = await waitFor(() => readUI(page, "CLOTR-PEEK"), 3000);
+      if (!peek) {
+        await page.mouse.move(0, 0);
+        point = await labelPoint(page);
+        await page.mouse.move(point.x, point.y);
+        peek = await waitFor(() => readUI(page, "CLOTR-PEEK"), 3000);
+      }
       expect(peek, "no bubble appeared");
       await evalInClotr(
         page,
@@ -266,8 +272,10 @@ module.exports = async function (env) {
       const btn = peek.buttons.find((b) => /copy/i.test(b.text));
       expect(btn, `no copy button: ${JSON.stringify(peek.buttons)}`);
       await clickNode(page, btn.nodeId);
-      await sleep(200);
-      const copied = await evalInClotr(page, "window.__copied");
+      const copied = await waitFor(async () => {
+        const value = await evalInClotr(page, "window.__copied");
+        return value !== null ? value : null;
+      }, 3000);
       expect(copied === "Sure, I'll call 555-555-0123 soon.", `copied: ${JSON.stringify(copied)}`);
       await resetState(ctx, {});
     }),

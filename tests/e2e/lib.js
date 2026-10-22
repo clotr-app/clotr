@@ -477,7 +477,7 @@ async function describeConsole(msg) {
 
 // ---------- Browser & extension ----------
 
-async function launch(ext = EXT, extraArgs = [], extraEnv = null) {
+async function launchOnce(ext, extraArgs, extraEnv) {
   const profile = fs.mkdtempSync(path.join(os.tmpdir(), "clotr-e2e-"));
   let browser;
   try {
@@ -496,20 +496,8 @@ async function launch(ext = EXT, extraArgs = [], extraEnv = null) {
       userDataDir: profile,
       ...(extraEnv ? { env: { ...process.env, ...extraEnv } } : {}), // Linux Chrome reads its UI language from LANGUAGE.
       defaultViewport: { width: 1000, height: 700 },
-      // Puppeteer's own default (180000) is a flat number, and a flat number can always be outlasted by enough
-      // sharing: a run that otherwise grew only 1.4x (a loaded machine, 380s to 532s) still had one
-      // `Runtime.callFunctionOn` round trip cross 180000ms alone, and later a fixed 360000 was crossed too, in a run
-      // whose total time (840s against an ordinary ~450s) said the machine was that busy, not that anything had
-      // hung. Scaling this by patience() once seemed to copy what every wait below already does, but it isn't the
-      // same thing: a wait calls patience() again right before it waits, so it reads the computer's load at that
-      // moment, while this is read once, at the top of the whole run, and then stays fixed on a single connection
-      // for however long the run takes (every section shares one browser). A quiet instant at launch, followed by
-      // another job starting up, or a CI runner's shared neighbor getting busier, minutes later when a later
-      // section's own check (EV4 among them) runs its evaluate calls, is exactly the gap this missed: the margin
-      // was tied to how busy the computer measured at launch, not to how busy it could still get before the run
-      // ends. Since there's no way to re-read patience() into an already-open connection, this takes patience()'s
-      // own worst case up front instead of a sample that can go stale the moment load shows up after it's taken.
-      protocolTimeout: 180000 * MAX_PATIENCE,
+      timeout: 30000,
+      protocolTimeout: 30000,
       args: [
         "--no-first-run",
         "--no-default-browser-check",
@@ -578,6 +566,36 @@ async function launch(ext = EXT, extraArgs = [], extraEnv = null) {
     fs.rmSync(profile, { recursive: true, force: true });
     throw err;
   }
+}
+
+async function launch(ext = EXT, extraArgs = [], extraEnv = null) {
+  // A busy runner can time out while the browser starts or its extension worker connects; retry once with a clean profile.
+  try {
+    return await launchOnce(ext, extraArgs, extraEnv);
+  } catch (err) {
+    if (!/(?:timed\s*out|timeout)/i.test(err.message || "")) throw err;
+    return launchOnce(ext, extraArgs, extraEnv);
+  }
+}
+
+async function spanishBrowser(ctx, ext = EXT) {
+  if (ctx.spanishBrowser) return ctx.spanishBrowser;
+  // Keep Spanish checks on one profile and close it with the run's main browser.
+  const spanish = await launch(ext, ["--lang=es-ES", "--accept-lang=es-ES"], {
+    LANGUAGE: "es",
+    LANG: "es_ES.UTF-8",
+  });
+  ctx.spanishBrowser = spanish;
+  const closeMain = ctx.browser.close.bind(ctx.browser);
+  ctx.browser.close = async () => {
+    try {
+      return await closeMain();
+    } finally {
+      await spanish.browser.close().catch(() => {});
+      fs.rmSync(spanish.profile, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 });
+    }
+  };
+  return spanish;
 }
 
 // A write goes through the background's own write queue, but only after I give the previous check's last events
@@ -1028,6 +1046,7 @@ async function check(id, title, fn) {
     }
     results.push({ id, title, ok: false, note: err.message.split("\n")[0], secs: secs() });
     console.log(`${QUIET ? line : ""}FAIL\n       → ${err.message.split("\n")[0]}`);
+    if (err.stack?.split("\n")[1]) console.log(`       ${err.stack.split("\n")[1].trim()}`);
   }
 }
 
@@ -1270,6 +1289,7 @@ module.exports = {
   restoreBackgroundReads,
   results,
   seedEvents,
+  spanishBrowser,
   settle,
   sentMessages,
   shot,

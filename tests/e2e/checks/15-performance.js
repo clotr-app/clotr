@@ -7,6 +7,7 @@ module.exports = async function (env) {
     ctx,
     editorText,
     expect,
+    evalInClotr,
     patience,
     pressEnter,
     readNotice,
@@ -177,6 +178,25 @@ module.exports = async function (env) {
         }),
       ms,
     );
+  const startLongTaskMeasure = (page) =>
+    page.evaluate(() => {
+      if (!PerformanceObserver.supportedEntryTypes?.includes("longtask")) return false;
+      window.__perfTasks = [];
+      window.__perfTaskObserver = new PerformanceObserver((list) => window.__perfTasks.push(...list.getEntries()));
+      window.__perfTaskObserver.observe({ type: "longtask" });
+      return true;
+    });
+  const stopLongTaskMeasure = (page) =>
+    page.evaluate(() => {
+      const observer = window.__perfTaskObserver;
+      if (!observer) return null;
+      window.__perfTasks.push(...observer.takeRecords());
+      observer.disconnect();
+      delete window.__perfTaskObserver;
+      const tasks = window.__perfTasks.map((entry) => ({ start: entry.startTime, duration: entry.duration }));
+      delete window.__perfTasks;
+      return tasks;
+    });
   // A saved detail, fingerprinted the way the vault page saves it (the strong fingerprint).
   const saveDetail = async (type, value, mode) => {
     const fp = await ctx.worker.evaluate(
@@ -220,6 +240,33 @@ module.exports = async function (env) {
       await saveDetail("email", mine, "allow");
       return withSite(ctx, "chatgpt", async (page) => {
         const rows = [...Array.from({ length: 599 }, (_, i) => `jane.doe${i}@corp-mail.com`), mine];
+        await evalInClotr(
+          page,
+          `(() => {
+            globalThis.__perfDetectCalls = 0;
+            globalThis.__perfVaultTimes = [];
+            globalThis.__perfVaultCalls = [];
+            const detect = globalThis.Clotr.detect;
+            globalThis.Clotr.detect = (...args) => {
+              globalThis.__perfDetectCalls++;
+              return detect(...args);
+            };
+            const vaultMode = globalThis.Clotr.vaultMode;
+            globalThis.Clotr.vaultMode = (...args) => {
+              const start = performance.now();
+              const mode = vaultMode(...args);
+              if (args[2]?.budget === null) {
+                while (performance.now() - start < 28) {}
+                globalThis.__perfVaultTimes.push(performance.now() - start);
+                globalThis.__perfVaultCalls.push({ start, end: performance.now() });
+              }
+              return mode;
+            };
+          })()`,
+        );
+        // Timer gaps can include time the shared runner didn't schedule the browser. Long tasks and individual
+        // vault checks show whether the page handled one expensive lookup before yielding to input.
+        expect(await startLongTaskMeasure(page), "this browser can't report main-thread long tasks");
         const t0 = Date.now();
         await typeText(page, rows.join("\n"));
         const notice = await waitFor(() => readNotice(page), 30000);
@@ -227,20 +274,50 @@ module.exports = async function (env) {
         expect(notice, "no notice");
         const allowed = 2000 * patience();
         expect(ms < allowed, `the warning took ${ms} ms (${Math.round(allowed)} allowed on this computer now)`);
-        const worst = await longestStall(page, 3000);
-        const stall = 300 * patience();
-        expect(
-          worst < stall,
-          `the page stalled for ${worst} ms while the vault was checked (${Math.round(stall)} allowed)`,
-        );
+        const scansAtNotice = await evalInClotr(page, "globalThis.__perfDetectCalls");
         const settled = await waitFor(
           async () => /Email Address ×599\b/.test((await readNotice(page))?.text || ""),
           60000,
         );
         const done = Date.now() - t0;
+        const scansAfterCatchup = await evalInClotr(page, "globalThis.__perfDetectCalls");
+        const calls = await evalInClotr(page, "globalThis.__perfVaultCalls");
+        const lookup = await evalInClotr(
+          page,
+          `(() => {
+            const times = globalThis.__perfVaultTimes.sort((a, b) => a - b);
+            return {
+              count: times.length,
+              p99: times.length ? times[Math.ceil(times.length * 0.99) - 1] : null,
+            };
+          })()`,
+        );
+        const tasks = await stopLongTaskMeasure(page);
+        const lookupsPerTask = tasks
+          .map((task) => ({
+            duration: Math.round(task.duration),
+            calls: calls.filter((call) => call.start >= task.start && call.start < task.start + task.duration).length,
+          }))
+          .filter((task) => task.calls);
+        expect(
+          scansAfterCatchup === scansAtNotice,
+          `the vault catch-up reran detection ${scansAfterCatchup - scansAtNotice} times instead of reusing its first scan`,
+        );
+        expect(
+          lookup.count >= 500,
+          `the vault checked only ${lookup.count} saved values in the background; timing needs at least 500`,
+        );
+        expect(
+          lookupsPerTask.every((task) => task.calls === 1),
+          `a long page task covered multiple vault lookups: ${JSON.stringify(lookupsPerTask.filter((task) => task.calls > 1))}`,
+        );
+        expect(
+          lookup.p99 < 300,
+          `the 99th percentile saved-value lookup took ${lookup.p99 ?? "unmeasured"} ms (300 ms allowed)`,
+        );
         expect(settled, `the saved email was still warned about: ${(await readNotice(page))?.text}`);
         await resetState(ctx, {});
-        return `${ms} ms to warn, ${worst} ms longest stall, ${done} ms until the saved email dropped out`;
+        return `${ms} ms to warn, ${lookup.count} saved values checked, ${lookup.p99} ms p99 lookup, ${done} ms until the saved email dropped out`;
       });
     },
   );

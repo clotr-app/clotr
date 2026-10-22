@@ -5,8 +5,8 @@
 "use strict";
 
 module.exports = async function (env) {
-  const { activeBadge, check, ctx, expect, fs, launch, openExtPage, openPopup, path, resetState, seedEvents } = env;
-  const { EXT, shot, shotAt, sleep, store, waitFor } = env;
+  const { activeBadge, check, ctx, expect, fs, openExtPage, openPopup, path, resetState, seedEvents } = env;
+  const { EXT, shot, shotAt, sleep, spanishBrowser, store, waitFor } = env;
 
   async function waitForNewPage(before, suffix) {
     return waitFor(async () => {
@@ -190,10 +190,10 @@ module.exports = async function (env) {
   );
 
   await check("PU6", "Spanish: the card, Settings' section and the setup line all translate", async () => {
-    const es = await launch(EXT, ["--lang=es-ES", "--accept-lang=es-ES"], { LANGUAGE: "es", LANG: "es_ES.UTF-8" });
+    const es = await spanishBrowser(ctx, EXT);
+    await store.set(es, { events: [] });
+    const popup = await openPopup(es);
     try {
-      await store.set(es, { events: [] });
-      const popup = await openPopup(es);
       const cardText = await popup.$eval("#lb-card", (n) => n.innerText.replace(/\s+/g, " "));
       expect(cardText.includes("Lo que ya está ahí fuera"), `Spanish card: ${cardText}`);
       expect(
@@ -205,9 +205,12 @@ module.exports = async function (env) {
 
       await popup.click("#tab-settings");
       await settingsShots(popup, "-es");
+    } finally {
       await popup.close();
+    }
 
-      const page = await openExtPage(es, "helper.html");
+    const page = await openExtPage(es, "helper.html");
+    try {
       await page.click('input[name="who"][value="self"]');
       await sleep(150);
       const afterText = await page.$eval("#after", (n) => n.innerText.replace(/\s+/g, " "));
@@ -222,10 +225,8 @@ module.exports = async function (env) {
         theme: "dark",
         selector: "#after",
       });
-      await page.close();
     } finally {
-      await es.browser.close();
-      fs.rmSync(es.profile, { recursive: true, force: true });
+      await page.close();
     }
   });
 
@@ -299,29 +300,24 @@ module.exports = async function (env) {
   );
 
   await check("PU8", "Spanish: the welcome page's Look back line translates", async () => {
-    const es = await launch(EXT, ["--lang=es-ES", "--accept-lang=es-ES"], { LANGUAGE: "es", LANG: "es_ES.UTF-8" });
+    const es = await spanishBrowser(ctx, EXT);
+    const page = await openExtPage(es, "vault.html?welcome=1");
     try {
-      const page = await openExtPage(es, "vault.html?welcome=1");
-      try {
-        const text = await waitFor(
-          () =>
-            page.evaluate(() => {
-              const p = document.getElementById("lb-offer");
-              return p && !p.hidden ? p.textContent.replace(/\s+/g, " ").trim() : null;
-            }),
-          3000,
-        );
-        expect(
-          text === "¿Ya has usado ChatGPT, Claude o Gemini? Mirar atrás te muestra lo que ya les contaste.",
-          `Spanish line: ${text}`,
-        );
-        await lineShots(page, "#lb-offer", "vault-lookback-line-es");
-      } finally {
-        await page.close();
-      }
+      const text = await waitFor(
+        () =>
+          page.evaluate(() => {
+            const p = document.getElementById("lb-offer");
+            return p && !p.hidden ? p.textContent.replace(/\s+/g, " ").trim() : null;
+          }),
+        3000,
+      );
+      expect(
+        text === "¿Ya has usado ChatGPT, Claude o Gemini? Mirar atrás te muestra lo que ya les contaste.",
+        `Spanish line: ${text}`,
+      );
+      await lineShots(page, "#lb-offer", "vault-lookback-line-es");
     } finally {
-      await es.browser.close();
-      fs.rmSync(es.profile, { recursive: true, force: true });
+      await page.close();
     }
   });
 };

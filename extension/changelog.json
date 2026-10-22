@@ -104,11 +104,30 @@
         "Se arreglaron más formas en que un texto hecho a propósito podía congelar la pestaña del chat.",
         "«¿Es una estafa?» ahora marca una petición de comprar una tarjeta regalo por un importe fijo, y una tarjeta regalo como obsequio sigue sin marcarse.",
         "Lo que guardas en tu caja fuerte, o lo que queda en tu historial, ahora cuesta tiempo de verdad adivinarlo.",
-        "Los enlaces a la guía de formación para oficinas ya no llevan a una página eliminada.",
         "La página de bienvenida dice por qué existe Clotr y dónde revisa.",
         "Clotr reacciona solo a lo que de verdad escribes, eliges y envías, no al script de una página que se hace pasar por ti.",
         "Se detecta más de lo que la gente pega, como una clave de API dicha en una frase o una contraseña dicha como «mi contraseña es …».",
         "El icono de la barra, el panel y los avisos muestran la misma C con la tirita que usan Clotr para Windows y Android."
+      ],
+      "1.5": [
+        "«Cubrirlo» ahora cubre la clave privada entera aunque le falte la última línea o esté dañada, o aunque su primera línea aparezca antes en tu mensaje.",
+        "«Cubrirlo» ahora cubre un secreto dentro de otro más largo, como una dirección web con una clave y su secreto, o una contraseña de base de datos con una /.",
+        "«Cubrirlo» ahora cubre entera una contraseña con signos de puntuación y una clave que sigue en una segunda línea, y lo que añadiste justo antes de pulsarlo.",
+        "Se detectan y se cubren una clave de monedero escrita como PRIVATE_KEY=0x… o dicha en una frase, más formas de los tokens de Telegram y SendGrid y todas las IP internas de un mensaje.",
+        "Al responder a un correo, ya no avisa por las direcciones del mensaje al que respondes, y lo que añades se sigue revisando escribas donde escribas.",
+        "«Cubrirlo» en un correo cambia solo lo que cubre y mantiene el resto de tu formato.",
+        "Un mensaje largo que escribiste tú ya no recibe el aviso de texto pegado grande, y en un chat lento el aviso ya no desaparece un segundo antes de volver.",
+        "Pegar un texto largo ya no frena la pestaña, y un valor muy largo o una lista de miles de números ya no impide que Clotr revise el resto.",
+        "Los botones del panel se siguen leyendo bien al cambiar el tema.",
+        "Se detectan contraseñas en muchos más idiomas y lugares, como la columna de contraseñas de una hoja de cálculo pegada, un comando de terminal o un archivo de configuración.",
+        "Se detectan más claves privadas, como una partida en varias líneas, una en base64 en archivos de Kubernetes, una con espacios en los guiones, un bloque de clave PGP, un JWK en JSON o una clave de WireGuard.",
+        "Se detecta una clave secreta de acceso de AWS junto a su ID de clave de acceso y dentro de una cadena JSON, y un token largo con su etiqueta, como un token de sesión de AWS, se detecta y se cubre entero.",
+        "Se detectan las claves de muchos más servicios, como Groq, OpenRouter, Supabase, Sentry, Shopify, Databricks, Tailscale y NuGet, cada una con el nombre de su servicio.",
+        "Las claves de GitLab, Perplexity, Slack, DigitalOcean, Hugging Face, Heroku, 1Password, Cloudflare, Twilio y GitHub llevan el nombre de su servicio, y también se detectan los tokens xoxe. de Slack.",
+        "Clotr también avisa de un secreto tras un salto de línea dentro de un JSON, un token bearer escrito en código, un token de npm, un secreto de webhook de Stripe y un número de tarjeta con puntos.",
+        "Se detectan los teléfonos de Francia, Alemania, Bélgica, Países Bajos, España e Italia también sin el prefijo del país, y una hora en un registro pegado ya no se toma por uno.",
+        "Se detecta un número de tarjeta en seis grupos, y también más números de identidad con dígito de control, como los españoles y mexicanos escritos en grupos o dichos en voz alta.",
+        "«En todas partes donde escribo» deja en paz las casillas de inicio de sesión, dirección y pago desde la primera tecla."
       ]
     }
   },
@@ -137,10 +156,29 @@
     "More ways specially made text could freeze the chat tab are fixed.",
     "\"Is this a scam?\" now marks a request to buy a gift card for a set amount, while a gift card as a present still isn't marked.",
     "What you save to your vault, or what ends up in your history, now takes real time to guess back out.",
-    "Links to the office training walkthrough no longer point to a page that was removed.",
     "The welcome page says why Clotr exists and where it checks.",
     "Clotr reacts only to what you actually type, pick and send, not to a page's own script pretending to be you.",
     "More of what people paste is caught, like an API key told in a sentence or a password told as \"my password's …\".",
     "The toolbar icon, popup and warnings show the same C with the bandage that Clotr for Windows and Android use."
+  ],
+  "1.5": [
+    "Cover it now covers the whole private key when its last line is missing or damaged, or when its first line also shows up earlier in your message.",
+    "Cover it now covers a secret inside a longer one, like a web address that carries a key and its secret, or a database password that holds a /.",
+    "Cover it now covers all of a password with punctuation and a key that wraps onto a second line, plus whatever you added just before clicking it.",
+    "A wallet key written as PRIVATE_KEY=0x… or told in a sentence, Telegram and SendGrid tokens in more shapes, and every internal IP address in a message are caught and covered.",
+    "Replying to an email no longer warns about the addresses in the message you're replying to, and what you add is still checked wherever you type it.",
+    "Cover it in an email changes only what it covers and keeps the rest of your formatting.",
+    "A long message you typed no longer gets the large-paste warning, and in a slow chat the warning no longer vanishes for a second before coming back.",
+    "Large pastes stay responsive, and one very long value or a list of thousands of numbers no longer stops Clotr from checking the rest.",
+    "The popup's buttons stay readable when the theme changes.",
+    "Passwords are caught in many more languages and places, like the password column of a pasted spreadsheet, a shell command or a config file.",
+    "More private keys are caught, like one wrapped onto several lines, one in base64 in Kubernetes files, one with spaces in its dashes, a PGP key block, a JWK in JSON, or a WireGuard key.",
+    "An AWS secret access key is caught beside its access key ID and inside a JSON string, and a long labeled token, like an AWS session token, is caught and covered whole.",
+    "Keys from many more services, like Groq, OpenRouter, Supabase, Sentry, Shopify, Databricks, Tailscale and NuGet, are caught and named by their service.",
+    "GitLab, Perplexity, Slack, DigitalOcean, Hugging Face, Heroku, 1Password, Cloudflare, Twilio and GitHub keys are each named by their service, and Slack's xoxe. tokens are caught too.",
+    "Clotr also warns about a secret after a line break inside JSON, a bearer token set in code, an npm token, a Stripe webhook secret and a card number with dots.",
+    "Phone numbers from France, Germany, Belgium, the Netherlands, Spain and Italy are caught without the country code too, and a time in a pasted log isn't read as one.",
+    "A card number in six groups is caught, and so are more ID numbers with a check digit, like Spanish and Mexican ones written in groups or said aloud.",
+    "Everywhere I type leaves sign-in, address and payment boxes alone from the first keystroke."
   ]
 }

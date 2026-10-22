@@ -98,6 +98,19 @@ module.exports = [
     },
   },
   {
+    // The engine package's classic scripts run in a bare JavaScript engine with nothing else available, as the first
+    // and last parts of the engine bundle every developer tool loads.
+    files: ["apps/engine/**/*.js"],
+    languageOptions: { sourceType: "script", globals: {} },
+  },
+  {
+    // The VS Code extension and its build run in Node inside VS Code's extension host.
+    files: ["apps/vscode/**/*.js"],
+    languageOptions: { sourceType: "commonjs", globals: { ...globals.node } },
+    // A caught error or argument whose name starts with "_" is left unused on purpose.
+    rules: { "no-unused-vars": ["error", { argsIgnorePattern: "^_", caughtErrorsIgnorePattern: "^_" }] },
+  },
+  {
     // Tests and dev tools run in Node.
     files: ["tests/**/*.js", "tools/**/*.js", "*.js"],
     ignores: ["tests/e2e/pages/**"],

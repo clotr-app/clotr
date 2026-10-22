@@ -1,0 +1,26 @@
+{
+  "name": "clotr-guard",
+  "version": "0.1.0",
+  "description": "Checks what you send to an AI coding assistant for credentials and personal details, on your device.",
+  "license": "AGPL-3.0-or-later",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/clotr-app/clotr"
+  },
+  "homepage": "https://github.com/clotr-app/clotr",
+  "bugs": {
+    "url": "https://github.com/clotr-app/clotr/issues"
+  },
+  "private": true,
+  "bin": {
+    "clotr-guard": "bin/clotr-guard.js",
+    "clotr-mcp": "bin/clotr-mcp.js"
+  },
+  "files": ["bin", "lib", "dist", "skills", "README.md", "LICENSE"],
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "prepack": "node ../../tools/engine-bundle.js --out dist/clotr-engine.js"
+  }
+}

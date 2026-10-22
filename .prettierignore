@@ -5,3 +5,8 @@
 *.json
 *.yml
 *.yaml
+
+# The JetBrains plugin's Gradle caches and the IDE platform it downloads.
+apps/jetbrains/.intellijPlatform/
+apps/jetbrains/.gradle/
+apps/jetbrains/build/

@@ -1,0 +1,9 @@
+.quick-exit-btn {
+  border: none;
+  font: inherit;
+  cursor: pointer;
+}
+.quick-exit-btn:hover,
+.quick-exit-btn:focus-visible {
+  background: color-mix(in srgb, var(--signal) 22%, var(--surface));
+}

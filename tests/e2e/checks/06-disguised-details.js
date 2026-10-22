@@ -132,9 +132,11 @@ module.exports = async function (env) {
       }, 3000);
       expect(after?.includes(`[REDACTED ${name.toUpperCase()}]`), `after Hide it: ${await editorText(page)}`);
       await pressEnter(page);
-      await sleep(300);
-      const sent = await sentMessages(page);
-      expect(sent.length === 1 && !sent[0].includes(value), `sent: ${JSON.stringify(sent)}`);
+      const sent = await waitFor(async () => {
+        const messages = await sentMessages(page);
+        return messages.length === 1 ? messages : null;
+      }, 4000);
+      expect(sent?.length === 1 && !sent[0].includes(value), `sent: ${JSON.stringify(sent)}`);
       const events = await waitFor(async () => {
         const e = (await store.events(ctx)).filter((x) => x.type === id && x.action === "redacted");
         return e.length ? e : null;

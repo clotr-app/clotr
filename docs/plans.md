@@ -12,9 +12,8 @@ anything new.
 
 Clotr only runs on AI chat sites I've checked, so new ones get added when people ask for them and I can test them.
 
-On detection, I plan to recognize more countries' ID numbers, phone numbers and addresses, starting with the UK,
-Canada and Australia, then Ireland and New Zealand. Reading details written in Portuguese and then French comes after
-that.
+On detection, Clotr has caught UK, Canadian and Australian addresses and numbers since 1.3.0. Ireland and New Zealand
+are next, and reading details written in Portuguese and then French comes after that.
 
 Clotr already runs in Chrome, Edge, Brave and Firefox. Firefox for Android and Safari are next.
 

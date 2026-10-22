@@ -14,6 +14,7 @@ module.exports = async function (env) {
     chooseResponse,
     clearEditor,
     clickDialogButton,
+    clickNode,
     clickSend,
     ctx,
     editorText,
@@ -23,6 +24,7 @@ module.exports = async function (env) {
     fs,
     openExtPage,
     openPopup,
+    patience,
     path,
     pressEnter,
     readDialog,
@@ -199,11 +201,27 @@ module.exports = async function (env) {
     () =>
       withSite(ctx, "chatgpt", async (page) => {
         await resetState(ctx, {});
+        await evalInClotr(
+          page,
+          `(() => {
+            const sendMessage = chrome.runtime.sendMessage.bind(chrome.runtime);
+            globalThis.__clotrSettingsReads = 0;
+            chrome.runtime.sendMessage = (payload, ...args) => {
+              const result = sendMessage(payload, ...args);
+              if (payload?.type !== "clotr:getSettings") return result;
+              return Promise.resolve(result).then((settings) => {
+                if (settings && !settings.error) globalThis.__clotrSettingsReads += 1;
+                return settings;
+              });
+            };
+          })()`,
+        );
         await typeText(page, "call me at 555-555-5636");
         expect(await waitForNotice(page), "no notice");
         await page.screenshot({ path: path.join(OUT, "notice-more-closed.png") });
         await clickDialogButton(page, "More choices", readNotice);
         await page.screenshot({ path: path.join(OUT, "notice-more-open.png") });
+        const settingsReads = await evalInClotr(page, "globalThis.__clotrSettingsReads");
         await clickDialogButton(page, "Leave it in, and don't warn me about this one again", readNotice);
         expect(!(await readNotice(page)), "notice still open");
         await answerOnClotrPage(ctx, page);
@@ -220,6 +238,11 @@ module.exports = async function (env) {
           `vault: ${JSON.stringify(vault)}`,
         );
         expect(!JSON.stringify(vault).includes("5636"), "the number itself was stored");
+        const refreshed = await waitFor(
+          () => evalInClotr(page, `globalThis.__clotrSettingsReads > ${settingsReads}`),
+          3000,
+        );
+        expect(refreshed, "the tab didn't reload its settings");
         await clearEditor(page);
         await typeText(page, "again 555-555-5636");
         await expectNoUI(page, "this number is fine to share now");
@@ -295,6 +318,53 @@ module.exports = async function (env) {
       const events = await waitFor(async () => ((await store.events(ctx)).length ? store.events(ctx) : null), 2000);
       expect(events?.[0]?.action === "redacted", `events: ${JSON.stringify(events)}`);
     }),
+  );
+
+  // Cover it used to hide only what the last scan found, and cancel the scan waiting on anything newer, so a key
+  // pasted a moment before the click went out with no warning at all.
+  await check(
+    "R2c",
+    "Cover it right after another paste covers that paste too, on plain and rich chat boxes",
+    async () => {
+      const token = "gh" + "p_7Hq2Lw9Xc4Rt6Yp1Mn8Bv3Zs5Kd0Fj2Ga4Ue";
+      for (const site of ["chatgpt", "claude"]) {
+        await withSite(ctx, site, async (page) => {
+          await resetState(ctx, {});
+          await typeText(page, `key ${KEY}`);
+          const notice = await waitForNotice(page);
+          const cover = notice?.buttons.find((b) => b.text === "Cover it");
+          expect(cover, `${site}: no notice with Cover it`);
+          await typeText(page, ` and token ${token}`);
+          await clickNode(page, cover.nodeId);
+          const text = await waitFor(async () => {
+            const t = await editorText(page);
+            return t.includes("[REDACTED") ? t : null;
+          }, 4000);
+          expect(text && !text.includes(KEY) && !text.includes(token.slice(4)), `${site}: chat box "${text}"`);
+          await sleep(600);
+          expect(!(await editorText(page)).includes(token.slice(4)), `${site}: the token came back`);
+        });
+      }
+      // Fixing a typo in the flagged key just before the click: the key as it reads now is the one hidden.
+      await withSite(ctx, "chatgpt", async (page) => {
+        await resetState(ctx, {});
+        await typeText(page, `my key is ${KEY} please fix`);
+        const cover = (await waitForNotice(page))?.buttons.find((b) => b.text === "Cover it");
+        expect(cover, "no notice with Cover it");
+        const end = `my key is ${KEY}`.length;
+        await page.evaluate(`${page.site.editor}.setSelectionRange(${end - 2}, ${end})`);
+        await page.keyboard.sendCharacter("NX");
+        await clickNode(page, cover.nodeId);
+        const text = await waitFor(async () => {
+          const t = await editorText(page);
+          return t.includes("[REDACTED") ? t : null;
+        }, 4000);
+        expect(
+          text === "my key is [REDACTED AWS ACCESS KEY] please fix",
+          `edited key: chat box "${await editorText(page)}"`,
+        );
+      });
+    },
   );
 
   await check(
@@ -1247,16 +1317,55 @@ module.exports = async function (env) {
   await check("R7", "Bulk paste: the notice summarizes counts instead of listing every value", () =>
     withSite(ctx, "chatgpt", async (page) => {
       await resetState(ctx, {});
-      const rows = Array.from(
-        { length: 30 },
-        (_, i) => `user${i},user${i}@example${i}.com,555-555-${String(1000 + i)}`,
+      const paste = [
+        "name,email,phone",
+        ...Array.from({ length: 30 }, (_, i) => `user${i},user${i}@example${i}.com,555-555-${String(1000 + i)}`),
+      ].join("\n");
+      TYPED_VALUES.add(paste);
+      await page.evaluate(`(() => {
+        const editor = ${page.site.editor};
+        window.__r7PasteEvents = [];
+        for (const type of ["beforeinput", "paste", "input"]) {
+          editor.addEventListener(type, (event) => window.__r7PasteEvents.push({
+            type: event.type,
+            inputType: event.inputType || "",
+            trusted: event.isTrusted,
+          }), true);
+        }
+      })()`);
+      await page.evaluate((text) => {
+        const button = document.createElement("button");
+        button.id = "r7-copy-test";
+        button.textContent = "Copy test text";
+        button.addEventListener("click", async () => {
+          try {
+            await navigator.clipboard.writeText(text);
+            window.__r7ClipboardWritten = true;
+          } catch (error) {
+            window.__r7ClipboardError = error.message;
+          }
+        });
+        document.body.append(button);
+      }, paste);
+      await page.click("#r7-copy-test");
+      await waitFor(() => page.evaluate(() => window.__r7ClipboardWritten || window.__r7ClipboardError), 3000);
+      const clipboardError = await page.evaluate(() => window.__r7ClipboardError);
+      expect(!clipboardError, `test clipboard write failed: ${clipboardError}`);
+      await page.evaluate(() => document.querySelector("#r7-copy-test").remove());
+      await page.evaluate(`${page.site.editor}.focus()`);
+      await page.keyboard.down("Control");
+      await page.keyboard.press("v");
+      await page.keyboard.up("Control");
+      const pasteEvents = await page.evaluate(() => window.__r7PasteEvents);
+      expect(
+        pasteEvents.some((event) => event.type === "paste" && event.trusted),
+        `paste events: ${JSON.stringify(pasteEvents)}`,
       );
-      await typeText(page, ["name,email,phone", ...rows].join("\n"));
       const notice = await waitForNotice(page);
       await page.screenshot({ path: path.join(OUT, "notice-bulk.png") });
       expect(
         /Large paste: 31 lines/.test(notice?.text || ""),
-        `notice: ${notice?.text} LOGS: ${page.logs.slice(-6).join(" || ")}`,
+        `notice: ${notice?.text} PASTE: ${JSON.stringify(pasteEvents)} LOGS: ${page.logs.slice(-6).join(" || ")}`,
       );
       expect(/Email Address ×30/.test(notice.text) && /Phone Number ×30/.test(notice.text), `notice: ${notice.text}`);
       expect(!/@example/.test(notice.text), "notice lists values");
@@ -2623,6 +2732,8 @@ module.exports = async function (env) {
           });
           const files = Object.entries(fx.hostile()).map(([name, bytes]) => pictureFile(`PIC13 ${name}`, bytes));
           const input = await page.$("#attach");
+          const rawBudgets = { eventLoop: 200, warning: 3000, total: 10000 };
+          const scale = patience();
           const t0 = Date.now();
           await input.uploadFile(...files); // all at once
           await sleep(1500);
@@ -2640,9 +2751,14 @@ module.exports = async function (env) {
             return new Promise((r) => setTimeout(() => r(performance.now() - s), 0));
           });
           const long = await page.evaluate(() => window.__longTasks.filter((d) => d > 200));
+          const elapsed = Date.now() - t0;
           expect(
-            lag < 200 && !long.length && warnedIn < 3000 && Date.now() - t0 < 10000,
-            `event loop ${Math.round(lag)} ms, long tasks ${long.join()}, warned in ${warnedIn} ms`,
+            lag < rawBudgets.eventLoop * scale &&
+              !long.length &&
+              warnedIn < rawBudgets.warning * scale &&
+              elapsed < rawBudgets.total * scale &&
+              elapsed < 30000,
+            `event loop ${Math.round(lag)} ms, long tasks ${long.join()}, warned in ${warnedIn} ms, total ${elapsed} ms`,
           );
           // The chat should carry on working normally: a message sends right away, and Clotr still checks new text.
           await clickDialogButton(page, "OK", readNotice);
@@ -2654,7 +2770,7 @@ module.exports = async function (env) {
           );
           await typeText(page, "call me at 555-555-0123");
           expect((await waitForNotice(page))?.text.includes("Phone Number"), "Clotr stopped checking what's typed");
-          return `warned about the 25 MB photo in ${warnedIn} ms; event loop ${Math.round(lag)} ms`;
+          return `warned about the 25 MB photo in ${warnedIn} ms; event loop ${Math.round(lag)} ms; raw budgets ${rawBudgets.eventLoop}/${rawBudgets.warning}/${rawBudgets.total} ms`;
         });
       } finally {
         dropMadePictures();

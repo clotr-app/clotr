@@ -252,6 +252,39 @@ function driver(send) {
         await send("Marionette:SetContext", { value: "content" });
       }
     },
+    // A real click on a part of the browser itself, such as a toolbar button, found by CSS selector.
+    async clickInBrowser(css) {
+      await send("Marionette:SetContext", { value: "chrome" });
+      try {
+        await send("WebDriver:ElementClick", { id: await element(css) });
+      } finally {
+        await send("Marionette:SetContext", { value: "content" });
+      }
+    },
+    // A real click at a point in the browser window, for a page no window handle reaches, such as an add-on's
+    // toolbar popup. Firefox passes it on to the page under that point the way it does a person's click.
+    async clickInBrowserAt(x, y) {
+      await send("Marionette:SetContext", { value: "chrome" });
+      try {
+        await send("WebDriver:PerformActions", {
+          actions: [
+            {
+              type: "pointer",
+              id: "mouse",
+              parameters: { pointerType: "mouse" },
+              actions: [
+                { type: "pointerMove", duration: 0, x: Math.round(x), y: Math.round(y) },
+                { type: "pointerDown", button: 0 },
+                { type: "pointerUp", button: 0 },
+              ],
+            },
+          ],
+        });
+        await send("WebDriver:ReleaseActions");
+      } finally {
+        await send("Marionette:SetContext", { value: "content" });
+      }
+    },
     click: async (css) => send("WebDriver:ElementClick", { id: await element(css) }),
     type: async (css, text) => send("WebDriver:ElementSendKeys", { id: await element(css), text }),
     // Polls `body`, the same as `exec`, until it returns something truthy, or returns the last answer once the

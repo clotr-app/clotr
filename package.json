@@ -9,7 +9,7 @@
     "test:e2e:packaged": "node tools/package.js --no-zip --folder dist/e2e-packaged && node tests/e2e/run.js --ext dist/e2e-packaged",
     "test:firefox": "node tests/e2e/firefox.js",
     "test:stress": "node tests/e2e/run.js --stress --only STS",
-    "lint": "prettier --check . && eslint .",
+    "lint": "prettier --check . && eslint . --ignore-pattern **/.intellijPlatform/** --ignore-pattern **/build/**",
     "coverage": "node tools/coverage.js",
     "coverage:all": "node tools/coverage.js --e2e",
     "format": "prettier --write .",
@@ -18,7 +18,10 @@
     "package": "node tools/package.js",
     "site-check": "node tools/site-check.js",
     "site-check:hosts": "node tools/site-check.js --hosts",
-    "check": "npm test && npm run lint && npm run test:e2e && npm run test:e2e:all-on && npm run test:firefox -- --if-installed"
+    "check": "npm test && npm run lint && npm run test:e2e && npm run test:e2e:all-on && npm run test:firefox -- --if-installed",
+    "engine-bundle": "node tools/engine-bundle.js",
+    "vscode:try": "node -e \"console.log('code --extensionDevelopmentPath=apps/vscode')\"",
+    "jetbrains:test": "node -e \"const o={cwd:'apps/jetbrains',stdio:'inherit'};const c=require('child_process');const r=process.platform==='win32'?c.spawnSync('gradlew.bat test',{...o,shell:true}):c.spawnSync('sh',['./gradlew','test'],o);process.exit(r.status??1)\""
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",

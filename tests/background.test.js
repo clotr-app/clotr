@@ -13,6 +13,7 @@ const { safariManifest } = require("../tools/package.js");
 
 const EXT = path.join(__dirname, "..", "extension");
 const source = () => JSON.parse(fs.readFileSync(path.join(EXT, "manifest.json"), "utf8"));
+const oneClotrSchema = JSON.parse(fs.readFileSync(path.join(EXT, "one-clotr-protocol.json"), "utf8"));
 const settle = () => new Promise((r) => setTimeout(r, 30));
 // Replies come from inside the test's own JavaScript context, so I make a plain copy to compare by value.
 const plain = (x) => (x === undefined ? x : JSON.parse(JSON.stringify(x)));
@@ -94,7 +95,14 @@ function loadBackground(browser, { chromeManifest = false } = {}) {
         throw new Error("no Clotr in this tab");
       },
     },
-    permissions: { getAll: async () => ({ origins: [] }), onAdded: event(), onRemoved: event() },
+    permissions: {
+      contains: async () => false,
+      request: async () => false,
+      remove: async () => true,
+      getAll: async () => ({ origins: [] }),
+      onAdded: event(),
+      onRemoved: event(),
+    },
     scripting: {
       getRegisteredContentScripts: async () => [],
       registerContentScripts: async () => {},
@@ -131,6 +139,8 @@ function loadBackground(browser, { chromeManifest = false } = {}) {
     "decide.js",
     "helper-core.js",
     "backup.js",
+    "one-clotr-protocol.js",
+    "one-clotr-bridge.js",
   ]) {
     vm.runInContext(fs.readFileSync(path.join(EXT, file), "utf8"), context, { filename: file });
   }
@@ -161,7 +171,7 @@ function loadBackground(browser, { chromeManifest = false } = {}) {
     chrome.storage.managed.get = async () => policy;
     for (const fn of chrome.storage.onChanged.listeners) fn({}, "managed");
   };
-  return { chrome, calls, local, session, send, install, manifest, setNow, setManaged };
+  return { chrome, calls, local, session, send, install, manifest, setNow, setManaged, context };
 }
 
 const tab = { id: 7, url: "https://chatgpt.com/c/1" };
@@ -919,4 +929,113 @@ test("Pages asking at once on a fresh install all get the one salt kept", async 
   const salts = new Set(replies.map((r) => r.salt));
   assert.equal(salts.size, 1, `different salts handed out: ${[...salts]}`);
   assert.equal([...salts][0], bg.local.data.salt);
+});
+
+test("One Clotr sync reads only its settings and clamps the host stamp before writing", async () => {
+  const bg = loadBackground("chrome");
+  bg.context.Clotr.OneClotrProtocol.schema = oneClotrSchema;
+  bg.setNow(1000);
+  await bg.local.set({
+    oneClotrPaired: true,
+    oneClotrMeta: { responses: { updatedAt: 500 } },
+    responses: { credit_card: "warn" },
+    events: [{ fixture: "event" }],
+    mentions: [{ fixture: "mention" }],
+    vault: [{ fixture: "vault" }],
+    salt: "fixture-salt",
+  });
+
+  const reads = [];
+  const get = bg.local.get.bind(bg.local);
+  bg.local.get = async (keys) => {
+    reads.push(plain(keys));
+    return get(keys);
+  };
+  bg.chrome.permissions.contains = async ({ permissions }) => {
+    assert.deepEqual(plain(permissions), ["nativeMessaging"]);
+    return true;
+  };
+  const sent = [];
+  bg.chrome.runtime.sendNativeMessage = async (host, message) => {
+    sent.push({ host, message: plain(message) });
+    if (message.type === "read_settings") {
+      return {
+        v: 1,
+        type: "settings",
+        settings: { responses: { value: { credit_card: "block" }, updatedAt: 9000 } },
+      };
+    }
+    return { v: 1, type: "settings_ack" };
+  };
+
+  const sync = bg.chrome.runtime.onStartup.listeners.find((fn) => fn.name === "oneClotrSync");
+  assert.ok(sync, "the background sync is registered at startup");
+  await sync();
+
+  assert.deepEqual(
+    reads.filter((keys) => Array.isArray(keys) && keys.includes("oneClotrPaired")),
+    [
+      [
+        "responses",
+        "largeText",
+        "keepDays",
+        "tourniquet",
+        "replyCheck",
+        "commandCheck",
+        "advanced",
+        "oneClotrMeta",
+        "oneClotrPaired",
+      ],
+    ],
+  );
+  assert.equal(bg.local.data.responses.credit_card, "block");
+  assert.equal(bg.local.data.oneClotrMeta.responses.updatedAt, 1000);
+  assert.equal(bg.local.data.events[0].fixture, "event");
+  assert.equal(bg.local.data.mentions[0].fixture, "mention");
+  assert.equal(bg.local.data.vault[0].fixture, "vault");
+  assert.equal(bg.local.data.salt, "fixture-salt");
+  assert.deepEqual(
+    sent.map(({ host, message }) => ({ host, type: message.type })),
+    [
+      { host: "app.clotr.bridge", type: "read_settings" },
+      { host: "app.clotr.bridge", type: "write_settings" },
+    ],
+  );
+  assert.equal(sent[1].message.settings.responses.updatedAt, 1000);
+});
+
+test("One Clotr sync leaves settings paired when a forgotten list is malformed", async () => {
+  const bg = loadBackground("chrome");
+  bg.context.Clotr.OneClotrProtocol.schema = oneClotrSchema;
+  await bg.local.set({
+    oneClotrPaired: true,
+    oneClotrMeta: { responses: { updatedAt: 8 } },
+    responses: { fixture_kind: "warn" },
+  });
+  const sent = [];
+  const removals = [];
+  const logs = [];
+  bg.chrome.permissions.contains = async () => true;
+  bg.chrome.permissions.remove = async (value) => removals.push(plain(value));
+  bg.chrome.runtime.sendNativeMessage = async (host, message) => {
+    sent.push({ host, message: plain(message) });
+    return { v: 1, type: "forgotten", forgotten: ["responses", 7] };
+  };
+  bg.context.console.warn = (line) => logs.push(line);
+
+  const sync = bg.chrome.runtime.onStartup.listeners.find((fn) => fn.name === "oneClotrSync");
+  await sync();
+
+  assert.equal(bg.local.data.oneClotrPaired, true);
+  assert.equal(bg.local.data.responses.fixture_kind, "warn");
+  assert.deepEqual(bg.local.data.oneClotrMeta.responses, { updatedAt: 8 });
+  assert.deepEqual(removals, []);
+  assert.deepEqual(
+    sent.map(({ message }) => message.type),
+    ["read_settings"],
+  );
+  assert.equal(logs.length, 1);
+  assert.match(logs[0], /\[Clotr\]/);
+  assert.match(logs[0], /forgotten/);
+  assert.doesNotMatch(logs[0], /responses|7/);
 });

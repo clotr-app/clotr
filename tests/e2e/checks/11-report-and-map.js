@@ -3141,7 +3141,15 @@ module.exports = async function (env) {
       const page = await openExtPage(ctx, "stored.html");
       try {
         await page.click(".raw summary");
-        await sleep(300);
+        const expectedHistoryRows = Math.min(events.length, 100);
+        const rows = await waitFor(async () => {
+          const counts = await page.evaluate(() => ({
+            history: document.querySelectorAll("#history-table tbody tr").length,
+            vault: document.querySelectorAll("#vault-table tbody tr").length,
+          }));
+          return counts.history === expectedHistoryRows && counts.vault === 2 ? counts : null;
+        }, 3000);
+        expect(rows, "the stored rows didn't appear");
         const got = await page.evaluate(() => ({
           text: document.body.innerText,
           historyRows: document.querySelectorAll("#history-table tbody tr").length,

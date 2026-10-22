@@ -10,7 +10,7 @@ const assert = require("node:assert/strict");
 const fs = require("fs");
 const os = require("os");
 const path = require("path");
-const { build, FEATURE_FILES } = require("../tools/package.js");
+const { build, FEATURE_FILES, stripFeatureMarkup } = require("../tools/package.js");
 const manifestOnDisk = require("../extension/manifest.json");
 
 const HELD_BACK = Object.keys(FEATURE_FILES);
@@ -34,6 +34,7 @@ const FEATURE_MESSAGES = {
   scamcheck: "ss_shareCheckText",
   commandcheck: "pp_commandCheck",
   practice: "ss_shareTogetherText",
+  checkup: ["pc_exit", "pc_exitLabel", "pc_exitHint"],
 };
 
 // Reads a stored-only zip back into [name, bytes] pairs; package.test.js has the fuller version with CRC checks.
@@ -66,6 +67,7 @@ test("the shipped build strips every still-held-back feature's markup, comments 
     assert.ok(!text.includes("<!--"), `${name}: still has a comment`);
     for (const feature of STILL_OFF) {
       assert.ok(!text.includes(`data-feature="${feature}"`), `${name}: still has ${feature}'s markup`);
+      if (feature === "oneclotr") assert.ok(!text.includes('id="one-clotr"'), `${name}: One Clotr card still ships`);
     }
   }
   const manifest = JSON.parse(entries.find(([n]) => n === "manifest.json")[1].toString("utf8"));
@@ -76,9 +78,41 @@ test("the shipped build strips every still-held-back feature's markup, comments 
     );
   }
   const es = JSON.parse(entries.find(([n]) => n === "_locales/es/messages.json")[1].toString("utf8"));
-  for (const [feature, key] of Object.entries(FEATURE_MESSAGES)) {
-    if (STILL_OFF.includes(feature)) assert.ok(!(key in es), `${key}: a held-back string still shipped`);
+  for (const [feature, keys] of Object.entries(FEATURE_MESSAGES)) {
+    if (!STILL_OFF.includes(feature)) continue;
+    for (const key of Array.isArray(keys) ? keys : [keys]) {
+      assert.ok(!(key in es), `${key}: a held-back string still shipped`);
+    }
   }
+  if (STILL_OFF.includes("checkup")) {
+    for (const [name, data] of html) {
+      const text = data.toString("utf8");
+      assert.ok(!text.includes('src="quick-exit.js"'), `${name}: Quick exit script still referenced`);
+      assert.ok(!text.includes('href="quick-exit.css"'), `${name}: Quick exit stylesheet still referenced`);
+    }
+    assert.ok(!entries.some(([name]) => name === "quick-exit.js" || name === "quick-exit.css"));
+  }
+});
+
+test("a held-back stylesheet link is removed as a void element", () => {
+  const html =
+    '<head><link rel="stylesheet" href="quick-exit.css" data-feature="checkup"><meta charset="utf-8"></head>';
+  assert.equal(stripFeatureMarkup(html, { checkup: false }), '<head><meta charset="utf-8"></head>');
+});
+
+test("One Clotr's popup card and bridge references follow its flag", () => {
+  const off = build({ zip: false, folder: tmp() });
+  const offPopup = fs.readFileSync(path.join(off.folder, "popup.html"), "utf8");
+  assert.ok(!offPopup.includes('id="one-clotr"'));
+  assert.ok(!offPopup.includes('src="one-clotr-protocol.js"'));
+  assert.ok(!offPopup.includes('src="one-clotr-bridge.js"'));
+
+  const on = build({ zip: false, folder: tmp(), features: { oneclotr: true } });
+  const onPopup = fs.readFileSync(path.join(on.folder, "popup.html"), "utf8");
+  assert.ok(onPopup.includes('id="one-clotr"'));
+  assert.ok(onPopup.includes('data-feature="oneclotr"'));
+  assert.ok(onPopup.includes('src="one-clotr-protocol.js" data-feature="oneclotr"'));
+  assert.ok(onPopup.includes('src="one-clotr-bridge.js" data-feature="oneclotr"'));
 });
 
 test("turning a held-back feature on ships its markup, name and strings again", () => {
@@ -93,6 +127,14 @@ test("turning a held-back feature on ships its markup, name and strings again", 
     const manifest = JSON.parse(entries.find(([n]) => n === "manifest.json")[1].toString("utf8"));
     assert.strictEqual(manifest.clotr_features[feature], true, `${feature}: missing from clotr_features once on`);
     const es = JSON.parse(entries.find(([n]) => n === "_locales/es/messages.json")[1].toString("utf8"));
-    assert.ok(FEATURE_MESSAGES[feature] in es, `${feature}: its string is still missing once it's on`);
+    const keys = Array.isArray(FEATURE_MESSAGES[feature]) ? FEATURE_MESSAGES[feature] : [FEATURE_MESSAGES[feature]];
+    for (const key of keys) assert.ok(key in es, `${feature}: ${key} is still missing once it's on`);
+    if (feature === "checkup") {
+      assert.ok(entries.some(([name]) => name === "quick-exit.js"));
+      assert.ok(entries.some(([name]) => name === "quick-exit.css"));
+      assert.ok(html.some((text) => text.includes('src="quick-exit.js" data-feature="checkup"')));
+      assert.ok(html.some((text) => text.includes('href="quick-exit.css" data-feature="checkup"')));
+    }
+    if (feature === "oneclotr") assert.ok(html.some((text) => text.includes('id="one-clotr"')));
   }
 });

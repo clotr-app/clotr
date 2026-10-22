@@ -54,5 +54,17 @@
   globalThis.Clotr.closeThisTab = closeThisTab;
   globalThis.Clotr.stopListeningForQuickExit = stopListeningForQuickExit;
 
+  const button = globalThis.document?.getElementById("quick-exit");
+  if (button) {
+    const enabled = Boolean(globalThis.chrome?.runtime?.getManifest?.().clotr_features?.checkup);
+    button.hidden = !enabled;
+    if (enabled) {
+      button.addEventListener("click", () => {
+        broadcastQuickExit();
+        setTimeout(() => window.close(), 0);
+      });
+    }
+  }
+
   listenForQuickExit(); // every page loading this script closes itself on someone else's Quick exit
 })();

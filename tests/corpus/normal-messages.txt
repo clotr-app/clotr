@@ -1236,3 +1236,73 @@ My package weighs 12.04 kg and the flight UA 1234 departs at 6:45. Will it fit t
 The docs' curl example is `curl -u user:password https://example.com/api`. Do I replace both words?
 ---
 What should a strong password look like? Mine keeps getting rejected as too short.
+---
+Server log: 2026-10-19 10:22:01 connection from 203.0.113.45 refused
+---
+2026-10-19T13:45:07Z INFO server ready
+---
+2026-10-19T13:45:07.123-04:00 INFO server ready
+---
+2026-10-19 13:45:07 INFO server ready
+---
+2026-10-19 13:45:07.123 -0400 INFO server ready
+---
+2026-10-19 13:45:07,123 INFO server ready
+---
+Oct 19 13:45:07 host service[42]: started
+---
+[19/Oct/2026:13:45:07 -0400] GET /health 200
+---
+{"ts":1760881507,"level":"info"}
+---
+{"timestamp":1760881507123,"level":"info"}
+---
+worker finished at 13:45:07.123
+---
+request took 1234567 ms
+---
+TimeCreated : 10/19/2026 1:45:07 PM, Information, Service Control Manager
+---
+2026-10-19 13:45:07,123 INFO worker: request finished
+---
+The date is 06 12 2026.
+---
+The date is 06.12.2026.
+---
+The time is 06:12.
+---
+The price is 06,12 €.
+---
+The order number is 06 12 34 56 78.
+---
+The invoice number is 06-12-34-56-78.
+---
+The postal code is 06123.
+---
+The IBAN fragment is FR76 3000 6000 0112.
+---
+The version is 06.12.34.56.78.
+---
+The GitHub Actions log says "Cache restored from key: node-cache-Linux-x64-npm-5d41402abc4b2a76b9719d911017c592" but npm install still ran. Why?
+---
+Post cache step:
+Cache saved with key: Linux-npm-e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855
+---
+Our payment retry sent the same charge twice. The logs show idempotency key: 8f14e45fceea167a5a36dedd4bea2543 on both, so why didn't the API dedupe it?
+---
+In DynamoDB the item has partition key: 9b74c9897bac770ffc029102a200c5de and sort key: 45c48cce2e2d7fbdea1afc51c7c6ad26. How do I query everything under that partition?
+---
+Why does this miss every time?
+cache_key = "d41d8cd98f00b204e9800998ecf8427e"
+if cache_key in store:
+    return store[cache_key]
+---
+The Bazel action cache key: c4ca4238a0b923820dcc509a6f75849b changed after I only touched a comment in the BUILD file.
+---
+CACHE_KEY=c81e728d9d4c2f636f067f89cc14862c is set in the CI env, could that be why the build is stale?
+---
+Postgres says duplicate primary key: eccbc87e4b5ce2fe28308fd9f2a7baf3 when I insert the second row. What's wrong?
+---
+localStorage.setItem("cache_key", "a87ff679a2f3e71d9181a67b7542122c") runs on every render, is that bad?
+---
+la parola COVID-19 è scritta qui.

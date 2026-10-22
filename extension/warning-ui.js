@@ -217,8 +217,10 @@
     // "Large paste: 400 lines, with Email Address ×37, Phone Number ×12." or null.
     function bulkSummary(results, file = null) {
       const editor = app.editor();
-      const lines = file ? file.lines : editor ? getText(editor).split("\n").length : 0;
-      if (!file && totalMatches(results) <= BULK_ITEMS && lines < BULK_LINES) return null;
+      const text = app.messageText?.() || (editor ? getText(editor) : "");
+      const lines = file ? file.lines : text ? text.split("\n").length : 0;
+      const pasted = app.largeInput?.() === true;
+      if (!file && totalMatches(results) <= BULK_ITEMS && (lines < BULK_LINES || !pasted)) return null;
       const counts = results.map((r) => `${r.name} ×${r.matches.length}`).join(", ");
       if (file?.count > 1) {
         return msg("bulkFiles", "$1 files you attached ($2) contain $3.", file.count, file.name, counts);
@@ -232,7 +234,7 @@
           counts,
         );
       }
-      if (lines >= BULK_LINES) return msg("bulkPaste", "Large paste: $1 lines, with $2.", lines, counts);
+      if (lines >= BULK_LINES && pasted) return msg("bulkPaste", "Large paste: $1 lines, with $2.", lines, counts);
       return app.search()
         ? msg("bulkSearch", "This search has $1.", counts)
         : msg("bulkMessage", "This message has $1.", counts);

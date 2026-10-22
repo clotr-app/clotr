@@ -647,7 +647,7 @@ test("Tourniquet's presets list every kind, each ask or warn (drift guard)", () 
   // details only get a note.
   const adult = Sites.TOURNIQUET.adult.requiredResponses;
   const codes = Clotr.PATTERNS.filter((p) => p.group === "credentials" && !TECHNICAL.includes(p.id)).map((p) => p.id);
-  assert.equal(codes.length, 16); // backup codes made it 16
+  assert.equal(codes.length, 35); // the developer credential kinds made it 35
   for (const id of [...codes, ...MONEY_AND_IDS, "date_of_birth"]) assert.equal(adult[id], "block", `adult.${id}`);
   for (const id of [...EVERYDAY_DETAILS, "watch_list", ...TECHNICAL, ...CAR, ...LINKS, "student_id", ...GAMES]) {
     assert.equal(adult[id], "warn", `adult.${id}`);
@@ -1082,6 +1082,92 @@ test("Email and chat apps: if the browser can't remove a permission, removeEvery
   assert.equal(logged.length, 1, `logged: ${JSON.stringify(logged)}`);
   assert.match(logged[0], /^\[Clotr\] could not switch off email and chat apps/);
   assert.doesNotMatch(logged[0], /https?:|discord/i, `an address in the log: ${logged[0]}`);
+});
+
+// While "Everywhere I type" is on, the browser's broad grant already covers every https site, so Firefox and
+// Chrome both answer yes to one more site without asking and without adding it to their grants. The switch
+// read only the grants, so it stayed off with no message, a click that did nothing.
+test("Switched on while Everywhere I type is on: the browser says yes without listing it, and it still counts", async () => {
+  const realRequest = globalThis.chrome.permissions.request;
+  const realRemove = globalThis.chrome.permissions.remove;
+  const realSet = globalThis.chrome.storage.local.set;
+  globalThis.chrome.permissions.request = async () => true; // covered already: a yes, and nothing added
+  globalThis.chrome.permissions.remove = async () => true; // nothing of its own to hand back
+  globalThis.chrome.storage.local.set = async (o) => void Object.assign(stored, o);
+  granted = ["https://*/*"];
+  stored = {};
+  try {
+    assert.equal(await Sites.requestEverydayApps(["Gmail", "Outlook"]), true);
+    assert.deepEqual(Sites.grantedEverydayApps(await Sites.userSitePatterns()), ["Gmail", "Outlook"]);
+    assert.equal(await Sites.requestMoreSites(["Google"]), true);
+    assert.ok((await Sites.userSitePatterns()).includes("https://www.google.com/*"), "Google search isn't on");
+    assert.deepEqual(
+      Sites.withPicks(granted, stored.siteScopes).filter((o) => o !== "https://*/*"),
+      [
+        "https://mail.google.com/*",
+        "https://outlook.live.com/*",
+        "https://outlook.office.com/*",
+        "https://www.google.com/*",
+      ],
+    );
+
+    // Switching one off forgets it, even though the browser has nothing of its own to take back.
+    assert.equal(await Sites.removeEverydayApps(["Outlook"]), true);
+    assert.equal(await Sites.removeMoreSites(["Google"]), true);
+    assert.deepEqual(await Sites.userSitePatterns(), ["https://mail.google.com/*"]);
+
+    // Without the broad grant, nothing it covered counts as on.
+    granted = [];
+    assert.deepEqual(await Sites.userSitePatterns(), []);
+    assert.deepEqual(Sites.withPicks(granted, stored.siteScopes), []);
+
+    // A site the browser lists itself isn't noted a second time, and a stored entry that isn't one https
+    // site, like the broad origin itself, never counts.
+    granted = ["https://*/*", "https://discord.com/*"];
+    stored = { siteScopes: { "https://*/*": ["https://*/*", "<all_urls>", "http://mail.yahoo.com/*", 7] } };
+    assert.equal(await Sites.requestEverydayApps(["Discord"]), true);
+    assert.deepEqual(stored.siteScopes["https://*/*"].length, 4, "noted a site the browser already lists");
+    assert.deepEqual(await Sites.userSitePatterns(), ["https://discord.com/*"]);
+  } finally {
+    globalThis.chrome.permissions.request = realRequest;
+    globalThis.chrome.permissions.remove = realRemove;
+    globalThis.chrome.storage.local.set = realSet;
+    granted = [];
+    stored = {};
+  }
+});
+
+test("Everywhere I type covers every email, chat and support app, but never a search engine", () => {
+  const broad = ["https://*/*"];
+  const names = (list) => list.map((s) => s.name);
+  assert.deepEqual(Sites.coveredByEverywhere(Sites.EVERYDAY_SITES, broad), names(Sites.EVERYDAY_SITES));
+  assert.deepEqual(Sites.coveredByEverywhere(Sites.SUPPORT_SITES, broad), names(Sites.SUPPORT_SITES));
+  assert.deepEqual(Sites.coveredByEverywhere(Sites.SEARCH_SITES, broad), []);
+  assert.deepEqual(Sites.coveredByEverywhere(Sites.EVERYDAY_SITES, ["https://mail.google.com/*"]), []);
+  assert.equal(Sites.everywhereCovers("mail.google.com", broad), true);
+  assert.equal(Sites.everywhereCovers("www.google.com", broad), false);
+  assert.equal(Sites.everywhereCovers("", broad), false);
+});
+
+test("Everywhere I type switched off: what it alone kept on is forgotten", async () => {
+  const realSet = globalThis.chrome.storage.local.set;
+  const keep = { "https://example.com/*": ["https://example.com/*"] };
+  globalThis.chrome.storage.local.set = async (obj) => void Object.assign(stored, obj);
+  try {
+    granted = ["https://example.com/*"];
+    stored = { siteScopes: { ...keep, "https://*/*": ["https://mail.google.com/*"] } };
+    await Sites.dropPicksWithoutEverywhere();
+    assert.deepEqual(stored.siteScopes, keep);
+    // While the broad grant stays, the picks stay.
+    granted = ["https://*/*"];
+    stored = { siteScopes: { "https://*/*": ["https://mail.google.com/*"] } };
+    await Sites.dropPicksWithoutEverywhere();
+    assert.deepEqual(stored.siteScopes, { "https://*/*": ["https://mail.google.com/*"] });
+  } finally {
+    globalThis.chrome.storage.local.set = realSet;
+    granted = [];
+    stored = {};
+  }
 });
 
 // The one-time offer to connect email and chat apps goes to new installs on the welcome page, and to people

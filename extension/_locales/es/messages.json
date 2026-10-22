@@ -32,6 +32,63 @@
   "type_slack_token": {
     "message": "Token de Slack"
   },
+  "type_gitlab_token": {
+    "message": "Token de GitLab"
+  },
+  "type_perplexity_key": {
+    "message": "Clave de API de Perplexity"
+  },
+  "type_digitalocean_token": {
+    "message": "Token de DigitalOcean"
+  },
+  "type_huggingface_token": {
+    "message": "Token de Hugging Face"
+  },
+  "type_heroku_token": {
+    "message": "Token de Heroku"
+  },
+  "type_onepassword_token": {
+    "message": "Token de 1Password"
+  },
+  "type_cloudflare_origin_ca_key": {
+    "message": "Clave de Cloudflare Origin CA"
+  },
+  "type_twilio_credentials": {
+    "message": "Token de Twilio"
+  },
+  "type_sentry_token": {
+    "message": "Token de autenticación de Sentry"
+  },
+  "type_grafana_token": {
+    "message": "Token de Grafana"
+  },
+  "type_vault_token": {
+    "message": "Token de HashiCorp Vault"
+  },
+  "type_replicate_token": {
+    "message": "Token de API de Replicate"
+  },
+  "type_linear_key": {
+    "message": "Clave de API de Linear"
+  },
+  "type_postman_key": {
+    "message": "Clave de API de Postman"
+  },
+  "type_shopify_token": {
+    "message": "Token de acceso de Shopify"
+  },
+  "type_atlassian_token": {
+    "message": "Token de API de Atlassian"
+  },
+  "type_netlify_token": {
+    "message": "Token de acceso de Netlify"
+  },
+  "type_pulumi_token": {
+    "message": "Token de acceso de Pulumi"
+  },
+  "type_databricks_token": {
+    "message": "Token de acceso de Databricks"
+  },
   "type_crypto_secret": {
     "message": "Semilla o clave de monedero de criptomonedas"
   },
@@ -567,7 +624,7 @@
     "message": "Clotr"
   },
   "popup_localOnly": {
-    "message": "Solo en este equipo"
+    "message": "Solo en este ordenador"
   },
   "popup_gotIt": {
     "message": "Entendido"
@@ -674,7 +731,7 @@
     "message": "Formación de la oficina"
   },
   "popup_managedDetail": {
-    "message": "Los ajustes de Clotr en este equipo los fija tu equipo de informática. Sigue revisando solo chats de IA, en este equipo, y no informa de nada a nadie."
+    "message": "Los ajustes de Clotr en este ordenador los fija tu equipo de informática. Sigue revisando solo chats de IA, en este ordenador, y no informa de nada a nadie."
   },
   "popup_settingsAreLocked": {
     "message": "Los ajustes están bloqueados"
@@ -782,7 +839,7 @@
     "message": "Historial"
   },
   "popup_clotrRemembersTheKindOf": {
-    "message": "Clotr recuerda qué tipo de dato era, el sitio, la hora y lo que elegiste, nunca el dato en sí. Se queda en este equipo durante un año, salvo que lo cambies en el informe completo."
+    "message": "Clotr recuerda qué tipo de dato era, el sitio, la hora y lo que elegiste, nunca el dato en sí. Se queda en este ordenador durante un año, salvo que lo cambies en el informe completo."
   },
   "popup_seeExactlyWhatSStored": {
     "message": "Ver exactamente qué se guarda"
@@ -1274,13 +1331,13 @@
     "message": "Solo donde tú eliges."
   },
   "vault_fact1": {
-    "message": "De serie, solo en chats de IA. En tu correo y tus apps de chat, solo en las que eliges, y tu navegador te pregunta antes. Nunca en un sitio que no elegiste, nunca en todas partes a la vez."
+    "message": "Tu navegador te pregunta antes por cada app de correo o chat que añades."
   },
   "vault_nothingLeavesThisComputer": {
-    "message": "Nada sale de este equipo."
+    "message": "Nada sale de este ordenador."
   },
   "vault_fact2": {
-    "message": "No hay servidores de Clotr y nunca se conecta a internet."
+    "message": "No hay servidores de Clotr."
   },
   "vault_itNeverSavesWhatYou": {
     "message": "Nunca guarda lo que escribes."
@@ -1319,7 +1376,7 @@
     "message": "Pega esta clave inventada o escribe un número de teléfono:"
   },
   "vault_thisPracticeBoxStaysOn": {
-    "message": "Este cuadro es solo para practicar y nada de lo que escribas aquí sale de tu equipo. En un chat de IA de verdad, el aviso aparece en la esquina superior derecha."
+    "message": "Este cuadro es solo para practicar y nada de lo que escribas aquí sale de tu ordenador. En un chat de IA de verdad, el aviso aparece en la esquina superior derecha."
   },
   "vault_optionalTellClotrWhatTo": {
     "message": "Dile a Clotr qué vigilar"
@@ -1385,7 +1442,7 @@
     "message": "Números de cuenta y de documentos"
   },
   "vault_idHint": {
-    "message": "Escribe tu número, como AB-123456: Clotr guarda su formato y una huella local del número (no el número en sí), así detecta cualquier documento con ese formato y sabe cuál es el tuyo. Los números cortos se pueden adivinar a partir de la huella si alguien tiene acceso completo a este equipo; para guardar solo el formato, escríbelo con # para una cifra y @ para una letra, como AB-######."
+    "message": "Escribe tu número, como AB-123456: Clotr guarda su formato y una huella local del número (no el número en sí), así detecta cualquier documento con ese formato y sabe cuál es el tuyo. Los números cortos se pueden adivinar a partir de la huella si alguien tiene acceso completo a este ordenador; para guardar solo el formato, escríbelo con # para una cifra y @ para una letra, como AB-######."
   },
   "vault_anythingElseToWatchFor": {
     "message": "Cualquier otra cosa que vigilar"
@@ -1551,7 +1608,7 @@
     "message": "No se encontró nada delicado."
   },
   "vt_welcome": {
-    "message": "Te damos la bienvenida a Clotr"
+    "message": "Clotr te da la bienvenida"
   },
   "vt_pinned": {
     "message": "✓ Clotr está fijado. Su contador aparece en el escudo de tu barra de herramientas."
@@ -1586,10 +1643,10 @@
     "message": "Tu informe de exposición"
   },
   "dash_onThisComputerOnly": {
-    "message": "Solo en este equipo"
+    "message": "Solo en este ordenador"
   },
   "dash_everythingClotrNoticedInYour": {
-    "message": "Todo lo que Clotr detectó en tus chats y tu correo, según sus propios registros en este equipo. Nunca guardó lo que escribiste, solo qué tipo de dato era, dónde, cuándo y qué elegiste."
+    "message": "Todo lo que Clotr detectó en tus chats y tu correo, según sus propios registros en este ordenador. Nunca guardó lo que escribiste, solo qué tipo de dato era, dónde, cuándo y qué elegiste."
   },
   "dash_soFar": {
     "message": "Hasta ahora"
@@ -1821,7 +1878,7 @@
     }
   },
   "db_card": {
-    "message": "Clotr detectó $p1$ camino de $p2$ (ocultados: $p3$; enviados de todos modos: $p4$). Comprobado en mi propio equipo; nunca salió nada de él.",
+    "message": "Clotr detectó $p1$ camino de $p2$ (ocultados: $p3$; enviados de todos modos: $p4$). Comprobado en mi propio ordenador; nunca salió nada de él.",
     "placeholders": {
       "p1": {
         "content": "$1"
@@ -1914,7 +1971,7 @@
     "message": "Qué guarda Clotr"
   },
   "st_onThisComputerOnly": {
-    "message": "Solo en este equipo"
+    "message": "Solo en este ordenador"
   },
   "st_everythingClotrKeepsIsBelow": {
     "message": "Todo lo que guarda Clotr está aquí abajo, leído directamente de su almacenamiento en este navegador. No se envía nada a ninguna parte. Nunca guarda lo que escribiste, solo qué tipo de dato encontró, dónde y cuándo, y qué elegiste."
@@ -2022,7 +2079,7 @@
     "message": "Los datos cortos se pueden adivinar a partir de sus huellas"
   },
   "st_t9": {
-    "message": "si alguien puede abrir el perfil de este navegador en este equipo. No hay tantos números de teléfono posibles, ni tantos lugares donde se pudo tomar una foto, así que una persona decidida podría probarlos todos. Las huellas protegen tus datos de miradas casuales, no de alguien con acceso total a tu equipo."
+    "message": "si alguien puede abrir el perfil de este navegador en este ordenador. No hay tantos números de teléfono posibles, ni tantos lugares donde se pudo tomar una foto, así que una persona decidida podría probarlos todos. Las huellas protegen tus datos de miradas casuales, no de alguien con acceso total a tu ordenador."
   },
   "st_aiSitesMayKeepYour": {
     "message": "Los sitios de IA pueden guardar en este navegador el mensaje que aún no has enviado."
@@ -2141,7 +2198,7 @@
     "message": "Última actualización"
   },
   "sj_pStorage": {
-    "message": "Guarda tus ajustes, las huellas de tu caja fuerte y el historial en este equipo."
+    "message": "Guarda tus ajustes, las huellas de tu caja fuerte y el historial en este ordenador."
   },
   "sj_pActiveTab": {
     "message": "Cuando haces clic en el botón de Clotr, le deja mirar esa pestaña para saber si es un chat de IA. Nada más."
@@ -2156,7 +2213,7 @@
     "message": "Actualiza el contador del día después de medianoche, borra el historial antiguo según lo previsto y termina a tiempo los 30 días de Tourniquet después de una estafa."
   },
   "sj_pOther": {
-    "message": "Lo usan funciones propias de Clotr en este equipo."
+    "message": "Lo usan funciones propias de Clotr en este ordenador."
   },
   "sj_aiSitesN": {
     "message": "$p1$ sitios de chat de IA",
@@ -2307,7 +2364,7 @@
     "message": "Solo en este navegador."
   },
   "vault_fact5": {
-    "message": "No ve las apps de IA de tu ordenador o móvil (como la app de ChatGPT) ni la IA integrada en otros programas, así que ten el mismo cuidado allí."
+    "message": "Ten el mismo cuidado con las apps de IA de tu móvil o integradas en otros programas."
   },
   "dash_everythingYouCouldBeLeaking": {
     "message": "Todo lo que podrías estar filtrando"
@@ -2859,7 +2916,7 @@
     "message": "Hola, soy Alex."
   },
   "vault_noteBody": {
-    "message": "Creé Clotr después de darme cuenta de cuánto les contaba a los chats de IA sin pensarlo dos veces. Enseguida quise una «armadura para todo el mundo» al estilo de Tony Stark, pero hecha con una computadora. Lee lo que escribes en un chat de IA, aquí mismo en tu computadora, y avisa antes de que salga algo privado. Es gratis, no te rastrea y nunca envía nada a ningún sitio."
+    "message": "Creé Clotr después de darme cuenta de cuánto les contaba a los chats de IA sin pensarlo dos veces. Enseguida quise una «armadura para todo el mundo» al estilo de Tony Stark, pero hecha con un ordenador. Lee lo que escribes en un chat de IA, aquí mismo en tu ordenador, y avisa antes de que salga algo privado. Es gratis, no te rastrea y nunca envía nada a ningún sitio."
   },
   "vault_noteWhy": {
     "message": "Mi objetivo principal es la privacidad frente a las grandes tecnológicas, para todo el mundo. Construirlo es parte de cómo estoy aprendiendo ingeniería de software en general y cómo convierto lo que aprendo en la universidad en algo que la gente pueda usar de verdad."
@@ -2922,7 +2979,7 @@
     "message": "Política de la organización aplicada aquí"
   },
   "pa_none": {
-    "message": "En este equipo no se aplica ninguna política de la organización."
+    "message": "En este ordenador no se aplica ninguna política de la organización."
   },
   "pa_organization": {
     "message": "Organización"
@@ -2937,7 +2994,7 @@
     "message": "Huella de la política"
   },
   "pa_fingerprintHint": {
-    "message": "No es un secreto: es igual en todos los equipos que llevan esta misma política, así que puedes compararla con la de un equipo de prueba. Compárala, no te limites a leerla en voz alta."
+    "message": "No es un secreto: es igual en todos los ordenadores que llevan esta misma política, así que puedes compararla con la de un ordenador de prueba. Compárala, no te limites a leerla en voz alta."
   },
   "pa_whatsSet": {
     "message": "Qué está fijado"
@@ -2946,7 +3003,7 @@
     "message": "Mostrar las palabras vigiladas en pantalla"
   },
   "pa_scope": {
-    "message": "Clotr revisa los chats de IA del navegador solo en este equipo. Esta página muestra la política configurada para este navegador; no envía un informe a tu organización. Cuando un tipo está en «Preguntar antes de enviar», la persona puede seguir eligiendo enviarlo. Las apps fuera del navegador no están cubiertas."
+    "message": "Clotr revisa los chats de IA del navegador solo en este ordenador. Esta página muestra la política configurada para este navegador; no envía un informe a tu organización. Cuando un tipo está en «Preguntar antes de enviar», la persona puede seguir eligiendo enviarlo. Las apps fuera del navegador no están cubiertas."
   },
   "pa_writtenPolicy": {
     "message": "Política escrita:"
@@ -3002,7 +3059,7 @@
     "message": "Tipos que añadió tu organización"
   },
   "pa_kindsLead": {
-    "message": "Las etiquetas de los tipos aparecen en los avisos y en esta página. Las palabras, los formatos y las etiquetas configurados se envían mediante la política de administración del navegador o del dispositivo y pueden seguir siendo legibles para quienes administran la política o en los equipos administrados. Clotr crea huellas locales de las palabras antes de compararlas; esto no cifra los valores originales de la política. Usa etiquetas generales, no nombres reales de clientes. El control «Mostrar palabras vigiladas» de abajo puede mostrar las palabras configuradas en este equipo."
+    "message": "Las etiquetas de los tipos aparecen en los avisos y en esta página. Las palabras, los formatos y las etiquetas configurados se envían mediante la política de administración del navegador o del dispositivo y pueden seguir siendo legibles para quienes administran la política o en los ordenadores administrados. Clotr crea huellas locales de las palabras antes de compararlas; esto no cifra los valores originales de la política. Usa etiquetas generales, no nombres reales de clientes. El control «Mostrar palabras vigiladas» de abajo puede mostrar las palabras configuradas en este equipo."
   },
   "pa_kindsKind": {
     "message": "Tipo"
@@ -3174,6 +3231,20 @@
   },
   "pp_kindChat": {
     "message": "App de chat"
+  },
+  "pp_kindThroughEverywhere": {
+    "message": "$p1$, a través de En todas partes donde escribo",
+    "placeholders": {
+      "p1": {
+        "content": "$1"
+      }
+    }
+  },
+  "pp_throughEverywhere": {
+    "message": "A través de En todas partes donde escribo"
+  },
+  "pp_keptOnByEverywhere": {
+    "message": "En todas partes donde escribo mantiene Clotr activo aquí. Apágalo primero para elegir los sitios uno a uno."
   },
   "popup_everydaySites": {
     "message": "También en tu correo y tus apps de chat"
@@ -4405,7 +4476,7 @@
     "message": "En el móvil, Clotr está en el menú del navegador: toca ⋮, luego Extensiones (o Complementos) y después Clotr, para ver su contador y abrir su panel."
   },
   "vault_practicePhone": {
-    "message": "Este cuadro es solo para practicar y nada de lo que escribas aquí sale de tu equipo. En un chat de IA de verdad, el aviso aparece arriba de la pantalla y sigue a la vista mientras te desplazas."
+    "message": "Este cuadro es solo para practicar y nada de lo que escribas aquí sale de tu móvil. En un chat de IA de verdad, el aviso aparece arriba de la pantalla y sigue a la vista mientras te desplazas."
   },
   "cmdTitle": {
     "message": "⚠️ Copiaste un comando"
@@ -5194,10 +5265,10 @@
     "message": "Empezar de nuevo"
   },
   "tw_wordsNone": {
-    "message": "Tu oficina aún no ha añadido palabras personalizadas. Un administrador puede añadir nombres de clientes o formatos de números de expediente mediante la política de administración del navegador o del dispositivo. Esos valores se envían a los equipos administrados y pueden seguir siendo legibles para quienes administran la política o en esos equipos. Clotr crea huellas locales de las palabras antes de compararlas, pero esto no cifra ni oculta los valores originales de la política."
+    "message": "Tu oficina aún no ha añadido palabras personalizadas. Un administrador puede añadir nombres de clientes o formatos de números de expediente mediante la política de administración del navegador o del dispositivo. Esos valores se envían a los ordenadores administrados y pueden seguir siendo legibles para quienes administran la política o en esos equipos. Clotr crea huellas locales de las palabras antes de compararlas, pero esto no cifra ni oculta los valores originales de la política."
   },
   "tw_wordsSome": {
-    "message": "Tu oficina ha configurado tipos propios. Aquí tienes un ejemplo inventado, nunca los valores reales: si un mensaje coincidiera con una palabra o formato configurado, Clotr podría detectarlo. Las etiquetas de los tipos aparecen en este ejercicio; las palabras y los formatos no. Las palabras, los formatos y las etiquetas viajan en la política de administración y pueden seguir siendo legibles para quienes la administran o en los equipos administrados. Clotr crea huellas locales de las palabras, pero no cifra ni oculta los valores originales de la política."
+    "message": "Tu oficina ha configurado tipos propios. Aquí tienes un ejemplo inventado, nunca los valores reales: si un mensaje coincidiera con una palabra o formato configurado, Clotr podría detectarlo. Las etiquetas de los tipos aparecen en este ejercicio; las palabras y los formatos no. Las palabras, los formatos y las etiquetas viajan en la política de administración y pueden seguir siendo legibles para quienes la administran o en los ordenadores administrados. Clotr crea huellas locales de las palabras, pero no cifra ni oculta los valores originales de la política."
   },
   "tw_leakDone": {
     "message": "Ver cómo te fue"
@@ -5969,5 +6040,16 @@
   },
   "tr_phoneLimitText": {
     "message": "Llega a cualquier app del teléfono, al mismo dominio de una red publicitaria que bloquearía un bloqueador de navegador desde una sola pestaña. Sigue sin poder ver el registro propio de una web, ni el cruce entre cuenta y wifi que conecta tus dispositivos, el mismo límite que tocaron las secciones de arriba. Un iPhone puede hacer algo parecido con un perfil de configuración para DNS cifrado, que lleva más pasos que escribir un solo nombre de host en Android."
-  }
+  },
+  "oc_title": { "message": "Un solo Clotr" },
+  "oc_notConnected": { "message": "No conectado a Clotr para Windows" },
+  "oc_notInstalled": { "message": "Clotr para Windows aún no está instalado" },
+  "oc_notRunning": { "message": "Abre Clotr para Windows para conectar tu navegador." },
+  "oc_connect": { "message": "Conectar con Clotr para Windows" },
+  "oc_connectBrowser": { "message": "Conectar con Clotr para tu navegador" },
+  "oc_consent": { "message": "Un cambio en uno se refleja en el otro. Nada de lo que encuentra sale de este ordenador, de cualquier forma." },
+  "oc_waiting": { "message": "Esperando tu confirmación en Clotr para Windows…" },
+  "oc_connected": { "message": "Conectado a Clotr para Windows" },
+  "oc_disconnect": { "message": "Desconectar" },
+  "oc_disconnectSub": { "message": "Los ajustes, tu lista y tu historial se quedan como están en cada lado." }
 }

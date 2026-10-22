@@ -21,7 +21,7 @@ changes. Bigger changes of direction show up in [docs/plans.md](docs/plans.md) f
 | Role | What it involves | Who |
 | --- | --- | --- |
 | Lead | Sets the direction and keeps the plans current. Reviews and merges pull requests. Cuts releases and sends them to the Chrome, Edge and Firefox stores. Answers issues and security reports. Holds the GitHub organization, the store accounts and the clotr.app domain. | Alex (BilliamBaSH) |
-| Contributor | Opens issues and pull requests, follows CONTRIBUTING.md and agrees to the [Contributor License Agreement](CLA.md) once, before a first pull request is merged. | Anyone |
+| Contributor | Opens issues and pull requests, follows CONTRIBUTING.md and signs off each commit, which certifies the [Developer Certificate of Origin](https://developercertificate.org/). Keeps the copyright to their work. | Anyone |
 | Security reporter | Reports a problem privately through SECURITY.md and gets credited in the advisory, unless they'd rather not be. | Anyone |
 
 Dependabot opens the monthly dependency updates, and I review and merge those by hand like any other pull request.
@@ -34,3 +34,6 @@ needing anything from me. The store accounts and the domain are still in my name
 
 Whatever happens to me, the code stays open. It's under the AGPL, anyone can fork it, and `npm run package` rebuilds
 any release byte for byte from its tag, so a fork can prove it ships the same code.
+
+If the project goes quiet, section 7 of [COMMITMENTS.md](COMMITMENTS.md) says when it counts as inactive and who may
+carry it on.

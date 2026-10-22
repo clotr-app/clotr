@@ -28,6 +28,7 @@ const os = require("node:os");
 
 // Waits without returning to the event loop, so synchronous tests can use it.
 const pause = (ms) => Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms);
+const scaledBudget = (budget) => (process.env.CLOTR_TIMING_RELAXED === "1" ? budget * 2 : budget);
 
 // check() measures and returns nothing on a pass, or a message describing what was too slow. On success,
 // retrySlow returns how many tries it took. It only fails, with the last message, once every try has missed.
@@ -149,20 +150,21 @@ const referenceFor = (ms) => timeOnce(reference, Math.min(10, Math.max(1, Math.r
 function withBudget(t, fn, runs, times = 1) {
   t.allowed = undefined;
   t.over = (budget) => {
-    t.allowed = budget;
-    if (t.wall < budget || t.cpu < budget) return false;
+    const allowed = scaledBudget(budget);
+    t.allowed = allowed;
+    if (t.wall < allowed || t.cpu < allowed) return false;
     const again = { wall: Infinity, cpu: Infinity };
     let ref = Infinity;
     prioritized(() => {
       for (let r = 0; r < runs; r++) {
-        ref = Math.min(ref, referenceFor(budget * times));
+        ref = Math.min(ref, referenceFor(allowed * times));
         keepBest(again, timeOnce(fn, times));
       }
-      ref = Math.min(ref, referenceFor(budget * times));
+      ref = Math.min(ref, referenceFor(allowed * times));
     });
     t.wall = again.wall;
     t.cpu = again.cpu;
-    t.allowed = budget * Math.max(1, ref / REFERENCE_MS);
+    t.allowed = allowed * Math.max(1, ref / REFERENCE_MS);
     return t.wall >= t.allowed && t.cpu >= t.allowed;
   };
   return t;
@@ -183,16 +185,17 @@ function bestOfBoth(fn, runs = 3) {
 async function timedAsync(fn) {
   const t = await prioritized(() => timeOnceAsync(fn));
   t.overAsync = async (budget) => {
-    t.allowed = budget;
-    if (t.wall < budget || t.cpu < budget) return false;
+    const allowed = scaledBudget(budget);
+    t.allowed = allowed;
+    if (t.wall < allowed || t.cpu < allowed) return false;
     const again = await prioritized(async () => {
-      const before = referenceFor(budget);
+      const before = referenceFor(allowed);
       const timed = await timeOnceAsync(fn);
-      return { ...timed, ref: Math.min(before, referenceFor(budget)) };
+      return { ...timed, ref: Math.min(before, referenceFor(allowed)) };
     });
     t.wall = again.wall;
     t.cpu = again.cpu;
-    t.allowed = budget * Math.max(1, again.ref / REFERENCE_MS);
+    t.allowed = allowed * Math.max(1, again.ref / REFERENCE_MS);
     return t.wall >= t.allowed && t.cpu >= t.allowed;
   };
   return t;

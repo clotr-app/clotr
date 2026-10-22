@@ -1,0 +1,32 @@
+{
+  "name": "clotr",
+  "displayName": "%displayName%",
+  "description": "%description%",
+  "version": "0.1.0",
+  "publisher": "clotr-app",
+  "repository": { "type": "git", "url": "https://github.com/clotr-app/clotr" },
+  "engines": { "vscode": "^1.100.0" },
+  "license": "AGPL-3.0-or-later",
+  "main": "./extension.js",
+  "capabilities": {
+    "untrustedWorkspaces": {
+      "supported": "limited",
+      "description": "%untrustedWorkspaces%",
+      "restrictedConfigurations": ["clotr.enabled", "clotr.minSeverity", "clotr.personalDetailsInFiles", "clotr.skipList"]
+    }
+  },
+  "activationEvents": ["onStartupFinished", "onCommand:clotr.checkClipboard", "onCommand:clotr.checkSelection", "onCommand:clotr.setupGuard"],
+  "categories": ["Other"],
+  "contributes": {
+    "commands": [{"command":"clotr.checkClipboard","title":"%checkClipboard%"},{"command":"clotr.checkSelection","title":"%checkSelection%"},{"command":"clotr.setupGuard","title":"%setupGuard%"}],
+    "views": {"explorer": [{"id":"clotr.findings","name":"%findingsView%"}]},
+    "menus": {"editor/context":[{"command":"clotr.checkSelection","group":"navigation@99"}]},
+    "configuration": {"title":"Clotr","properties": {
+      "clotr.enabled":{"type":"boolean","default":true,"description":"%enabled%"},
+      "clotr.minSeverity":{"type":"string","enum":["low","medium","high"],"default":"medium","description":"%minSeverity%"},
+      "clotr.personalDetailsInFiles":{"type":"boolean","default":false,"description":"%personalDetailsInFiles%"},
+      "clotr.skipList":{"type":"array","items":{"type":"string"},"default":["**/.git/**","**/.svn/**","**/.hg/**","**/node_modules/**","**/bower_components/**","**/.next/**","**/.nuxt/**","**/.svelte-kit/**","**/.angular/**","**/.turbo/**","**/.parcel-cache/**","**/.yarn/**","**/.pnpm-store/**","**/__pycache__/**","**/site-packages/**","**/dist-packages/**","**/.pytest_cache/**","**/.mypy_cache/**","**/.ruff_cache/**","**/.tox/**","**/.nox/**","**/.eggs/**","**/.dart_tool/**","**/.pub-cache/**","**/.stack-work/**","**/elm-stuff/**","**/.terraform/**","**/DerivedData/**","**/.cache/**","**/.vs/**","**/*.egg-info/**","**/*.dist-info/**","**/package-lock.json","**/npm-shrinkwrap.json","**/pnpm-lock.yaml","**/yarn.lock","**/deno.lock","**/Pipfile.lock","**/poetry.lock","**/packages.lock.json","**/*.min.js","**/*.min.mjs","**/.env.example","**/.env.sample","**/.env.template","**/.env.dist"],"description":"%skipList%"}
+    }}
+  },
+  "scripts": {"vscode:prepublish":"node build.js"}
+}
