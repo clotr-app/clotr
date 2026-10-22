@@ -89,12 +89,23 @@ test("JetBrains status widget has no tooltip that promises to open settings", ()
   assert.doesNotMatch(words, /^status\.tooltip=/m);
 });
 
-// The repo's own workflow, and in the fuller checkout this test came from, the public repo's copy beside it too.
-test("each JetBrains CI job checks the committed Gradle wrapper before Gradle runs", () => {
-  const workflows = [".github", path.join("public", ".github")]
-    .map((dir) => path.join(__dirname, "..", dir, "workflows", "jetbrains.yml"))
-    .filter((file) => fs.existsSync(file));
-  assert.ok(workflows.length > 0, "no JetBrains workflow");
+// The repo's own workflows, and in the fuller checkout this test came from, the public repo's copies beside them too.
+const workflowFiles = () =>
+  [".github", path.join("public", ".github")]
+    .map((dir) => path.join(__dirname, "..", dir, "workflows"))
+    .filter((dir) => fs.existsSync(dir))
+    .flatMap((dir) => fs.readdirSync(dir).map((name) => path.join(dir, name)))
+    .filter((file) => /\.ya?ml$/.test(file));
+
+// Every workflow that runs the plugin's Gradle wrapper: the JetBrains build, and CodeQL's build of its Kotlin.
+test("each CI job that builds the plugin checks the committed Gradle wrapper before Gradle runs", () => {
+  const workflows = workflowFiles().filter((file) =>
+    /working-directory: apps\/jetbrains/.test(fs.readFileSync(file, "utf8")),
+  );
+  assert.ok(
+    workflows.some((file) => path.basename(file) === "jetbrains.yml"),
+    "no JetBrains workflow",
+  );
   for (const file of workflows) {
     const workflow = fs.readFileSync(file, "utf8");
     const validation = workflow.search(/uses: gradle\/actions\/wrapper-validation@[0-9a-f]{40}/);
@@ -102,6 +113,35 @@ test("each JetBrains CI job checks the committed Gradle wrapper before Gradle ru
     assert.ok(validation < workflow.indexOf("gradle/actions/setup-gradle@"), `${file}: validation before setup-gradle`);
     assert.ok(validation < workflow.indexOf("./gradlew"), `${file}: validation comes before the wrapper runs`);
     assert.match(workflow, /persist-credentials: false/);
+  }
+});
+
+// CodeQL reads Kotlin only while it compiles. Its default setup scanned the plugin without a build and found none of
+// it, so the public repo's CodeQL workflow compiles the main and test sources itself, with nothing cached.
+test("CodeQL compiles the plugin's Kotlin itself instead of scanning it without a build", () => {
+  const workflows = workflowFiles().filter((file) => path.basename(file) === "codeql.yml");
+  assert.ok(workflows.length > 0, "no CodeQL workflow");
+  for (const file of workflows) {
+    const workflow = fs.readFileSync(file, "utf8").replace(/\r\n/g, "\n");
+    for (const language of ["actions", "javascript-typescript", "java-kotlin"]) {
+      assert.match(workflow, new RegExp(`- language: ${language}\\n`), `${file}: ${language} isn't analyzed`);
+    }
+    assert.match(workflow, /- language: java-kotlin\n\s+build-mode: manual\n/, `${file}: Kotlin needs a manual build`);
+    const build = workflow.match(/working-directory: apps\/jetbrains\n[\s\S]*?\n\s+run: >-\n((?: {10}.*\n)+)/);
+    assert.ok(build, `${file}: no build of apps/jetbrains`);
+    const command = build[1].replace(/\s+/g, " ").trim();
+    for (const part of [
+      "--no-daemon",
+      "--no-configuration-cache",
+      "--no-build-cache",
+      "compileKotlin",
+      "compileTestKotlin",
+    ]) {
+      assert.ok(command.split(" ").includes(part), `${file}: the Kotlin build is missing ${part}`);
+    }
+    const init = workflow.indexOf("github/codeql-action/init@");
+    assert.ok(init > 0 && init < workflow.indexOf("./gradlew"), `${file}: Gradle runs before CodeQL is watching`);
+    assert.ok(workflow.indexOf("./gradlew") < workflow.indexOf("github/codeql-action/analyze@"), `${file}: order`);
   }
 });
 

@@ -2098,7 +2098,10 @@ module.exports = async function (env) {
               /^[0-9a-f]{16}$/.test(mentions[0].fp),
             `mentions: ${JSON.stringify(mentions)}`,
           );
-          expect(!JSON.stringify(mentions).includes("555"), "the number itself was stored");
+          // The record's time and fingerprint are digits and hex that can hold "555" by chance (one CI run did), so
+          // the number is looked for in everything else the record holds.
+          const rest = JSON.stringify(mentions, (key, value) => (key === "t" || key === "fp" ? undefined : value));
+          expect(!/555|0147/.test(rest), `the number itself was stored: ${rest}`);
           expect(events.length === 0, `a reply mention went into history: ${JSON.stringify(events)}`);
         } finally {
           await store.set(ctx, { vault: [], mentions: [] });
