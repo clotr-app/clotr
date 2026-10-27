@@ -56,14 +56,14 @@ The Kotlin tests run against IntelliJ IDEA 2025.3.3 with `npm run jetbrains:test
 
 | Feature | Status | Tests |
 | --- | --- | --- |
-| Warnings in open files, with their quick fixes and the personal details setting | Preview | [ClotrInspectionTest.kt][inspection-tests] |
+| Warnings in open files, with their quick fixes and the personal details setting | Stable | [ClotrInspectionTest.kt][inspection-tests] |
 | Secret files stay silent, with one note when Git doesn't ignore one | Stable | [ClotrInspectionTest.kt][inspection-tests], [jetbrains-rules.test.js][rules-tests] |
 | Check my clipboard and Check selection, with a cleaned copy | Stable | [ClotrInspectionTest.kt][inspection-tests] |
 | The salt and your choices kept on this computer | Stable | [ClotrLocalStateTest.kt][state-tests], [jetbrains-rules.test.js][rules-tests] |
 | Setting up Clotr Guard | Stable | [GuardSetupTest.kt][setup-tests], [jetbrains-rules.test.js][rules-tests] |
 | No network calls and no AI runtime | Stable | [jetbrains-rules.test.js][rules-tests] |
 
-Warnings in open files are a preview until they've been tried in a full IDE as well as in the platform tests.
+Warnings in open files have been tried in a full IDE (PyCharm 2026.2.3) as well as in the platform tests.
 
 [inspection-tests]: https://github.com/clotr-app/clotr/blob/main/apps/jetbrains/src/test/kotlin/app/clotr/jetbrains/ClotrInspectionTest.kt
 [state-tests]: https://github.com/clotr-app/clotr/blob/main/apps/jetbrains/src/test/kotlin/app/clotr/jetbrains/ClotrLocalStateTest.kt

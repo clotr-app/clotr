@@ -1,6 +1,6 @@
 [package]
 name = "clotr-desktop"
-version = "1.0.2"
+version = "1.6.0"
 description = "Clotr for Windows: a warning before you paste personal details into an AI app"
 license = "AGPL-3.0-or-later"
 edition = "2021"
@@ -40,7 +40,7 @@ required-features = ["dk-test-app"]
 
 [features]
 default = []
-# Windows 1.0.2 keeps these new features out of the Store build; adding either name to `default` enables it.
+# Windows 1.6.0 keeps these new features out of the Store build; adding either name to `default` enables it.
 one-clotr = []
 scan-times = []
 # The DK checks only: the stand-in AI app joins the list, and the data folder can be a test folder.

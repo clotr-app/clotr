@@ -6,7 +6,7 @@
   xmlns:desktop="http://schemas.microsoft.com/appx/manifest/desktop/windows10"
   IgnorableNamespaces="uap rescap desktop">
 
-  <Identity Name="Clotr.Clotr" Publisher="CN=7E0B146B-B666-4866-B825-C1312B3CCEE9" Version="1.0.2.0" ProcessorArchitecture="x64" />
+  <Identity Name="Clotr.Clotr" Publisher="CN=7E0B146B-B666-4866-B825-C1312B3CCEE9" Version="1.6.0.0" ProcessorArchitecture="x64" />
 
   <Properties>
     <DisplayName>Clotr</DisplayName>

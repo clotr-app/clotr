@@ -1,6 +1,7 @@
 package app.clotr.jetbrains
 
 import com.intellij.testFramework.fixtures.BasePlatformTestCase
+import java.nio.file.Files
 import java.nio.file.Path
 import java.security.MessageDigest
 import java.util.Base64
@@ -51,6 +52,9 @@ class ClotrEngineTest : BasePlatformTestCase() {
 
     fun testDetectionMatchesTheExtensionAcrossSharedDetectionCorpora() {
         val root = Path.of(System.getProperty("clotr.repoRoot"))
+        // The shared corpus comes from tools/engine-parity.js, which stays private with the corpus (like Guard's
+        // parity test), so the public repo's CI has nothing to compare against.
+        if (!Files.exists(root.resolve("tools/engine-parity.js"))) return
         val reference = System.getProperty("clotr.engineParityReference")
         val process = ProcessBuilder("node", reference, root.toString()).start()
         val rows = process.inputStream.bufferedReader().use { it.readLines() }

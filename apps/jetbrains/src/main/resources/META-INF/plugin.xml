@@ -9,7 +9,13 @@
 <p>The plugin runs in the IDE and makes no network calls. It reads .clotrignore at the repository root. Secret files stay silent in the editor. If Git does not ignore a secret file, Clotr shows one project note with an option to add it to .gitignore.</p>
 <p>Free and open source under AGPL-3.0-or-later. <a href="https://github.com/clotr-app/clotr">Source and issues</a>.</p>
 ]]></description>
-    <change-notes><![CDATA[<p>Updated IntelliJ API calls and clarified which file checks start on by default. Guard setup remains a separate, manual step.</p>]]></change-notes>
+    <change-notes><![CDATA[<ul>
+<li>Clotr now recognizes access tokens for Open VSX, RubyGems and JetBrains Marketplace.</li>
+<li>Changing Clotr's settings rechecks open files right away, so their warnings and the status bar count follow your choice.</li>
+<li><b>Add to .gitignore</b> now handles special characters in file paths, and won't write through a link or to anything that isn't a normal file.</li>
+<li>A large or unusual <code>.gitignore</code> can no longer slow the editor down.</li>
+<li>Credential checks start on and personal-detail checks start off. Guard setup is still a separate step you choose.</li>
+</ul>]]></change-notes>
     <depends>com.intellij.modules.platform</depends>
     <resource-bundle>messages.ClotrBundle</resource-bundle>
     <extensions defaultExtensionNs="com.intellij">

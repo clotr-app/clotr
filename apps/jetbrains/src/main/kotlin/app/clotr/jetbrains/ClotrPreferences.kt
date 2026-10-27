@@ -1,5 +1,6 @@
 package app.clotr.jetbrains
 
+import com.intellij.codeInsight.daemon.DaemonCodeAnalyzer
 import com.intellij.openapi.application.ApplicationManager
 import com.intellij.openapi.components.PersistentStateComponent
 import com.intellij.openapi.components.Service
@@ -7,6 +8,7 @@ import com.intellij.openapi.components.State
 import com.intellij.openapi.components.Storage
 import com.intellij.openapi.fileChooser.FileChooserDescriptorFactory
 import com.intellij.openapi.options.Configurable
+import com.intellij.openapi.project.ProjectManager
 import com.intellij.openapi.ui.TextFieldWithBrowseButton
 import com.intellij.openapi.util.Disposer
 import com.intellij.ui.components.JBCheckBox
@@ -48,7 +50,7 @@ class ClotrPreferences : PersistentStateComponent<ClotrPreferences> {
 class ClotrSettingsConfigurable : Configurable {
     private var panel: JPanel? = null
     private lateinit var enabled: JBCheckBox
-    private lateinit var personalDetails: JBCheckBox
+    internal lateinit var personalDetails: JBCheckBox // internal for ClotrInspectionTest
     private lateinit var severity: JComboBox<String>
     private lateinit var skipList: JBTextArea
     private lateinit var guardPath: TextFieldWithBrowseButton
@@ -88,11 +90,21 @@ class ClotrSettingsConfigurable : Configurable {
     }
     override fun apply() {
         val p = ClotrPreferences.getInstance()
+        val before = listOf(p.enabled, p.personalDetailsInFiles, p.minimumSeverity, p.skipPatterns.toList())
         p.enabled = enabled.isSelected
         p.personalDetailsInFiles = personalDetails.isSelected
         p.minimumSeverity = severity.selectedItem as String
         p.skipPatterns = skipList.text.lines().map(String::trim).filter(String::isNotEmpty).toMutableList()
         ClotrLocalState.getInstance().guardCliPath = guardPath.text
+        if (before != listOf(p.enabled, p.personalDetailsInFiles, p.minimumSeverity, p.skipPatterns.toList())) recheckOpenFiles()
+    }
+
+    // Open editors keep their highlighting until the daemon runs again, so a change that affects what the inspection
+    // shows restarts it in every open project. The rerun also updates the status bar count.
+    private fun recheckOpenFiles() {
+        for (project in ProjectManager.getInstance().openProjects) {
+            if (!project.isDisposed) DaemonCodeAnalyzer.getInstance(project).restart("Clotr settings changed")
+        }
     }
     override fun reset() {
         val p = ClotrPreferences.getInstance()

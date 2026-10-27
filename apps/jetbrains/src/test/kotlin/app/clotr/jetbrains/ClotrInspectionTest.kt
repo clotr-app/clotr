@@ -1,5 +1,7 @@
 package app.clotr.jetbrains
 
+import com.intellij.codeInsight.daemon.DaemonCodeAnalyzer
+import com.intellij.codeInsight.daemon.impl.DaemonCodeAnalyzerImpl
 import com.intellij.lang.annotation.HighlightSeverity
 import com.intellij.codeInspection.ProblemHighlightType
 import com.intellij.testFramework.fixtures.BasePlatformTestCase
@@ -61,6 +63,29 @@ class ClotrInspectionTest : BasePlatformTestCase() {
         assertTrue(fixes.any { it.text == "Turn off for this file" })
         myFixture.launchAction(fixes.first { it.text == "Ignore this one" })
         assertEquals(0, myFixture.doHighlighting().count { it.description?.contains("AWS Access Key") == true })
+    }
+
+    // Found in a real IDE (27 Oct 2026): unticking a setting left the open editor's warnings until the tab was reopened.
+    fun testSavingChangedSettingsRechecksOpenFiles() {
+        myFixture.configureByText("Sample.kt", "val key = \"AKIA4HPQ7XZ2R6TWLJ3N\"")
+        myFixture.doHighlighting()
+        val daemon = DaemonCodeAnalyzer.getInstance(project) as DaemonCodeAnalyzerImpl
+        assertTrue("highlighting should be finished before the change", daemon.isAllAnalysisFinished(myFixture.file))
+
+        val prefs = ClotrPreferences.getInstance()
+        val settings = ClotrSettingsConfigurable()
+        try {
+            settings.createComponent()
+            settings.apply()
+            assertTrue("saving unchanged settings shouldn't recheck", daemon.isAllAnalysisFinished(myFixture.file))
+
+            settings.personalDetails.isSelected = !prefs.personalDetailsInFiles
+            settings.apply()
+            assertFalse("saving a changed setting should recheck open files", daemon.isAllAnalysisFinished(myFixture.file))
+        } finally {
+            prefs.personalDetailsInFiles = false
+            settings.disposeUIResources()
+        }
     }
 
     fun testSecretEnvFileStaysSilentEvenWithAKey() {

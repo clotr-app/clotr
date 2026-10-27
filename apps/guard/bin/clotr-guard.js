@@ -2328,7 +2328,7 @@ function clineHookSource(
     ? `const first=spawnSync(${JSON.stringify(metadata.backup)},{input,encoding:"utf8",timeout:${HOOK_TIMEOUT_SECONDS * 1000},maxBuffer:65536});if(first.error||first.status===null){process.stdout.write(bad);proceed=false}else if(first.status!==0){process.exitCode=first.status;proceed=false}else{try{if(JSON.parse(first.stdout||"{}").cancel){if(first.stdout)process.stdout.write(first.stdout);proceed=false}}catch{}}`
     : "";
   const limitBinding = includeLimitMessage ? `,limit=${JSON.stringify(tooLarge)}` : "";
-  const limitOutput = includeLimitMessage ? "JSON.stringify(limit)" : "bad";
+  const limitOutput = includeLimitMessage ? "limit" : "bad";
   const source = `const fs=require("node:fs"),{spawnSync}=require("node:child_process"),bad=${JSON.stringify(failure)}${limitBinding};const chunks=[];const buffer=Buffer.alloc(65536);let size=0,tooLarge=false;for(;;){const length=Math.min(buffer.length,${maxBytes + 1}-size);if(length<=0){tooLarge=true;break}const count=fs.readSync(0,buffer,0,length,null);if(!count)break;size+=count;chunks.push(Buffer.from(buffer.subarray(0,count)));if(size>${maxBytes}){tooLarge=true;break}}if(tooLarge)process.stdout.write(${limitOutput});else{const input=Buffer.concat(chunks,size).toString("utf8");let proceed=true;${previousHook}if(proceed){const out=spawnSync(${JSON.stringify(metadata.node)},${JSON.stringify(args)},{input,encoding:"utf8",timeout:${HOOK_TIMEOUT_SECONDS * 1000},maxBuffer:65536});if(out.error||out.status!==0)process.stdout.write(bad);else{if(out.stdout)process.stdout.write(out.stdout);if(out.stderr)process.stderr.write(out.stderr)}}}`;
   return `#!/bin/sh\n# clotr-guard-hook:v1:${encodedMetadata}\nexec ${shellQuote(metadata.node)} -e ${shellQuote(source)}\n`;
 }

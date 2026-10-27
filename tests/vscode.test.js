@@ -1980,22 +1980,30 @@ test("clipboard result explains that findings below the selected severity pass",
   assert.match(fake.vscode.window.messages[0], /at your selected level or higher/);
 });
 
-test("Guard command offers every tool and Git, then previews and applies through the Guard CLI", async () => {
+test("Guard command offers every supported tool and Git, then previews and applies through the Guard CLI", async () => {
   const workspace = fs.mkdtempSync(path.join(os.tmpdir(), "clotr-vscode-guard-"));
   assert.equal(require("node:child_process").spawnSync("git", ["init"], { cwd: workspace }).status, 0);
   const fake = fakeVscode([], {}, {}, workspace);
+  const hostPlatform = process.platform;
+  fake.context.clotrPlatform = hostPlatform;
   fs.mkdirSync(path.join(fake.context.clotrGuardHome, ".codex"), { recursive: true });
   const selection = (labels) => [
     (items) => items.find((item) => item.remove === false),
     (items) => {
+      const expectedTools = ["claude", "cursor", "gemini", "codex", "windsurf"];
+      const expectedLabels = ["Claude Code", "Cursor", "Gemini CLI", "Codex CLI", "Windsurf"];
+      if (hostPlatform !== "win32") {
+        expectedTools.push("cline");
+        expectedLabels.push("Cline");
+      }
       assert.deepEqual(
         items.filter((item) => item.tool !== "git").map((item) => item.tool),
-        guard.TOOL_NAMES.filter((tool) => tool !== "cline"),
+        expectedTools,
       );
       // People see each assistant's own name; the Guard CLI still gets its short tool name.
       assert.deepEqual(
         items.map((item) => item.label),
-        ["Claude Code", "Cursor", "Gemini CLI", "Codex CLI", "Windsurf", "Git"],
+        [...expectedLabels, "Git"],
       );
       assert.ok(items.some((item) => item.tool === "git"));
       return items.filter((item) => labels.includes(item.tool));
@@ -2152,9 +2160,10 @@ test("Guard previews its target file and every hook before it can write them", a
   }
 });
 
-test("the VS Code Guard picker hides Cline while Guard keeps its implementation", async () => {
+test("the VS Code Guard picker hides Cline on Windows while Guard keeps its implementation", async () => {
   const workspace = fs.mkdtempSync(path.join(os.tmpdir(), "clotr-vscode-cline-"));
   const fake = fakeVscode([], {}, {}, workspace);
+  fake.context.clotrPlatform = "win32";
   let labels;
   await activateExtension(fake);
   fake.setPicks([
