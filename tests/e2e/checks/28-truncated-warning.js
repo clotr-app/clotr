@@ -81,7 +81,7 @@ module.exports = async function (env) {
         expect(dialog.text.includes(LINE), `dialog didn't say so: ${dialog.text}`);
         const problems = await auditBoth(page, "CLOTR-GUARD");
         expect(!problems.length, problems.slice(0, 8).join(" | "));
-        await clickDialogButton(page, "Leave it in and send");
+        await clickDialogButton(page, "Leave it and send");
       }),
   );
 

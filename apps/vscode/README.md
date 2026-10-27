@@ -1,62 +1,35 @@
-# Clotr for VS Code
+# Clotr for VS Code-compatible editors
 
-Version 0.1.0.
+Local warnings for credentials in open files that AI coding assistants can read.
 
-Clotr checks ordinary open files for credentials as you edit. It shows a masked finding because AI assistants in VS Code
-can read files you have open. Personal details stay quiet unless you turn on `clotr.personalDetailsInFiles`. Secret
-files such as `.env` and private keys stay quiet. If one isn't ignored by Git, Clotr shows one workspace note with an
-option to add the file to `.gitignore`.
-Clotr also checks your clipboard or a selected piece of text before you paste it into an AI assistant, then offers to
-copy a cleaned version with the engine's Bandage placeholders.
+I built Clotr for Cursor, Windsurf, VSCodium, and other VS Code-compatible editors. It checks open files as you edit, underlines findings, and says what kind of credential it found. It doesn't show credential values.
 
-The Explorer's Clotr view lists each open file with findings and shows each finding's kind and masked form. Select a
-finding to open its file at that range. The Clotr status bar item opens Explorer. The minimum severity setting starts
-at medium.
+![Clotr warning on an unsaved sample in Cursor](images/open-file-warning.png)
 
-The editor plugin reads a `.clotrignore` file at the repository root for paths and for made-up values you want it to
-skip. A matching file is skipped silently. A finding whose value matches a listed fingerprint is skipped.
+## Install
 
-Use **Clotr: Check what I send to AI coding assistants** to set up or remove Clotr Guard for Claude Code, Cursor,
-Gemini CLI, Codex CLI or Windsurf. It shows which settings folders it finds and previews the exact CLI changes before
-asking to apply them. Choose the Git pre-commit check to add it to the open workspace.
+Open Extensions with **Ctrl+Shift+X** (Windows/Linux) or **Cmd+Shift+X** (macOS), then search for **Clotr**. If it isn't in your editor's list, download the VSIX from [Open VSX](https://open-vsx.org/extension/clotr-app/clotr), open the Command Palette, and choose **Extensions: Install from VSIX...**. These steps work in Cursor, Windsurf, and VSCodium.
 
-Setup uses Clotr Guard from `npm install -g clotr-guard` when it finds one, and the copy inside the extension
-otherwise. An update moves the extension to a new folder, so Clotr asks before setting Guard up again.
+## Try it
 
-Clotr runs on your device and makes no network calls. It keeps a random salt, ignored finding fingerprints and the list
-of files you turned off in VS Code workspace state. It does not save detected values. Files above 1 MiB, binary files,
-secret files, and the configured skip patterns are left alone.
+On first use, Clotr shows one dismissible welcome in your editor. Choose **Try it** to open an unsaved sample with a made-up key. Clotr underlines it and explains the warning right away. The sample is never saved. Clotr works without an account or network connection.
 
-## Stable and preview
+Clotr checks credentials in open text files up to 1 MiB, after a short pause in typing. Secret files such as `.env` stay quiet. Files over 1 MiB and binary files show a warning that Clotr could not check them. Patterns in `clotr.skipList` skip matching files. Personal details are off by default. Each finding names its kind without showing the detected value. The status bar counts checked files and findings, and marks files it could not check.
 
-Every feature below has tests that run whenever the code changes. A stable one is settled, and a preview one works
-but may still change.
+The quick fixes let you ignore that occurrence while it stays in the same place in the file; the ignore clears when the occurrence changes or disappears, the file closes, or the extension reloads. You can also add a salted fingerprint to `.clotrignore`, or use **Move to .env** for a supported quoted JavaScript/TypeScript credential. The last action writes the selected credential to the local `.env` file and updates the source file; review the edit before sharing either file. Path patterns in `.clotrignore` do not skip files; fingerprints skip exact values. Use the machine-scoped `clotr.skipList` setting for deliberate file skips.
 
-| Feature | Status | Tests |
-| --- | --- | --- |
-| Warnings for credentials in open files | Stable | [vscode.test.js][vscode-tests] |
-| Personal details in open files, off until you turn them on | Stable | [vscode.test.js][vscode-tests] |
-| Ignore this one and Turn off for this file | Stable | [vscode.test.js][vscode-tests] |
-| Secret files stay quiet, with one note when Git doesn't ignore one | Stable | [vscode.test.js][vscode-tests] |
-| Checking the clipboard or a selection, with a cleaned copy | Stable | [vscode.test.js][vscode-tests] |
-| The Explorer view and the status bar item | Stable | [vscode.test.js][vscode-tests] |
-| Setting up Clotr Guard | Preview | [vscode.test.js][vscode-tests], [guard.test.js][guard-tests] |
-| No network calls | Stable | [rules.test.js][rules-tests] |
+## Clotr Guard
 
-Guard setup is a preview because hooks that use the copy inside the extension stop working when the extension
-updates, until you choose Set it up again.
+Clotr Guard adds hooks to supported assistants' existing setup files so it can check prompts before they are sent. **Set up Clotr Guard for AI coding assistants** detects assistants available on your system, selects the one matching your editor when possible, and previews the exact Clotr hook changes before you apply them. Guard needs Node.js 20 or newer and a trusted workspace. The extension also works without Guard.
 
-[vscode-tests]: https://github.com/clotr-app/clotr/blob/main/tests/vscode.test.js
-[guard-tests]: https://github.com/clotr-app/clotr/blob/main/tests/guard.test.js
-[rules-tests]: https://github.com/clotr-app/clotr/blob/main/tests/rules.test.js
+## Local checks
+
+File checks run on this computer. The extension makes no network calls and needs no account. Diagnostic text and clipboard results identify the kind of finding without including its value. Workspace state stores a random salt, skipped-file URIs, and whether Clotr showed the workspace secret-file note. Global state stores the one-time welcome choice and Guard update-prompt version. Neither state contains detected values. `.clotrignore` stores salted fingerprints only when you choose to ignore a value. These extension states stay in local storage and are not registered for Settings Sync; the extension's settings are machine-scoped.
+
+To check this yourself, disconnect from the network, install Clotr, then choose **Try it**. The warning still appears. You can also inspect the extension's source and its network rules in the [Clotr repository](https://github.com/clotr-app/clotr).
+
+You can [rate Clotr on Open VSX](https://open-vsx.org/extension/clotr-app/clotr/reviews) or [report a problem](https://github.com/clotr-app/clotr/issues).
 
 ## Building it
 
-The extension package includes its engine bundle, Guard files, and the license. VS Code's prepublish step builds them
-inside the extension folder, so the `.vsix` runs without files from the Clotr checkout.
-
-To try Clotr from a clone, run `node apps/vscode/build.js`, then run `npm run vscode:try` and copy the printed command
-into a terminal with VS Code's `code` command available. This opens the extension from the clone in an Extension
-Development Host.
-
-Package it from `apps/vscode` with `npx --yes @vscode/vsce package --no-dependencies`.
+Build steps are in the repository's [contributing guide](https://github.com/clotr-app/clotr/blob/main/CONTRIBUTING.md#working-on-the-code).

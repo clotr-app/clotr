@@ -1,6 +1,6 @@
 // E2E checks: TQ. Tourniquet is the stronger setup for someone you help, whether a child or a grown-up. It sits
 // over the person's own settings: the kinds that matter always ask first, the shortcuts that would loosen a
-// warning are gone, a short line says why, and "Leave it in and send" is always there.
+// warning are gone, a short line says why, and "Leave it and send" is always there.
 // Run in order by ../run.js with one shared env (helpers from ../lib.js).
 "use strict";
 
@@ -176,7 +176,7 @@ module.exports = async function (env) {
           expect(note >= 15 && keys >= 15, `small text in the larger dialog: note ${note}px, keys ${keys}px`);
           expect((await sentMessages(page)).length === 0, "sent before the choice");
           await page.screenshot({ path: path.join(OUT, "tourniquet-dialog-adult.png") });
-          await clickDialogButton(page, "Hide it");
+          await clickDialogButton(page, "Clot this leak");
           await clearEditor(page);
           await typeText(page, `Call me at ${PHONE}`);
           const n = await waitForNotice(page);
@@ -206,8 +206,8 @@ module.exports = async function (env) {
           expect(d, "no dialog for a Medicare number");
           const dialogChoices = d.buttons.map((b) => b.text);
           expect(!dialogChoices.some((t) => LOOSENING.test(t)), `dialog: ${dialogChoices.join(" | ")}`);
-          expect(dialogChoices.includes("Leave it in"), `no Leave it in: ${dialogChoices.join(" | ")}`);
-          await clickDialogButton(page, "Hide it");
+          expect(dialogChoices.includes("Leave it alone"), `no Leave it alone: ${dialogChoices.join(" | ")}`);
+          await clickDialogButton(page, "Clot this leak");
           for (let i = 1; i <= 3; i++) {
             await clearEditor(page);
             await typeText(page, `call me at 555-555-01${20 + i}`);
@@ -215,7 +215,7 @@ module.exports = async function (env) {
             expect(n, `no notice #${i}`);
             const choices = n.buttons.map((b) => b.text);
             expect(!choices.some((t) => LOOSENING.test(t)), `notice #${i}: ${choices.join(" | ")}`);
-            await clickDialogButton(page, "Send as is", readNotice);
+            await clickDialogButton(page, "Leave it alone", readNotice);
             await sleep(300);
           }
           await sleep(1500);
@@ -229,7 +229,7 @@ module.exports = async function (env) {
             const n = await readNotice(page);
             return n?.text.includes("Tourniquet") ? n : null;
           }, 3000);
-          expect(tip && /You can always leave it in/.test(tip.text), `tip: ${(await readNotice(page))?.text}`);
+          expect(tip && /You can always leave it alone/.test(tip.text), `tip: ${(await readNotice(page))?.text}`);
           const tipChoices = tip.buttons.map((b) => b.text);
           for (const gone of [
             "Warn me",
@@ -264,7 +264,7 @@ module.exports = async function (env) {
           expect(!(await uiClasses(page, "CLOTR-GUARD")).has("large"), "larger warnings weren't asked for");
           expect((await sentMessages(page)).length === 0, "sent before the choice");
           await page.screenshot({ path: path.join(OUT, "tourniquet-dialog-child.png") });
-          await clickDialogButton(page, "Hide it");
+          await clickDialogButton(page, "Clot this leak");
           await clearEditor(page);
           await typeText(page, "my password is Fluffy123 ok");
           const p = await waitForDialog(page);
@@ -274,45 +274,38 @@ module.exports = async function (env) {
       }),
   );
 
-  await check(
-    "TQ5",
-    'Under either preset, "Leave it in and send" sends the message and records it as sent',
-    async () => {
-      for (const [word, text] of [
-        ["child", `I live at ${ADDRESS}`],
-        ["adult", `My Medicare number is ${MEDICARE}`],
-      ]) {
-        await resetState(ctx, {});
-        await setTourniquet(ctx, word);
-        try {
-          await withSite(ctx, "chatgpt", async (page) => {
-            await typeText(page, text);
-            await pressEnter(page);
-            expect(await waitForDialog(page), `${word}: no dialog`);
-            expect((await sentMessages(page)).length === 0, `${word}: sent before the choice`);
-            await sleep(700);
-            await clickDialogButton(page, "Leave it in and send");
-            const sent = await waitFor(
-              async () => ((await sentMessages(page)).length ? sentMessages(page) : null),
-              2000,
-            );
-            expect(sent?.length === 1, `${word}: sent ${JSON.stringify(sent)}`);
-            const events = await waitFor(async () => {
-              const e = await store.events(ctx);
-              return e.length ? e : null;
-            }, 2000);
-            expect(
-              events?.every((e) => e.action === "allowed"),
-              `${word}: events ${JSON.stringify(events)}`,
-            );
-          });
-        } finally {
-          await setTourniquet(ctx, null);
-        }
+  await check("TQ5", 'Under either preset, "Leave it and send" sends the message and records it as sent', async () => {
+    for (const [word, text] of [
+      ["child", `I live at ${ADDRESS}`],
+      ["adult", `My Medicare number is ${MEDICARE}`],
+    ]) {
+      await resetState(ctx, {});
+      await setTourniquet(ctx, word);
+      try {
+        await withSite(ctx, "chatgpt", async (page) => {
+          await typeText(page, text);
+          await pressEnter(page);
+          expect(await waitForDialog(page), `${word}: no dialog`);
+          expect((await sentMessages(page)).length === 0, `${word}: sent before the choice`);
+          await sleep(700);
+          await clickDialogButton(page, "Leave it and send");
+          const sent = await waitFor(async () => ((await sentMessages(page)).length ? sentMessages(page) : null), 2000);
+          expect(sent?.length === 1, `${word}: sent ${JSON.stringify(sent)}`);
+          const events = await waitFor(async () => {
+            const e = await store.events(ctx);
+            return e.length ? e : null;
+          }, 2000);
+          expect(
+            events?.every((e) => e.action === "allowed"),
+            `${word}: events ${JSON.stringify(events)}`,
+          );
+        });
+      } finally {
+        await setTourniquet(ctx, null);
       }
-      await resetState(ctx);
-    },
-  );
+    }
+    await resetState(ctx);
+  });
 
   await check(
     "TQ6",
@@ -611,7 +604,7 @@ module.exports = async function (env) {
           text: document.getElementById("tq-line").textContent.replace(/\s+/g, " "),
         }));
         expect(
-          line.shown && /Tourniquet is on/.test(line.text) && /sends nothing anywhere/.test(line.text),
+          line.shown && /Tourniquet is on/.test(line.text) && /AI service receives it as usual/.test(line.text),
           `line: ${JSON.stringify(line)}`,
         );
         await shot(popup, "tourniquet-overview.png");
@@ -637,7 +630,9 @@ module.exports = async function (env) {
         }));
         expect(locked.unlock && locked.body && locked.card && !locked.switchShown, `locked: ${JSON.stringify(locked)}`);
         expect(
-          /Clotr sends nothing anywhere, and every message is still yours to send/.test(locked.cardText),
+          /Clotr checks messages on your device\. If you choose to send one, the AI service receives it as usual\. Clotr has no server\./.test(
+            locked.cardText,
+          ),
           `card: ${locked.cardText}`,
         );
         expect(
@@ -688,7 +683,12 @@ module.exports = async function (env) {
         await shot(popup, "tourniquet-settings-es.png");
         await popup.close();
         expect(got.chip === "Tourniquet activado", `chip: ${got.chip}`);
-        expect(/Clotr no envía nada a ningún sitio/.test(got.card), `card: ${got.card}`);
+        expect(
+          /Si decides enviar uno, el servicio de IA lo recibe como siempre\. Clotr no tiene servidores\./.test(
+            got.card,
+          ),
+          `card: ${got.card}`,
+        );
         expect(/Tourniquet está activado/.test(got.line), `line: ${got.line}`);
         expect(!/Clotr sends nothing|Tourniquet is on/.test(got.card + got.line), "English left in the Spanish popup");
       } finally {
@@ -1191,7 +1191,7 @@ module.exports = async function (env) {
         await setTourniquet(ctx, "adult");
         const adult = await read(true);
         expect(
-          /^Tourniquet is on /.test(adult || "") && /You can always leave them in and send/.test(adult),
+          /^Tourniquet is on /.test(adult || "") && /You can always leave them as they are and send/.test(adult),
           `grown-up: ${adult}`,
         );
         await setTourniquet(ctx, "child");
@@ -1228,14 +1228,14 @@ module.exports = async function (env) {
           expect(!MONEY_LINE.test(d.text), `the grown-up's line too: ${d.text}`);
           expect((await uiClasses(page, "CLOTR-GUARD")).has("large"), "the dialog isn't larger");
           await page.screenshot({ path: path.join(OUT, "tourniquet-after-scam-dialog.png") });
-          await clickDialogButton(page, "Hide it");
+          await clickDialogButton(page, "Clot this leak");
           await clearEditor(page);
           await typeText(page, "ok, the code they texted me is 482913");
           const c = await waitForDialog(page);
           // The code's own line replaces Tourniquet's codes line, so the dialog shows only one, never both.
           expect(c && /Who asks for a code that was sent to you?/.test(c.text), `no who-asks line: ${c?.text}`);
           expect(!CODES_LINE.test(c.text) && !AFTER_SCAM_LINE.test(c.text), `two lines: ${c.text}`);
-          await clickDialogButton(page, "Hide it");
+          await clickDialogButton(page, "Clot this leak");
           await clearEditor(page);
           await typeText(page, `call me at ${PHONE}`);
           const n = await waitForNotice(page);
@@ -1264,7 +1264,7 @@ module.exports = async function (env) {
           expect(set.alarm && set.alarm === set.until, `the end alarm: ${JSON.stringify(set)}`);
           await typeText(page, `my card is ${CARD}`);
           expect(await waitForDialog(page), "no Ask before sending while it's on");
-          await clickDialogButton(page, "Hide it");
+          await clickDialogButton(page, "Clot this leak");
           await clearEditor(page);
           // Moves the stored end to a moment ago to simulate the end arriving. The background's own watch on
           // the record notices this the same way it would notice the end alarm firing.
@@ -1528,7 +1528,7 @@ module.exports = async function (env) {
         expect(overview.chip, "no Tourniquet on chip");
         expect(
           overview.line ===
-            "Tourniquet is on for 30 days after a scam: Clotr asks before bank, card and ID numbers, gift card numbers, passwords and sign-in codes go out. Clotr sends nothing anywhere.",
+            "Tourniquet is on for 30 days after a scam: Clotr asks before bank, card and ID numbers, gift card numbers, passwords and sign-in codes go out. If you choose to send a message, the AI service receives it as usual. Clotr has no server.",
           `Overview line: ${overview.line}`,
         );
         await popupShots(popup, "after-scam-popup-overview");
@@ -1596,7 +1596,7 @@ module.exports = async function (env) {
           });
           expect(
             text ===
-              `Tourniquet is on Until ${until}, Clotr asks before bank, card and ID numbers, gift card numbers, passwords and sign-in codes go out, and its warnings are bigger. You can always leave them in and send.`,
+              `Tourniquet is on Until ${until}, Clotr asks before bank, card and ID numbers, gift card numbers, passwords and sign-in codes go out, and its warnings are bigger. You can always leave them as they are and send.`,
             `the guide: ${text}`,
           );
           expect(!/scam|child|grown-up|adult/i.test(text), `the guide says who or why: ${text}`);

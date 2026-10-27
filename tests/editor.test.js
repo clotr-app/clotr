@@ -203,3 +203,19 @@ test("isChatComposer: a comment box with a plain Post or Submit button never qua
 test("isChatComposer: a search input never qualifies, even with a Send-labelled button nearby", () => {
   assert.equal(isChatComposer({ tag: "input", hasSendButton: true, enterSends: true }), false);
 });
+
+test("user input provenance reads edits, paste data, replacement text and bounded deletions", () => {
+  const { sourceInputText, appendSourceText, removeSourceText, MAX_SOURCE_CHARS } = globalThis.Clotr.editor;
+  assert.equal(sourceInputText("insertText", "Jane", null), "Jane");
+  assert.equal(sourceInputText("insertReplacementText", "555-555-5636", null), "555-555-5636");
+  assert.equal(sourceInputText("insertFromDictation", "Call me at 555-555-5636", null), "Call me at 555-555-5636");
+  assert.equal(sourceInputText("insertFromPaste", null, "Jane\r\n555-555-5636"), "Jane\r\n555-555-5636");
+  assert.equal(sourceInputText("insertFromDrop", null, "Jane Doe"), "Jane Doe");
+  assert.equal(sourceInputText("insertParagraph", null, null), "\n");
+  assert.equal(sourceInputText("deleteContentBackward", null, null), null);
+
+  const entered = appendSourceText("Jane ", "555-555-5636");
+  assert.equal(entered, "Jane 555-555-5636");
+  assert.equal(removeSourceText(entered, "555-555-5636"), "Jane ");
+  assert.equal(appendSourceText("x".repeat(MAX_SOURCE_CHARS), "Jane"), `${"x".repeat(MAX_SOURCE_CHARS - 4)}Jane`);
+});

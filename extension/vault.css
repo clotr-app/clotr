@@ -76,6 +76,21 @@ body.vault-page {
   margin-top: 2px;
   user-select: all;
 }
+/* Try it's made-up key with its Copy button beside it; on a narrow screen the button drops under the key. */
+.try-key {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 4px 10px;
+  margin-bottom: 4px;
+}
+.try-key label {
+  margin-bottom: 0;
+}
+.try-key .btn {
+  padding: 2px 12px;
+  font-size: 13px;
+}
 /* The author's note on the welcome page: the brand's mind map draws itself once (branches
    grow out of "You", the plasters land on each detail, the cut-off lines keep drifting), then the note.
    Everything rests in its final state, so with reduced motion it's simply there. */

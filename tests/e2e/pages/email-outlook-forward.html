@@ -9,9 +9,10 @@
       <div>From: Professor Example &lt;professor@example.test&gt;</div>
       <div>To: student@example.test<br>Cc: helper@example.test</div>
       <div>Subject: FW: Example</div>
-      <div class="quote-body">API key: AKIA4HPQ7XZ2R6TWLJ3N</div>
+      <div class="quote-body">API key: <span id="demo-key"></span></div>
     </div>
   </div>
   <button id="send" type="button">Send</button>
+  <script>document.getElementById("demo-key").textContent = ["AKIA", "4HPQ7XZ2", "R6TWLJ3N"].join("");</script>
 </body>
 </html>

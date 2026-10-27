@@ -1,0 +1,154 @@
+[package]
+name = "clotr-desktop"
+version = "1.0.2"
+description = "Clotr for Windows: a warning before you paste personal details into an AI app"
+license = "AGPL-3.0-or-later"
+edition = "2021"
+rust-version = "1.90"
+publish = false
+default-run = "clotr"
+
+[[bin]]
+name = "clotr"
+path = "src/main.rs"
+
+# A stand-in "AI app" for the DK checks: a plain window with a text box. Built only with the dk-test-app feature,
+# never in Clotr itself.
+[[bin]]
+name = "clotr-dk-ai"
+path = "src/bin/clotr-dk-ai.rs"
+required-features = ["dk-test-app"]
+
+[[bin]]
+name = "clotr-bridge"
+path = "src/bin/bridge.rs"
+required-features = ["one-clotr"]
+
+# A stand-in "ordinary program" for the DK checks: on no app or terminal list, so a check can confirm the card
+# never shows over it. Never built into Clotr itself.
+[[bin]]
+name = "clotr-dk-plain"
+path = "src/bin/clotr-dk-plain.rs"
+required-features = ["dk-test-app"]
+
+# Test-only timing tool for the Windows typing check. It records control type, password flag, read time, event count
+# and processor time. It never stores or prints typed text and is not part of Clotr itself.
+[[bin]]
+name = "clotr-typing-spike"
+path = "src/bin/clotr-typing-spike.rs"
+required-features = ["dk-test-app"]
+
+[features]
+default = []
+# Windows 1.0.2 keeps these new features out of the Store build; adding either name to `default` enables it.
+one-clotr = []
+scan-times = []
+# The DK checks only: the stand-in AI app joins the list, and the data folder can be a test folder.
+dk-test-app = []
+
+[build-dependencies]
+tauri-build = { version = "=2.7.1", default-features = false, features = [] }
+
+[dependencies]
+tauri = { version = "=2.12.1", default-features = false, features = ["wry", "common-controls-v6", "compression", "tray-icon"] }
+tauri-plugin-dialog = "2"
+# The weekly check's one notification (main.rs's weekly_check_done): a toast from Rust alone, so no capability
+# entry is needed -- nothing in a page calls this plugin, only the native side does.
+tauri-plugin-notification = "2"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+getrandom = "0.3"
+# Already in the dependency tree through tauri itself; named directly for the scan's own ignore fingerprint
+# (store.rs), the same 16-hex-character shape the engine's fingerprints use, salted the same way.
+sha2 = "0.10"
+# WebView2's own options (crash reports kept on this computer): the version Tauri's wry already uses.
+webview2-com = "=0.39.1"
+# Already in the tree through `windows`; named directly because the COM `#[implement]` macro the typing check's
+# event handlers use (typing.rs) refers to it by this name.
+windows-core = "0.62"
+windows = { version = "0.62", features = [
+  # The desktop bridge's own start-at-login task (StartupTask, main.rs): only live once the MSIX gives the
+  # app a package identity, so it errors cleanly on the unpackaged try build.
+  "ApplicationModel",
+  "ApplicationModel_Activation",
+  "Win32_Foundation",
+  "Win32_Globalization",
+  "Win32_Graphics_Dwm",
+  "Win32_Graphics_Gdi",
+  "Win32_Security",
+  "Win32_Security_Cryptography",
+  "Win32_Security_Authorization",
+  "Win32_Security_WinTrust",
+  "Win32_Storage_FileSystem",
+  "Win32_Storage_Packaging_Appx",
+  "Win32_System_Com",
+  "Win32_System_DataExchange",
+  # The typing check (typing.rs): which processes are the AI app's, since a WebView2 or Electron app answers UI
+  # Automation from a child of its window's process.
+  "Win32_System_Diagnostics_ToolHelp",
+  "Win32_System_LibraryLoader",
+  "Win32_System_Memory",
+  "Win32_System_Ole",
+  "Win32_System_Registry",
+  "Win32_System_Threading",
+  "Win32_System_Pipes",
+  "Win32_System_IO",
+  # The typing check's value-changed handler and its button search (typing.rs).
+  "Win32_System_Variant",
+  "Win32_UI_Accessibility",
+  "Win32_UI_HiDpi",
+  "Win32_UI_Input_KeyboardAndMouse",
+  "Win32_UI_Shell",
+  # SHOpenFolderAndSelectItems and the PIDL helpers around it (scan_reveal, main.rs): opens Explorer with a file
+  # selected through the shell, not by starting explorer.exe as a process.
+  "Win32_UI_Shell_Common",
+  "Win32_UI_WindowsAndMessaging",
+] }
+# *Move to the Recycle Bin* (recycle.rs): a small, focused wrapper over the same Shell IFileOperation the
+# `windows` crate above already carries the bindings for, tested across Windows versions already.
+trash = "5.2.9"
+# Reading inside a .zip (scan.rs's own budget and cap keep it bounded): only "deflate", the method almost every
+# real zip uses (Explorer's own, Takeout's, the AI exports'); no password feature, so an encrypted entry simply
+# can't be read, which is exactly "not read" (4-8).
+zip = { version = "9.0.0", default-features = false, features = ["deflate"] }
+
+[profile.release]
+codegen-units = 1
+lto = true
+opt-level = "s"
+# Unwind, not abort: the scan walkers run under catch_unwind so a hostile file name can end one scan, never the
+# whole app with its clipboard and typing checks. Abort gave a smaller binary
+# and nothing else.
+panic = "unwind"
+strip = true
+
+# Your local tries ("Try Clotr for Windows", npm run build:try): the release build's optimizations without its two
+# slowest steps (whole-program LTO, one codegen unit), so a one-file change rebuilds in a fraction of the time. Its
+# own folder (target/try) also keeps a running trial from blocking the build. The store build stays [profile.release].
+[profile.try]
+inherits = "release"
+lto = false
+codegen-units = 16
+incremental = true
+
+# Tests and checks (cargo test/check, the DK checks): line numbers for Clotr's own code, no debug info for the
+# libraries, so they compile and link faster and target/ stays smaller.
+[profile.dev]
+debug = "line-tables-only"
+
+[profile.dev.package."*"]
+debug = false
+
+# The DK checks only (tests/dk.rs): watching Clotr's processes, their sockets and memory, and finding the card's
+# buttons the way a screen reader does. Never in Clotr itself.
+[dev-dependencies]
+windows = { version = "0.62", features = [
+  "Win32_NetworkManagement_IpHelper",
+  "Win32_Networking_WinSock",
+  "Win32_System_Diagnostics_ToolHelp",
+  "Win32_System_ProcessStatus",
+  "Win32_System_Variant",
+] }
+# The no-network check's import-table scan (tests/no_network.rs): reads the shipped clotr.exe's own PE
+# structure. Never in Clotr itself, and only the formats and the read path it actually uses.
+object = { version = "0.40", default-features = false, features = ["read_core", "coff", "pe", "std"] }

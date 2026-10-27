@@ -1,0 +1,105 @@
+{
+  "about": "The AI apps Clotr checks outside the browser. Email and chat apps are not on this list. For makers whose every desktop app is an AI app, Clotr matches the maker's signer or Store publisher id; other apps use their executable name plus Store package family or publisher. Android apps use the maker's signing certificate digest with the app package name. Each entry says where it was checked; 'to confirm on a real PC' or 'to confirm on a real phone' means it is not confirmed yet.",
+  "makers": [
+    {
+      "id": "openai",
+      "name": "OpenAI",
+      "signer": "OpenAI OpCo, LLC",
+      "publisherId": "2p2nqsd0c76g0",
+      "androidSigners": [
+        "b24f4bfbb3cf293f938703b9d87027c1102cc36dc4fa206910e08927db40473c"
+      ]
+    },
+    {
+      "id": "anthropic",
+      "name": "Anthropic",
+      "signer": "Anthropic, PBC",
+      "publisherId": "pzs8sxrjxfjjc",
+      "androidSigners": [
+        "305a1e8a432e5ec0c612b2465359c3b88e3c95d6253599ac6088562b818b64a0"
+      ]
+    }
+  ],
+  "apps": [
+    {
+      "id": "chatgpt",
+      "name": "ChatGPT",
+      "maker": "openai",
+      "windows": [
+        {
+          "exe": "ChatGPT.exe",
+          "packageFamily": "OpenAI.ChatGPT-Desktop_2p2nqsd0c76g0",
+          "seen": "The Store package name changed before the check was complete."
+        },
+        {
+          "exe": "ChatGPT.exe",
+          "packageFamily": "OpenAI.Codex_2p2nqsd0c76g0",
+          "publisher": "OpenAI OpCo, LLC",
+          "seen": "Checked on a Windows 11 PC on 2026-10-13: the executable and Store package share the maker's publisher, so no separate entry is needed."
+        }
+      ],
+      "android": [
+        {
+          "packageName": "com.openai.chatgpt",
+          "seen": "confirmed on a real phone, 13 Oct 2026: version 1.2026.279 from Google Play, signed by the OpenAI Android signing digest"
+        }
+      ]
+    },
+    {
+      "id": "claude",
+      "name": "Claude",
+      "maker": "anthropic",
+      "windows": [
+        {
+          "exe": "claude.exe",
+          "packageFamily": "Claude_pzs8sxrjxfjjc",
+          "publisher": "Anthropic, PBC",
+          "seen": "Checked on a Windows 11 PC on 2026-10-13: both package family and publisher match."
+        }
+      ],
+      "android": [
+        {
+          "packageName": "com.anthropic.claude",
+          "seen": "confirmed on a real phone, 13 Oct 2026: version 1.261009.20 from Google Play, signed by the Anthropic Android signing digest"
+        }
+      ]
+    },
+    {
+      "id": "copilot",
+      "name": "Microsoft Copilot",
+      "windows": [
+        {
+          "exe": "Copilot.exe",
+          "packageFamily": "Microsoft.Copilot_8wekyb3d8bbwe",
+          "seen": "to confirm on a real PC"
+        }
+      ],
+      "android": [
+        {
+          "packageName": "com.microsoft.copilot",
+          "seen": "To confirm on a real phone; not installed when checked on 2026-10-13."
+        }
+      ]
+    },
+    {
+      "id": "lumo",
+      "name": "Proton Lumo",
+      "android": [
+        {
+          "packageName": "me.proton.android.lumo",
+          "seen": "to confirm on a real phone: by packageName only, since Proton also makes mail and a maker match would reach it"
+        }
+      ]
+    },
+    {
+      "id": "conduit",
+      "name": "Conduit",
+      "android": [
+        {
+          "packageName": "app.cogwheel.conduit",
+          "seen": "to confirm on a real phone: a client for a self-hosted Open WebUI, made by one developer, so no maker entry"
+        }
+      ]
+    }
+  ]
+}

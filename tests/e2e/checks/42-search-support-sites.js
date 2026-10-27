@@ -182,7 +182,7 @@ module.exports = async function (env) {
                 const dialog = await waitForDialog(page);
                 expect(dialog, `${name}: no dialog`);
                 expect(/search/i.test(dialog.text), `${name}: dialog doesn't read as a search: ${dialog.text}`);
-                await clickDialogButton(page, "Leave it in and send");
+                await clickDialogButton(page, "Leave it and send");
                 const sent = await waitFor(
                   async () => ((await sentMessages(page)).length ? sentMessages(page) : null),
                   2000,
@@ -329,7 +329,7 @@ module.exports = async function (env) {
                 /people who read it here/i.test(dialog.text),
                 `${name}: widget dialog doesn't read as a chat with people: ${dialog.text}`,
               );
-              await clickFrameDialogButton(frame, "Leave it in and send");
+              await clickFrameDialogButton(frame, "Leave it and send");
               const sent = await waitFor(
                 () => frame.evaluate(() => window.__sent.slice()).then((s) => (s.length ? s : null)),
                 2000,

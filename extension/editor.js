@@ -40,6 +40,29 @@
     return editor.isContentEditable ? editor.innerText : editor.value;
   }
 
+  // The text a person has supplied to a chat box, kept only while that draft is in memory.
+  const MAX_SOURCE_CHARS = 100000;
+  function sourceInputText(inputType, data, clipboardText) {
+    if (/^insert(?:Paragraph|LineBreak)$/i.test(inputType || "")) return "\n";
+    if (!/^insert/i.test(inputType || "")) return null;
+    if (typeof data === "string" && data) return data;
+    if (/^insertFrom(?:Paste|Drop)$/i.test(inputType || "")) {
+      return typeof clipboardText === "string" && clipboardText ? clipboardText : null;
+    }
+    return null;
+  }
+  function appendSourceText(current, inserted) {
+    const next = String(current || "") + String(inserted || "");
+    return next.length > MAX_SOURCE_CHARS ? next.slice(-MAX_SOURCE_CHARS) : next;
+  }
+  function removeSourceText(current, removed) {
+    const text = String(current || "");
+    const part = String(removed || "");
+    if (!part) return text;
+    const at = text.lastIndexOf(part);
+    return at < 0 ? text : text.slice(0, at) + text.slice(at + part.length);
+  }
+
   // ---------- "Everywhere I type": is this really a chat-style composer? ----------
   // Only matters on a page covered by the broad switch, with no dedicated setup of its own: there, Clotr has
   // to tell a message box from an ordinary form field by itself, since nothing names the page in advance.
@@ -399,6 +422,10 @@
     realTarget,
     findEditor,
     getText,
+    sourceInputText,
+    appendSourceText,
+    removeSourceText,
+    MAX_SOURCE_CHARS,
     replaceText,
     replaceMatchesInPlace,
     replacementSpans,

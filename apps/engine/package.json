@@ -1,7 +1,14 @@
 {
   "name": "clotr-engine",
-  "version": "1.5.0",
+  "version": "1.6.0",
   "description": "Clotr's detection engine for credentials and personal details, as a package for scripts, hooks and tools.",
+  "keywords": [
+    "pii",
+    "secrets",
+    "detection",
+    "redaction",
+    "privacy"
+  ],
   "private": true,
   "license": "AGPL-3.0-or-later",
   "repository": {

@@ -35,3 +35,12 @@ test("Firefox gets AMO's reviews link", () => {
 test("an unrecognized user agent falls back to the Chrome Web Store", () => {
   assert.equal(Rate.rateUrl("something else entirely"), Rate.STORE_URLS.chrome);
 });
+
+// The welcome page's pin steps use the same test, so its wording and the store link always agree.
+test("browserFor names the browser family the same way rateUrl picks a store", () => {
+  assert.equal(Rate.browserFor(CHROME_UA), "chrome");
+  assert.equal(Rate.browserFor(BRAVE_UA), "chrome");
+  assert.equal(Rate.browserFor(EDGE_UA), "edge");
+  assert.equal(Rate.browserFor(FIREFOX_UA), "firefox");
+  assert.equal(Rate.browserFor("something else entirely"), "chrome");
+});

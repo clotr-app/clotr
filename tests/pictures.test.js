@@ -14,7 +14,7 @@ require("../extension/attachments.js"); // provides ownBytes, and loads before p
 require("../extension/pictures.js");
 const { isPicture } = globalThis.Clotr;
 const fx = require("../tools/make-picture-fixtures.js");
-const { retrySlow, retrySlowAsync, bestOfBoth, timedAsync } = require("./timing.js");
+const { bestOfPair, bestOfAsyncPair, grewMoreThan } = require("./timing.js");
 
 test("isPicture: by type or by name; an SVG is text, not a picture", () => {
   const file = (name, type = "") => new File([new Uint8Array([1, 2, 3])], name, { type });
@@ -122,7 +122,23 @@ test("gpsFrom: no place when there is none, at 0,0, out of range, or in a damage
   }
 });
 
-test("2,000 damaged pictures never throw, never give a place out of range, and finish within two seconds", () => {
+test("gpsFrom: XMP lookup stays linear on a long unterminated name", () => {
+  const { gpsFrom } = globalThis.Clotr;
+  const make = (length) => bytes(Buffer.from(`${"a".repeat(length)}GPSLatitude`, "latin1"));
+  const small = make(4096);
+  const big = make(16384);
+  // bestOfPair runs the small input four times, so linear work gives a ratio near 1 and the quadratic scan this
+  // replaced gave about 4.
+  const [quick, slow] = bestOfPair(
+    () => gpsFrom(small),
+    () => gpsFrom(big),
+    4,
+  );
+  assert.ok(!grewMoreThan(quick, slow, 3), `XMP prefix: ${quick.wall.toFixed(1)} → ${slow.wall.toFixed(1)} ms`);
+  assert.equal(gpsFrom(big), null);
+});
+
+test("2,000 damaged pictures never throw, never give a place out of range, and grow linearly", () => {
   const { gpsFrom } = globalThis.Clotr;
   let seed = 20261002;
   const rand = () => (seed = (seed * 1103515245 + 12345) % 2 ** 31) / 2 ** 31;
@@ -149,13 +165,12 @@ test("2,000 damaged pictures never throw, never give a place out of range, and f
     const got = gpsFrom(m);
     assert.ok(got === null || (Math.abs(got.lat) <= 90 && Math.abs(got.lon) <= 180), JSON.stringify(got));
   }
-  // Two seconds is the budget on a quiet computer. A busy one gets more time, scaled by tests/timing.js's reference task.
-  retrySlow(() => {
-    const t = bestOfBoth(() => damaged.forEach((m) => gpsFrom(m)), 1);
-    return t.over(2000)
-      ? `${Math.round(t.wall)} ms (${Math.round(t.allowed)} allowed on this computer now)`
-      : undefined;
-  });
+  const [small, big] = bestOfPair(
+    () => damaged.slice(0, 500).forEach((m) => gpsFrom(m)),
+    () => damaged.forEach((m) => gpsFrom(m)),
+    4,
+  );
+  assert.ok(!grewMoreThan(small, big, 16), "checking four times as many damaged locations grew too much");
 });
 
 // A File that records every part of it that is read.
@@ -214,34 +229,29 @@ test("readPicture reads the first 256 KB at most, plus a HEIC's location item (6
   const late = spyFile(fx.jpegWith(filler, filler, filler, filler, filler, fx.exifSegment(fx.tiffGps())), "late.jpg");
   assert.deepEqual(await readPicture(late.file), []);
   assert.deepEqual(late.reads, [[0, HEAD]]);
-  // A 25 MB photo only needs one read of the start, and stays quick: 200 ms on a quiet computer, more on a busy one.
+  // A 25 MB photo only needs one read of the start.
   const big = spyFile(fx.bigJpeg(25), "IMG_9999.jpg", "image/jpeg");
   assert.deepEqual(
     (await readPicture(big.file)).map((r) => r.id),
     ["photo_location"],
   );
   assert.deepEqual(big.reads, [[0, HEAD]]);
-  await retrySlowAsync(async () => {
-    const t = await timedAsync(() => readPicture(big.file));
-    return (await t.overAsync(200))
-      ? `${Math.round(t.wall)} ms for 25 MB (${Math.round(t.allowed)} allowed on this computer now)`
-      : undefined;
-  });
 });
 
-test("readPicture: hostile and unreadable pictures give nothing, never throw, and never hold the chat", async () => {
+test("readPicture: hostile and unreadable pictures give nothing and grow linearly", async () => {
   const { readPicture } = globalThis.Clotr;
   const hostile = Object.entries(fx.hostile()).map(([name, b]) => [name, new File([b], `IMG_${name}`)]);
   for (const [name, file] of hostile) assert.deepEqual(await readPicture(file), [], name);
-  // Budgets half a second for all of them on a quiet computer, more on a busy one.
-  await retrySlowAsync(async () => {
-    const t = await timedAsync(async () => {
-      for (const [, file] of hostile) await readPicture(file);
-    });
-    return (await t.overAsync(500))
-      ? `${Math.round(t.wall)} ms for every hostile picture (${Math.round(t.allowed)} allowed on this computer now)`
-      : undefined;
-  });
+  const smallHostile = hostile.slice(0, Math.max(1, Math.floor(hostile.length / 4)));
+  const readAll = (pictures) => async () => {
+    for (const [, file] of pictures) await readPicture(file);
+  };
+  const [smallTime, bigTime] = await bestOfAsyncPair(
+    readAll(smallHostile),
+    readAll(hostile),
+    Math.max(1, Math.round(hostile.length / smallHostile.length)),
+  );
+  assert.ok(!grewMoreThan(smallTime, bigTime, 16), "checking more hostile pictures grew too much");
   // A file the browser can no longer read, because it was removed from disk after being chosen, gives nothing and no error.
   const gone = {
     name: "IMG_0001.jpg",

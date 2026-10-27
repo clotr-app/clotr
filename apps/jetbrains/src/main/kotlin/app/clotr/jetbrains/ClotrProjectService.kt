@@ -12,8 +12,13 @@ import com.intellij.notification.NotificationGroupManager
 import com.intellij.notification.NotificationType
 import com.intellij.openapi.actionSystem.AnAction
 import com.intellij.openapi.actionSystem.AnActionEvent
+import java.nio.ByteBuffer
+import java.nio.charset.StandardCharsets
 import java.nio.file.Files
+import java.nio.file.LinkOption
+import java.nio.file.OpenOption
 import java.nio.file.Path
+import java.nio.file.StandardOpenOption
 
 @Service(Service.Level.PROJECT)
 class ClotrProjectService(private val project: Project) : Disposable {
@@ -22,6 +27,7 @@ class ClotrProjectService(private val project: Project) : Disposable {
     // Looked up on each use, so a reload of the local state is never written over with an old entry.
     private val state get() = local.project(key)
     private val counts = mutableMapOf<String, Int>()
+    private val uncheckedFiles = linkedSetOf<String>()
     private val secretFiles = linkedSetOf<String>()
     private var rawIgnoreWarningShown = false
     private val engineValue = lazy(LazyThreadSafetyMode.SYNCHRONIZED) { ClotrEngine.start(local.salt(state)) }
@@ -32,6 +38,7 @@ class ClotrProjectService(private val project: Project) : Disposable {
         project.messageBus.connect(this).subscribe(FileEditorManagerListener.FILE_EDITOR_MANAGER, object : FileEditorManagerListener {
             override fun fileClosed(source: FileEditorManager, file: com.intellij.openapi.vfs.VirtualFile) {
                 counts.remove(file.path)
+                uncheckedFiles.remove(file.path)
                 refreshStatus()
             }
         })
@@ -75,7 +82,14 @@ class ClotrProjectService(private val project: Project) : Disposable {
             )
         notification.addAction(object : AnAction(ClotrBundle.message("secret.addToGitignore")) {
             override fun actionPerformed(event: AnActionEvent) {
-                addSecretFilesToGitignore(rootPath)
+                if (!addSecretFilesToGitignore(rootPath)) {
+                    NotificationGroupManager.getInstance().getNotificationGroup("Clotr Secret Files")
+                        .createNotification(
+                            ClotrBundle.message("secret.gitignoreWriteError"),
+                            NotificationType.WARNING,
+                        )
+                        .notify(project)
+                }
                 notification.expire()
             }
         })
@@ -94,53 +108,83 @@ class ClotrProjectService(private val project: Project) : Disposable {
         var ignoredByGit = false
         for (directory in directories.asReversed()) {
             val ignoreFile = directory.resolve(".gitignore")
-            if (!Files.isRegularFile(ignoreFile)) continue
+            val content = ClotrIgnore.readGitIgnore(ignoreFile) ?: continue
             val pathFromIgnore = directory.relativize(target).toString().replace('\\', '/')
-            for (line in Files.readAllLines(ignoreFile)) {
-                val rule = line.trim()
+            for (line in content.split(Regex("\\r?\\n"))) {
+                val rule = normalizeGitIgnoreLine(line)
                 if (rule.isEmpty() || rule.startsWith("#")) continue
                 val negated = rule.startsWith("!")
                 val pattern = (if (negated) rule.drop(1) else rule).removePrefix("/").removeSuffix("/")
-                if (matchesGitIgnore(pattern, pathFromIgnore)) ignoredByGit = !negated
+                if (ClotrIgnore.gitIgnoreMatches(pattern, pathFromIgnore)) ignoredByGit = !negated
             }
         }
         return ignoredByGit
     }
 
-    private fun matchesGitIgnore(pattern: String, path: String): Boolean {
-        val expression = buildString {
-            append('^')
-            var index = 0
-            while (index < pattern.length) {
-                when {
-                    pattern.startsWith("**", index) -> { append(".*"); index += 2 }
-                    pattern[index] == '*' -> { append("[^/]*"); index++ }
-                    pattern[index] == '?' -> { append("[^/]"); index++ }
-                    else -> { append(Regex.escape(pattern[index].toString())); index++ }
-                }
-            }
-            append('$')
-        }
-        val candidates = if (pattern.contains('/')) {
-            generateSequence(path) { value -> value.substringBeforeLast('/', "").takeIf(String::isNotEmpty) }.toList()
-        } else path.split('/')
-        return candidates.any { Regex(expression).matches(it) }
+    private fun normalizeGitIgnoreLine(line: String): String {
+        var rule = line.trimStart()
+        while (rule.endsWith(' ') && !rule.endsWith("\\ ")) rule = rule.dropLast(1)
+        return rule
     }
 
-    private fun addSecretFilesToGitignore(root: Path) {
+    internal fun addSecretFilesToGitignore(root: Path, files: Collection<String> = secretFiles): Boolean {
         val ignoreFile = root.resolve(".gitignore")
-        val current = if (Files.isRegularFile(ignoreFile)) Files.readString(ignoreFile) else ""
-        val existing = current.lineSequence().map(String::trim).toSet()
-        val additions = secretFiles.filterNot(existing::contains)
-        if (additions.isEmpty()) return
-        val prefix = if (current.isNotEmpty() && !current.endsWith('\n')) "\n" else ""
-        Files.writeString(ignoreFile, current + prefix + additions.joinToString("\n") + "\n")
+        val additions = files.map { gitIgnoreLine(it) ?: return false }.distinct()
+        return try {
+            val exists = Files.exists(ignoreFile, LinkOption.NOFOLLOW_LINKS)
+            if (exists && (Files.isSymbolicLink(ignoreFile) || !Files.isRegularFile(ignoreFile, LinkOption.NOFOLLOW_LINKS))) {
+                return false
+            }
+            val current = if (exists) ClotrIgnore.readGitIgnore(ignoreFile) ?: return false else ""
+            val existing = current.lineSequence().map(::normalizeGitIgnoreLine).toSet()
+            val missing = additions.filterNot(existing::contains)
+            if (missing.isEmpty()) return true
+            val prefix = if (current.isNotEmpty() && !current.endsWith('\n')) "\n" else ""
+            val content = prefix + missing.joinToString("\n") + "\n"
+            val options = if (exists) {
+                setOf<OpenOption>(StandardOpenOption.WRITE, StandardOpenOption.APPEND, LinkOption.NOFOLLOW_LINKS)
+            } else {
+                setOf<OpenOption>(StandardOpenOption.CREATE_NEW, StandardOpenOption.WRITE, StandardOpenOption.APPEND, LinkOption.NOFOLLOW_LINKS)
+            }
+            Files.newByteChannel(ignoreFile, options).use { channel ->
+                val bytes = StandardCharsets.UTF_8.encode(content)
+                while (bytes.hasRemaining()) channel.write(bytes)
+            }
+            true
+        } catch (_: Exception) {
+            false
+        }
+    }
+
+    private fun gitIgnoreLine(path: String): String? {
+        if (path.isEmpty() || path.any { Character.isISOControl(it) }) return null
+        if (path.startsWith('/') || (path.length >= 2 && path[0].isLetter() && path[1] == ':')) return null
+        if (path.split('/').any { it.isEmpty() || it == "." || it == ".." }) return null
+        val escaped = buildString {
+            for ((index, character) in path.withIndex()) {
+                val isTrailingSpace = character == ' ' && path.substring(index).all { it == ' ' }
+                if (
+                    character in "\\*?[]" ||
+                    (index == 0 && character in "#!") ||
+                    isTrailingSpace
+                ) append('\\')
+                append(character)
+            }
+        }
+        return escaped.takeIf { it.length <= ClotrIgnore.MAX_PATTERN_LENGTH }
     }
 
     internal fun shouldShowSecretNote(alreadyShown: Boolean, ignoredByGit: Boolean) = !alreadyShown && !ignoredByGit
     fun findingCount() = counts.values.sum()
+    fun uncheckedCount() = uncheckedFiles.size
+    fun markUnchecked(path: String) {
+        counts[path] = 0
+        uncheckedFiles.add(path)
+        refreshStatus()
+    }
     fun updateCount(path: String, value: Int) {
         counts[path] = value.coerceAtLeast(0)
+        uncheckedFiles.remove(path)
         refreshStatus()
     }
 

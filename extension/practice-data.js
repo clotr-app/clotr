@@ -8,6 +8,7 @@
   "use strict";
 
   const { msg } = globalThis.Clotr;
+  const { awsAccessKey } = globalThis.ClotrDemo;
 
   // Checks whether a reply is a bare number, with nothing else around it, shaped like what the drill's own
   // message just asked for. A real chat has to stay quiet on a bare number alone, and detect() still does
@@ -193,7 +194,7 @@
     },
     {
       id: "script",
-      text: msg("pd_l5", "This script fails with a 403, here's my config: AWS_ACCESS_KEY_ID=AKIA4HPQ7XZ2R6TWLJ3N"),
+      text: msg("pd_l5", "This script fails with a 403, here's my config: AWS_ACCESS_KEY_ID=$1", awsAccessKey),
       finds: ["aws_access_key"],
       instead: msg("pd_l5Instead", "The AI doesn't need the key to help: send the error without it."),
     },

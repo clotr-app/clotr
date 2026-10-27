@@ -1,0 +1,13 @@
+{
+  "name": "clotr-guard",
+  "description": "Checks each prompt for credentials before Claude Code sends it, on your device.",
+  "version": "0.1.1",
+  "author": {
+    "name": "clotr-app",
+    "url": "https://github.com/clotr-app"
+  },
+  "homepage": "https://github.com/clotr-app/clotr/tree/main/apps/guard/plugin#readme",
+  "repository": "https://github.com/clotr-app/clotr",
+  "license": "AGPL-3.0-or-later",
+  "keywords": ["secrets", "credentials", "privacy"]
+}

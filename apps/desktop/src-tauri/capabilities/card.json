@@ -1,0 +1,24 @@
+{
+  "identifier": "card",
+  "description": "The card's page shows text from the clipboard or the AI app's message box, so it gets only narrow commands: read the copy or the typed message being checked, show or close the card, put the safe version on the clipboard, paste it, record a choice, stop warning about a kind, go back to the app, open the false-alarm report. No settings, no vault, no move file.",
+  "windows": ["card"],
+  "permissions": [
+    "core:event:allow-listen",
+    "core:event:allow-unlisten",
+    "allow-card-hello",
+    "allow-read-clip",
+    "allow-show-card",
+    "allow-resize-card",
+    "allow-card-done",
+    "allow-hide-in-clipboard",
+    "allow-read-typed",
+    "allow-read-box-again",
+    "allow-copy-safe",
+    "allow-typed-note-seen",
+    "allow-paste-clip",
+    "allow-record",
+    "allow-set-responses",
+    "allow-back-to-app",
+    "allow-open-report"
+  ]
+}

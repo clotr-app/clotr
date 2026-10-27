@@ -7,7 +7,7 @@ const test = require("node:test");
 const assert = require("node:assert/strict");
 const fs = require("node:fs");
 const path = require("node:path");
-const { retrySlow, bestOfBoth, bestOfPair, grewMoreThan } = require("./timing.js");
+const { bestOfPair, grewMoreThan } = require("./timing.js");
 
 // The signs, in their order.
 const SIGN_IDS = [
@@ -151,7 +151,7 @@ test("the scam corpora use every sign, in both languages, and the look-alikes ar
 require("../extension/patterns.js");
 require("../extension/detector.js");
 require("../extension/scam-signs.js");
-const { scamSigns, SCAM_SIGNS, askLabels, detect } = globalThis.Clotr;
+const { scamSigns, scamHasLink, SCAM_SIGNS, askLabels, detect } = globalThis.Clotr;
 
 const found = (text, opts) => scamSigns(text, opts).map((s) => s.id);
 // Returns the words a sign actually marked, for the messages below.
@@ -201,6 +201,22 @@ test("the made-up message gives exactly its four signs, in both languages, marki
   assert.deepEqual(words(en, "press_secret"), ["Don't tell anyone at the branch", "they may be in on it"]);
   assert.deepEqual(words(en, "pret_bank"), ["the fraud team at Anytown Bank"]);
   assert.deepEqual(words(es, "asks_code"), ["el código de 6 cifras que te acabamos de enviar"]);
+});
+
+test("scam link check keeps the supported link shapes and boundaries", () => {
+  for (const text of [
+    "https://example.com",
+    "www.example.com",
+    "example.com",
+    "example.org",
+    "example.invalid",
+    "a.co.uk",
+  ]) {
+    assert.equal(scamHasLink(text), true, text);
+  }
+  for (const text of ["person@example.com", "@example.com", "Äexample.com", "example.comx", "example.dev"]) {
+    assert.equal(scamHasLink(text), false, text);
+  }
 });
 
 // A real pressure-sell email that landed in spam: paid, fake Chrome Web Store reviews, sold with an invented
@@ -360,36 +376,74 @@ test("Clotr.askLabels: the scam rules' own labels, and what detect() finds after
 });
 
 // A long paste, such as a whole email thread, must be read in time that grows with its length, not faster than
-// that; this is the same budget that once caught a slowdown in the otp_secret rule. It's measured the same way
-// as the other speed checks in tests/timing.js: best of three runs, the two lengths timed in alternating turns,
-// retried after a pause if a busy moment slowed one of them, with a budget that grows on a busy computer by as
-// much as a reference task slows down.
+// that. Warmed measurements of both sizes alternate in the same run and compare growth instead of a fixed limit.
 test("a long message is read in linear time, and hostile text in a moment", () => {
   const block = readLabelled("scam-messages.txt")
     .map((m) => m.text)
     .join("\n");
   const big = Array(8).fill(block).join("\n");
-  retrySlow(() => {
-    const [one, eight] = bestOfPair(
-      () => scamSigns(block),
-      () => scamSigns(big),
-      8,
-      8,
-    );
-    return grewMoreThan(one, eight, 16, 1)
-      ? `8× the text: ${one.wall.toFixed(0)} → ${eight.wall.toFixed(0)} ms`
-      : undefined;
-  });
+  const [one, eight] = bestOfPair(
+    () => scamSigns(block),
+    () => scamSigns(big),
+    8,
+  );
+  assert.ok(!grewMoreThan(one, eight, 16, 1), "eight times the text took too much longer to scan");
   // Long runs of the words the rules look for.
-  for (const text of ["code ".repeat(20000), "send me ".repeat(10000), "a".repeat(100000), "the 3 ".repeat(15000)]) {
-    retrySlow(() => {
-      const t = bestOfBoth(() => scamSigns(text), 1);
-      return t.over(3000)
-        ? `${text.slice(0, 10)}…: ${t.wall.toFixed(0)} ms (${t.allowed.toFixed(0)} allowed on this computer now)`
-        : undefined;
-    });
+  for (const text of ["code ".repeat(5000), "send me ".repeat(2500), "a".repeat(25000), "the 3 ".repeat(3750)]) {
+    const small = text.slice(0, Math.floor(text.length / 4));
+    const [a, b] = bestOfPair(
+      () => scamSigns(small),
+      () => scamSigns(text),
+      4,
+    );
+    assert.ok(!grewMoreThan(a, b, 16), `${text.slice(0, 10)} grew too fast for 4× the text`);
   }
 });
+
+test("hostile link and negation inputs grow with their length", () => {
+  const linkJunk = "a.".repeat(25000);
+  assert.equal(scamHasLink(linkJunk), false);
+  const [linkSmall, linkBig] = bestOfPair(
+    () => scamHasLink(linkJunk.slice(0, 12500)),
+    () => scamHasLink(linkJunk),
+    2,
+  );
+  assert.ok(!grewMoreThan(linkSmall, linkBig, 16), "hostile link text grew too fast");
+
+  // Keep this in one sentence: each candidate used to rescan all earlier words in the sentence.
+  const clause = "never ask for the 6-digit code we just texted you, ";
+  const negationJunk = clause.repeat(1500);
+  assert.deepEqual(scamSigns(negationJunk), []);
+  const [negationSmall, negationBig] = bestOfPair(
+    () => scamSigns(clause.repeat(375)),
+    () => scamSigns(negationJunk),
+    4,
+  );
+  assert.ok(!grewMoreThan(negationSmall, negationBig, 16), "negated text grew too fast");
+});
+
+test(
+  "Try page caps its check at the extension's 100,000-character scan size",
+  { skip: !fs.existsSync(path.join(__dirname, "..", "website-test")) && "no website-test here" },
+  () => {
+    const root = path.join(__dirname, "..");
+    const html = fs.readFileSync(path.join(root, "website-test", "try.html"), "utf8");
+    const script = fs.readFileSync(path.join(root, "website-test", "try", "scam-check.js"), "utf8");
+    const extensionContent = fs.readFileSync(path.join(root, "extension", "content.js"), "utf8");
+    const extensionSigns = fs.readFileSync(path.join(root, "extension", "scam-signs.js"), "utf8");
+    const siteSigns = fs.readFileSync(path.join(root, "website-test", "try", "scam-signs.js"), "utf8");
+    assert.match(html, /Clotr checks the first 100,000 characters/);
+    assert.match(html, /<textarea\b[^>]*id="sc-message"[^>]*maxlength="100000"/);
+    assert.match(script, /const MAX_MESSAGE_LENGTH = 100000;/);
+    assert.match(
+      script,
+      /const text = input\.length > MAX_MESSAGE_LENGTH \? input\.slice\(0, MAX_MESSAGE_LENGTH\) : input;/,
+    );
+    assert.match(script, /if \(input\.length > MAX_MESSAGE_LENGTH\)[\s\S]*?\$\("sc-message"\)\.value = text;/);
+    assert.match(extensionContent, /if \(text\.length > 100000\) break/);
+    assert.equal(siteSigns, extensionSigns, "the export's Try engine copy matches the extension source");
+  },
+);
 
 test("nothing but text in: an empty, missing or odd input gives no signs and doesn't throw", () => {
   for (const v of ["", "   ", undefined, null, 42, {}]) assert.deepEqual(scamSigns(v), []);

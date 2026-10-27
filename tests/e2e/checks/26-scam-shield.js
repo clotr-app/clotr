@@ -559,38 +559,34 @@ module.exports = async function (env) {
         .map((h) => h.textContent.trim()),
     );
 
-  await check(
-    "SN3",
-    "The welcome page carries no scam check card: it moved into Settings, so Try it runs straight into Tell Clotr what to look out for",
-    async () => {
-      await resetState(ctx, {});
+  await check("SN3", "The welcome page has no scam check card, and Try it comes before the setup cards", async () => {
+    await resetState(ctx, {});
+    await unlockSettings(ctx);
+    const page = await openPage(ctx, "vault.html?welcome=1");
+    try {
+      expect(!(await page.$("#ss-welcome")), "the old scam check card is still on the welcome page");
+      const h2s = await readWelcomeH2s(page);
+      const at = h2s.indexOf("Try it");
+      expect(
+        at >= 0 && h2s.indexOf("Tell Clotr what to look out for", at + 1) > at,
+        `Try it or the later setup card is missing: ${h2s.join(" / ")}`,
+      );
+      await fitsAt380(page, "The welcome page");
+      await partShots(page, "#welcome", "scam-shield-welcome");
+      expect(!(await store.events(ctx)).length, "the welcome page recorded something");
+    } finally {
+      await page.close();
+    }
+    // Even locked by a PIN, it should stay gone, since these pages don't change any setting.
+    await lockSettings(ctx);
+    const locked = await openPage(ctx, "vault.html?welcome=1");
+    try {
+      expect(!(await locked.$("#ss-welcome")), "the card came back while settings are locked");
+    } finally {
+      await locked.close();
       await unlockSettings(ctx);
-      const page = await openPage(ctx, "vault.html?welcome=1");
-      try {
-        expect(!(await page.$("#ss-welcome")), "the old scam check card is still on the welcome page");
-        const h2s = await readWelcomeH2s(page);
-        const at = h2s.indexOf("Try it");
-        expect(
-          at >= 0 && h2s[at + 1] === "Tell Clotr what to look out for",
-          `Try it isn't followed by the next card: ${h2s.join(" / ")}`,
-        );
-        await fitsAt380(page, "The welcome page");
-        await partShots(page, "#welcome", "scam-shield-welcome");
-        expect(!(await store.events(ctx)).length, "the welcome page recorded something");
-      } finally {
-        await page.close();
-      }
-      // Even locked by a PIN, it should stay gone, since these pages don't change any setting.
-      await lockSettings(ctx);
-      const locked = await openPage(ctx, "vault.html?welcome=1");
-      try {
-        expect(!(await locked.$("#ss-welcome")), "the card came back while settings are locked");
-      } finally {
-        await locked.close();
-        await unlockSettings(ctx);
-      }
-    },
-  );
+    }
+  });
 
   // Reads the Share page's headings, the card's tag, and its practice lines.
   const readShare = (page) =>
@@ -919,15 +915,15 @@ module.exports = async function (env) {
           await popup.close();
           await setTourniquet(es, null);
         }
-        // Checks the welcome page: the old card is gone, so Try it runs straight into the next one.
+        // Checks the welcome page: the old card is gone, and the setup cards follow Try it.
         const welcome = await openPage(es, "vault.html?welcome=1");
         try {
           expect(!(await welcome.$("#ss-welcome")), "the old scam check card is still on the welcome page");
           const h2s = await readWelcomeH2s(welcome);
           const at = h2s.indexOf("Pruébalo");
           expect(
-            at >= 0 && h2s[at + 1] === "Dile a Clotr qué vigilar",
-            `Pruébalo isn't followed by the next card: ${h2s.join(" / ")}`,
+            at >= 0 && h2s.indexOf("Dile a Clotr qué vigilar", at + 1) > at,
+            `Pruébalo or the later setup card is missing: ${h2s.join(" / ")}`,
           );
           await fitsAt380(welcome, "The Spanish welcome page");
         } finally {

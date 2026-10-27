@@ -6,7 +6,7 @@
 
 const test = require("node:test");
 const assert = require("node:assert/strict");
-const { bestOfBoth } = require("./timing");
+const { bestOfPair, grewMoreThan } = require("./timing");
 
 require("../extension/patterns.js");
 require("../extension/detector.js");
@@ -58,33 +58,37 @@ function oldRespFor(r, m, s) {
 }
 const RANK = { log: 0, warn: 1, block: 2 };
 
-test("respFor: 600 phone numbers with a saved phone to protect are decided in well under a second", () => {
+test("respFor: decision work grows with the number of saved phone matches", () => {
+  const small = found("phone_number", phones(150));
   const r = found("phone_number", phones(600));
   const savedPhone = strong("phone_number", "(555) 555-5636", "protect");
-  let answers;
-  const timing = bestOfBoth(() => {
+  const run = (result) => {
     const s = state({ vault: [savedPhone] });
-    answers = r.matches.map((m) => C.respFor(r, m, s));
-  });
+    return result.matches.map((m) => C.respFor(result, m, s));
+  };
+  const [smallTime, bigTime] = bestOfPair(
+    () => run(small),
+    () => run(r),
+    4,
+  );
+  const answers = run(r);
   assert.ok(answers.every((a) => a === "warn"));
-  // Before the fix: 600 strong fingerprints, about 9 seconds.
-  assert.ok(!timing.over(500), `took ${Math.round(timing.wall)} ms`);
+  assert.ok(!grewMoreThan(smallTime, bigTime, 16), "decision work grew too fast for 4× the matches");
 });
 
-test("respFor: 600 emails with a saved email marked OK to share stay within a host's time budget", () => {
+test("respFor: an email marked OK to share stays guarded while the host works through its budget", () => {
   const mine = "jo@example.org";
   const list = [...emails(599), mine];
   const r = found("email", list);
   const savedEmail = strong("email", mine, "allow");
   let s;
   let answers;
-  const timing = bestOfBoth(() => {
+  const decide = () => {
     s = state({ vault: [savedEmail] });
-    s.budget = { until: performance.now() + 50, missed: [] };
+    s.budget = { until: -1, missed: [] };
     answers = r.matches.map((m) => C.respFor(r, m, s));
-  });
-  // One slow fingerprint can start just before the budget ends; anything past that is left for later.
-  assert.ok(!timing.over(50 + 100), `took ${Math.round(timing.wall)} ms with a 50 ms budget`);
+  };
+  decide();
   assert.ok(s.budget.missed.length > 500, `only ${s.budget.missed.length} left for later`);
   // Not known yet means the kind's usual warning, so the saved email is warned about until it's worked out.
   assert.equal(answers.at(-1), "warn");

@@ -5,7 +5,7 @@
 
 const test = require("node:test");
 const assert = require("node:assert/strict");
-const { retrySlow, bestOfBoth } = require("./timing.js");
+const { bestOfPair, grewMoreThan } = require("./timing.js");
 const fs = require("node:fs");
 const path = require("node:path");
 
@@ -124,22 +124,24 @@ test("text that only looks like a label isn't one", () => {
   assert.deepEqual(readBandageLabels(null), []);
 });
 
-test("a long chat is read in one quick pass", () => {
+test("a long chat is read in one linear pass", () => {
   const chunk = "Here is a long answer about [Phone 3] and [Address 2], with arrays like a[i] and [links](x). ";
-  const text = chunk.repeat(20000); // about 2 MB
-  assert.equal(readBandageLabels(text).length, 40000);
-  retrySlow(() => {
-    const t = bestOfBoth(() => readBandageLabels(text), 1);
-    return t.over(1000)
-      ? `took ${t.wall.toFixed(0)} ms (${t.allowed.toFixed(0)} allowed on this computer now)`
-      : undefined;
-  });
-  const plain = "nothing to see here ".repeat(100000);
+  const text = chunk.repeat(2500);
+  assert.equal(readBandageLabels(text).length, 5000);
+  const [a, b] = bestOfPair(
+    () => readBandageLabels(chunk.repeat(625)),
+    () => readBandageLabels(text),
+    4,
+  );
+  assert.ok(!grewMoreThan(a, b, 16), "reading labels grew too fast for 4× the chat");
+  const plain = "nothing to see here ".repeat(20000);
   assert.deepEqual(readBandageLabels(plain), []);
-  retrySlow(() => {
-    const t = bestOfBoth(() => readBandageLabels(plain), 1);
-    return t.over(200) ? `text without a bracket wasn't skipped quickly: ${t.wall.toFixed(0)} ms` : undefined;
-  });
+  const [plainSmall, plainBig] = bestOfPair(
+    () => readBandageLabels(plain.slice(0, plain.length / 4)),
+    () => readBandageLabels(plain),
+    4,
+  );
+  assert.ok(!grewMoreThan(plainSmall, plainBig, 16), "plain text grew too fast for 4× the chat");
 });
 
 // The reader's word list has to match what Bandage actually writes: English lives in content.js, Spanish in
@@ -198,24 +200,25 @@ test("a team's cover words are read as labels while its kinds are set, and a bui
     assert.equal(C.bandageKindOf("Matter"), "team:matter");
     assert.equal(C.bandageKindOf("Phone"), "bl_phone");
     assert.equal(C.bandageKindOf("Teléfono"), "bl_phone");
-    // Still one quick pass over a long chat.
-    const long = "An answer about [Matter 3] and [Phone 2], with a[i] and [links](x). ".repeat(20000);
-    assert.equal(readBandageLabels(long).length, 40000);
-    retrySlow(() => {
-      const t = bestOfBoth(() => readBandageLabels(long), 1);
-      return t.over(1000)
-        ? `a long chat with team labels took ${t.wall.toFixed(0)} ms (${t.allowed.toFixed(0)} allowed on this computer now)`
-        : undefined;
-    });
-    // A "[" before a long run of spaces, like in a code block, is read just as quickly.
-    const spaced = "[" + " ".repeat(10000) + "x, then [" + " \n".repeat(5000) + "Matter 6]";
-    assert.deepEqual(ids(spaced), ["team:matter 6"]);
-    retrySlow(() => {
-      const t = bestOfBoth(() => readBandageLabels(spaced), 1);
-      return t.over(50)
-        ? `a "[" before a long run of spaces took ${t.wall.toFixed(0)} ms (${t.allowed.toFixed(0)} allowed on this computer now)`
-        : undefined;
-    });
+    // Still one linear pass over a long chat.
+    const teamChunk = "An answer about [Matter 3] and [Phone 2], with a[i] and [links](x). ";
+    const long = teamChunk.repeat(2500);
+    assert.equal(readBandageLabels(long).length, 5000);
+    const [teamSmall, teamBig] = bestOfPair(
+      () => readBandageLabels(teamChunk.repeat(625)),
+      () => readBandageLabels(long),
+      4,
+    );
+    assert.ok(!grewMoreThan(teamSmall, teamBig, 16), "team labels grew too fast for 4× the chat");
+    // A "[" before a long run of spaces, like in a code block, is also read in linear time.
+    const spaced = (n) => "[" + " ".repeat(n) + "x, then [" + " \n".repeat(n / 2) + "Matter 6]";
+    assert.deepEqual(ids(spaced(2000)), ["team:matter 6"]);
+    const [gapSmall, gapBig] = bestOfPair(
+      () => readBandageLabels(spaced(500)),
+      () => readBandageLabels(spaced(2000)),
+      4,
+    );
+    assert.ok(!grewMoreThan(gapSmall, gapBig, 16), "a long bracket gap grew too fast");
   } finally {
     C.setVault(null);
   }

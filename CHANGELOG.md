@@ -2,6 +2,23 @@
 
 What changed in each version of Clotr. How the version numbers work is in [VERSIONING.md](VERSIONING.md).
 
+## 1.6.0 (2026-10-27)
+
+- The practice key is assembled when its pages open, so examples still work without shipping a whole copy of a key.
+- The Try page checks the first 100,000 characters of a pasted message and explains what to do when it is longer.
+- Saved details still warn after paste rewrites, autocorrect and undo; guesses added by a chat page stay quiet.
+- When an AI reply mentions a detail from your vault, Clotr shows the count in its toolbar and popup. Activity keeps only the kind and chat, and the page never sees a reply notice.
+- Clotr recognizes long credentials wrapped across indented lines in YAML files.
+- Long runs of everyday words no longer make Clotr hash thousands of overlapping recovery-phrase windows. Number-word scans skip ordinary prose and private-key checks skip parsers whose markers are absent.
+- Large messages are scanned in smaller overlapping pieces and a result is marked if the scan stops before it finishes.
+- On first use, the welcome page opens a fake example and checks it as soon as you choose to try it.
+- The welcome page explains that an AI service still receives a message you choose to send, and that Clotr has no server.
+- The warning choices use the same names in Windows and in the browser. 'Leave it alone' closes the warning; 'Leave it and send' sends a held message.
+- The welcome page names built-in AI chats as the default and explains how to pause Clotr on one. Its other choice checks chat boxes on other sites, not checkout or sign-in forms.
+- On Clotr's own welcome page, the toolbar popup now says where you are instead of saying there is no web page in the tab.
+- On an ordinary website the popup says Clotr watches AI chats and is idle there. A plain button can still turn it on for that site.
+- Settings shows your Clotr version and a 'what's new' button that reopens these release notes, even after you have marked them as read.
+
 ## 1.5.0 (2026-10-21)
 
 - Cover it now covers a pasted private key even when its last line is missing or damaged.

@@ -1,7 +1,7 @@
 "use strict";
 /* global require, module */
 
-const path = require("node:path");
+const path = require("path");
 
 const OPENSSH_PRIVATE_KEYS = new Set([
   "id_rsa",
@@ -31,8 +31,18 @@ const SECRET_PATHS = [
   ".azure/msal_token_cache.json",
 ];
 
+// Windows opens "name.", "name " and "name::$DATA" (any "name:stream") as the file "name", so each part of the path is
+// read the way Windows would before the rules below see it.
+function windowsPart(part) {
+  return part.replace(/:.*$/, "").replace(/[. ]+$/, "");
+}
+
 function isSecretFile(filePath, content = "") {
-  const normalized = filePath.replace(/\\/g, "/");
+  const normalized = filePath
+    .replace(/\\/g, "/")
+    .split("/")
+    .map((part, index) => (index === 0 && /^[a-z]:$/i.test(part) ? part : windowsPart(part)))
+    .join("/");
   const name = path.posix.basename(normalized).toLowerCase();
   const parent = path.posix.basename(path.posix.dirname(normalized)).toLowerCase();
   const lowered = normalized.toLowerCase();

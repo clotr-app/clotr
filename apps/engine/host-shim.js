@@ -141,7 +141,7 @@
     const lang = String(tag || "en")
       .toLowerCase()
       .split(/[-_]/)[0];
-    locale = Object.hasOwn(books(), lang) ? lang : "en";
+    locale = Object.prototype.hasOwnProperty.call(books(), lang) ? lang : "en";
     return locale;
   }
 

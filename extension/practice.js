@@ -49,7 +49,7 @@ function showDrill(i) {
 }
 
 // Shows what Clotr would show on a real chat for this reply, using the engine's real answer, then the safer
-// reply. `after` switches to the wording used once Hide it has covered the reply.
+// reply. `after` switches to the wording used once Clot this leak has covered the reply.
 function reveal(after = false) {
   const d = DRILLS[at];
   const text = $("reply").value;

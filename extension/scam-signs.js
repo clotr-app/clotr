@@ -64,7 +64,18 @@
     if (start < text.length) out.push(span(start, text.length));
     return out;
   }
-  const sentenceAt = (list, at) => list.find((s) => at >= s.start && at < s.end) || span(at, at);
+  function sentenceAt(list, at) {
+    let low = 0;
+    let high = list.length - 1;
+    while (low <= high) {
+      const middle = (low + high) >> 1;
+      const s = list[middle];
+      if (at < s.start) high = middle - 1;
+      else if (at >= s.end) low = middle + 1;
+      else return s;
+    }
+    return span(at, at);
+  }
 
   // A request said as a warning, like "we'll never ask for the code" or "nunca te pediremos", isn't really a
   // request. I decide this by the last matching negation word before the place in its sentence; a condition
@@ -76,17 +87,54 @@
     String.raw`if\s+(?:you|u|it|this|that)\s+(?:did\s*n'?t|did\s+not|don'?t|do\s+not|wasn'?t|was\s+not|weren'?t|haven'?t)|don'?t\s+(?:wait|delay|worry|hesitate|panic|hang\s+up)|do\s+not\s+(?:wait|delay|worry|hang\s+up)|si\s+no|para\s+no|no\s+cuelgues?|no\s+tarde|no\s+espere`,
   );
   const TURN = words(String.raw`but|however|instead|pero|sino`);
-  function negated(text, sents, at) {
+  function firstAtOrAfter(list, at, startOf = (item) => item.start) {
+    let low = 0;
+    let high = list.length;
+    while (low < high) {
+      const middle = (low + high) >> 1;
+      if (startOf(list[middle]) < at) low = middle + 1;
+      else high = middle;
+    }
+    return low < list.length ? low : -1;
+  }
+  function indexNegations(text, sents) {
+    for (const s of sents) {
+      const sentence = text.slice(s.start, s.end);
+      const shifted = (re) => all(re, sentence).map((m) => span(s.start + m.index, s.start + m.index + m[0].length));
+      const keep = shifted(NOT_NEGATION);
+      const negations = shifted(NEGATION);
+      const notNegations = [];
+      let keepAt = 0;
+      for (const n of negations) {
+        while (keepAt < keep.length && keep[keepAt].end <= n.start) keepAt++;
+        const k = keep[keepAt];
+        if (!k || k.start >= n.end || k.end <= n.start) notNegations.push(n);
+      }
+      s.negation = {
+        words: notNegations,
+        turns: shifted(TURN),
+        semicolons: [...sentence.matchAll(/;/g)].map((m) => s.start + m.index),
+      };
+    }
+  }
+  function negated(sents, at) {
     const s = sentenceAt(sents, at);
-    const before = text.slice(s.start, at);
-    const keep = all(NOT_NEGATION, before).map(spanOf);
-    const neg = all(NEGATION, before)
-      .map(spanOf)
-      .filter((n) => !keep.some((k) => n.start < k.end && k.start < n.end))
-      .at(-1);
+    const state = s.negation;
+    if (!state) return false;
+    let low = 0;
+    let high = state.words.length;
+    while (low < high) {
+      const middle = (low + high) >> 1;
+      if (state.words[middle].end <= at) low = middle + 1;
+      else high = middle;
+    }
+    const neg = state.words[low - 1];
     if (!neg) return false;
-    const after = before.slice(neg.end);
-    return !has(TURN, after) && !after.includes(";");
+    const turnAt = firstAtOrAfter(state.turns, neg.end);
+    const semicolonAt = firstAtOrAfter(state.semicolons, neg.end, (position) => position);
+    const turned = turnAt >= 0 && state.turns[turnAt].start < at && state.turns[turnAt].end <= at;
+    const separated = semicolonAt >= 0 && state.semicolons[semicolonAt] < at;
+    return !turned && !separated;
   }
 
   // The words that make a request, in English and Spanish. A verb followed by "you", as in "we'll send you a
@@ -107,7 +155,7 @@
     const cue = all(ask, before)
       .filter((m) => !GIVES_TO_YOU.test(before.slice(m.index + m[0].length)))
       .at(-1);
-    return Boolean(cue) && !negated(text, sents, from + cue.index);
+    return Boolean(cue) && !negated(sents, from + cue.index);
   }
 
   // ---------- It asks for a code or a detail ----------
@@ -163,7 +211,7 @@
     const out = labels.filter((l) => askedBefore(text, sents, l.start, ASK_CODE));
     for (const m of all(ASK_IT, text)) {
       const label = labels.filter((l) => l.end <= m.index && m.index - l.end < 200).at(-1);
-      if (label && !negated(text, sents, m.index) && !out.includes(label)) out.push(label);
+      if (label && !negated(sents, m.index) && !out.includes(label)) out.push(label);
     }
     return out;
   }
@@ -212,13 +260,13 @@
     for (const re of GIFT_ASKS) {
       for (const m of all(re, text)) {
         const plural = /s$/i.test(m[0]) || /\S/.test(m.groups?.amount || "") || re !== GIFT_ASKS[0];
-        if (plural && !negated(text, sents, m.index)) out.push(spanOf(m));
+        if (plural && !negated(sents, m.index)) out.push(spanOf(m));
       }
     }
     if (GIFT_ANY.test(text)) {
       for (const m of all(GIFT_NUMBERS, text)) {
         const s = spanOf(m);
-        if (!codes.some((c) => overlaps(c, s)) && !negated(text, sents, m.index)) out.push(s);
+        if (!codes.some((c) => overlaps(c, s)) && !negated(sents, m.index)) out.push(s);
       }
     }
     return out;
@@ -307,12 +355,12 @@
   );
   function payCrypto(text, sents) {
     const out = PAY_CRYPTO.flatMap((re) => all(re, text))
-      .filter((m) => !negated(text, sents, m.index))
+      .filter((m) => !negated(sents, m.index))
       .map(spanOf);
     const near = all(ANY_CRYPTO, text).map((m) => sents.findIndex((s) => m.index >= s.start && m.index < s.end));
     for (const m of all(PAY_MONEY, text)) {
       const at = sents.findIndex((s) => m.index >= s.start && m.index < s.end);
-      if (near.some((k) => k === at || k === at - 1) && !negated(text, sents, m.index)) out.push(spanOf(m));
+      if (near.some((k) => k === at || k === at - 1) && !negated(sents, m.index)) out.push(spanOf(m));
     }
     return out;
   }
@@ -338,7 +386,7 @@
   ];
   const payHardToUndo = (text, sents) =>
     HARD_TO_UNDO.flatMap((re) => all(re, text))
-      .filter((m) => !negated(text, sents, m.index))
+      .filter((m) => !negated(sents, m.index))
       .map(spanOf);
 
   // Matches "moving money to protect it": a safety phrase and a verb that moves money, both in one sentence.
@@ -352,8 +400,8 @@
     const out = [];
     for (const p of all(PROTECT, text)) {
       const s = sentenceAt(sents, p.index);
-      const move = all(MOVE, text.slice(s.start, s.end)).find((m) => !negated(text, sents, s.start + m.index));
-      if (move && !negated(text, sents, p.index)) {
+      const move = all(MOVE, text.slice(s.start, s.end)).find((m) => !negated(sents, s.start + m.index));
+      if (move && !negated(sents, p.index)) {
         out.push(span(s.start + move.index, s.start + move.index + move[0].length), spanOf(p));
       }
     }
@@ -493,8 +541,29 @@
   const DO_NOW = words(
     String.raw`click|tap|call|reply|text\s+back|respond|log\s*in|sign\s*in|verify|confirm|visit|update|pay|book|reschedule|fix|re-?enter|contact|claim|send|enter|deposit|wire|scan|responda|responde|pague|paga|llame|llama|haga\s+clic|pulse|entra|entre|confirme|confirma|actualice|actualiza|verifique|verifica|introduzca|introduce|env[ií]e|env[ií]a|cobrar|reclamar|canjear[\p{L}]*|escanee`,
   );
-  const LINK =
-    /https?:\/\/|www\.|(?<![\p{L}\p{N}@-])[a-z0-9-]+(?:\.[a-z0-9-]+)*\.(?:com|net|org|invalid|info|co|io|us|gov|es)(?![\p{L}\p{N}])/iu;
+  const LINK_PREFIX = /https?:\/\/|www\./iu;
+  const LINK_DOMAIN_END = /\.(?:com|net|org|invalid|info|co|io|us|gov|es)(?![\p{L}\p{N}])/giu;
+  const domainLabelChar = (code) =>
+    (code >= 48 && code <= 57) || (code >= 65 && code <= 90) || (code >= 97 && code <= 122) || code === 45;
+  function domainStartBoundary(text, at) {
+    if (!at) return true;
+    let code = text.charCodeAt(at - 1);
+    if (code >= 0xdc00 && code <= 0xdfff && at > 1) {
+      const high = text.charCodeAt(at - 2);
+      if (high >= 0xd800 && high <= 0xdbff) code = 0x10000 + ((high - 0xd800) << 10) + (code - 0xdc00);
+    }
+    return !/[\p{L}\p{N}@-]/u.test(String.fromCodePoint(code));
+  }
+  function hasLink(text) {
+    if (LINK_PREFIX.test(text)) return true;
+    LINK_DOMAIN_END.lastIndex = 0;
+    for (const match of text.matchAll(LINK_DOMAIN_END)) {
+      let start = match.index - 1;
+      while (start >= 0 && domainLabelChar(text.charCodeAt(start))) start--;
+      if (start < match.index - 1 && domainStartBoundary(text, start + 1)) return true;
+    }
+    return false;
+  }
 
   // ---------- All together ----------
 
@@ -533,6 +602,7 @@
     // still lines up.
     const text = input.replace(/[’‘]/g, "'").replace(/\u00a0/g, " ");
     const sents = sentences(text);
+    indexNegations(text, sents);
     const codes = codeLabels(text);
     const found = new Map();
     const add = (id, list) => {
@@ -547,7 +617,7 @@
     add(
       "asks_remote",
       all(REMOTE_ASKS, text)
-        .filter((m) => !negated(text, sents, m.index))
+        .filter((m) => !negated(sents, m.index))
         .map(spanOf),
     );
     add("asks_details", asksDetails(text, sents, cards));
@@ -588,7 +658,7 @@
     // A problem or a prize only counts as a sign alongside something to do about it right now. I skip the
     // problem sign when the message already named the bank, the government, or tech support, so that
     // pretext doesn't get counted twice.
-    const doNow = asksOrPays || has(DO_NOW, text) || LINK.test(text);
+    const doNow = asksOrPays || has(DO_NOW, text) || hasLink(text);
     if (doNow && !found.has("pret_bank") && !found.has("pret_gov") && !found.has("pret_support")) {
       add("prob_account", spansOf(PROBLEM, text));
     }
@@ -603,7 +673,7 @@
   }
 
   // Tells the page whether the message has a link in it, for the "don't use it to check" line.
-  const scamHasLink = (text) => typeof text === "string" && LINK.test(text);
+  const scamHasLink = (text) => typeof text === "string" && hasLink(text);
 
   globalThis.Clotr = { ...(globalThis.Clotr || {}), SCAM_SIGNS, scamSigns, scamHasLink };
 })();

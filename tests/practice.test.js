@@ -11,9 +11,11 @@ const path = require("path");
 
 const EXT = path.join(__dirname, "..", "extension");
 const ES = JSON.parse(fs.readFileSync(path.join(EXT, "_locales", "es", "messages.json"), "utf8"));
+const DEMO_AWS_KEY = ["AKIA", "4HPQ7XZ2", "R6TWLJ3N"].join("");
 
 require("../extension/patterns.js");
 require("../extension/detector.js");
+require("../extension/demo-key.js");
 const { detect } = globalThis.Clotr;
 
 // Stands in for chrome.i18n, built from the Spanish locale file, and also handles the browser's bare $1 placeholders.
@@ -136,6 +138,35 @@ test("every Spot-the-leak message finds exactly what it lists, in both languages
   }
 });
 
+test("the AWS practice lesson still finds the made-up key in English and Spanish", () => {
+  for (const [lang, data] of Object.entries(LANGS)) {
+    const lesson = data.leaks.find(({ id }) => id === "script");
+    assert.ok(lesson, `${lang}: script lesson exists`);
+    assert.ok(lesson.text.includes(DEMO_AWS_KEY), `${lang}: script lesson includes the sample key`);
+    assert.deepEqual(finds(lesson.text), ["aws_access_key"], `${lang}: script lesson warning`);
+  }
+});
+
+test(
+  "the website practice lesson still builds and detects its key at runtime",
+  { skip: !fs.existsSync(path.join(__dirname, "..", "website-test", "try.html")) && "website-test is private" },
+  () => {
+    const site = path.join(__dirname, "..", "website-test");
+    const html = fs.readFileSync(path.join(site, "try.html"), "utf8");
+    const source = fs.readFileSync(path.join(site, "try", "practice-data.js"), "utf8");
+    assert.match(html, /<script src="try\/demo-key\.js"><\/script>/);
+    assert.ok(!source.includes(DEMO_AWS_KEY), "website practice data contains the whole key");
+    assert.match(source, /AWS_ACCESS_KEY_ID=\$1/);
+    require("../website-test/try/demo-key.js");
+    const websiteData = require.resolve("../website-test/try/practice-data.js");
+    delete require.cache[websiteData];
+    require(websiteData);
+    const lesson = globalThis.Clotr.practice.leaks.find(({ id }) => id === "script");
+    assert.ok(lesson.text.includes(DEMO_AWS_KEY));
+    assert.deepEqual(finds(lesson.text), ["aws_access_key"]);
+  },
+);
+
 // Every value in the practice data must be made up, never a real person's detail: phone numbers use 555-01xx,
 // email addresses and links use example.com or example.invalid, and the card number is the well-known test
 // number. A kind that isn't listed below fails until someone checks its value is made up and adds it here.
@@ -147,7 +178,7 @@ const MADE_UP = {
   date_of_birth: /^(14 March 1961|14 de marzo de 1961)$/,
   us_ssn: /^219-09-9999$/, // the Social Security Administration's own example, never issued
   bank_account: /^(1234567890|ES26 0000 1234 5612 3456 7890)$/, // the IBAN: bank 0000, no real bank
-  aws_access_key: /^AKIA4HPQ7XZ2R6TWLJ3N$/, // the test suite's fake key
+  aws_access_key: new RegExp(`^${DEMO_AWS_KEY}$`), // the test suite's fake key
   password: /^(482913|552019|666 197 342|Sunflower-2024|Girasol-2024)$/,
   gift_card: /^(7KQ2-9PMX-4RT8|4471)$/,
   card_code: /^482$/,

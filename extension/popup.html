@@ -71,6 +71,11 @@
         <button id="caught-settings" class="linkish" type="button" data-i18n="popup_settings">Settings</button>
       </p>
     </div>
+    <div id="reply-mentions-card" class="card" role="status" hidden>
+      <div class="card-title" data-i18n="popup_replyMentionsTitle">AI replies mentioned your details</div>
+      <p id="reply-mentions-text" class="muted"></p>
+      <button id="reply-mentions-open" class="btn" type="button" data-i18n="popup_replyMentionsOpen">See Activity</button>
+    </div>
     <div id="ss-row" class="ss-row" role="group" aria-labelledby="ss-row-name">
       <svg class="tq-shield" viewBox="0 0 16 16" aria-hidden="true" focusable="false"><path d="M8 1 14 3.4V8c0 3.4-2.5 6.1-6 7-3.5-.9-6-3.6-6-7V3.4Z"/></svg><b id="ss-row-name" data-i18n="ss_name">Scam check</b>
       <span class="ss-row-links"><button id="ss-row-check" class="linkish" type="button" data-feature="scamcheck" data-i18n="ss_check">Is this a scam?</button>
@@ -117,7 +122,7 @@
 
     <div id="empty-overview" class="empty-card" hidden>
       <b id="empty-title" data-i18n="popup_nothingFoundYet">Nothing found yet.</b>
-      <span id="empty-hint"><span data-i18n="popup_tryItPaste">Try it: paste</span> <code>AKIA4HPQ7XZ2R6TWLJ3N</code> <span data-i18n="popup_intoAProtectedAiChat">into a protected AI chat.</span></span>
+      <span id="empty-hint"><span data-i18n="popup_tryItPaste">Try it: paste</span> <code data-demo-aws-key></code> <span data-i18n="popup_intoAProtectedAiChat">into a protected AI chat.</span></span>
       <span id="empty-quiet" hidden data-i18n="popup_nothingInThisPeriodOlder">Nothing in this period. Older history is in Activity and below.</span>
     </div>
 
@@ -186,7 +191,7 @@
       <p id="tq-asks"></p>
       <p id="tq-notes"></p>
       <p id="tq-apps"></p>
-      <p class="tq-yours" data-i18n="pp_tqNothingSent">Clotr sends nothing anywhere, and every message is still yours to send.</p>
+      <p class="tq-yours" data-i18n="pp_tqNothingSent">Clotr checks messages on your device. If you choose to send one, the AI service receives it as usual. Clotr has no server.</p>
       <div id="tq-switch" class="tq-switch" role="group" aria-label="Tourniquet" hidden>
         <button type="button" data-for="child" aria-pressed="false" data-i18n="pp_tqForChild">For a child</button>
         <button type="button" data-for="adult" aria-pressed="false" data-i18n="pp_tqForAdult">For a grown-up</button>
@@ -268,7 +273,7 @@
     <button id="open-watch" class="btn" type="button" data-i18n="popup_ownWords">Your own words and formats</button>
     <p class="muted" data-i18n="popup_ownWordsHint">Client names, project codenames, or a format like EMP-#####. Clotr warns you when one shows up.</p>
     <label class="toggle"><input type="checkbox" id="reply-check"> <span data-i18n="popup_checkRepliesForMyDetails">Check the AI's replies for my details</span></label>
-    <p class="muted" data-i18n="popup_replyCheckMeans">If your vault has details in it, Clotr also reads the AI's answer for 90 seconds after you send, and tells you if it brings one up that you didn't type. It only keeps what kind of detail it was, never the text.</p>
+    <p class="muted" data-i18n="popup_replyCheckMeans">If your vault has details, Clotr checks the AI's answer for 90 seconds after you send. When it finds one you didn't type in this chat, the toolbar badge and popup show a count, and Activity keeps the kind and chat name. The page never sees a notice, and Clotr never keeps the answer or detail.</p>
 
     <h2 data-i18n="pp_bandage">Bandage</h2>
     <p class="muted" data-i18n="pp_bandageMeans">On a site where you say yes, personal details become cover names like [Phone 1] while you type, so the AI never sees the real thing. Point at a label in its answer (or focus it with the keyboard) to see the real detail.</p>
@@ -335,6 +340,10 @@
       <button id="open-move" class="btn" type="button" data-i18n="mv_title">Move to a new computer</button>
       <a href="https://clotr.app/download.html#windows" data-i18n="getClotrWindows">Get Clotr for Windows</a></p>
     <button id="clear" class="danger-link" data-i18n="popup_clearHistory">Clear history</button>
+
+    <h2 data-i18n="popup_aboutClotr">About Clotr</h2>
+    <p class="ss-buttons"><span id="clotr-version">Clotr</span>
+      <button id="settings-whats-new" class="btn" type="button" data-i18n="popup_whatsNew">What's new</button></p>
     </div>
   </main>
 
@@ -350,6 +359,7 @@
   </nav>
 
   <script src="page-i18n.js"></script>
+  <script src="demo-key.js"></script>
   <script src="patterns.js"></script>
   <script src="report.js"></script>
   <script src="rate.js"></script>

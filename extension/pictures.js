@@ -114,22 +114,29 @@
   }
 
   // The text form (XMP): exif:GPSLatitude="40,41.35N" (degrees, minutes and maybe seconds, then N/S, E/W).
-  const XMP_LAT = /(?:[A-Za-z_][\w.-]*:)?GPSLatitude(?:="|>)\s*(\d{1,3}(?:[.,]\d{1,12}){0,3})\s*([NS])?/;
-  const XMP_LON = /(?:[A-Za-z_][\w.-]*:)?GPSLongitude(?:="|>)\s*(\d{1,3}(?:[.,]\d{1,12}){0,3})\s*([EW])?/;
+  const XMP_VALUE_BYTES = 128;
+  const XMP_LAT = /^(?:="|>)\s*(\d{1,3}(?:[.,]\d{1,12}){0,3})\s*([NS])?/;
+  const XMP_LON = /^(?:="|>)\s*(\d{1,3}(?:[.,]\d{1,12}){0,3})\s*([EW])?/;
   function xmpGps(b) {
     const text = latin1.decode(b);
     if (!/GPS(?:Latitude|Longitude)/.test(text)) return null;
-    const read = (re) => {
-      const m = re.exec(text);
-      if (!m) return null;
-      const parts = m[1].split(",").map(Number);
-      if (parts.length > 3 || parts.some((n) => !Number.isFinite(n))) return null;
-      const [d, mins = 0, s = 0] = parts;
-      const value = d + mins / 60 + s / 3600;
-      return m[2] === "S" || m[2] === "W" ? -value : value;
+    const read = (name, re) => {
+      let from = 0;
+      while ((from = text.indexOf(name, from)) >= 0) {
+        const start = from + name.length;
+        const m = re.exec(text.slice(start, start + XMP_VALUE_BYTES));
+        from = start;
+        if (!m) continue;
+        const parts = m[1].split(",").map(Number);
+        if (parts.length > 3 || parts.some((n) => !Number.isFinite(n))) continue;
+        const [d, mins = 0, s = 0] = parts;
+        const value = d + mins / 60 + s / 3600;
+        return m[2] === "S" || m[2] === "W" ? -value : value;
+      }
+      return null;
     };
-    const lat = read(XMP_LAT);
-    const lon = read(XMP_LON);
+    const lat = read("GPSLatitude", XMP_LAT);
+    const lon = read("GPSLongitude", XMP_LON);
     return lat === null || lon === null ? null : { lat, lon };
   }
 
@@ -336,7 +343,7 @@
   }
 
   // ---------- Removing a photo's place, keeping the photo ----------
-  // "Cover it" swaps a typed detail for a label; a photo needs a different fix, since its place isn't a word
+  // "Clot this leak" swaps a typed detail for a label; a photo needs a different fix, since its place isn't a word
   // on screen to replace. This rebuilds the file itself: the picture's own bytes (what a person actually
   // looks at, and its EXIF Orientation) stay exactly as they were, while the GPS directory that named the
   // place, and any XMP text packet that repeats it, are gone. A pure function: the same bytes in always give

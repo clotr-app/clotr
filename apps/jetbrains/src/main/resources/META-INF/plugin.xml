@@ -1,15 +1,22 @@
 <idea-plugin>
     <id>app.clotr.jetbrains</id>
     <name>Clotr</name>
-    <vendor>Clotr</vendor>
-    <description>Check open files and copied text for private details before AI assistants can read them.</description>
+    <vendor url="https://clotr.app" email="support@clotr.app">Clotr</vendor>
+    <description><![CDATA[
+<p>Clotr flags credentials in open files as you edit and shows a masked preview for each finding. Credential checks are on by default. Checks for personal details in open files start off and can be turned on in settings.</p>
+<p>Use Check my clipboard or Check selection before sharing text. Clotr checks up to 1 MB of text and can copy a cleaned version with Bandage placeholders.</p>
+<p>Set up Clotr Guard from Tools or Clotr settings when you want to check prompts and file reads in Claude Code, Cursor, Gemini CLI, Codex CLI or Windsurf. Guard setup needs Node.js, previews its changes and waits for your approval.</p>
+<p>The plugin runs in the IDE and makes no network calls. It reads .clotrignore at the repository root. Secret files stay silent in the editor. If Git does not ignore a secret file, Clotr shows one project note with an option to add it to .gitignore.</p>
+<p>Free and open source under AGPL-3.0-or-later. <a href="https://github.com/clotr-app/clotr">Source and issues</a>.</p>
+]]></description>
+    <change-notes><![CDATA[<p>Updated IntelliJ API calls and clarified which file checks start on by default. Guard setup remains a separate, manual step.</p>]]></change-notes>
     <depends>com.intellij.modules.platform</depends>
     <resource-bundle>messages.ClotrBundle</resource-bundle>
     <extensions defaultExtensionNs="com.intellij">
         <notificationGroup id="Clotr Secret Files" displayType="BALLOON" isLogByDefault="false"/>
         <notificationGroup id="Clotr Guard" displayType="BALLOON" isLogByDefault="false"/>
         <projectService serviceImplementation="app.clotr.jetbrains.ClotrProjectService"/>
-        <localInspection language="" shortName="ClotrPrivateDetails" displayName="Clotr private details"
+        <localInspection language="" shortName="ClotrPrivateDetails" displayName="Private details in open files"
                          groupName="Clotr" enabledByDefault="true" level="WARNING"
                          implementationClass="app.clotr.jetbrains.ClotrInspection"/>
         <statusBarWidgetFactory id="ClotrStatus" implementation="app.clotr.jetbrains.ClotrStatusWidgetFactory"/>

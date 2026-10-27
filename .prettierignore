@@ -10,3 +10,7 @@
 apps/jetbrains/.intellijPlatform/
 apps/jetbrains/.gradle/
 apps/jetbrains/build/
+
+# Clotr for Windows' build output (Rust and Tauri)
+apps/desktop/src-tauri/target/
+apps/desktop/src-tauri/gen/

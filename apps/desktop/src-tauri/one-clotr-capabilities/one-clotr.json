@@ -1,0 +1,6 @@
+{
+  "identifier": "one-clotr",
+  "description": "One Clotr's card in the main window: its status, the person's yes or no, and disconnecting. Only a build with the one-clotr feature reads this file, since only that build registers these commands.",
+  "windows": ["main"],
+  "permissions": ["allow-one-clotr-status", "allow-one-clotr-consent", "allow-one-clotr-disconnect"]
+}

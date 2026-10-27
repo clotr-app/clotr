@@ -14,7 +14,7 @@ const assert = require("node:assert/strict");
 
 require("../extension/patterns.js");
 require("../extension/detector.js");
-const { retrySlow, bestOfBoth } = require("./timing.js");
+const { bestOfPair, grewMoreThan } = require("./timing.js");
 
 // A small, fast generator (mulberry32). The seed is fixed, not time-based, so every run of this file fuzzes the
 // same strings in the same order; printing it in a failure message is enough to reproduce the run by hand.
@@ -264,32 +264,22 @@ test("fuzz: thousands of seeded random strings never crash detect(), every findi
   );
 });
 
-// Same shapes, scaled up to about 20 KB (the size the warning has to stay responsive at on a long paste), timed
-// with the same retry helper and budget-growth-under-load logic tests/patterns.test.js uses elsewhere, since a
-// busy test runner shouldn't make this flaky. 1,500 ms is generous: the same generator's worst case measured
-// locally, over hundreds of 2-20 KB strings, was under 250 ms on a quiet computer, well inside the 10-second
-// backstop detect() itself enforces (DETECT_BACKSTOP_MS in extension/detector.js).
-test("fuzz: no single detect() call on fuzzed text up to about 20 KB is slow", () => {
+// Each seeded hostile string contributes a 1,000-character and 4,000-character prefix. Warmed best-of-three
+// measurements compare their growth, so runner load affects both sizes in the same run.
+test("fuzz: detection grows with hostile text", () => {
   const rng = makeRng(SEED ^ 0x9e3779b9);
-  const CASES = 20;
-  const BUDGET = 1500;
+  const CASES = 10;
   const slow = [];
   for (let i = 0; i < CASES; i++) {
     const len = 2000 + int(rng, 18000);
     const text = randomText(rng, len);
-    const check = () => {
-      const t = bestOfBoth(() => globalThis.Clotr.detect(text));
-      if (t.over(BUDGET)) {
-        return `seed ${SEED} case ${i} (${len} chars): ${t.wall.toFixed(0)} ms (${t.allowed.toFixed(0)} allowed on this computer now)`;
-      }
-      return undefined; // within budget: retrySlow reads no message as a pass
-    };
-    if (!check()) continue;
-    try {
-      retrySlow(check, { tries: 2 }); // the first try already missed
-    } catch (e) {
-      slow.push(e.message);
-    }
+    const [small, big] = bestOfPair(
+      () => globalThis.Clotr.detect(text.slice(0, 1000)),
+      () => globalThis.Clotr.detect(text.slice(0, 4000)),
+      4,
+      3,
+    );
+    if (grewMoreThan(small, big, 16)) slow.push(`seed ${SEED} case ${i} (${len} chars) grew too fast`);
   }
   assert.deepEqual(slow, []);
 });

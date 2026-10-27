@@ -4,6 +4,7 @@ import com.intellij.openapi.diagnostic.Logger
 import org.graalvm.polyglot.Context
 import org.graalvm.polyglot.HostAccess
 import org.graalvm.polyglot.Value
+import org.graalvm.polyglot.io.IOAccess
 
 /**
  * Runs the generated engine in a guest context that cannot call JVM code or access files. Every value reaches the
@@ -16,13 +17,12 @@ class ClotrEngine private constructor(private val context: Context) : AutoClosea
     private val rangesFn = context.eval("js", """
         (text) => {
           const found = [];
-          const cursor = new Map();
           for (const group of Clotr.detect(text)) for (const value of group.matches) {
-            const start = text.indexOf(value, cursor.get(group.id) || 0);
-            if (start < 0) continue;
-            cursor.set(group.id, start + value.length);
-            found.push({ start, end: start + value.length, type: group.id, value,
-              fp: ClotrHost.fingerprintFor(group.id, value) });
+            if (!value) continue;
+            for (let start = text.indexOf(value); start >= 0; start = text.indexOf(value, start + 1)) {
+              found.push({ start, end: start + value.length, type: group.id, severity: group.severity, value,
+                fp: ClotrHost.fingerprintFor(group.id, value) });
+            }
           }
           return found;
         }
@@ -46,6 +46,8 @@ class ClotrEngine private constructor(private val context: Context) : AutoClosea
             DetectedRange(
                 item.getMember("start").asInt(),
                 item.getMember("end").asInt(),
+                item.getMember("type").asString(),
+                item.getMember("severity").asString(),
                 item.getMember("fp").asString(),
                 item.getMember("value").asString(),
             )
@@ -66,7 +68,7 @@ class ClotrEngine private constructor(private val context: Context) : AutoClosea
 
         fun start(salt: String, locale: String = java.util.Locale.getDefault().language): ClotrEngine {
             val context = Context.newBuilder("js").allowHostAccess(HostAccess.NONE).allowHostClassLookup { false }
-                .allowIO(false).allowCreateThread(false).allowNativeAccess(false).build()
+                .allowIO(IOAccess.NONE).allowCreateThread(false).allowNativeAccess(false).build()
             try {
                 val bundle = ClotrEngine::class.java.getResourceAsStream("/engine/clotr-engine.js")!!
                     .bufferedReader(Charsets.UTF_8).use { it.readText() }
@@ -97,4 +99,4 @@ class ClotrEngine private constructor(private val context: Context) : AutoClosea
 }
 
 data class Finding(val id: String, val type: String, val name: String, val severity: String, val preview: String, val fp: String)
-class DetectedRange(val start: Int, val end: Int, val fp: String, internal val value: String)
+class DetectedRange(val start: Int, val end: Int, val type: String, val severity: String, val fp: String, internal val value: String)

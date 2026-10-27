@@ -1,0 +1,31 @@
+{
+  "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
+  "name": "io.github.clotr-app/clotr-guard",
+  "title": "Clotr Guard",
+  "description": "Checks text for credentials and personal details on your device, before it goes anywhere.",
+  "repository": {
+    "url": "https://github.com/clotr-app/clotr",
+    "source": "github",
+    "subfolder": "apps/guard"
+  },
+  "websiteUrl": "https://github.com/clotr-app/clotr/tree/main/apps/guard#readme",
+  "version": "0.1.1",
+  "packages": [
+    {
+      "registryType": "npm",
+      "registryBaseUrl": "https://registry.npmjs.org",
+      "identifier": "clotr-guard",
+      "version": "0.1.1",
+      "runtimeHint": "npx",
+      "transport": {
+        "type": "stdio"
+      },
+      "packageArguments": [
+        {
+          "type": "positional",
+          "value": "mcp"
+        }
+      ]
+    }
+  ]
+}

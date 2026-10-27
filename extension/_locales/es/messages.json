@@ -1,6 +1,6 @@
 {
   "extDescription": {
-    "message": "Detecta contraseñas, claves y datos personales antes de enviarlos en chats y herramientas de IA. Todo se revisa en tu ordenador."
+    "message": "Te avisa antes de que una contraseña, un número de tarjeta o un dato personal acabe en un chat de IA."
   },
   "cmdFocusNotice": {
     "message": "Ir al aviso de Clotr (Esc vuelve a tu mensaje)"
@@ -201,7 +201,10 @@
     "message": "bajo"
   },
   "coverIt": {
-    "message": "Ocultarlo"
+    "message": "Taponar esta fuga"
+  },
+  "coverItHint": {
+    "message": "Tapa el dato antes de que se envíe"
   },
   "pc_exit": {
     "message": "Salida rápida"
@@ -213,19 +216,25 @@
     "message": "Cierra todas las páginas de Clotr abiertas, incluida esta"
   },
   "leaveIt": {
-    "message": "Dejarlo"
+    "message": "Dejarlo así"
+  },
+  "leaveItHint": {
+    "message": "Cierra este aviso y deja tu mensaje como está"
   },
   "editIt": {
     "message": "Editarlo"
   },
   "leaveItSend": {
-    "message": "Dejarlo y enviar"
+    "message": "Dejarlo así y enviar"
+  },
+  "leaveItSendHint": {
+    "message": "Envía tu mensaje tal como está, sin tapar nada"
   },
   "noticeCover": {
-    "message": "Cubrirlo"
+    "message": "Taponar esta fuga"
   },
   "noticeSendAsIs": {
-    "message": "Enviarlo tal cual"
+    "message": "Dejarlo así"
   },
   "noticeWhy": {
     "message": "¿Por qué?"
@@ -237,13 +246,13 @@
     "message": "Más opciones"
   },
   "choiceAllowOne": {
-    "message": "Dejarlo, y no avisarme más de este"
+    "message": "Dejarlo así, y no avisarme más de este"
   },
   "choiceAllowMany": {
-    "message": "Dejarlos, y no avisarme más de estos"
+    "message": "Dejarlos así, y no avisarme más de estos"
   },
   "choiceLogKinds": {
-    "message": "Dejarlo, y dejar de avisarme de: $p1$",
+    "message": "Dejarlo así, y dejar de avisarme de: $p1$",
     "placeholders": {
       "p1": {
         "content": "$1"
@@ -251,10 +260,10 @@
     }
   },
   "choiceProtectOne": {
-    "message": "Ocultarlo, y vigilarlo siempre, se escriba como se escriba"
+    "message": "Taponar esta fuga, y vigilarlo siempre, se escriba como se escriba"
   },
   "choiceProtectMany": {
-    "message": "Ocultarlos, y vigilarlos siempre, se escriban como se escriban"
+    "message": "Taponar estas fugas, y vigilarlos siempre, se escriban como se escriban"
   },
   "backToMessage": {
     "message": "Volver a mi mensaje (Esc)"
@@ -272,7 +281,7 @@
     "message": "Si buscas esto, sale como parte de tu búsqueda:"
   },
   "dialogNote": {
-    "message": "Clotr lo revisó en tu ordenador y todavía no se ha enviado nada. «Ocultarlo» lo cambia por una etiqueta como $p1$.",
+    "message": "Clotr lo revisó en tu ordenador y todavía no se ha enviado nada. «Taponar esta fuga» lo cambia por una etiqueta como $p1$.",
     "placeholders": {
       "p1": {
         "content": "$1"
@@ -280,7 +289,7 @@
     }
   },
   "enterCovers": {
-    "message": "Intro: ocultarlo"
+    "message": "Intro: taponar esta fuga"
   },
   "keyboardHint": {
     "message": "Teclado: Alt+Mayús+C salta aquí, Intro elige, Esc vuelve a tu mensaje."
@@ -387,7 +396,7 @@
     }
   },
   "whyBody": {
-    "message": "Lo que le envías a una IA puede quedarse en sus servidores, leerlo quien la gestiona o usarse para entrenarla. Todavía no ha salido nada de tu ordenador, y tú decides: ocultarlo, dejarlo o, con Más opciones, elegir cómo lo trata Clotr a partir de ahora."
+    "message": "Lo que le envías a una IA puede quedarse en sus servidores, leerlo quien la gestiona o usarse para entrenarla. Todavía no ha salido nada de tu ordenador, y tú decides: taponar esta fuga, dejarlo así o, con Más opciones, elegir cómo lo trata Clotr a partir de ahora."
   },
   "bulkFile": {
     "message": "El archivo «$p1$» que adjuntaste ($p2$) contiene $p3$.",
@@ -581,17 +590,6 @@
   },
   "askFirstNextTime": {
     "message": "Preguntarme antes la próxima vez"
-  },
-  "replyTitle": {
-    "message": "ℹ️ La respuesta de la IA menciona: $p1$",
-    "placeholders": {
-      "p1": {
-        "content": "$1"
-      }
-    }
-  },
-  "replyText": {
-    "message": "No lo escribiste aquí, así que seguramente esta IA lo tiene de un chat anterior o de su memoria. Puedes borrar chats antiguos y desactivar su memoria en los ajustes de la IA."
   },
   "reloadTitle": {
     "message": "🔄 Clotr se actualizó"
@@ -926,6 +924,15 @@
   },
   "pp_noPage": {
     "message": "No hay ninguna página web en esta pestaña."
+  },
+  "pp_ownWelcome": {
+    "message": "Esta es la página de bienvenida de Clotr."
+  },
+  "pp_ownPageNamed": {
+    "message": "Esta es la página «$1» de Clotr."
+  },
+  "pp_ownPage": {
+    "message": "Esta es una de las páginas de Clotr."
   },
   "pp_resume": {
     "message": "Reanudar"
@@ -1325,31 +1332,25 @@
     "message": "Solo huellas"
   },
   "vault_clotrChecksWhatYouType": {
-    "message": "Clotr revisa lo que escribes en chats de IA y en las apps de correo o chat que tú actives."
+    "message": "Clotr revisa lo que escribes en chats de IA y en las apps de correo o chat que TÚ actives."
   },
   "vault_onlyOnAiChats": {
-    "message": "Solo donde tú eliges."
+    "message": "chats de IA están activados desde el principio."
   },
   "vault_fact1": {
-    "message": "Tu navegador te pregunta antes por cada app de correo o chat que añades."
+    "message": "Por cada app de correo o chat que añadas, tu navegador te pregunta antes."
   },
   "vault_nothingLeavesThisComputer": {
-    "message": "Nada sale de este ordenador."
+    "message": "No hay servidores de Clotr:"
   },
   "vault_fact2": {
-    "message": "No hay servidores de Clotr."
+    "message": "lo que Clotr lee aquí se queda aquí, como en Las Vegas. Lo que decides enviar sigue llegando al servicio, porque tú lo eliges."
   },
   "vault_itNeverSavesWhatYou": {
     "message": "Nunca guarda lo que escribes."
   },
   "vault_fact3": {
     "message": "Guarda una nota breve de lo que encontró, como «Número de teléfono · chatgpt.com · ocultado». Puedes verlas desde su botón en la barra de herramientas."
-  },
-  "vault_itOnlyWarns": {
-    "message": "Solo avisa."
-  },
-  "vault_fact4": {
-    "message": "De entrada solo pone una nota en la esquina, y el mensaje lo sigues enviando tú."
   },
   "vault_pinClotr": {
     "message": "Fija Clotr"
@@ -1369,11 +1370,35 @@
   "vault_pinEnd": {
     "message": "junto a Clotr."
   },
+  "vault_pinIntroButton": {
+    "message": "Los navegadores esconden las extensiones nuevas. Para ver el contador de Clotr y abrir su panel, haz clic en el"
+  },
+  "vault_pinExtensionsButton": {
+    "message": "botón de extensiones"
+  },
+  "vault_pinFirefoxMiddle": {
+    "message": "de la barra de herramientas del navegador, luego en el engranaje junto a Clotr y después en"
+  },
+  "vault_pinFirefoxEnd": {
+    "message": "Fijar a la barra de herramientas"
+  },
+  "vault_pinEdgeMiddle": {
+    "message": "de la barra de herramientas del navegador y luego en el ojo junto a Clotr, que dice"
+  },
+  "vault_pinEdgeEnd": {
+    "message": "Mostrar en la barra de herramientas"
+  },
   "vault_tryIt": {
     "message": "Pruébalo"
   },
   "vault_tryLabel": {
     "message": "Pega esta clave inventada o escribe un número de teléfono:"
+  },
+  "vault_copyKey": {
+    "message": "Copiar"
+  },
+  "vault_copied": {
+    "message": "Copiado"
   },
   "vault_thisPracticeBoxStaysOn": {
     "message": "Este cuadro es solo para practicar y nada de lo que escribas aquí sale de tu ordenador. En un chat de IA de verdad, el aviso aparece en la esquina superior derecha."
@@ -1611,7 +1636,7 @@
     "message": "Clotr te da la bienvenida"
   },
   "vt_pinned": {
-    "message": "✓ Clotr está fijado. Su contador aparece en el escudo de tu barra de herramientas."
+    "message": "✓ Clotr está fijado. Su contador aparece en el icono de Clotr de tu barra de herramientas."
   },
   "vault_allowTitle": {
     "message": "Deja que Clotr revise tus chats de IA"
@@ -1974,7 +1999,7 @@
     "message": "Solo en este ordenador"
   },
   "st_everythingClotrKeepsIsBelow": {
-    "message": "Todo lo que guarda Clotr está aquí abajo, leído directamente de su almacenamiento en este navegador. No se envía nada a ninguna parte. Nunca guarda lo que escribiste, solo qué tipo de dato encontró, dónde y cuándo, y qué elegiste."
+    "message": "Todo lo que guarda Clotr está aquí abajo, leído directamente del almacenamiento de este navegador. Clotr no tiene un servidor para recibir estos datos. No guarda el texto de tus mensajes de chat; el historial solo indica qué tipo de dato encontró, dónde y cuándo, y qué elegiste."
   },
   "st_yourSettings": {
     "message": "Tus ajustes"
@@ -2091,7 +2116,7 @@
     "message": "Clotr no puede leer imágenes."
   },
   "st_picturesLimitText": {
-    "message": "Revisa lo que escribes y el texto de los archivos que adjuntas (texto, PDF, Word, Excel y PowerPoint). En una imagen o una captura de pantalla solo revisa el nombre del archivo y, en una foto, si guarda el lugar donde se tomó. No puede leer las palabras ni ver lo que muestra una imagen, así que revisa tú las imágenes. No oye la voz. Si tu caja fuerte tiene datos, también lee la respuesta de la IA durante 90 segundos después de enviar, solo para notar tus propios datos; no se guarda nada de la respuesta."
+    "message": "Revisa lo que escribes y el texto de los archivos que adjuntas (texto, PDF, Word, Excel y PowerPoint). En una imagen o una captura de pantalla solo revisa el nombre del archivo y, en una foto, si guarda el lugar donde se tomó. No puede leer las palabras ni ver lo que muestra una imagen, así que revisa tú las imágenes. No oye la voz. Si tu caja fuerte tiene datos, Clotr revisa la respuesta de la IA durante 90 segundos después de enviar. Si encuentra uno, muestra un recuento en el icono, la ventana emergente y Actividad; la página no ve ningún aviso, y Clotr nunca guarda la respuesta ni el dato."
   },
   "st_longList": {
     "message": "Una lista larga enviada de una vez se cuenta, no se guarda uno por uno."
@@ -2360,12 +2385,6 @@
   "ss_askHomeCodeDo": {
     "message": "No lo envíes por chat. Si enviaste el PIN de una tarjeta, llama al número de tu tarjeta."
   },
-  "vault_onlyThisBrowser": {
-    "message": "Solo en este navegador."
-  },
-  "vault_fact5": {
-    "message": "Ten el mismo cuidado con las apps de IA de tu móvil o integradas en otros programas."
-  },
   "dash_everythingYouCouldBeLeaking": {
     "message": "Todo lo que podrías estar filtrando"
   },
@@ -2550,7 +2569,24 @@
     "message": "Revisar las respuestas de la IA en busca de mis datos"
   },
   "popup_replyCheckMeans": {
-    "message": "Si tu caja fuerte tiene datos, Clotr también lee la respuesta de la IA durante 90 segundos después de enviar y te avisa si menciona alguno que tú no escribiste. Solo guarda qué tipo de dato era, nunca el texto."
+    "message": "Si tu caja fuerte tiene datos, Clotr revisa la respuesta de la IA durante 90 segundos después de enviar. Si encuentra uno que no escribiste en este chat, el icono de Clotr y la ventana emergente muestran un recuento; Actividad guarda el tipo de dato y el nombre del chat. La página no ve ningún aviso, y Clotr nunca guarda la respuesta ni el dato."
+  },
+  "popup_replyMentionsTitle": {
+    "message": "Las respuestas de la IA mencionaron tus datos"
+  },
+  "popup_replyMentionsOne": {
+    "message": "1 respuesta de la IA mencionó tus datos en los últimos $p1$ días.",
+    "placeholders": { "p1": { "content": "$1" } }
+  },
+  "popup_replyMentionsMany": {
+    "message": "$p2$ respuestas de la IA mencionaron tus datos en los últimos $p1$ días.",
+    "placeholders": { "p1": { "content": "$1" }, "p2": { "content": "$2" } }
+  },
+  "popup_replyMentionsOpen": {
+    "message": "Ver actividad"
+  },
+  "popup_replyMentioned": {
+    "message": "Mencionado en respuesta de IA"
   },
   "pp_bandage": {
     "message": "Bandage"
@@ -2565,10 +2601,10 @@
     "message": "Aquí no hay nada todavía. Un sitio de IA aparece cuando respondes allí a la oferta de nombres de reemplazo de Clotr."
   },
   "vault_itReadsReplies": {
-    "message": "También lee las respuestas."
+    "message": "Cuando añadas tus datos, Clotr revisa las respuestas de la IA durante 90 segundos después de enviar,"
   },
   "vault_fact6": {
-    "message": "Cuando añadas tus datos abajo, te avisa si una IA menciona alguno que tú no escribiste. Puedes desactivarlo en Ajustes."
+    "message": "y muestra un recuento en el icono y la ventana emergente; Actividad guarda el tipo de dato y el chat, nunca el texto. Puedes desactivarlo en Ajustes."
   },
   "sj_replyCheck": {
     "message": "Revisar las respuestas de la IA en busca de mis datos"
@@ -2637,7 +2673,7 @@
     "message": "Lo que verá"
   },
   "hp_whatTheyllSeeText": {
-    "message": "Una nota en la esquina del chat de IA cuando su mensaje lleva algo privado, con un botón para ocultarlo. Con Preguntar antes de enviar datos personales activado, Clotr pregunta antes de que salga uno. Clotr en sí nunca envía nada a ningún sitio."
+    "message": "Una nota en la esquina del chat de IA cuando su mensaje lleva algo privado, con un botón para ocultarlo. Con Preguntar antes de enviar datos personales activado, Clotr pregunta antes de que salga uno. Si deciden enviar un mensaje, llega a ese servicio de IA como siempre. Clotr no tiene servidores."
   },
   "hp_tryItTogether": {
     "message": "Pruébalo juntos: abre un chat de IA y escribe un teléfono inventado."
@@ -2706,10 +2742,10 @@
     "message": "si querías compartirlo."
   },
   "sh_notSure": {
-    "message": "¿No estás seguro? Ocúltalo. Siempre puedes volver a escribirlo."
+    "message": "¿No estás seguro? Tapona esta fuga. Siempre puedes volver a escribirlo."
   },
   "sh_whatItNeverDoesText": {
-    "message": "Nunca envía nada a ningún sitio y nunca guarda lo que escribes. Funciona en los chats de IA, y en tu correo o una app de chat solo si alguien lo activó allí."
+    "message": "Clotr revisa tu mensaje en este dispositivo y guarda solo un historial breve. Si decides enviarlo, llega a ese servicio de IA como siempre. Clotr no tiene servidores. Funciona en chats de IA y en el correo o una app de chat solo si alguien lo activó allí."
   },
   "sh_scam": {
     "message": "El soporte de verdad nunca te pide tu contraseña, un código que te llegó por SMS ni tu tarjeta. Si alguien lo hace, para y llama a la persona de abajo."
@@ -2916,19 +2952,19 @@
     "message": "Hola, soy Alex."
   },
   "vault_noteBody": {
-    "message": "Creé Clotr después de darme cuenta de cuánto les contaba a los chats de IA sin pensarlo dos veces. Enseguida quise una «armadura para todo el mundo» al estilo de Tony Stark, pero hecha con un ordenador. Lee lo que escribes en un chat de IA, aquí mismo en tu ordenador, y avisa antes de que salga algo privado. Es gratis, no te rastrea y nunca envía nada a ningún sitio."
+    "message": "Creé Clotr para cubrir mis propias necesidades, porque no dejaba de copiar, pegar o escribir información privada y necesitaba una barrera de protección. Estoy cansado de recibir cartas por correo sobre filtraciones de datos de empresas que ni siquiera conozco. Quería una «armadura para todo el mundo» al estilo de Tony Stark, pero para mi ordenador y mi teléfono."
+  },
+  "vault_noteReads": {
+    "message": "Clotr revisa lo que escribes en un chat de IA desde tu dispositivo. Si decides enviar un mensaje, llega al servicio de IA como siempre. Clotr no tiene servidores. Es gratis, y de eso se trata."
   },
   "vault_noteWhy": {
-    "message": "Mi objetivo principal es la privacidad frente a las grandes tecnológicas, para todo el mundo. Construirlo es parte de cómo estoy aprendiendo ingeniería de software en general y cómo convierto lo que aprendo en la universidad en algo que la gente pueda usar de verdad."
+    "message": "Mi objetivo principal es la privacidad frente a las grandes tecnológicas y la IA, para todo el mundo. Construirlo es parte de cómo estoy aprendiendo ingeniería de software en general y cómo convierto lo que aprendo en la universidad en algo que la gente pueda usar de verdad."
   },
   "vault_noteNoAi": {
-    "message": "Clotr no tiene absolutamente NADA de IA, eso iría en contra de su propósito."
-  },
-  "vault_noteCoding": {
-    "message": "Sin embargo, sí uso programación con agentes."
+    "message": "Clotr no tiene IA dentro. Sí uso herramientas de IA para programar, y cada cambio tiene que pasar las pruebas de Clotr, creadas por personas (y por IA), antes de publicarse. Tengo la ventaja de los créditos y paquetes para estudiantes, y no quiero acumularlos como Smaug: quiero usar el oro (las herramientas) para convertir al dragón en una estatua."
   },
   "vault_noteReport": {
-    "message": "Cuanto más uses Clotr y más fallos reportes, mejor se vuelve. Gratis."
+    "message": "Cada fallo que reportas mejora Clotr, para todos y gratis. Los leo. Para mí son cartas de fans."
   },
   "vault_heroAiChats": {
     "message": "Chats de IA"
@@ -3210,10 +3246,10 @@
     "message": "Activar Clotr aquí"
   },
   "pp_offHere": {
-    "message": "Clotr está apagado en este sitio."
+    "message": "Clotr vigila los chats de IA, así que aquí descansa."
   },
   "pp_offHereWhy": {
-    "message": "De serie solo funciona en chats de IA. ¿Quieres un aviso aquí también, como en tu correo o una app de chat?"
+    "message": "¿Quieres un aviso aquí también, como en tu correo o una app de chat?"
   },
   "pp_on": {
     "message": "Sí"
@@ -3364,7 +3400,7 @@
     "message": "Repórtalo en GitHub"
   },
   "dash_historyFullSendsNothing": {
-    "message": "Abre una página de GitHub que lees antes de publicar. Clotr no envía nada."
+    "message": "El formulario de GitHub se abre para que lo revises antes de publicarlo. Clotr no lo envía."
   },
   "db_historyFullText": {
     "message": "Clotr guarda hasta 10.000 registros. Para hacer sitio, borró los registros anteriores al $p1$, antes de lo que marca tu ajuste $p2$. Todo lo más reciente sigue aquí.",
@@ -3413,7 +3449,7 @@
     "message": "Los estafadores suelen volver diciendo que pueden recuperar tu dinero. Quien te pida una comisión o tus datos para hacerlo también es un estafador."
   },
   "tqTipAsks": {
-    "message": "Tourniquet está activado, así que Clotr pregunta antes de que salga este tipo de dato ($p2$). Siempre puedes dejarlo.",
+    "message": "Tourniquet está activado, así que Clotr pregunta antes de que salga este tipo de dato ($p2$). Siempre puedes dejarlo así.",
     "placeholders": {
       "p2": {
         "content": "$2"
@@ -3421,7 +3457,7 @@
     }
   },
   "tqTipNotes": {
-    "message": "Tourniquet está activado, así que Clotr avisa de este tipo de dato ($p2$) cada vez. Siempre puedes dejarlo.",
+    "message": "Tourniquet está activado, así que Clotr avisa de este tipo de dato ($p2$) cada vez. Siempre puedes dejarlo así.",
     "placeholders": {
       "p2": {
         "content": "$2"
@@ -3444,7 +3480,7 @@
     "message": "Tourniquet: 30 días después de una estafa"
   },
   "pp_tqNothingSent": {
-    "message": "Clotr no envía nada a ningún sitio, y enviar cada mensaje sigue siendo decisión tuya."
+    "message": "Clotr revisa los mensajes en tu dispositivo. Si decides enviar uno, el servicio de IA lo recibe como siempre. Clotr no tiene servidores."
   },
   "pp_tqForChild": {
     "message": "Para un niño"
@@ -3483,13 +3519,13 @@
     "message": "Tourniquet mantiene esto"
   },
   "pp_tqLineChild": {
-    "message": "Tourniquet está activado: Clotr pregunta antes de que salgan datos personales, contraseñas y códigos de acceso. Clotr no envía nada a ningún sitio."
+    "message": "Tourniquet está activado: Clotr pregunta antes de que salgan datos personales, contraseñas y códigos de acceso. Si deciden enviar un mensaje, el servicio de IA lo recibe como siempre. Clotr no tiene servidores."
   },
   "pp_tqLineAdult": {
-    "message": "Tourniquet está activado: Clotr pregunta antes de que salgan números de banco, de tarjeta y de identificación, contraseñas y códigos de acceso. Clotr no envía nada a ningún sitio."
+    "message": "Tourniquet está activado: Clotr pregunta antes de que salgan números de banco, de tarjeta y de identificación, contraseñas y códigos de acceso. Si decides enviar un mensaje, el servicio de IA lo recibe como siempre. Clotr no tiene servidores."
   },
   "pp_tqLineAfterScam": {
-    "message": "Tourniquet está activado durante 30 días después de una estafa: Clotr pregunta antes de que salgan números de banco, de tarjeta y de identificación, números de tarjetas regalo, contraseñas y códigos de acceso. Clotr no envía nada a ningún sitio."
+    "message": "Tourniquet está activado durante 30 días después de una estafa: Clotr pregunta antes de que salgan números de banco, de tarjeta y de identificación, números de tarjetas regalo, contraseñas y códigos de acceso. Si decides enviar un mensaje, el servicio de IA lo recibe como siempre. Clotr no tiene servidores."
   },
   "pp_tqSince": {
     "message": "Activado desde el $p1$.",
@@ -3570,10 +3606,22 @@
     "message": "¿Dónde debería revisar Clotr?"
   },
   "vt_whereLead": {
-    "message": "Clotr ya revisa tus chats de IA. También puede llegar a un cuadro de chat en cualquier otra página web, nunca a un formulario de compra o de inicio de sesión."
+    "message": "La opción «En todas partes donde escribo» también revisa cuadros de chat en otros sitios web, pero nunca formularios de compra ni de inicio de sesión."
+  },
+  "vt_aiChatsThe": {
+    "message": "Los"
   },
   "vt_aiChatsOnly": {
-    "message": "Solo chats de IA"
+    "message": "chats de IA más usados"
+  },
+  "vt_everywhereOn": {
+    "message": "✓ Activado. Ahora Clotr también revisa los cuadros de chat de cualquier sitio web. Puedes apagarlo en Ajustes, con «En todas partes donde escribo»."
+  },
+  "vt_everywhereRefused": {
+    "message": "No se activó nada, porque la pregunta del navegador se cerró o se respondió que no. Pulsa el botón para preguntar de nuevo, o actívalo más tarde en Ajustes, con «En todas partes donde escribo»."
+  },
+  "vt_wherePause": {
+    "message": "Para pausar Clotr en un sitio, abre su menú desde allí."
   },
   "vt_aiChatsAndEverywhere": {
     "message": "Chats de IA y en todas partes donde escribo"
@@ -4256,7 +4304,7 @@
     "message": "Su historial se queda en este ordenador, y puede borrarlo sin el PIN."
   },
   "hp_tqHow4": {
-    "message": "Clotr no envía nada a ningún sitio."
+    "message": "Clotr no tiene servidores. Si la persona decide enviar un mensaje, llega al servicio de IA como siempre."
   },
   "hp_tqTryChild": {
     "message": "Pruébalo juntos: en un chat de IA o en una app de chat, escribe «vivo en la calle Mayor 12». Clotr pregunta antes de que salga."
@@ -4274,13 +4322,13 @@
     "message": "Tourniquet está activado"
   },
   "sh_tqChild": {
-    "message": "Clotr pregunta antes de que salgan datos personales, contraseñas y códigos de acceso. Siempre puedes dejarlos y enviar."
+    "message": "Clotr pregunta antes de que salgan datos personales, contraseñas y códigos de acceso. Siempre puedes dejarlos así y enviar."
   },
   "sh_tqAdult": {
-    "message": "Clotr pregunta antes de que salgan números de banco, de tarjeta y de identificación, contraseñas y códigos de acceso, y sus avisos son más grandes. Siempre puedes dejarlos y enviar."
+    "message": "Clotr pregunta antes de que salgan números de banco, de tarjeta y de identificación, contraseñas y códigos de acceso, y sus avisos son más grandes. Siempre puedes dejarlos así y enviar."
   },
   "sh_tqUntil": {
-    "message": "Hasta el $p1$, Clotr pregunta antes de que salgan números de banco, de tarjeta y de identificación, números de tarjetas regalo, contraseñas y códigos de acceso, y sus avisos son más grandes. Siempre puedes dejarlos y enviar.",
+    "message": "Hasta el $p1$, Clotr pregunta antes de que salgan números de banco, de tarjeta y de identificación, números de tarjetas regalo, contraseñas y códigos de acceso, y sus avisos son más grandes. Siempre puedes dejarlos así y enviar.",
     "placeholders": {
       "p1": {
         "content": "$1"
@@ -4656,7 +4704,7 @@
     "message": "Me cobraron dos veces el gimnasio en mi tarjeta 4111 1111 1111 1111. Escríbeme una carta de reclamación."
   },
   "pd_l5": {
-    "message": "Este script falla con un 403, esta es mi configuración: AWS_ACCESS_KEY_ID=AKIA4HPQ7XZ2R6TWLJ3N"
+    "message": "Este script falla con un 403, esta es mi configuración: AWS_ACCESS_KEY_ID=$1"
   },
   "pd_l5Instead": {
     "message": "La IA no necesita la clave para ayudarte: envía el error sin ella."
@@ -4812,7 +4860,7 @@
     "message": "Encuentra la fuga"
   },
   "pd_leftIn": {
-    "message": "Lo dejaste. En un chat de verdad, Clotr solo avisa por defecto: el mensaje sigue siendo tuyo para enviarlo."
+    "message": "Lo dejaste así. En un chat de verdad, Clotr solo avisa por defecto: el mensaje sigue siendo tuyo para enviarlo."
   },
   "pd_leakCount": {
     "message": "$p1$ de $p2$",
@@ -5781,7 +5829,7 @@
     "message": "Leyendo tus extensiones…"
   },
   "ec_facts": {
-    "message": "Solo lee la lista: los nombres y qué sitios puede leer cada una.\nNada sale de este ordenador: Clotr no tiene servidores y nunca se conecta.\nPuede leer, no hace: Clotr dice lo que cada una puede leer, no lo que hace con ello."
+    "message": "Solo lee la lista: los nombres y qué sitios puede leer cada una.\nClotr no tiene un servidor para recibir esa lista.\nPuede leer, no hace: Clotr dice lo que cada una puede leer, no lo que hace con ello."
   },
   "ec_listDate": {
     "message": "La lista de extensiones señaladas de Clotr se revisó por última vez el $1. Llega con las actualizaciones de Clotr; Clotr nunca la descarga."
@@ -5823,7 +5871,7 @@
     "message": "Añadida por tu organización."
   },
   "ec_isClotr": {
-    "message": "Clotr en sí lee las páginas de chats con IA para revisar lo que escribes; no guarda nada y no envía nada."
+    "message": "Clotr revisa los chats de IA en tu dispositivo. Si envías un mensaje, ese servicio lo recibe como siempre. Clotr no tiene servidores."
   },
   "ec_normal": {
     "message": "Los bloqueadores de anuncios y los gestores de contraseñas necesitan todos los sitios para funcionar. Conserva los que conozcas; Clotr solo dice lo que cada uno puede leer, no lo que hace."
@@ -6051,5 +6099,8 @@
   "oc_waiting": { "message": "Esperando tu confirmación en Clotr para Windows…" },
   "oc_connected": { "message": "Conectado a Clotr para Windows" },
   "oc_disconnect": { "message": "Desconectar" },
-  "oc_disconnectSub": { "message": "Los ajustes, tu lista y tu historial se quedan como están en cada lado." }
+  "oc_disconnectSub": { "message": "Los ajustes, tu lista y tu historial se quedan como están en cada lado." },
+  "popup_aboutClotr": { "message": "Acerca de Clotr" },
+  "popup_whatsNew": { "message": "Novedades" },
+  "pp_whatsNewIn": { "message": "Novedades de Clotr $p1$", "placeholders": { "p1": { "content": "$1" } } }
 }

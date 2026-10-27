@@ -40,8 +40,8 @@
   }
 
   // `found`: detect()'s results. `everyday`: the words for a message people read, else an AI chat's.
-  // `onHide`: Hide it. `onEdit` (optional): Edit it, for going back to the message without Clotr changing it.
-  // `onLeave` (optional): Leave it in, which then says what a real chat does with it.
+  // `onHide`: Clot this leak. `onEdit` (optional): Edit it, for going back to the message without Clotr changing it.
+  // `onLeave` (optional): Leave it alone, which then says what a real chat does with it.
   function practiceNotice(found, { everyday = false, onHide, onEdit = null, onLeave = null } = {}) {
     const shown = shownOf(found);
     const words = noticeWords(shown, { everyday });
@@ -49,7 +49,12 @@
       .flatMap((r) => r.matches.map((m) => [el("b", { textContent: r.name }), ` (${mask(m)})`]))
       .flatMap((item, i) => (i ? [", ", ...item] : item));
     const line = askLine(found);
-    const hide = el("button", { className: "btn primary", type: "button", textContent: msg("coverIt", "Hide it") });
+    const hide = el("button", {
+      className: "btn primary",
+      type: "button",
+      textContent: msg("coverIt", "Clot this leak"),
+      title: msg("coverItHint", "Covers the detail before it's sent"),
+    });
     hide.addEventListener("click", () => onHide?.());
     const buttons = el("div", { className: "notice-buttons" }, [hide]);
     if (onEdit) {
@@ -67,7 +72,8 @@
       const leave = el("button", {
         className: "btn leave",
         type: "button",
-        textContent: msg("leaveIt", "Leave it in"),
+        textContent: msg("leaveIt", "Leave it alone"),
+        title: msg("leaveItHint", "Closes this warning and leaves your message as it is"),
       });
       leave.addEventListener("click", () => {
         // On a real chat the notice steps aside and the message goes as it is: Clotr only warns by default.
@@ -76,7 +82,7 @@
             className: "notice-left",
             textContent: msg(
               "pd_leftIn",
-              "Left in. On a real chat, Clotr just warns by default: the message is still yours to send.",
+              "Left alone. On a real chat, Clotr just warns by default: the message is still yours to send.",
             ),
           }),
         );

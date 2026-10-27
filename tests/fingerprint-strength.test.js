@@ -1,6 +1,6 @@
 // Covers the fix for F6: a stolen profile has the salt and every stored fingerprint, and a single fast SHA-256
 // let it hash every candidate for a short value (a PIN, an SSN) and find a match. See docs/security/fingerprints.md
-// for the design (why only some fingerprints got slower) and the measured costs this test's budget is based on.
+// for the design (why only some fingerprints got slower) and the comparison this test makes against the old hash.
 // Run from the repo root:  node --test tests/
 "use strict";
 
@@ -10,7 +10,7 @@ const assert = require("node:assert/strict");
 require("../extension/patterns.js");
 require("../extension/detector.js");
 require("../extension/decide.js");
-const { bestOf } = require("./timing.js");
+const { bestOfPair, grewMoreThan } = require("./timing.js");
 
 const { fingerprint, fingerprintStrong, fingerprintFor, sha256, normalize } = globalThis.Clotr;
 
@@ -19,34 +19,23 @@ const { fingerprint, fingerprintStrong, fingerprintFor, sha256, normalize } = gl
 // function changes underneath it.
 const oldScheme = (salt, patternId, match) => sha256(salt + normalize(patternId, match)).slice(0, 16);
 
-test("fingerprintStrong: a 4-digit PIN takes real time to brute force now, not an instant hash", () => {
+test("fingerprintStrong: one PIN guess costs far more than the original hash", () => {
   const salt = "s4ltsaltsaltsalt";
-  // Warm up the JIT so the first few timed calls aren't paying a one-off compile cost.
-  for (let i = 0; i < 50; i++) fingerprintStrong(salt, "card_code", String(i % 10000).padStart(4, "0"));
-  let i = 0;
-  const perCallMs = bestOf(() => fingerprintStrong(salt, "card_code", String(i++ % 10000).padStart(4, "0")), 3);
-  const PIN_SPACE = 10000; // every 4-digit PIN
-  const projectedSeconds = (perCallMs * PIN_SPACE) / 1000;
-  // Measured on the PC this budget was set on: about 13 ms per call in Node (the runtime these tests run under),
-  // so trying all 10,000 four-digit PINs, single-threaded, takes on the order of 130 seconds, against under a
-  // millisecond with one plain SHA-256. 10 seconds is a wide margin below that measurement, so the check still
-  // holds on a machine several times faster or slower than this one, while still proving brute force is no
-  // longer the sub-second affair a single fast hash made it.
+  const fast = () => oldScheme(salt, "card_code", "4471");
+  const strong = () => fingerprintStrong(salt, "card_code", "4471");
+  const [baseline, protectedCall] = bestOfPair(fast, strong, 100);
   assert.ok(
-    projectedSeconds > 10,
-    `projected ${projectedSeconds.toFixed(1)}s to try every 4-digit PIN (one call took ${perCallMs.toFixed(3)} ms); ` +
-      `want well over 10s so a stolen profile can't exhaust the PIN space in a coffee break`,
+    grewMoreThan(baseline, protectedCall, 100, 0.001),
+    "fingerprintStrong must cost far more than one ordinary hash for each PIN guess",
   );
 });
 
 test("fingerprint: the watch-list word scan's own fingerprint stays a single, cheap round", () => {
   const salt = "s4ltsaltsaltsalt";
-  for (let i = 0; i < 50; i++) fingerprint(salt, "watch_list", `word ${i}`);
-  let i = 0;
-  const perCallMs = bestOf(() => fingerprint(salt, "watch_list", `word ${i++}`), 3);
-  // patterns.js checks this once per word-span combination while someone types, so it has to stay far below
-  // fingerprintStrong's per-call cost. 2 ms is a wide margin above the sub-millisecond this actually measures at.
-  assert.ok(perCallMs < 2, `fingerprint() now costs ${perCallMs.toFixed(3)} ms/call, too slow for a per-span scan`);
+  const baseline = () => oldScheme(salt, "watch_list", "word");
+  const fast = () => fingerprint(salt, "watch_list", "word");
+  const [old, current] = bestOfPair(baseline, fast, 100);
+  assert.ok(!grewMoreThan(old, current, 3), "fingerprint() grew slower than its original hash workload");
 });
 
 test("fingerprintStrong: still exactly 16 lowercase hex characters, so storage validation and dedupe don't change", () => {

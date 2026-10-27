@@ -13,7 +13,6 @@ import com.intellij.psi.PsiElement
 import com.intellij.openapi.components.service
 import com.intellij.codeInspection.ProblemHighlightType
 import com.intellij.openapi.vfs.VirtualFile
-import java.nio.file.Path
 
 class ClotrInspection : LocalInspectionTool() {
     override fun buildVisitor(holder: ProblemsHolder, isOnTheFly: Boolean): PsiElementVisitor = object : PsiElementVisitor() {
@@ -34,29 +33,44 @@ class ClotrInspection : LocalInspectionTool() {
                 return
             }
             val ignore = service.clotrIgnoreFor(path)
-            if (service.isDisabled(path) || skipped(virtual, project.basePath, prefs.skipPatterns) ||
-                (ignore.root != null && ClotrIgnore.pathIgnoredForFile(ignore.config, ignore.root, Path.of(path)))) {
+            if (service.isDisabled(path) || skipped(virtual, project.basePath, prefs.skipPatterns)) {
                 service.updateCount(path, 0)
                 return
             }
-            if (text.indexOf('\u0000') >= 0 || text.toByteArray(Charsets.UTF_8).size > 1024 * 1024) return
-            val engine = service.engine
-            val findings = engine.check(text).filter {
-                allowed(it.severity, prefs.minimumSeverity) && !service.isIgnored(it.fp) &&
-                    (prefs.personalDetailsInFiles || !isPersonalDetail(it.type))
+            if (text.indexOf('\u0000') >= 0) {
+                reportUnchecked(holder, file, path, service, "inspection.binary")
+                return
             }
-            val ranges = engine.detectRanges(text)
-                .filterNot { range -> ClotrIgnore.valueFingerprint(ignore.config.salt, range.value) in ignore.config.fingerprints }
-                .groupBy { it.fp }.mapValues { it.value.toMutableList() }
-            val count = findings.mapNotNull { finding ->
-                val range = ranges[finding.fp]?.removeFirstOrNull() ?: return@mapNotNull null
-                if (range.end > text.length || range.start < 0) return@mapNotNull null
-                holder.registerProblem(file, TextRange(range.start, range.end),
-                    ClotrBundle.message("inspection.message", finding.name, finding.preview),
-                    IgnoreFindingFix(finding.fp), DisableFileFix(path))
-                1
-            }.sum()
-            service.updateCount(path, count)
+            if (text.toByteArray(Charsets.UTF_8).size > 1024 * 1024) {
+                reportUnchecked(holder, file, path, service, "inspection.tooLarge")
+                return
+            }
+            try {
+                val engine = service.engine
+                val findings = engine.check(text).filter {
+                    allowed(it.severity, prefs.minimumSeverity) && !service.isIgnored(it.fp) &&
+                        (prefs.personalDetailsInFiles || !isPersonalDetail(it.type))
+                }
+                val ranges = engine.detectRanges(text)
+                    .filterNot { range -> ClotrIgnore.valueFingerprint(ignore.config.salt, range.value) in ignore.config.fingerprints }
+                    .groupBy { it.fp }.mapValues { it.value.toMutableList() }
+                val count = findings.mapNotNull { finding ->
+                    val range = ranges[finding.fp]?.removeFirstOrNull() ?: return@mapNotNull null
+                    if (range.end > text.length || range.start < 0) return@mapNotNull null
+                    holder.registerProblem(
+                        file,
+                        ClotrBundle.message("inspection.message", finding.name),
+                        highlightType(finding.severity),
+                        TextRange(range.start, range.end),
+                        IgnoreFindingFix(finding.fp),
+                        DisableFileFix(path),
+                    )
+                    1
+                }.sum()
+                service.updateCount(path, count)
+            } catch (_error: Exception) {
+                reportUnchecked(holder, file, path, service, "inspection.checkFailed")
+            }
         }
     }
 
@@ -64,6 +78,13 @@ class ClotrInspection : LocalInspectionTool() {
         fun allowed(severity: String, minimum: String): Boolean {
             val rank = mapOf("low" to 1, "medium" to 2, "high" to 3)
             return (rank[severity] ?: 0) >= (rank[minimum] ?: 2)
+        }
+
+        fun highlightType(severity: String): ProblemHighlightType = when (severity) {
+            "high" -> ProblemHighlightType.ERROR
+            "medium" -> ProblemHighlightType.WARNING
+            "low" -> ProblemHighlightType.WEAK_WARNING
+            else -> ProblemHighlightType.WEAK_WARNING
         }
 
         fun isPersonalDetail(kind: String): Boolean {
@@ -93,6 +114,11 @@ class ClotrInspection : LocalInspectionTool() {
             return Regex(out.append('$').toString(), RegexOption.IGNORE_CASE)
         }
     }
+}
+
+private fun reportUnchecked(holder: ProblemsHolder, file: PsiFile, path: String, service: ClotrProjectService, message: String) {
+    service.markUnchecked(path)
+    holder.registerProblem(file, ClotrBundle.message(message), ProblemHighlightType.WEAK_WARNING, TextRange(0, 0))
 }
 
 private class IgnoreFindingFix(private val fingerprint: String) : LocalQuickFix {

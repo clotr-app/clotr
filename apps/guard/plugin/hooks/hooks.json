@@ -1,0 +1,15 @@
+{
+  "hooks": {
+    "UserPromptSubmit": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "npx -y clotr-guard@0.1.1 hook claude --min-severity medium",
+            "timeout": 15
+          }
+        ]
+      }
+    ]
+  }
+}

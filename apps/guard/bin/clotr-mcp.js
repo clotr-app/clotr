@@ -7,8 +7,7 @@ const path = require("node:path");
 const vm = require("node:vm");
 const { check, ENGINE_PATH } = require("../lib/engine.js");
 const { isSecretFile } = require("../lib/secret-files.js");
-const { readClotrIgnore, valueFingerprint } = require("../lib/clotrignore.js");
-const { gitRoot, isNpxCachePath } = require("./clotr-guard.js");
+const { isNpxCachePath } = require("./clotr-guard.js");
 
 const SERVER_NAME = "clotr";
 const NPX_CONFIG_MESSAGE =
@@ -41,11 +40,12 @@ const TOOLS = [
         include_personal_details: PERSONAL_DETAILS_OPTION,
       },
       required: ["text"],
+      additionalProperties: false,
     },
   },
   {
     name: "clean_text",
-    description: "Like check_text, but returns the text with each finding replaced by a placeholder.",
+    description: "Returns text with each finding replaced by a placeholder.",
     inputSchema: {
       type: "object",
       properties: {
@@ -53,13 +53,19 @@ const TOOLS = [
         include_personal_details: PERSONAL_DETAILS_OPTION,
       },
       required: ["text"],
+      additionalProperties: false,
     },
   },
   {
     name: "is_secret_file",
     description:
       "Call before reading a local file. True means Clotr treats the path as a secret file, so don't read it.",
-    inputSchema: { type: "object", properties: { path: { type: "string" } }, required: ["path"] },
+    inputSchema: {
+      type: "object",
+      properties: { path: { type: "string", maxLength: 4096 } },
+      required: ["path"],
+      additionalProperties: false,
+    },
   },
 ];
 
@@ -77,56 +83,33 @@ function fail(message) {
   return { isError: true, content: [{ type: "text", text: message }] };
 }
 
-function ignoreConfig({ cwd = process.cwd(), ignoreFingerprints = [] } = {}) {
-  let config = null;
-  try {
-    config = readClotrIgnore(gitRoot(cwd));
-  } catch {
-    // A server outside a Git repository has no repository ignore file.
-  }
-  if (config?.reason === "raw-value") return { error: "Use clotr-guard ignore-value." };
-  return {
-    salt: config?.valid ? config.salt : null,
-    fingerprints: new Set([...(config?.valid ? config.fingerprints : []), ...ignoreFingerprints]),
-  };
-}
-
-function checkedText(text, includePersonalDetails, options = {}) {
+function checkedText(text, includePersonalDetails) {
   if (typeof text !== "string") return { error: "text must be a string" };
   if (Buffer.byteLength(text, "utf8") > MAX_TEXT_BYTES) return { error: "Text is too large to check." };
-  const ignore = ignoreConfig(options);
-  if (ignore.error) return { error: ignore.error };
-  const result = check(text, {
-    site: "clotr-mcp",
-    ignoreSalt: ignore.salt,
-    ignoreFingerprints: [...ignore.fingerprints],
-  });
+  const result = check(text, { site: "clotr-mcp" });
   const selected = result.findings.filter((finding) => includePersonalDetails || !PERSONAL_KIND.test(finding.kind));
   const jwtMasks = new Set(selected.filter((finding) => finding.kind === "jwt").map((finding) => finding.masked));
   const findings = selected.filter((finding) => !(finding.kind === "password" && jwtMasks.has(finding.masked)));
-  return { findings, engineResult: result, ignore };
+  return { findings };
 }
 
-function checkResult(text, includePersonalDetails, options = {}) {
-  const result = checkedText(text, includePersonalDetails, options);
+function checkResult(text, includePersonalDetails) {
+  const result = checkedText(text, includePersonalDetails);
   if (result.error) return fail(result.error);
   const findings = result.findings.map(({ kind, masked }) => ({ kind, masked }));
   const verdict = findings.length ? "Review these findings before sending." : "No findings.";
   return { findings, verdict };
 }
 
-function cleanResult(text, includePersonalDetails = false, options = {}) {
-  const result = checkedText(text, includePersonalDetails, options);
+function cleanResult(text, includePersonalDetails = false) {
+  const result = checkedText(text, includePersonalDetails);
   if (result.error) return fail(result.error);
   const engine = getEngineContext().Clotr;
   const detections = engine
     .detect(text)
     .map((detection) => ({
       ...detection,
-      matches: detection.matches.filter((value) => {
-        const fingerprint = valueFingerprint(result.ignore.salt, value);
-        return !fingerprint || !result.ignore.fingerprints.has(fingerprint);
-      }),
+      matches: detection.matches,
     }))
     .filter((detection) => detection.matches.length);
   const allowedKinds = new Set(result.findings.map((finding) => finding.kind));
@@ -139,41 +122,31 @@ function cleanResult(text, includePersonalDetails = false, options = {}) {
 function callTool(name, args) {
   if (!args || typeof args !== "object" || Array.isArray(args)) return fail("Tool arguments must be an object.");
   if (name === "check_text") {
+    if (Object.keys(args).some((key) => !["text", "include_personal_details"].includes(key))) {
+      return fail("Unexpected tool argument.");
+    }
     if (args.include_personal_details !== undefined && typeof args.include_personal_details !== "boolean") {
       return fail("include_personal_details must be a boolean.");
     }
-    if (args.ignoreFingerprints !== undefined && !validIgnoreFingerprints(args.ignoreFingerprints)) {
-      return fail("ignoreFingerprints must be an array of SHA-256 fingerprints.");
-    }
-    const result = checkResult(args.text, args.include_personal_details === true, {
-      ignoreFingerprints: args.ignoreFingerprints || [],
-    });
-    return result;
+    return checkResult(args.text, args.include_personal_details === true);
   }
   if (name === "clean_text") {
+    if (Object.keys(args).some((key) => !["text", "include_personal_details"].includes(key))) {
+      return fail("Unexpected tool argument.");
+    }
     if (args.include_personal_details !== undefined && typeof args.include_personal_details !== "boolean") {
       return fail("include_personal_details must be a boolean.");
     }
-    if (args.ignoreFingerprints !== undefined && !validIgnoreFingerprints(args.ignoreFingerprints)) {
-      return fail("ignoreFingerprints must be an array of SHA-256 fingerprints.");
-    }
-    return cleanResult(args.text, args.include_personal_details === true, {
-      ignoreFingerprints: args.ignoreFingerprints || [],
-    });
+    return cleanResult(args.text, args.include_personal_details === true);
   }
   if (name === "is_secret_file") {
-    if (typeof args.path !== "string") return fail("path must be a string.");
+    if (Object.keys(args).some((key) => key !== "path")) return fail("Unexpected tool argument.");
+    if (typeof args.path !== "string" || args.path.length > 4096) {
+      return fail("path must be a string of at most 4096 characters.");
+    }
     return { is_secret_file: isSecretFile(args.path) };
   }
   return null;
-}
-
-function validIgnoreFingerprints(value) {
-  return (
-    Array.isArray(value) &&
-    value.length <= 1024 &&
-    value.every((item) => typeof item === "string" && /^[0-9a-f]{64}$/i.test(item))
-  );
 }
 
 function toolResponse(result, modern) {
@@ -224,7 +197,7 @@ function handleRequest(request) {
       error: {
         code: -32022,
         message: "Unsupported protocol version",
-        data: { supported: [CURRENT_PROTOCOL], requested: requestedProtocol },
+        data: { supported: [CURRENT_PROTOCOL] },
       },
     };
   }
@@ -279,7 +252,7 @@ function handleRequest(request) {
 
 function configFor(tool, scriptPath = __dirname) {
   const script = path.resolve(scriptPath, "clotr-mcp.js");
-  const command = "node";
+  const command = path.resolve(process.execPath);
   const args = [script];
   const server = { command, args };
   if (tool === "codex") {
@@ -312,13 +285,16 @@ function send(value) {
 
 function serve() {
   let pending = Buffer.alloc(0);
+  let discardingOversizedLine = false;
   process.stdin.on("data", (chunk) => {
-    pending = Buffer.concat([pending, chunk]);
-    if (pending.length > MAX_LINE_BYTES && !pending.includes(0x0a)) {
-      pending = Buffer.alloc(0);
-      send(rpcError(null, -32700, "Request is too large"));
-      return;
+    let incoming = chunk;
+    if (discardingOversizedLine) {
+      const newline = incoming.indexOf(0x0a);
+      if (newline < 0) return;
+      incoming = incoming.subarray(newline + 1);
+      discardingOversizedLine = false;
     }
+    pending = Buffer.concat([pending, incoming]);
     let newline;
     while ((newline = pending.indexOf(0x0a)) !== -1) {
       const line = pending.subarray(0, newline);
@@ -340,8 +316,14 @@ function serve() {
         if (request && Object.hasOwn(request, "id")) send(rpcError(request.id, -32603, "Internal error"));
       }
     }
+    if (pending.length > MAX_LINE_BYTES) {
+      pending = Buffer.alloc(0);
+      discardingOversizedLine = true;
+      send(rpcError(null, -32700, "Request is too large"));
+    }
   });
   process.stdin.on("end", () => {
+    if (discardingOversizedLine) return;
     if (!pending.length) return;
     try {
       send(handleRequest(JSON.parse(pending.toString("utf8"))));

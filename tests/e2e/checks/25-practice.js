@@ -4,7 +4,23 @@
 "use strict";
 
 module.exports = async function (env) {
-  const { EXT, OUT, check, ctx, expect, fs, launch, openExtPage, path, resetState, sleep, store, waitFor } = env;
+  const {
+    EXT,
+    KEY,
+    OUT,
+    check,
+    ctx,
+    expect,
+    fs,
+    launch,
+    openExtPage,
+    path,
+    resetState,
+    sleep,
+    spanishBrowser,
+    store,
+    waitFor,
+  } = env;
 
   const AXE = fs.readFileSync(require.resolve("axe-core/axe.min.js"), "utf8");
 
@@ -170,7 +186,7 @@ module.exports = async function (env) {
 
   await check(
     "PD4",
-    "Hide it in the reveal covers the code in the reply and the reveal updates; Leave it in says the message is still theirs",
+    "Clot this leak in the reveal covers the code in the reply and the reveal updates; Leave it alone says the message is still theirs",
     async () => {
       const page = await openPractice();
       try {
@@ -185,7 +201,7 @@ module.exports = async function (env) {
         await page.click("#reveal .try-notice .leave");
         await sleep(200);
         const left = await drillState(page);
-        expect(/still yours to send/.test(left.notice), `after Leave it in: ${left.notice}`);
+        expect(/still yours to send/.test(left.notice), `after Leave it alone: ${left.notice}`);
         expect(left.reply === "ok, the code they texted me is 482913", `reply changed: ${left.reply}`);
       } finally {
         await page.close();
@@ -291,6 +307,14 @@ module.exports = async function (env) {
             (t) => globalThis.Clotr.detect(t).flatMap((r) => r.matches.map((m) => [r.name, m])),
             a.text,
           );
+          if (a.text.includes("AWS_ACCESS_KEY_ID")) {
+            expect(a.text.includes(KEY), "the script lesson lost its made-up AWS key");
+            expect(
+              found.some(([name]) => name === "AWS Access Key"),
+              `the script lesson warning: ${JSON.stringify(found)}`,
+            );
+            expect(!a.reveal.includes(KEY), "the script lesson warning shows the key in full");
+          }
           if (found.length) {
             withSome++;
             if (choice === "#change-it") changed++;
@@ -336,6 +360,42 @@ module.exports = async function (env) {
         expect((await leakState(page)).count === "1 of 10", "Ten more didn't start again");
       } finally {
         await page.close();
+      }
+
+      const spanish = await spanishBrowser(ctx, EXT);
+      const spanishPage = await openPractice(spanish);
+      try {
+        await toLeak(spanishPage);
+        // Each round draws its messages at random, so play rounds ("Ten more") until the script lesson comes up.
+        const ROUNDS = 30;
+        for (let round = 0; round < ROUNDS; round++) {
+          if (round) {
+            await spanishPage.click("#leak-again");
+            await sleep(120);
+          }
+          for (let i = 0; i < 10; i++) {
+            const current = await leakState(spanishPage);
+            if (current.text.includes("AWS_ACCESS_KEY_ID")) {
+              expect(current.text.includes(KEY), "the Spanish script lesson lost its made-up AWS key");
+              await spanishPage.click("#change-it");
+              await sleep(120);
+              const shown = await leakState(spanishPage);
+              expect(
+                shown.chips.some((chip) => chip.startsWith("Clave de acceso de AWS (")),
+                `Spanish warning: ${shown.reveal}`,
+              );
+              expect(!shown.reveal.includes(KEY), "the Spanish script lesson warning shows the key in full");
+              return;
+            }
+            await spanishPage.click("#change-it");
+            await sleep(80);
+            await spanishPage.click("#leak-next");
+            await sleep(80);
+          }
+        }
+        throw new Error(`the Spanish script lesson didn't come up in ${ROUNDS} rounds of ten`);
+      } finally {
+        await spanishPage.close();
       }
     },
   );

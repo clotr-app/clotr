@@ -2,10 +2,16 @@
   "name": "clotr",
   "displayName": "%displayName%",
   "description": "%description%",
-  "version": "0.1.0",
+  "version": "0.2.0.1",
   "publisher": "clotr-app",
+  "icon": "icon.png",
   "repository": { "type": "git", "url": "https://github.com/clotr-app/clotr" },
-  "engines": { "vscode": "^1.100.0" },
+  "homepage": "https://clotr.app/developers.html",
+  "bugs": { "url": "https://github.com/clotr-app/clotr/issues" },
+  "qna": "https://github.com/clotr-app/clotr/discussions",
+  "keywords": ["secrets", "credentials", "api key", "privacy", "pii", "ai", "claude code", "copilot", "cursor", "windsurf", "vscodium", "kiro", "trae", "code-server", "gitpod", "gemini cli", "codex", "cline", "leak"],
+  "engines": { "vscode": "^1.57.0" },
+  "extensionKind": ["workspace"],
   "license": "AGPL-3.0-or-later",
   "main": "./extension.js",
   "capabilities": {
@@ -15,17 +21,47 @@
       "restrictedConfigurations": ["clotr.enabled", "clotr.minSeverity", "clotr.personalDetailsInFiles", "clotr.skipList"]
     }
   },
-  "activationEvents": ["onStartupFinished", "onCommand:clotr.checkClipboard", "onCommand:clotr.checkSelection", "onCommand:clotr.setupGuard"],
-  "categories": ["Other"],
+  "activationEvents": ["onStartupFinished", "onCommand:clotr.tryIt", "onCommand:clotr.checkClipboard", "onCommand:clotr.checkSelection", "onCommand:clotr.setupGuard"],
+  "galleryBanner": { "color": "#1A1221", "theme": "dark" },
+  "categories": ["AI", "Linters", "Other"],
   "contributes": {
-    "commands": [{"command":"clotr.checkClipboard","title":"%checkClipboard%"},{"command":"clotr.checkSelection","title":"%checkSelection%"},{"command":"clotr.setupGuard","title":"%setupGuard%"}],
+    "walkthroughs": [
+      {
+        "id": "clotr.start",
+        "title": "%walkthroughTitle%",
+        "description": "%walkthroughDescription%",
+        "steps": [
+          {
+            "id": "clotr.start.what",
+            "title": "%walkthroughWhatTitle%",
+            "description": "%walkthroughWhatDescription%",
+            "media": { "image": "icon.png", "altText": "%walkthroughWhatImageAlt%" }
+          },
+          {
+            "id": "clotr.start.try",
+            "title": "%walkthroughTryTitle%",
+            "description": "%walkthroughTryDescription%",
+            "media": { "image": "images/open-file-warning.png", "altText": "%walkthroughTryImageAlt%" },
+            "completionEvents": ["onCommand:clotr.tryIt"]
+          },
+          {
+            "id": "clotr.start.guard",
+            "title": "%walkthroughGuardTitle%",
+            "description": "%walkthroughGuardDescription%",
+            "media": { "image": "images/guard-setup-preview.png", "altText": "%walkthroughGuardImageAlt%" },
+            "completionEvents": ["onCommand:clotr.setupGuard"]
+          }
+        ]
+      }
+    ],
+    "commands": [{"command":"clotr.tryIt","title":"%tryItCommand%"},{"command":"clotr.checkClipboard","title":"%checkClipboard%"},{"command":"clotr.checkSelection","title":"%checkSelection%"},{"command":"clotr.setupGuard","title":"%setupGuard%"}],
     "views": {"explorer": [{"id":"clotr.findings","name":"%findingsView%"}]},
     "menus": {"editor/context":[{"command":"clotr.checkSelection","group":"navigation@99"}]},
     "configuration": {"title":"Clotr","properties": {
-      "clotr.enabled":{"type":"boolean","default":true,"description":"%enabled%"},
-      "clotr.minSeverity":{"type":"string","enum":["low","medium","high"],"default":"medium","description":"%minSeverity%"},
-      "clotr.personalDetailsInFiles":{"type":"boolean","default":false,"description":"%personalDetailsInFiles%"},
-      "clotr.skipList":{"type":"array","items":{"type":"string"},"default":["**/.git/**","**/.svn/**","**/.hg/**","**/node_modules/**","**/bower_components/**","**/.next/**","**/.nuxt/**","**/.svelte-kit/**","**/.angular/**","**/.turbo/**","**/.parcel-cache/**","**/.yarn/**","**/.pnpm-store/**","**/__pycache__/**","**/site-packages/**","**/dist-packages/**","**/.pytest_cache/**","**/.mypy_cache/**","**/.ruff_cache/**","**/.tox/**","**/.nox/**","**/.eggs/**","**/.dart_tool/**","**/.pub-cache/**","**/.stack-work/**","**/elm-stuff/**","**/.terraform/**","**/DerivedData/**","**/.cache/**","**/.vs/**","**/*.egg-info/**","**/*.dist-info/**","**/package-lock.json","**/npm-shrinkwrap.json","**/pnpm-lock.yaml","**/yarn.lock","**/deno.lock","**/Pipfile.lock","**/poetry.lock","**/packages.lock.json","**/*.min.js","**/*.min.mjs","**/.env.example","**/.env.sample","**/.env.template","**/.env.dist"],"description":"%skipList%"}
+      "clotr.enabled":{"type":"boolean","scope":"machine","default":true,"description":"%enabled%"},
+      "clotr.minSeverity":{"type":"string","scope":"machine","enum":["low","medium","high"],"default":"medium","description":"%minSeverity%"},
+      "clotr.personalDetailsInFiles":{"type":"boolean","scope":"machine","default":false,"description":"%personalDetailsInFiles%"},
+      "clotr.skipList":{"type":"array","scope":"machine","items":{"type":"string"},"default":["**/.git/**","**/.svn/**","**/.hg/**","**/node_modules/**","**/bower_components/**","**/.next/**","**/.nuxt/**","**/.svelte-kit/**","**/.angular/**","**/.turbo/**","**/.parcel-cache/**","**/.yarn/**","**/.pnpm-store/**","**/__pycache__/**","**/site-packages/**","**/dist-packages/**","**/.pytest_cache/**","**/.mypy_cache/**","**/.ruff_cache/**","**/.tox/**","**/.nox/**","**/.eggs/**","**/.dart_tool/**","**/.pub-cache/**","**/.stack-work/**","**/elm-stuff/**","**/.terraform/**","**/DerivedData/**","**/.cache/**","**/.vs/**","**/*.egg-info/**","**/*.dist-info/**","**/package-lock.json","**/npm-shrinkwrap.json","**/pnpm-lock.yaml","**/yarn.lock","**/deno.lock","**/Pipfile.lock","**/poetry.lock","**/packages.lock.json","**/*.min.js","**/*.min.mjs","**/.env.example","**/.env.sample","**/.env.template","**/.env.dist"],"description":"%skipList%"}
     }}
   },
   "scripts": {"vscode:prepublish":"node build.js"}

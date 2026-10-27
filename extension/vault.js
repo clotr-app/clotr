@@ -287,17 +287,35 @@ if (new URLSearchParams(location.search).has("welcome")) {
   $("welcome").hidden = false;
   $("vault-lead").hidden = true;
   allowCard();
+  mountWhereOffer();
   let timer = null;
   $("try").addEventListener("input", () => {
     clearTimeout(timer);
     timer = setTimeout(tryIt, 300);
   });
+  // Copy puts the made-up key on the clipboard so nobody has to select it by hand. If the browser won't
+  // allow that, the key gets selected instead, ready for Ctrl+C.
+  let copiedTimer = null;
+  $("try-copy").addEventListener("click", async () => {
+    const button = $("try-copy");
+    const key = $("try-field").querySelector("code");
+    try {
+      await navigator.clipboard.writeText(key.textContent.trim());
+    } catch {
+      getSelection().selectAllChildren(key);
+      return;
+    }
+    button.textContent = msg("vault_copied", "Copied");
+    clearTimeout(copiedTimer);
+    copiedTimer = setTimeout(() => (button.textContent = msg("vault_copyKey", "Copy")), 1500);
+  });
+  pinStepsForThisBrowser();
   // Pinned yet? The browser can tell us (Chrome/Edge/Brave; older browsers keep the instructions).
   const checkPinned = async () => {
     const settings = await chrome.action.getUserSettings?.().catch(() => null);
     if (!settings?.isOnToolbar) return false;
     $("pin-step").replaceChildren(
-      msg("vt_pinned", "✓ Clotr is pinned. Its count shows on the shield in your toolbar."),
+      msg("vt_pinned", "✓ Clotr is pinned. Its count shows on Clotr's icon in your toolbar."),
     );
     $("pin-step").classList.add("done");
     return true;
@@ -326,15 +344,54 @@ if (new URLSearchParams(location.search).has("welcome")) {
     if (Sites.grantedEverydayApps(listed).length || Sites.grantedMoreSites(listed).length) {
       $("where-pick-sites").open = true;
     }
-    mountWhereOffer();
     $("where-offer").hidden = false;
   });
 }
 
-// "Where should Clotr check?": either button settles the question, so both close the card. "AI chats only"
-// does nothing else; the other asks for the broad permission in the same click, the same flow Settings'
-// own "Everywhere I type" switch uses, and only closes the card once the browser says yes.
+// The page's pin steps are Chrome's and Brave's (the puzzle piece, then the pin). Firefox and Edge tuck the
+// pin elsewhere in the same extensions menu, so their steps are swapped in here, using the same browser test
+// as the Rate Clotr link. Phones keep their own line.
+function pinStepsForThisBrowser() {
+  const kind = globalThis.Clotr.Rate?.browserFor();
+  const steps = {
+    firefox: [
+      msg("vault_pinFirefoxMiddle", "in your browser's toolbar, then the gear next to Clotr, then"),
+      msg("vault_pinFirefoxEnd", "Pin to Toolbar"),
+    ],
+    edge: [
+      msg("vault_pinEdgeMiddle", "in your browser's toolbar, then the eye next to Clotr, which says"),
+      msg("vault_pinEdgeEnd", "Show in toolbar"),
+    ],
+  }[kind];
+  if (!steps) return;
+  $("pin-step")
+    .querySelector(".on-computer")
+    .replaceChildren(
+      msg(
+        "vault_pinIntroButton",
+        "Browsers tuck new extensions away. To see Clotr's count and open its dashboard, click the",
+      ),
+      " ",
+      el("b", { textContent: msg("vault_pinExtensionsButton", "extensions button") }),
+      ` ${steps[0]} `,
+      el("b", { textContent: steps[1] }),
+      ".",
+    );
+}
+
+// "Where should Clotr check?": the highlighted choice names the built-in AI chat sites, with its count read
+// from ai-sites.json. The other asks for the broad permission in the same click, the same flow Settings' own
+// "Everywhere I type" switch uses; on a yes the card keeps only its title and a ✓ On line, so the person sees it took.
 function mountWhereOffer() {
+  fetch(chrome.runtime.getURL("ai-sites.json"))
+    .then((response) => (response.ok ? response.json() : []))
+    .then((sites) => {
+      if (!Array.isArray(sites) || !sites.length) return;
+      const count = String(sites.length);
+      $("ai-site-count-choice").textContent = count;
+      $("ai-site-count-fact").textContent = count;
+    })
+    .catch(() => {}); // Keep the general wording if the bundled list cannot be read.
   $("where-ai-only").addEventListener("click", () => {
     $("where-offer").hidden = true;
   });
@@ -342,11 +399,17 @@ function mountWhereOffer() {
     const status = $("where-status");
     status.textContent = "";
     const yes = await Sites.requestEverywhere();
-    if (yes) $("where-offer").hidden = true;
-    else {
+    if (yes) {
+      $("where-offer").querySelector(".ev-actions").hidden = true;
+      $("where-pick-sites").hidden = true;
       status.textContent = msg(
-        "ev_refused",
-        "Nothing was switched on: the browser's question was closed or answered No. Tick and try again, or switch them on later in Settings.",
+        "vt_everywhereOn",
+        "✓ On. Clotr now checks a chat box on any website too. You can switch it off in Settings, under Everywhere I type.",
+      );
+    } else {
+      status.textContent = msg(
+        "vt_everywhereRefused",
+        "Nothing was switched on, because the browser's question was closed or answered No. Press the button to ask again, or switch on Everywhere I type later in Settings.",
       );
     }
   });

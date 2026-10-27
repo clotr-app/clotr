@@ -1,13 +1,19 @@
 // E2E checks: C. Dashboard. Run in order by ../run.js with one shared env (helpers from ../lib.js).
 "use strict";
 
+const { isDeepStrictEqual } = require("node:util");
+
 module.exports = async function (env) {
   const {
+    EXT,
     check,
     clickDialogButton,
     ctx,
     expect,
+    fs,
+    KEY,
     openPopup,
+    path,
     resetState,
     restoreBackgroundReads,
     seedEvents,
@@ -15,6 +21,7 @@ module.exports = async function (env) {
     shotAt,
     slowBackgroundReads,
     sleep,
+    spanishBrowser,
     store,
     typeText,
     waitFor,
@@ -145,7 +152,7 @@ module.exports = async function (env) {
         await typeText(page, "call me at 555-555-5636");
         const dialog = await waitForDialog(page);
         expect(dialog?.text.includes("Phone Number"), "phone didn't block on the stricter site");
-        await clickDialogButton(page, "Leave it in");
+        await clickDialogButton(page, "Leave it alone");
       });
       await store.set(ctx, { siteModes: {}, events: [] });
     },
@@ -197,7 +204,19 @@ module.exports = async function (env) {
     await popup.click("#tab-overview");
     await sleep(200);
     expect(await popup.$eval("#empty-overview", (n) => !n.hidden), "empty state not shown");
+    const hint = await popup.$eval("#empty-hint", (node) => node.innerText.replace(/\s+/g, " ").trim());
+    expect(hint === `Try it: paste ${KEY} into a protected AI chat.`, `English hint: ${hint}`);
     await popup.close();
+
+    const spanish = await spanishBrowser(ctx, EXT);
+    await store.set(spanish, { events: [] });
+    const spanishPopup = await openPopup(spanish);
+    try {
+      const spanishHint = await spanishPopup.$eval("#empty-hint", (node) => node.innerText.replace(/\s+/g, " ").trim());
+      expect(spanishHint === `Pruébalo: pega ${KEY} en un chat de IA protegido.`, `Spanish hint: ${spanishHint}`);
+    } finally {
+      await spanishPopup.close();
+    }
   });
 
   await check("C12", "Clear history during a slow report from another AI tab still ends up empty", async () => {
@@ -324,6 +343,139 @@ module.exports = async function (env) {
       expect(shown && /Hi, I'm Alex/.test(shown.note) && shown.practice, `welcome: ${JSON.stringify(shown)}`);
       await opened.close();
       await popup.close();
+    },
+  );
+
+  // Opens the popup over a tab showing `url`, answering the tab lookup by hand, since a scripted popup gets no
+  // activeTab grant and would otherwise always see an empty tab.
+  const openPopupOn = async (url, title) => {
+    const popup = await ctx.browser.newPage();
+    popup.on("pageerror", (err) => ctx.problems.push(`popup error: ${err.message}`));
+    await popup.evaluateOnNewDocument(
+      (u, t) => {
+        chrome.tabs.query = async () => [{ id: 999, url: u, title: t }];
+      },
+      url,
+      title,
+    );
+    await popup.setViewport({ width: 380, height: 700 });
+    await popup.goto(`chrome-extension://${new URL(ctx.swTarget.url()).host}/popup.html`);
+    await popup.waitForSelector("#hero-value");
+    await sleep(400);
+    return popup;
+  };
+  const siteCard = (popup) => popup.$eval("#site", (n) => n.innerText.replace(/\s+/g, " ").trim());
+
+  // The first popup most people open sits over the welcome page, so it names that page instead of saying there's
+  // no web page in the tab. Any other Clotr page goes by its own title; someone else's extension page doesn't.
+  await check("WP3", "Popup over one of Clotr's own pages names that page, not 'No web page in this tab'", async () => {
+    const own = `chrome-extension://${new URL(ctx.swTarget.url()).host}`;
+    const welcome = await openPopupOn(`${own}/vault.html?welcome=1`, "Welcome to Clotr");
+    try {
+      const text = await siteCard(welcome);
+      expect(/^This is Clotr's welcome page\./.test(text) && !/No web page/.test(text), `welcome: ${text}`);
+      for (const theme of ["light", "dark"]) {
+        await shotAt(welcome, `popup-own-page-380-${theme}.png`, { width: 380, height: 700, theme, selector: "#site" });
+      }
+    } finally {
+      await welcome.close();
+    }
+    const other = await openPopupOn(`${own}/stored.html`, "What Clotr stores");
+    try {
+      const text = await siteCard(other);
+      expect(/What Clotr stores/.test(text) && !/No web page/.test(text), `another Clotr page: ${text}`);
+    } finally {
+      await other.close();
+    }
+    const stranger = await openPopupOn("chrome-extension://abcdefghijklmnopabcdefghijklmnop/page.html", "Not Clotr");
+    try {
+      const text = await siteCard(stranger);
+      expect(/No web page in this tab/.test(text), `another extension's page: ${text}`);
+    } finally {
+      await stranger.close();
+    }
+  });
+
+  // On an ordinary site Clotr is resting, not broken: the card says so first, and switching it on there is the
+  // quieter button, so nobody is nudged into giving Clotr their bank's site.
+  await check(
+    "WP4",
+    "Popup on an ordinary site: 'resting here' comes first and Turn Clotr on here is a plain button",
+    async () => {
+      const popup = await openPopupOn("https://forum.example/thread/1", "A forum");
+      try {
+        const r = await popup.evaluate(() => {
+          const button = [...document.querySelectorAll("#site button")].find((b) =>
+            /Turn Clotr on here/.test(b.textContent),
+          );
+          return {
+            state: document.querySelector("#site .state")?.textContent.trim(),
+            button: button ? button.className : null,
+          };
+        });
+        expect(r.state === "Clotr watches AI chats, so it's resting here.", `state line: ${r.state}`);
+        expect(r.button !== null && !/\bprimary\b/.test(r.button), `Turn Clotr on here: ${r.button}`);
+        for (const theme of ["light", "dark"]) {
+          await shotAt(popup, `popup-resting-380-${theme}.png`, { width: 380, height: 700, theme, selector: "#site" });
+        }
+      } finally {
+        await popup.close();
+      }
+    },
+  );
+
+  // Settings names the version and reopens the release's notes, since the top card goes for good after Got it.
+  // Reopening is only for reading: whatever lastUpdate said before (seen, or none at all) stays as it was.
+  await check(
+    "SV1",
+    "Settings shows Clotr's version, and What's new reopens the notes without marking anything",
+    async () => {
+      const version = await ctx.worker.evaluate(() => chrome.runtime.getManifest().version);
+      const minor = version.split(".").slice(0, 2).join(".");
+      const notes = JSON.parse(fs.readFileSync(path.join(EXT, "changelog.json"), "utf8"))[minor] || [];
+      const seenBefore = { from: "1.0.0", to: version, t: 1, seen: true };
+      for (const before of [seenBefore, undefined]) {
+        if (before) await store.set(ctx, { lastUpdate: before });
+        else await ctx.worker.evaluate(() => chrome.storage.local.remove("lastUpdate"));
+        const popup = await openPopup(ctx);
+        try {
+          expect(await popup.$eval("#whats-new", (n) => n.hidden), "the update card showed with nothing new");
+          await popup.click("#tab-settings");
+          const line = await popup.$eval("#clotr-version", (n) => n.textContent);
+          expect(line === `Clotr ${version}`, `version line: ${line}`);
+          if (before) {
+            await popup.$eval("#settings-whats-new", (n) => n.scrollIntoView({ block: "center" }));
+            await shot(popup, "popup-settings-version.png");
+          }
+          await popup.click("#settings-whats-new");
+          const card = await waitFor(
+            () =>
+              popup.evaluate(() =>
+                document.getElementById("whats-new").hidden
+                  ? null
+                  : {
+                      title: document.getElementById("whats-new-title").textContent,
+                      open: document.getElementById("whats-new-more").open,
+                      items: [...document.querySelectorAll("#whats-new-list li")].map((li) => li.textContent),
+                      focused: document.getElementById("whats-new").contains(document.activeElement),
+                    },
+              ),
+            3000,
+          );
+          expect(card, "What's new didn't open the card");
+          expect(card.title.includes(minor) && !/Updated to/.test(card.title), `title: ${card.title}`);
+          expect(JSON.stringify(card.items) === JSON.stringify(notes), `notes: ${JSON.stringify(card.items)}`);
+          expect(card.open === notes.length > 0 && card.focused, `open: ${card.open}, focused: ${card.focused}`);
+          if (before) await shot(popup, "popup-settings-whats-new.png");
+          await popup.click("#whats-new-ok");
+          await sleep(300);
+          expect(await popup.$eval("#whats-new", (n) => n.hidden), "the card stayed after Got it");
+          const { lastUpdate } = await store.get(ctx, "lastUpdate");
+          expect(isDeepStrictEqual(lastUpdate, before), `lastUpdate changed: ${JSON.stringify(lastUpdate)}`);
+        } finally {
+          await popup.close();
+        }
+      }
     },
   );
 };

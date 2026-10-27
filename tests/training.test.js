@@ -16,6 +16,7 @@ const ES = JSON.parse(fs.readFileSync(path.join(EXT, "_locales", "es", "messages
 require("../extension/patterns.js");
 require("../extension/detector.js");
 const { detect } = globalThis.Clotr;
+require("../extension/demo-key.js");
 require("../extension/practice-data.js");
 const { practice } = globalThis.Clotr;
 require("../extension/training-data.js");

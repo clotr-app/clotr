@@ -1,0 +1,229 @@
+/* Clotr for Windows' line shield: Home's status picture (and the tray flyout's, smaller). A fine-line shield with a
+   stitched seam inside. It draws itself once each time Home opens, then holds still; now and then a glint runs
+   round its edge. home.js sets data-status on .shield and starts each glint itself, one at a time, only while
+   someone can see Home, so nothing here asks for a frame while the window sits idle.
+
+   All quiet: orange-to-plum lines. Worth a look: the seam turns amber and a small flag shows. Paused or not
+   running: grey dotted lines, nothing moves. Under reduced motion or Settings > Motion > Still it never moves,
+   and every state still shows. The words beside it say the same thing, so the picture stays out of a screen
+   reader's way (aria-hidden). */
+
+.shield {
+  --size: 196px;
+  position: relative;
+  flex: none;
+  width: var(--size);
+  height: var(--size);
+}
+/* A soft light behind the lines, drawn once: no motion, no cost. */
+.shield::before {
+  content: "";
+  position: absolute;
+  inset: 4%;
+  border-radius: 50%;
+  background: radial-gradient(closest-side, color-mix(in srgb, var(--g1) 18%, transparent), transparent 75%);
+  transition: opacity 0.6s var(--ease);
+}
+.shield svg {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+  fill: none;
+}
+.shield .g1 {
+  stop-color: var(--g1);
+}
+.shield .g2 {
+  stop-color: var(--g2);
+}
+.shield path {
+  fill: none;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+.shield .o {
+  stroke: url(#shield-line);
+  stroke-width: 2.4;
+}
+.shield .i1 {
+  stroke: url(#shield-line);
+  stroke-width: 1.3;
+  opacity: 0.55;
+}
+.shield .i2 {
+  stroke: url(#shield-line);
+  stroke-width: 1;
+  opacity: 0.3;
+}
+.shield .k {
+  stroke: url(#shield-seam);
+  stroke-width: 2.2;
+  transition: stroke 0.6s var(--ease);
+}
+.shield .k.st {
+  stroke-width: 2.6;
+}
+
+/* Drawing itself in: each line runs from nothing to whole once, then holds (forwards). The screen it sits in goes
+   display: none whenever another one is shown, so coming back to Home draws it again. */
+.shield .draw {
+  stroke-dasharray: 1 2;
+  stroke-dashoffset: 1;
+  animation: shield-trace var(--d, 1.6s) var(--ease) var(--w, 0s) forwards;
+}
+@keyframes shield-trace {
+  to {
+    stroke-dashoffset: 0;
+  }
+}
+
+/* The glint: a short bright stroke once round the edge, only while home.js adds .glinting (it takes it off again
+   at animationend), so between glints nothing animates at all. */
+.shield .glint {
+  stroke: var(--glint);
+  stroke-width: 3.4;
+  stroke-dasharray: 0.05 1;
+  stroke-dashoffset: 0.05;
+  opacity: 0;
+}
+.shield.glinting .glint {
+  filter: drop-shadow(0 0 4px #ffb27f);
+  animation: shield-glint 2.8s linear 1;
+}
+@keyframes shield-glint {
+  0% {
+    opacity: 0;
+    stroke-dashoffset: 0.05;
+  }
+  8% {
+    opacity: 0.95;
+  }
+  88% {
+    opacity: 0.95;
+  }
+  100% {
+    opacity: 0;
+    stroke-dashoffset: -1;
+  }
+}
+
+/* A scan under way: a calm ring round the shield, home.js's own .scanning and --progress (0 to 1, set only once
+   there's a share to show -- the counting phase has none, so the ring sweeps instead of claiming a share it
+   doesn't know yet). Never the amber of Worth a look, so the two states never read as the same thing. */
+.shield .scan-ring {
+  fill: none;
+  stroke: var(--g1);
+  stroke-width: 3;
+  stroke-linecap: round;
+  transform-origin: 98px 98px;
+  opacity: 0;
+  stroke-dasharray: 1 1;
+  stroke-dashoffset: 1;
+}
+.shield.scanning .scan-ring {
+  opacity: 0.9;
+}
+.shield.scanning.determinate .scan-ring {
+  stroke-dashoffset: calc(1 - var(--progress, 0));
+  transition: stroke-dashoffset 0.5s var(--ease);
+}
+.shield.scanning:not(.determinate) .scan-ring {
+  stroke-dasharray: 0.22 1;
+  animation: shield-scan-spin 2.2s linear infinite;
+}
+@keyframes shield-scan-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+/* Worth a look: the seam turns amber and a small flag shows at the top right. Never red, never a siren. */
+.shield .flag {
+  opacity: 0;
+  transition: opacity 0.5s var(--ease);
+}
+.shield .flag circle.f {
+  fill: var(--warn-fill);
+  stroke: var(--surface);
+  stroke-width: 2.5;
+}
+.shield .flag path {
+  stroke: var(--on-warn);
+  stroke-width: 2.4;
+}
+.shield .flag circle.d {
+  fill: var(--on-warn);
+}
+.shield[data-status="look"] .k {
+  stroke: var(--warn-fill);
+}
+.shield[data-status="look"] .flag {
+  opacity: 1;
+}
+.shield[data-status="look"]::before {
+  background: radial-gradient(closest-side, color-mix(in srgb, var(--warn-fill) 20%, transparent), transparent 75%);
+}
+
+/* Paused and not running: grey, dotted and still. Nothing to watch means nothing to move for. */
+.shield[data-status="paused"]::before,
+.shield[data-status="notRunning"]::before {
+  opacity: 0;
+}
+.shield[data-status="paused"] path:not(.glint),
+.shield[data-status="notRunning"] path:not(.glint) {
+  stroke: var(--line);
+  stroke-dasharray: 0.012 0.018;
+  stroke-dashoffset: 0;
+  animation: none;
+}
+.shield[data-status="paused"] .glint,
+.shield[data-status="notRunning"] .glint {
+  display: none;
+}
+
+/* Still: the shield is simply there, whole, from the first frame (the flyout always is). */
+.shield.still .draw {
+  stroke-dashoffset: 0;
+  animation: none;
+}
+@media (prefers-reduced-motion: reduce) {
+  .shield .draw {
+    stroke-dashoffset: 0;
+    animation: none;
+  }
+  .shield .glint {
+    display: none;
+  }
+  .shield .k,
+  .shield .flag,
+  .shield::before {
+    transition: none;
+  }
+  /* A share to show still shows, as a steady arc, not a transition; nothing spins while it's still counting. */
+  .shield.scanning .scan-ring {
+    animation: none;
+    transition: none;
+    stroke-dasharray: 0.22 1;
+    stroke-dashoffset: 0;
+  }
+}
+:root[data-motion="still"] .shield .draw {
+  stroke-dashoffset: 0;
+  animation: none;
+}
+:root[data-motion="still"] .shield .glint {
+  display: none;
+}
+:root[data-motion="still"] .shield .k,
+:root[data-motion="still"] .shield .flag,
+:root[data-motion="still"] .shield::before {
+  transition: none;
+}
+:root[data-motion="still"] .shield.scanning .scan-ring {
+  animation: none;
+  transition: none;
+  stroke-dasharray: 0.22 1;
+  stroke-dashoffset: 0;
+}

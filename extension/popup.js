@@ -52,6 +52,7 @@ const FEATURES = chrome.runtime.getManifest().clotr_features || {};
 
 let state = {
   events: [],
+  mentions: [],
   paused: {},
   responses: {},
   vault: [],
@@ -75,6 +76,9 @@ let siteFilter = readPref("siteFilter", ""); // "" = all AI tools
 // Events for the chosen AI tool (or all), shared by Overview and Activity.
 function viewEvents() {
   return siteFilter ? state.events.filter((e) => e.site === siteFilter) : state.events;
+}
+function viewMentions() {
+  return siteFilter ? state.mentions.filter((e) => e.site === siteFilter) : state.mentions;
 }
 
 function renderSiteFilter() {
@@ -158,6 +162,15 @@ function prettyPattern(p) {
 
 // ---------- Current site ----------
 
+// One of Clotr's own pages, like the welcome page right after install, which is where most people open the
+// popup first: the site card names the page instead of saying there's no web page. Only this extension's
+// pages count, never another extension's.
+function ownPage(url, tab) {
+  if (!url || !url.href.startsWith(chrome.runtime.getURL(""))) return null;
+  if (url.pathname === "/vault.html" && url.searchParams.has("welcome")) return { welcome: true };
+  return { title: (tab.title || "").trim() };
+}
+
 async function detectSite() {
   let tab;
   try {
@@ -167,7 +180,7 @@ async function detectSite() {
   }
   const url = tab?.url ? new URL(tab.url) : null;
   if (!url || !/^https?:$/.test(url.protocol)) {
-    site = { kind: "none" };
+    site = { kind: "none", own: ownPage(url, tab) };
     return;
   }
 
@@ -407,9 +420,15 @@ function renderSite() {
   Report?.setHost(site.kind === "protected" || site.kind === "spotted" ? site.host : null);
 
   if (site.kind === "none") {
-    box.replaceChildren(
-      el("div", { className: "grow" }, [stateLine("", msg("pp_noPage", "No web page in this tab.")), coverageLine()]),
-    );
+    const own = site.own;
+    const line = own?.welcome
+      ? msg("pp_ownWelcome", "This is Clotr's welcome page.")
+      : own?.title
+        ? msg("pp_ownPageNamed", "This is Clotr's “$1” page.", own.title)
+        : own
+          ? msg("pp_ownPage", "This is one of Clotr's own pages.")
+          : msg("pp_noPage", "No web page in this tab.");
+    box.replaceChildren(el("div", { className: "grow" }, [stateLine("", line), coverageLine()]));
     return;
   }
 
@@ -543,11 +562,13 @@ function renderSite() {
   }
 
   // Not an AI site: stays off here until you switch it on, whether it's an email or chat app, any other site,
-  // or an AI tool Clotr missed.
+  // or an AI tool Clotr missed. It reads as resting rather than off, so nobody takes it for broken, and on an
+  // ordinary site the switch-on button is the quiet one, since that site could be their bank. A known email or
+  // chat app keeps the highlighted button: that's where people do want it.
   const https = Boolean(site.host && site.url?.startsWith("https:"));
   const known = Sites.everydaySiteFor(site.host);
   const turnOn = el("button", {
-    className: "btn primary",
+    className: known ? "btn primary" : "btn",
     textContent: known ? msg("pp_turnOnFor", "Turn on for $1", known.name) : msg("pp_turnOnHere", "Turn Clotr on here"),
   });
   turnOn.addEventListener("click", () => protectSite(site.url, "everyday"));
@@ -559,14 +580,11 @@ function renderSite() {
   box.replaceChildren(
     el("div", { className: "grow" }, [
       el("div", { className: "host", textContent: site.host }),
-      stateLine("", msg("pp_offHere", "Clotr is off on this site.")),
+      stateLine("", msg("pp_offHere", "Clotr watches AI chats, so it's resting here.")),
       https
         ? el("div", {
             className: "why",
-            textContent: msg(
-              "pp_offHereWhy",
-              "Out of the box it runs only on AI chats. Want a heads-up here too, like on your email or a chat app?",
-            ),
+            textContent: msg("pp_offHereWhy", "Want a heads-up here too, like on your email or a chat app?"),
           })
         : coverageLine(),
       https ? willCover() : "",
@@ -667,6 +685,18 @@ function renderOverview() {
   renderLookBackCard(); // all history too: it's about what's out there, not this range
   renderScamHelpToday(); // today only, regardless of range
   const empty = events.length === 0;
+  const replyMentions = viewMentions().filter((e) => e.t >= since);
+  $("reply-mentions-card").hidden = replyMentions.length === 0;
+  if (replyMentions.length) {
+    $("reply-mentions-text").textContent = msg(
+      replyMentions.length === 1 ? "popup_replyMentionsOne" : "popup_replyMentionsMany",
+      replyMentions.length === 1
+        ? "1 AI reply mentioned your details in the last $1 days."
+        : "$2 AI replies mentioned your details in the last $1 days.",
+      rangeDays,
+      replyMentions.length,
+    );
+  }
   const quiet = empty && viewEvents().length > 0; // history exists, just not in this range
   $("empty-title").textContent = quiet
     ? msg("pp_quietDays", "Quiet $1 days.", rangeDays)
@@ -1002,8 +1032,9 @@ function renderActivity() {
   const fmtDate = new Intl.DateTimeFormat([], { month: "short", day: "numeric" });
 
   const rows = events
-    .slice(-ACTIVITY_LIMIT)
-    .reverse()
+    .concat(viewMentions())
+    .sort((a, b) => b.t - a.t)
+    .slice(0, ACTIVITY_LIMIT)
     .map((e) => {
       const when = e.t >= today ? fmtTime.format(e.t) : `${fmtDate.format(e.t)} ${fmtTime.format(e.t)}`;
       const what = el("td", {}, [
@@ -1039,8 +1070,10 @@ function renderActivity() {
         what,
         el("td", {}, [
           el("span", { className: "outcome" }, [
-            el("i", { style: { background: o?.color || "var(--muted)" } }),
-            o?.label || e.action,
+            el("i", {
+              style: { background: o?.color || (e.action === "mentioned" ? "var(--brand)" : "var(--muted)") },
+            }),
+            e.action === "mentioned" ? msg("popup_replyMentioned", "Mentioned in AI reply") : o?.label || e.action,
           ]),
         ]),
       ]);
@@ -1651,16 +1684,16 @@ function renderTourniquet() {
   $("tq-line-text").textContent = child
     ? msg(
         "pp_tqLineChild",
-        "Tourniquet is on: Clotr asks before personal details, passwords and sign-in codes go out. Clotr sends nothing anywhere.",
+        "Tourniquet is on: Clotr asks before personal details, passwords and sign-in codes go out. If you choose to send a message, the AI service receives it as usual. Clotr has no server.",
       )
     : scam
       ? msg(
           "pp_tqLineAfterScam",
-          "Tourniquet is on for 30 days after a scam: Clotr asks before bank, card and ID numbers, gift card numbers, passwords and sign-in codes go out. Clotr sends nothing anywhere.",
+          "Tourniquet is on for 30 days after a scam: Clotr asks before bank, card and ID numbers, gift card numbers, passwords and sign-in codes go out. If you choose to send a message, the AI service receives it as usual. Clotr has no server.",
         )
       : msg(
           "pp_tqLineAdult",
-          "Tourniquet is on: Clotr asks before bank, card and ID numbers, passwords and sign-in codes go out. Clotr sends nothing anywhere.",
+          "Tourniquet is on: Clotr asks before bank, card and ID numbers, passwords and sign-in codes go out. If you choose to send a message, the AI service receives it as usual. Clotr has no server.",
         );
   $("tq-title-text").textContent = scam
     ? msg("pp_tqTitleAfterScam", "Tourniquet: 30 days after a scam")
@@ -1810,6 +1843,7 @@ $("caught-what").addEventListener("click", () => {
   $("responses-heading")?.scrollIntoView({ block: "start" });
 });
 $("caught-settings").addEventListener("click", () => selectTab("settings"));
+$("reply-mentions-open").addEventListener("click", () => selectTab("activity"));
 
 for (const b of document.querySelectorAll(".range button")) {
   b.addEventListener("click", () => {
@@ -1855,9 +1889,22 @@ async function renderWhatsNew() {
   const { lastUpdate } = await chrome.storage.local.get("lastUpdate");
   if (!lastUpdate || lastUpdate.seen) {
     $("whats-new").hidden = true;
+    delete $("whats-new").dataset.reopened;
     return;
   }
-  const minor = lastUpdate.to.split(".").slice(0, 2).join(".");
+  await fillWhatsNew(
+    lastUpdate.to,
+    lastUpdate.from
+      ? msg("pp_updatedFrom", "Updated to v$1 (from v$2)", lastUpdate.to, lastUpdate.from)
+      : msg("pp_updated", "Updated to v$1", lastUpdate.to),
+  );
+  delete $("whats-new").dataset.reopened;
+  $("whats-new").hidden = false;
+}
+
+// Fills the card with one version's notes and pages. Settings reuses it to reopen the notes after Got it.
+async function fillWhatsNew(version, title) {
+  const minor = version.split(".").slice(0, 2).join(".");
   let notes = [];
   try {
     const log = await (await fetch(chrome.runtime.getURL("changelog.json"))).json();
@@ -1866,9 +1913,7 @@ async function renderWhatsNew() {
   } catch {
     /* the title alone still helps */
   }
-  $("whats-new-title").textContent = lastUpdate.from
-    ? msg("pp_updatedFrom", "Updated to v$1 (from v$2)", lastUpdate.to, lastUpdate.from)
-    : msg("pp_updated", "Updated to v$1", lastUpdate.to);
+  $("whats-new-title").textContent = title;
   $("whats-new-list").replaceChildren(...notes.map((n) => el("li", { textContent: n })));
   $("whats-new-more").dataset.count = String(notes.length);
   $("whats-new-more").hidden = !notes.length;
@@ -1884,8 +1929,31 @@ async function renderWhatsNew() {
     }),
   );
   $("whats-new-doors").hidden = doors.length === 0;
-  $("whats-new").hidden = false;
+  return minor;
 }
+
+// Settings' What's new button. An update card that hasn't been answered yet is simply brought into view. Otherwise
+// the card comes back for this version, already open, just for reading: Got it then closes it without writing
+// anything, so lastUpdate stays exactly as it was.
+async function reopenWhatsNew() {
+  const card = $("whats-new");
+  if (card.hidden || card.dataset.reopened) {
+    const version = chrome.runtime.getManifest().version;
+    const minor = version.split(".").slice(0, 2).join(".");
+    await fillWhatsNew(version, msg("pp_whatsNewIn", "What's new in Clotr $1", minor));
+    card.dataset.reopened = "1";
+    if ($("tq-end")) $("tq-end").hidden = true;
+    $("everyday-offer").hidden = true;
+    card.hidden = false;
+  }
+  const more = $("whats-new-more");
+  if (!more.hidden) more.open = true;
+  card.scrollIntoView({ block: "start" });
+  (more.hidden ? $("whats-new-ok") : more.querySelector("summary")).focus();
+}
+$("settings-whats-new").addEventListener("click", reopenWhatsNew);
+$("clotr-version").textContent = `Clotr ${chrome.runtime.getManifest().version}`;
+
 // Only one card shows in the top slot at a time. The end of Tourniquet's 30 days after a scam comes first,
 // since it's about this person's own protection, then the one-time offer to use Clotr on email and chat
 // apps. What's new only shows once both of those have been answered.
@@ -1981,9 +2049,17 @@ $("ev-no").addEventListener("click", () => {
 });
 
 $("whats-new-ok").addEventListener("click", async () => {
+  const card = $("whats-new");
+  if (card.dataset.reopened) {
+    // Reopened from Settings: closing it puts back whatever card it covered, and marks nothing seen.
+    card.hidden = true;
+    delete card.dataset.reopened;
+    await renderTopCard();
+    return;
+  }
   const { lastUpdate } = await chrome.storage.local.get("lastUpdate");
   await chrome.storage.local.set({ lastUpdate: { ...lastUpdate, seen: true } });
-  $("whats-new").hidden = true;
+  card.hidden = true;
 });
 
 async function loadBuiltInTools() {

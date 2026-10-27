@@ -43,6 +43,8 @@
   --critical: #b3261e;
   --alarm: #9c2b4a; /* a detail that went through as typed: always with a cross and bold, never colour alone */
 
+  --text-xs: 13px;
+
   --high-bg: #fce8e6;
   --high-fg: #b3261e;
   --medium-bg: #fef3e0;
@@ -697,7 +699,7 @@ a {
 }
 
 .sev {
-  font-size: 9px;
+  font-size: var(--text-xs);
   font-weight: 700;
   text-transform: capitalize;
   margin-right: 4px;

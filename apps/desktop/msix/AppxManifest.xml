@@ -1,0 +1,44 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Package
+  xmlns="http://schemas.microsoft.com/appx/manifest/foundation/windows10"
+  xmlns:uap="http://schemas.microsoft.com/appx/manifest/uap/windows10"
+  xmlns:rescap="http://schemas.microsoft.com/appx/manifest/foundation/windows10/restrictedcapabilities"
+  xmlns:desktop="http://schemas.microsoft.com/appx/manifest/desktop/windows10"
+  IgnorableNamespaces="uap rescap desktop">
+
+  <Identity Name="Clotr.Clotr" Publisher="CN=7E0B146B-B666-4866-B825-C1312B3CCEE9" Version="1.0.2.0" ProcessorArchitecture="x64" />
+
+  <Properties>
+    <DisplayName>Clotr</DisplayName>
+    <PublisherDisplayName>Clotr</PublisherDisplayName>
+    <Logo>assets\StoreLogo.png</Logo>
+  </Properties>
+
+  <Resources>
+    <Resource Language="en-us" />
+  </Resources>
+
+  <Dependencies>
+    <TargetDeviceFamily Name="Windows.Desktop" MinVersion="10.0.17763.0" MaxVersionTested="10.0.26100.0" />
+  </Dependencies>
+
+  <Capabilities>
+    <rescap:Capability Name="runFullTrust" />
+  </Capabilities>
+
+  <Applications>
+    <Application Id="Clotr" Executable="clotr.exe" EntryPoint="Windows.FullTrustApplication">
+      <uap:VisualElements
+        DisplayName="Clotr"
+        Description="Warns you before you send a password, a key or a personal detail to an AI chat tool."
+        Square150x150Logo="assets\Square150x150Logo.png"
+        Square44x44Logo="assets\Square44x44Logo.png"
+        BackgroundColor="transparent" />
+      <Extensions>
+        <desktop:Extension Category="windows.startupTask" Executable="clotr.exe" EntryPoint="Windows.FullTrustApplication">
+          <desktop:StartupTask TaskId="ClotrStartup" Enabled="false" DisplayName="Clotr" />
+        </desktop:Extension>
+      </Extensions>
+    </Application>
+  </Applications>
+</Package>

@@ -15,7 +15,7 @@ test("JetBrains shows its release version and leaves the engine build to the pac
   const build = read("build.gradle.kts");
   const pluginVersion = build.match(/^version = "([^"]+)"/m)?.[1];
   const readme = read("README.md");
-  assert.equal(pluginVersion, "0.1.0");
+  assert.equal(pluginVersion, "0.1.1");
   assert.equal(readme.match(/^Version (\d+\.\d+\.\d+)\.$/m)?.[1], pluginVersion);
   assert.doesNotMatch(readme, /engine \d+\.\d+\.\d+/i);
   assert.match(build, /commandLine\("node", "tools\/engine-bundle\.js", "--out"/);
@@ -29,7 +29,7 @@ test("JetBrains app has no network clients or AI runtime dependencies", () => {
     for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
       const file = path.join(dir, entry.name);
       if (entry.isDirectory()) walk(file);
-      else if (/\.(kt|kts)$/.test(entry.name)) sources.push(fs.readFileSync(file, "utf8"));
+      else if (/\.(kt|kts|java)$/.test(entry.name)) sources.push(fs.readFileSync(file, "utf8"));
     }
   };
   walk(sourceRoot);
@@ -37,8 +37,26 @@ test("JetBrains app has no network clients or AI runtime dependencies", () => {
   const dependencies = read("build.gradle.kts").toLowerCase();
   assert.doesNotMatch(dependencies, /tensorflow|onnxruntime|llama|openai|anthropic|huggingface/);
   assert.match(dependencies, /js-community/);
-  assert.match(read("src/main/kotlin/app/clotr/jetbrains/ClotrEngine.kt"), /allowIO\(false\)/);
+  assert.match(read("src/main/kotlin/app/clotr/jetbrains/ClotrEngine.kt"), /allowIO\(IOAccess\.NONE\)/);
   assert.match(read("src/main/kotlin/app/clotr/jetbrains/ClotrEngine.kt"), /HostAccess\.NONE/);
+});
+
+test("project path rules cannot silence JetBrains inspection findings", () => {
+  const inspection = read("src/main/kotlin/app/clotr/jetbrains/ClotrInspection.kt");
+  assert.doesNotMatch(inspection, /pathIgnoredForFile\s*\(/);
+  assert.match(inspection, /ClotrIgnore\.valueFingerprint\(ignore\.config\.salt, range\.value\)/);
+  assert.match(read("src/main/kotlin/app/clotr/jetbrains/ClotrProjectService.kt"), /fun clotrIgnoreFor\(/);
+});
+
+test("JetBrains shows an unchecked file state when inspection cannot check it", () => {
+  const inspection = read("src/main/kotlin/app/clotr/jetbrains/ClotrInspection.kt");
+  const service = read("src/main/kotlin/app/clotr/jetbrains/ClotrProjectService.kt");
+  const widget = read("src/main/java/app/clotr/jetbrains/ClotrStatusWidget.java");
+  assert.match(inspection, /markUnchecked\(path\)/);
+  assert.match(inspection, /inspection\.tooLarge/);
+  assert.match(inspection, /inspection\.checkFailed/);
+  assert.match(service, /fun uncheckedCount\(\)/);
+  assert.match(widget, /uncheckedCount\(\)/);
 });
 
 test("JetBrains hands text, salt and settings to the engine as arguments, never inside its source", () => {
@@ -54,9 +72,13 @@ test("JetBrains hands text, salt and settings to the engine as arguments, never 
 test("JetBrains keeps the salt and fingerprints on this computer, out of the project and out of settings sync", () => {
   const service = read("src/main/kotlin/app/clotr/jetbrains/ClotrProjectService.kt");
   const local = read("src/main/kotlin/app/clotr/jetbrains/ClotrLocalState.kt");
+  const readme = read("README.md");
   assert.doesNotMatch(service, /\.set(Value|List)\(/);
   assert.match(local, /roamingType = RoamingType\.DISABLED/);
   assert.doesNotMatch(local, /StoragePathMacros|WORKSPACE_FILE/);
+  assert.match(readme, /not encrypted, and JetBrains\s+Settings Sync leaves it out/);
+  assert.match(readme, /Fingerprints in `\.clotrignore` use a separate repository salt/);
+  assert.match(readme, /Path patterns in that\s+file do not skip files/);
 });
 
 test("JetBrains finds Guard only where the person put it, and sets it up only in a trusted project", () => {
@@ -65,7 +87,7 @@ test("JetBrains finds Guard only where the person put it, and sets it up only in
   assert.doesNotMatch(guard, /user\.dir|apps\/guard\/bin|walk|basePath\s*\)\s*\.parent/);
   assert.match(guard, /clotr-guard\/bin\/clotr-guard\.js/);
   assert.match(guard, /"root", "-g"/);
-  assert.match(guard, /fun showGuardSetup[\s\S]*?GuardSetup\.trusted\(project\)[\s\S]*?showChooseDialog/);
+  assert.match(guard, /fun showGuardSetup[\s\S]*?GuardSetup\.trusted\(project\)[\s\S]*?Messages\.showDialog\(/);
   assert.match(guard, /TrustedProjects\.isProjectTrusted/);
   // The dialog only lays out choices: Guard and npm run after the person clicks.
   const dialog = guard.slice(guard.indexOf("class GuardSetupDialog"), guard.indexOf("override fun doOKAction"));
@@ -78,15 +100,16 @@ test("JetBrains tells people how to install Guard when it cannot find it", () =>
   const words = read("src/main/resources/messages/ClotrBundle.properties");
   assert.match(
     words,
-    /^guard\.cliMissing=Install Clotr Guard with npm install -g clotr-guard, or point the setting at it\.$/m,
+    /^guard\.cliMissing=Clotr Guard was not found\. Install it with npm install -g clotr-guard, or select its clotr-guard\.js file\.$/m,
   );
 });
 
-test("JetBrains status widget has no tooltip that promises to open settings", () => {
-  const widget = read("src/main/kotlin/app/clotr/jetbrains/ClotrStatusWidget.kt");
+test("JetBrains status widget only uses its tooltip to report unchecked files", () => {
+  const widget = read("src/main/java/app/clotr/jetbrains/ClotrStatusWidget.java");
   const words = read("src/main/resources/messages/ClotrBundle.properties");
-  assert.match(widget, /override fun getTooltipText\(\) = ""/);
-  assert.doesNotMatch(words, /^status\.tooltip=/m);
+  assert.match(widget, /uncheckedCount\(\)/);
+  assert.match(widget, /ClotrBundle(?:\.INSTANCE)?\.message\("status\.unchecked"/);
+  assert.doesNotMatch(words, /^status\.tooltip=.*settings/im);
 });
 
 // The repo's own workflows, and in the fuller checkout this test came from, the public repo's copies beside them too.

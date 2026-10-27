@@ -38,7 +38,7 @@ sealed interface GlobStep {
 object ClotrIgnore {
     private const val MAX_BYTES = 64 * 1024
     private const val MAX_LINES = 8192
-    private const val MAX_PATTERN_LENGTH = 1024
+    internal const val MAX_PATTERN_LENGTH = 1024
 
     fun valueFingerprint(salt: String?, value: String): String {
         if (salt == null || !salt.matches(Regex("[0-9a-fA-F]{64}")) || value.isEmpty()) return ""
@@ -71,6 +71,47 @@ object ClotrIgnore {
         } catch (_: Exception) {
             return invalid("unsafe-file")
         }
+    }
+
+    internal fun readGitIgnore(file: Path): String? {
+        try {
+            if (Files.isSymbolicLink(file) || !Files.isRegularFile(file, LinkOption.NOFOLLOW_LINKS)) return null
+            if (Files.size(file) > MAX_BYTES) return null
+            val bytes = ByteBuffer.allocate(MAX_BYTES + 1)
+            Files.newByteChannel(file, StandardOpenOption.READ, LinkOption.NOFOLLOW_LINKS).use { channel ->
+                while (bytes.hasRemaining()) {
+                    val read = channel.read(bytes)
+                    if (read < 0) break
+                }
+            }
+            if (bytes.position() > MAX_BYTES) return null
+            val decoder = StandardCharsets.UTF_8.newDecoder()
+                .onMalformedInput(CodingErrorAction.REPORT)
+                .onUnmappableCharacter(CodingErrorAction.REPORT)
+            val content = decoder.decode(ByteBuffer.wrap(bytes.array(), 0, bytes.position())).toString()
+            if (content.split(Regex("\\r?\\n")).size > MAX_LINES) return null
+            return content
+        } catch (_: Exception) {
+            return null
+        }
+    }
+
+    internal fun gitIgnoreMatches(pattern: String, path: String): Boolean {
+        if (pattern.isEmpty() || pattern.length > MAX_PATTERN_LENGTH) return false
+        val steps = try {
+            globSteps(pattern)
+        } catch (_: Exception) {
+            return false
+        }
+        if (!pattern.contains('/')) return path.split('/').any { globMatches(steps, it) }
+
+        val ends = IntArray(path.count { it == '/' } + 1)
+        var end = 0
+        path.forEachIndexed { index, character ->
+            if (character == '/') ends[end++] = index
+        }
+        ends[end] = path.length
+        return globMatchesAt(steps, path, ends).any { it }
     }
 
     fun parse(content: String): ClotrIgnoreConfig {

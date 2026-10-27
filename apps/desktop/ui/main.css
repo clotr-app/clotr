@@ -1,0 +1,1610 @@
+/* Clotr for Windows' main window: its layout uses theme.css's tokens and UI components.
+   A sidebar of six sections leads to one screen at a time. Below 1080 px wide, the sidebar shrinks to icons,
+   each keeping its name for screen readers and as a tooltip. Only transform and opacity move; under reduced
+   motion nothing does. */
+
+:root {
+  --side-w: 224px;
+}
+
+html,
+body {
+  height: 100%;
+}
+body {
+  overflow: hidden;
+  background: var(--paper);
+}
+/* The background glow: whiter at the top, a warm light at the foot, in every theme. */
+body.glow::before {
+  content: "";
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+  background:
+    radial-gradient(900px 320px at 50% -80px, var(--glow-top), transparent 70%),
+    radial-gradient(1200px 420px at 50% 112%, var(--glow-soft), transparent 70%),
+    linear-gradient(180deg, var(--glow-dawn), transparent 240px);
+}
+.sprite {
+  position: absolute;
+  width: 0;
+  height: 0;
+  overflow: hidden;
+}
+svg {
+  width: 20px;
+  height: 20px;
+  flex: none;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.75;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+svg .dotted {
+  stroke-width: 2.6;
+}
+
+/* ---------- The window ---------- */
+.app {
+  display: grid;
+  grid-template-columns: var(--side-w) minmax(0, 1fr);
+  height: 100vh;
+  min-width: 0;
+}
+
+/* ---------- Sidebar: sections, title and controls ---------- */
+.side {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-5);
+  min-height: 0;
+  padding: var(--sp-4) var(--sp-3);
+  background: color-mix(in srgb, var(--side) 88%, transparent);
+  border-right: 1px solid var(--line);
+}
+.brand {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+  min-height: 40px;
+  padding: 0 var(--sp-1);
+}
+.brand-icon {
+  display: block;
+  width: 34px;
+  height: 34px;
+}
+.brand-words b {
+  display: block;
+  font-size: var(--t-xl);
+  line-height: 1.15;
+}
+.brand-words small {
+  display: block;
+  color: var(--muted);
+  font-size: var(--t-sm);
+}
+.nav {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--sp-1);
+}
+.nav a {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+  min-height: 40px;
+  padding: 0 var(--sp-3);
+  border-radius: var(--r-sm);
+  color: var(--ink-2);
+  font-size: var(--t-md);
+  font-weight: 700;
+  text-decoration: none;
+}
+.nav a:hover {
+  background: color-mix(in srgb, var(--accept) 12%, transparent);
+  color: var(--ink);
+}
+.nav a[aria-current="page"] {
+  color: var(--ink);
+  background: var(--surface);
+  box-shadow:
+    var(--edge),
+    0 0 0 1px var(--line);
+}
+.nav a[aria-current="page"] svg {
+  color: var(--orange-text);
+}
+.offline {
+  display: flex;
+  gap: var(--sp-3);
+  margin-top: auto;
+  padding: var(--sp-3);
+  border-radius: var(--r-lg);
+  background: var(--surface);
+  border: 1px solid color-mix(in srgb, var(--line) 60%, transparent);
+  color: var(--ink-2);
+}
+.offline svg {
+  color: var(--good);
+  margin-top: 1px;
+}
+.offline p {
+  margin: 0;
+  font-size: var(--t-xs);
+  line-height: 1.4;
+}
+.offline b {
+  display: block;
+  color: var(--ink);
+  font-size: var(--t-sm);
+}
+
+/* ---------- The main pane and its screens ---------- */
+.main {
+  position: relative;
+  min-width: 0;
+  overflow: auto;
+  padding: var(--sp-5) clamp(16px, 2.6vw, 32px) var(--sp-8);
+  outline: none;
+}
+/* A thin scrollbar in the window's own colours (Windows draws a wide grey one with arrows otherwise). */
+.main,
+.table-wrap {
+  scrollbar-width: thin;
+  scrollbar-color: color-mix(in srgb, var(--ink) 30%, transparent) transparent;
+}
+.screen {
+  display: none;
+  max-width: 1120px;
+  margin: 0 auto;
+}
+.screen.on {
+  display: block;
+  animation: screen-in var(--t-med) var(--ease) both;
+}
+@keyframes screen-in {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+}
+.screen h1 {
+  margin: 0;
+  outline: none;
+}
+/* A page heading: name, muted line and actions on the right. */
+.screen-head {
+  margin-bottom: var(--sp-4);
+}
+.screen-head h1 {
+  font-size: var(--t-display);
+  line-height: 1.2;
+}
+.screen-head p {
+  margin: var(--sp-1) 0 0;
+  color: var(--muted);
+  font-size: var(--t-sm);
+  max-width: 72ch;
+}
+.row-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: var(--sp-3) var(--sp-4);
+}
+.head-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--sp-2);
+  margin: 0;
+}
+/* A section name uses a small-caps label. */
+.sec-title {
+  margin: var(--sp-6) 0 var(--sp-3);
+  color: var(--muted);
+  font-size: var(--t-sm);
+  font-weight: 700;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+}
+.card h2 {
+  margin: 0 0 var(--sp-2);
+  font-size: var(--t-lg);
+}
+.card h3 {
+  margin: var(--sp-4) 0 var(--sp-1);
+  font-size: var(--t-base);
+}
+.card p {
+  margin: 0 0 var(--sp-3);
+}
+.card > p:last-child {
+  margin-bottom: 0;
+}
+.note.paused-note {
+  margin-bottom: var(--sp-4);
+}
+
+/* Is this a scam? (scamcheck.js): each warning sign as its own small block, grouped under why it matters. */
+.sc-result .sign-group {
+  margin: var(--sp-5) 0;
+}
+.sign-card {
+  padding: var(--sp-3) 0;
+  border-top: 1px solid var(--faint);
+}
+.sign-name {
+  margin: 0 0 var(--sp-1);
+  font-weight: 700;
+}
+.sign-words {
+  margin: 0 0 var(--sp-1);
+  color: var(--ink-2);
+}
+.sign-means {
+  margin: 0 0 var(--sp-1);
+}
+.sign-source {
+  font-size: var(--t-xs);
+  color: var(--ink-2);
+}
+#sc-marked mark {
+  background: var(--caught-hi);
+  color: var(--warn-ink);
+  border-radius: 3px;
+  padding: 0 2px;
+}
+.strong {
+  font-weight: 700;
+}
+
+/* ---------- Home ---------- */
+/* The hero: the line shield (shield.css) on a soft well, the status in words beside it. */
+.hero {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: center;
+  gap: clamp(24px, 3.4vw, 48px);
+  padding: var(--sp-6) clamp(24px, 3.4vw, 44px);
+}
+.hero .shield {
+  margin: var(--sp-1) var(--sp-2);
+}
+.hero-words {
+  min-width: 0;
+}
+.hero-kicker {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-2);
+  height: 28px;
+  margin: 0 0 var(--sp-3);
+  padding: 0 var(--sp-3);
+  border-radius: 999px;
+  background: var(--faint);
+  color: var(--ink-2);
+  font-size: var(--t-sm);
+  font-weight: 700;
+}
+.hero h1 {
+  font-size: var(--t-hero);
+  line-height: 1.1;
+}
+.hero-lead {
+  max-width: 54ch;
+  margin: var(--sp-3) 0 var(--sp-5);
+  color: var(--ink-2);
+  font-size: var(--t-lg);
+}
+/* The way to the browser extension, tucked under the lead that names it. */
+.hero-link {
+  margin: calc(-1 * var(--sp-4)) 0 var(--sp-4);
+}
+/* The first run's line about starting with Windows, with its switch beside it. */
+.hero-start {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+  max-width: 54ch;
+  margin: 0 0 var(--sp-5);
+  padding: var(--sp-2) var(--sp-3);
+  border-radius: var(--r-sm);
+  background: var(--faint);
+  color: var(--ink);
+  font-size: var(--t-sm);
+}
+.hero-start > span {
+  flex: 1;
+  min-width: 0;
+}
+.hero-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--sp-2);
+  margin: 0;
+}
+.scan-cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: var(--sp-4);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.scan-cards li {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+}
+/* A whole card that's a link: its title and line lift a little on hover. */
+.card.scan-card {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  grid-template-rows: auto auto 1fr auto;
+  gap: var(--sp-1);
+  color: var(--ink);
+  text-decoration: none;
+  transition: border-color 0.12s;
+}
+.card.scan-card:hover {
+  border-color: var(--accept);
+}
+/* ---------- Results: one summary, a filter row, then folds by what's at stake ---------- */
+.res-summary {
+  margin: 0 0 var(--sp-4);
+  padding: var(--sp-4) var(--sp-5);
+  border-radius: var(--r-lg);
+  border: 1px solid color-mix(in srgb, var(--line) 60%, transparent);
+  border-left: 4px solid var(--signal);
+  background: var(--surface);
+  box-shadow: var(--lift);
+}
+.res-head {
+  font-size: var(--t-display);
+  font-weight: 700;
+  line-height: 1.25;
+}
+.res-detail {
+  margin-top: var(--sp-1);
+  color: var(--ink-2);
+  font-size: var(--t-lg);
+}
+.res-summary .small {
+  margin-top: var(--sp-2);
+}
+.res-filters {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--sp-3) var(--sp-5);
+  margin: 0 0 var(--sp-3);
+}
+.res-find {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  flex: 1 1 280px;
+  color: var(--ink-2);
+  font-size: var(--t-sm);
+  font-weight: 700;
+}
+.res-find input {
+  flex: 1;
+  min-width: 0;
+}
+.res-switch {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-2);
+  color: var(--ink-2);
+  font-size: var(--t-sm);
+  font-weight: 700;
+}
+.res-showing {
+  margin: 0 0 var(--sp-2);
+}
+.res-showing:empty {
+  display: none;
+}
+.res-groups {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--sp-3);
+}
+/* A group card holds its name and count on one line; folders and files fold inside. */
+.rg {
+  border-radius: var(--r-lg);
+  border: 1px solid color-mix(in srgb, var(--line) 60%, transparent);
+  background: var(--surface);
+  box-shadow: var(--lift);
+}
+.rg > summary,
+.rf > summary,
+.fr > summary {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  list-style: none;
+}
+.rg > summary::-webkit-details-marker,
+.rf > summary::-webkit-details-marker,
+.fr > summary::-webkit-details-marker {
+  display: none;
+}
+/* The fold's own arrow: points right when shut, down when open. */
+.rg > summary::before,
+.rf > summary::before,
+.fr > summary::before {
+  content: "";
+  flex: none;
+  width: 7px;
+  height: 7px;
+  margin: 0 4px 0 2px;
+  border-right: 2px solid var(--muted);
+  border-bottom: 2px solid var(--muted);
+  transform: rotate(-45deg);
+  transition: transform var(--t-fast) var(--ease);
+}
+.rg[open] > summary::before,
+.rf[open] > summary::before,
+.fr[open] > summary::before {
+  transform: rotate(45deg);
+}
+.rg > summary {
+  min-height: 52px;
+  padding: var(--sp-2) var(--sp-4);
+  border-radius: var(--r-lg);
+  font-size: var(--t-lg);
+}
+.rg[open] > summary {
+  border-bottom: 1px solid var(--faint);
+  border-radius: var(--r-lg) var(--r-lg) 0 0;
+  background: color-mix(in srgb, var(--side) 60%, transparent);
+}
+.rg-count {
+  margin-left: auto;
+  color: var(--muted);
+  font-size: var(--t-sm);
+  font-weight: 700;
+  white-space: nowrap;
+}
+.rg-why,
+.rg-same {
+  padding: var(--sp-3) var(--sp-4) 0;
+}
+.rg-same + .rf-list,
+.rg-why + .rf-list {
+  padding-top: var(--sp-1);
+}
+.rg-same {
+  padding-top: var(--sp-1);
+  color: var(--ink-2);
+}
+.rf-list {
+  padding: 0 var(--sp-4) var(--sp-2);
+}
+.rf + .rf {
+  border-top: 1px solid var(--faint);
+}
+.rf > summary {
+  min-height: 44px;
+  font-size: var(--t-md);
+}
+.rf[open] > summary {
+  margin-bottom: var(--sp-1);
+}
+.fr-list {
+  margin: 0 0 var(--sp-2) var(--sp-4);
+  border-radius: var(--r-md);
+  border: 1px solid var(--faint);
+}
+.fr + .fr {
+  border-top: 1px solid var(--faint);
+}
+/* One file, one line: its name, then where it is and what's in it. */
+.fr > summary {
+  min-height: 44px;
+  padding: var(--sp-1) var(--sp-3);
+}
+.fr > summary:hover {
+  background: color-mix(in srgb, var(--side) 55%, transparent);
+}
+.fr-name {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  flex: 0 1 auto;
+  max-width: 45%;
+  min-width: 0;
+}
+.fr-name b {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.fr-name .tag {
+  flex: none;
+}
+.fr-meta {
+  flex: 1 1 0;
+  min-width: 0;
+  overflow: hidden;
+  color: var(--muted);
+  font-size: var(--t-sm);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.fr-body {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--sp-2);
+  padding: var(--sp-1) var(--sp-3) var(--sp-3) calc(var(--sp-3) + 17px);
+}
+/* A plan step's files: at most eight, with "and N more" under them, so the list shows every name in full instead of
+   scrolling in a box of its own and cutting the last one in half. */
+.fr-copies {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.fr-copies li {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--sp-2);
+  font-size: var(--t-sm);
+  overflow-wrap: anywhere;
+}
+.fr-copies li > span {
+  min-width: 0;
+}
+/* A long name wraps to a second line: a little air keeps one file from running into the next, and the button keeps
+   its words on one line instead of giving its width to the name. */
+.fr-copies li + li {
+  margin-top: var(--sp-1);
+}
+.fr-copies li > button {
+  flex: none;
+  white-space: nowrap;
+}
+.rf-more {
+  margin: 0 0 var(--sp-3) var(--sp-4);
+}
+@media (max-width: 760px) {
+  .fr > summary {
+    flex-wrap: wrap;
+  }
+  .fr-name {
+    max-width: none;
+  }
+  .fr-meta {
+    flex-basis: 100%;
+    padding-left: 17px;
+  }
+}
+
+/* What to do: one card per step, same shapes as a group's own fold (.rg) so the plan reads as part of Results. */
+.plan-steps {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--sp-3);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.plan-step {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--sp-2);
+  padding: var(--sp-3) var(--sp-4);
+  border-radius: var(--r-lg);
+  border: 1px solid color-mix(in srgb, var(--line) 60%, transparent);
+  background: var(--surface);
+  box-shadow: var(--lift);
+}
+.plan-step.done {
+  opacity: 0.7;
+}
+.plan-head {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+}
+/* "How to do this": the same fold arrow as a file's own row (.fr), one step smaller. */
+.plan-how > summary {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  list-style: none;
+  cursor: pointer;
+  font-size: var(--t-sm);
+  font-weight: 600;
+}
+.plan-how > summary::-webkit-details-marker {
+  display: none;
+}
+.plan-how > summary::before {
+  content: "";
+  flex: none;
+  width: 7px;
+  height: 7px;
+  margin: 0 4px 0 2px;
+  border-right: 2px solid var(--muted);
+  border-bottom: 2px solid var(--muted);
+  transform: rotate(-45deg);
+  transition: transform var(--t-fast) var(--ease);
+}
+.plan-how[open] > summary::before {
+  transform: rotate(45deg);
+}
+.plan-how ol {
+  margin: var(--sp-2) 0 0;
+  padding-left: 1.4em;
+  font-size: var(--t-sm);
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--sp-1);
+}
+/* Mark as done: its own row, under everything else a step says, so ticking it is never mistaken for the fix itself. */
+.plan-mark {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  margin-top: var(--sp-1);
+}
+.plan-mark-hint {
+  margin: 0;
+}
+.plan-done-row {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+}
+@media (prefers-reduced-motion: reduce) {
+  .plan-how > summary::before {
+    transition: none;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .rg > summary::before,
+  .rf > summary::before,
+  .fr > summary::before {
+    transition: none;
+  }
+}
+.all-done {
+  margin: var(--sp-4) 0 0;
+  color: var(--good);
+  font-weight: 700;
+}
+.all-done::before {
+  content: "\2713 ";
+}
+.scan-card b {
+  font-size: var(--t-lg);
+  line-height: 1.3;
+}
+.scan-card > span:not(.sc-icon, .tag) {
+  color: var(--ink-2);
+  font-size: var(--t-sm);
+  line-height: 1.45;
+}
+.scan-card .tag {
+  margin-top: var(--sp-2);
+}
+.sc-icon {
+  display: grid;
+  place-items: center;
+  width: 36px;
+  height: 36px;
+  margin-bottom: var(--sp-2);
+  border-radius: var(--r-sm);
+  background: var(--signal-wash);
+  color: var(--orange-text);
+}
+.sc-icon svg {
+  width: 20px;
+  height: 20px;
+}
+.sc-icon.big {
+  width: 52px;
+  height: 52px;
+  border-radius: var(--r-md);
+}
+.sc-icon.big svg {
+  width: 28px;
+  height: 28px;
+}
+.home-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr);
+  gap: var(--sp-4);
+  margin-top: var(--sp-5);
+  align-items: start;
+}
+.home-row .rows {
+  margin: calc(-1 * var(--sp-3)) 0 var(--sp-2);
+}
+.home-row .row b {
+  font-size: var(--t-base);
+}
+.month-list {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  margin: calc(-1 * var(--sp-3)) 0 var(--sp-2);
+}
+.month-list div {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--sp-3);
+  min-height: 44px;
+  border-top: 1px solid var(--faint);
+}
+.month-list div:first-child {
+  border-top: 0;
+}
+.month-list dt {
+  color: var(--ink-2);
+}
+.month-list dd {
+  margin: 0;
+  font-size: var(--t-xl);
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+.sc-teaser {
+  margin-top: var(--sp-4);
+}
+
+/* ---------- Protection ---------- */
+.prot-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1.35fr) minmax(0, 1fr);
+  gap: var(--sp-4);
+  align-items: start;
+}
+.prot-copy {
+  grid-row: span 2;
+}
+.prot-kinds {
+  grid-column: 1 / -1;
+}
+.app-rows {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  margin: var(--sp-3) 0;
+  padding: 0;
+  list-style: none;
+}
+.app-rows li {
+  display: grid;
+  grid-template-columns: 36px minmax(0, 1fr) auto;
+  gap: var(--sp-3);
+  align-items: center;
+  min-height: 56px;
+  padding: var(--sp-2) 0;
+  border-top: 1px solid var(--faint);
+}
+.app-rows li:first-child {
+  border-top: 0;
+}
+.app-tile {
+  display: grid;
+  place-items: center;
+  width: 36px;
+  height: 36px;
+  border-radius: var(--r-sm);
+  background: var(--faint);
+  color: var(--ink-2);
+  font-weight: 700;
+}
+.app-name {
+  font-weight: 700;
+}
+.app-rows li.absent .app-name {
+  color: var(--muted);
+}
+.foot-note {
+  color: var(--muted);
+  font-size: var(--t-xs);
+}
+.card p.foot-note {
+  margin: 0;
+}
+.sel.inline {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-2);
+  color: var(--ink-2);
+  font-size: var(--t-sm);
+}
+/* Settings rows place words on the left and the control on the right. */
+.toggles {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.toggles li {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--sp-4);
+  min-height: 52px;
+  padding: var(--sp-2) 0;
+  border-top: 1px solid var(--faint);
+}
+.card > h2:first-child + .toggles li:first-child,
+.toggles li:first-child {
+  border-top: 0;
+}
+.card > p + .toggles {
+  margin-top: var(--sp-1);
+}
+.card > p + .toggles li:first-child {
+  border-top: 1px solid var(--faint);
+}
+.toggles b {
+  display: block;
+}
+.toggles small {
+  display: block;
+  color: var(--muted);
+  font-size: var(--t-xs);
+  line-height: 1.45;
+}
+.toggles .tag {
+  margin-top: var(--sp-1);
+}
+.toggles select {
+  min-width: 160px;
+}
+.toggles input[type="text"] {
+  min-width: 160px;
+  max-width: 220px;
+}
+.prot-more .rows {
+  margin: var(--sp-2) 0 0;
+}
+.kinds {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0 var(--sp-5);
+  margin-top: var(--sp-3);
+}
+.kind {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--sp-3);
+  min-height: 48px;
+  border-bottom: 1px solid var(--faint);
+}
+.kind label {
+  min-width: 0;
+  color: var(--ink-2);
+  font-size: var(--t-sm);
+}
+.kind select {
+  flex: none;
+  min-height: 34px;
+}
+
+/* ---------- History ---------- */
+/* The last 12 weeks, oldest first. Decorative (aria-hidden): the totals beside it, in words, carry the same
+   numbers for a screen reader. */
+.chart-card .month-list {
+  margin-top: var(--sp-2);
+}
+.weeks {
+  display: flex;
+  align-items: flex-end;
+  gap: 6px;
+  height: 120px;
+  margin: var(--sp-2) 0 var(--sp-3);
+}
+.weeks .bar {
+  flex: 1;
+  display: flex;
+  flex-direction: column-reverse;
+  min-width: 0;
+  height: 100%;
+  border-radius: var(--r-sm) var(--r-sm) 3px 3px;
+  background: var(--faint);
+  overflow: hidden;
+}
+.weeks .seg {
+  width: 100%;
+  flex-shrink: 0;
+}
+.weeks .seg.redacted {
+  background: var(--good);
+}
+.weeks .seg.allowed {
+  background: var(--signal);
+}
+.weeks .seg.suppressed {
+  background: var(--line);
+}
+.table-card {
+  margin-top: var(--sp-4);
+}
+.table-card > .muted:not([hidden]) {
+  margin: 0;
+}
+/* The table runs to the card's edges. */
+.table-wrap {
+  overflow-x: auto;
+  margin: calc(-1 * var(--sp-3)) calc(-1 * var(--sp-4)) calc(-1 * var(--sp-4));
+}
+.table-wrap .events th:first-child,
+.table-wrap .events td:first-child {
+  padding-left: var(--sp-4);
+}
+.table-wrap .events th:last-child,
+.table-wrap .events td:last-child {
+  padding-right: var(--sp-4);
+}
+.table-card .muted:not([hidden]) + .table-wrap {
+  margin-top: var(--sp-2);
+}
+
+/* ---------- Settings ----------
+   One column, read top to bottom, the way Windows' own Settings pages read. Two columns of cards this different
+   in height left big gaps beside the short ones, and a balance picked by hand breaks again as soon as Leave out of
+   scans gets a few folders on it. The column stops at a readable width so a switch stays near its words. */
+.set-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--sp-4);
+  max-width: 820px;
+}
+/* A folder's or file's name can be one long run with nothing to break it at (a cache file named after its hash). */
+#leave-list b,
+#leave-list small {
+  overflow-wrap: anywhere;
+}
+#leave-list li > span {
+  min-width: 0;
+}
+.move {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: var(--sp-2) var(--sp-3);
+  align-items: center;
+  margin: var(--sp-3) 0 0;
+}
+.move label {
+  font-weight: 700;
+  font-size: var(--t-sm);
+}
+.move input {
+  min-width: 0;
+}
+.move input[type="file"] {
+  padding: var(--sp-1);
+  font-size: var(--t-sm);
+}
+.move .btn-row {
+  grid-column: 2;
+  margin: var(--sp-1) 0 0;
+}
+.card .status {
+  margin: var(--sp-3) 0 0;
+  color: var(--good);
+  font-size: var(--t-sm);
+  font-weight: 700;
+}
+.card .status.error {
+  color: var(--err);
+}
+.card .status:empty {
+  display: none;
+}
+
+/* ---------- Saved change toast, in the bottom corner ---------- */
+.toast {
+  position: fixed;
+  right: var(--sp-5);
+  bottom: var(--sp-5);
+  z-index: 40;
+  max-width: min(380px, calc(100vw - 32px));
+  margin: 0;
+  padding: var(--sp-3) var(--sp-4);
+  border-radius: var(--r-lg);
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-left: 4px solid var(--good);
+  box-shadow: var(--float);
+  color: var(--ink);
+  font-size: var(--t-sm);
+  font-weight: 700;
+  opacity: 0;
+  transform: translateY(10px);
+  pointer-events: none;
+  transition:
+    opacity var(--t-med) var(--ease),
+    transform var(--t-med) var(--ease);
+}
+.toast.on {
+  opacity: 1;
+  transform: none;
+}
+
+/* ---------- Narrow windows (the 900 x 600 minimum, and large scaling) ---------- */
+@media (max-width: 1080px) {
+  :root {
+    --side-w: 68px;
+  }
+  /* The words leave the screen, not the window: screen readers still read each name, and it shows as a tooltip. */
+  .brand-words,
+  .nav span,
+  .offline p {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    margin: -1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+  }
+  .side {
+    padding: var(--sp-4) var(--sp-2);
+  }
+  .brand {
+    justify-content: center;
+    padding: 0;
+  }
+  .nav a {
+    justify-content: center;
+    padding: 0;
+  }
+  .offline {
+    justify-content: center;
+    padding: var(--sp-3) 0;
+  }
+  .offline svg {
+    margin: 0;
+  }
+  .kinds {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+@media (max-width: 960px) {
+  .hero .shield {
+    --size: 150px;
+    margin: 0;
+  }
+  .hero h1 {
+    font-size: 28px;
+  }
+  .prot-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .prot-copy {
+    grid-row: auto;
+  }
+}
+@media (max-width: 760px) {
+  .hero {
+    grid-template-columns: minmax(0, 1fr);
+    justify-items: center;
+    text-align: center;
+  }
+  .hero-actions {
+    justify-content: center;
+  }
+  .home-row,
+  .kinds {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+/* ---------- The first-run chooser: Walk me through it, or Show me everything ---------- */
+.chooser-options {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: var(--sp-3);
+  margin: var(--sp-3) 0;
+}
+.chooser-opt {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--sp-2);
+  padding: var(--sp-4);
+  border: 1px solid var(--line);
+  border-radius: var(--r-lg);
+  background: var(--surface);
+  text-align: left;
+  cursor: pointer;
+  font: inherit;
+  color: inherit;
+}
+.chooser-opt:hover {
+  border-color: var(--accept);
+  background: color-mix(in srgb, var(--accept) 8%, var(--surface));
+}
+.chooser-opt-head {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+}
+.chooser-opt b {
+  font-size: var(--t-base);
+}
+.chooser-opt small {
+  color: var(--muted);
+  line-height: 1.45;
+}
+.chooser-recommended {
+  background: var(--signal-wash);
+  color: var(--orange-text);
+}
+
+/* ---------- Guided results: a rail of every card beside the current one ---------- */
+.guided {
+  display: grid;
+  grid-template-columns: 260px minmax(0, 1fr);
+  gap: var(--sp-5);
+  align-items: start;
+}
+.guided-rail {
+  position: sticky;
+  top: var(--sp-5);
+  display: flex;
+  flex-direction: column;
+  max-height: calc(100vh - var(--sp-8));
+  min-height: 0;
+}
+.guided-rail-top {
+  display: flex;
+  flex: none;
+  align-items: baseline;
+  justify-content: space-between;
+  margin: 0 0 var(--sp-2);
+  font-weight: 700;
+}
+#guided-count {
+  color: var(--muted);
+  font-weight: 400;
+  font-size: var(--t-sm);
+}
+.guided-progress {
+  display: flex;
+  flex: none;
+  gap: 4px;
+  margin-bottom: var(--sp-3);
+}
+.guided-progress span {
+  flex: 1;
+  height: 4px;
+  border-radius: 2px;
+  background: var(--faint);
+}
+.guided-progress span.done {
+  background: var(--good);
+}
+.guided-progress span.now {
+  background: var(--orange-text);
+}
+/* The rail scrolls independently: a step list that keeps growing (a Full scan's own many steps and files) never
+   pushes the page under the card down with it -- only this list scrolls, inside its own column. */
+.guided-rail-list {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  flex: 1 1 auto;
+  gap: var(--sp-1);
+  margin: 0;
+  padding: 0 var(--sp-1) var(--sp-2) 0;
+  min-height: 0;
+  overflow-y: auto;
+  list-style: none;
+}
+.guided-rail-group {
+  margin: 0;
+}
+.guided-rail-item,
+.guided-rail-step {
+  display: flex;
+  width: 100%;
+  align-items: flex-start;
+  gap: var(--sp-2);
+  padding: var(--sp-2);
+  border: 0;
+  border-radius: var(--r-md);
+  background: none;
+  text-align: left;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+}
+.guided-rail-item:hover,
+.guided-rail-step:hover {
+  background: color-mix(in srgb, var(--side) 55%, transparent);
+}
+.guided-rail-text {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 2px;
+  min-width: 0;
+}
+.guided-rail-head,
+.guided-rail-sub {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+/* A step's own heading, the one line named once for every file under it: wraps instead of cutting off, since
+   there's no second place that still names it once the rail folds. */
+.guided-rail-step .guided-rail-head {
+  overflow: visible;
+  text-overflow: clip;
+  white-space: normal;
+  overflow-wrap: break-word;
+  font-weight: 700;
+}
+.guided-rail-item[aria-current="step"] {
+  background: var(--surface);
+  box-shadow:
+    var(--edge),
+    0 0 0 1px var(--line);
+  font-weight: 700;
+}
+.guided-rail-step.open {
+  background: var(--surface);
+  box-shadow:
+    var(--edge),
+    0 0 0 1px var(--line);
+}
+.guided-rail-num {
+  display: grid;
+  place-items: center;
+  flex: none;
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  border: 1px solid var(--line);
+  font-size: var(--t-xs);
+  font-weight: 700;
+}
+.guided-rail-item[aria-current="step"] .guided-rail-num {
+  border-color: var(--orange-text);
+  background: var(--orange-text);
+  color: #fff;
+}
+.guided-rail-num.done {
+  border-color: var(--good);
+  background: var(--good);
+  color: #fff;
+}
+/* "Show all N": a step's own files past the first RAIL_PAGE, one tap away instead of always drawn. */
+.guided-rail-more-wrap {
+  padding: 0 var(--sp-2);
+}
+.guided-rail-more {
+  width: 100%;
+}
+.guided-card {
+  padding: var(--sp-5);
+  border-radius: var(--r-lg);
+  border: 1px solid var(--line);
+  background: var(--surface);
+  box-shadow: var(--lift);
+}
+.guided-card h2 {
+  margin: 0 0 var(--sp-3);
+  font-size: var(--t-lg);
+}
+/* A file's name inside a sentence can be one long run (a cache file named after its hash): it breaks anywhere
+   rather than run past the card's edge. */
+.guided-card p,
+.guided-card h2 {
+  overflow-wrap: anywhere;
+}
+.guided-card .sec-title {
+  margin: var(--sp-3) 0 var(--sp-1);
+}
+.gd-buttons {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--sp-2);
+  margin: var(--sp-4) 0 var(--sp-3);
+}
+.gd-btn {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--sp-3);
+  min-height: 50px;
+  padding: 0 var(--sp-4);
+  border: 1px solid var(--line);
+  border-radius: var(--r-md);
+  background: var(--surface);
+  text-align: left;
+  font: inherit;
+  font-weight: 700;
+  cursor: pointer;
+}
+.gd-btn:hover {
+  border-color: var(--accept);
+}
+.gd-btn-num {
+  display: grid;
+  place-items: center;
+  flex: none;
+  width: 26px;
+  height: 26px;
+  margin-right: var(--sp-2);
+  border-radius: 50%;
+  background: var(--faint);
+  font-size: var(--t-sm);
+}
+.gd-btn-label {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--sp-1) var(--sp-2);
+  flex: 1;
+  min-width: 0;
+}
+.gd-btn.recommended {
+  border: 2px solid var(--orange-text);
+  background: color-mix(in srgb, var(--orange-text) 10%, var(--surface));
+}
+.gd-btn.recommended .gd-btn-num {
+  background: var(--orange-text);
+  color: #fff;
+}
+.gd-btn-tag {
+  padding: 2px 8px;
+  border-radius: var(--r-md);
+  background: var(--signal-wash);
+  color: var(--orange-text);
+  font-size: var(--t-sm);
+  font-weight: 700;
+}
+.gd-ghosts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--sp-4);
+}
+.gd-ghosts button {
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--link);
+  font: inherit;
+  font-weight: 700;
+  cursor: pointer;
+  text-decoration: underline;
+}
+.gd-finish {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--sp-3);
+  text-align: center;
+  padding: var(--sp-6) var(--sp-4);
+}
+/* "Was this right?" is small and quiet, with the same shape on a Guided card and the Detailed pane. */
+.acc-check {
+  margin-top: var(--sp-4);
+  padding-top: var(--sp-3);
+  border-top: 1px solid var(--line);
+}
+.acc-buttons {
+  display: flex;
+  gap: var(--sp-2);
+  margin-top: var(--sp-2);
+}
+@media (max-width: 860px) {
+  .guided {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .guided-rail {
+    order: 2;
+  }
+}
+
+/* ---------- Reduced motion: nothing moves, everything still shows ---------- */
+@media (prefers-reduced-motion: reduce) {
+  .screen.on {
+    animation: none;
+  }
+  .toast {
+    transition: none;
+  }
+}
+/* Settings > Motion > Still: the same, chosen by hand instead of Windows' own setting. */
+:root[data-motion="still"] .screen.on {
+  animation: none;
+}
+:root[data-motion="still"] .toast {
+  transition: none;
+}
+
+/* Save a summary's preview: the same order as the saved page, in the app's own look. */
+#res-summary-panel {
+  margin-top: var(--sp-6);
+  padding: var(--sp-5);
+}
+#res-summary-panel > .sec-title {
+  margin-top: 0;
+}
+#res-summary-preview {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--sp-4);
+  margin: var(--sp-4) 0;
+}
+.sum-lead {
+  padding: var(--sp-3) var(--sp-4);
+  border-left: 4px solid var(--signal);
+  border-radius: var(--r-md);
+  background: color-mix(in srgb, var(--side) 60%, transparent);
+}
+.sum-lead .res-head {
+  font-size: var(--t-2xl);
+}
+.sum-group h3 {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  margin: 0 0 var(--sp-1);
+  font-size: var(--t-lg);
+}
+.sum-group .events th.num,
+.sum-group .events td.num {
+  width: 6em;
+  text-align: right;
+  white-space: nowrap;
+}
+.sum-names {
+  margin: var(--sp-2) 0 0;
+  padding-left: var(--sp-5);
+  /* Two columns only while each is wide enough for a long name to read on a line or two. */
+  columns: 2 22em;
+  column-gap: var(--sp-6);
+  font-size: var(--t-sm);
+}
+.sum-names li {
+  break-inside: avoid;
+  overflow-wrap: anywhere;
+}
+.sum-names li + li {
+  margin-top: var(--sp-1);
+}
+.sum-plan h3 {
+  margin: 0 0 var(--sp-1);
+  font-size: var(--t-lg);
+}
+.sum-plan .plan-steps {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--sp-3);
+  margin: var(--sp-2) 0 0;
+  padding-left: var(--sp-5);
+}
+.sum-plan .plan-step.done {
+  opacity: 0.7;
+}
+.sum-plan .plan-what {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  margin: 0;
+  font-weight: 700;
+}
+/* Save a summary > Print: only the panel's own words and table go to paper, not the app around it. A plain
+   `#screen-results { display: block }` here used to lose to `#main > .screen { display: none }`, which names an
+   ID and a class and so outweighs an ID alone: the whole results screen, and the summary panel inside it, stayed
+   display: none and the printed page came out blank. Excluding #screen-results from the hide rules, and hiding
+   its other sections by name instead, keeps every selector's specificity on the side that's meant to win. */
+@media print {
+  body.printing-summary .app > *:not(#main),
+  body.printing-summary #main > .screen:not(#screen-results),
+  body.printing-summary #screen-results > *:not(#res-summary-panel),
+  body.printing-summary #res-summary-panel .toggles,
+  body.printing-summary #res-summary-panel .btn-row,
+  body.printing-summary #res-summary-status {
+    display: none;
+  }
+  body.printing-summary #screen-results,
+  body.printing-summary #res-summary-panel {
+    display: block;
+  }
+}
+
+/* Results starts with a short lead and three quiet actions; each full area opens on demand. */
+.res-lead {
+  margin: var(--sp-3) 0;
+  font-size: var(--t-lg);
+  line-height: 1.4;
+}
+.res-first {
+  margin: var(--sp-3) 0 var(--sp-4);
+}
+.res-first > .sec-title {
+  margin: 0 0 var(--sp-2);
+}
+.res-first .plan-steps {
+  gap: var(--sp-2);
+}
+.res-first .res-first-step {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--sp-2) var(--sp-3);
+  padding: var(--sp-2) var(--sp-3);
+  border: 1px solid var(--line);
+  border-radius: var(--r-md);
+  background: color-mix(in srgb, var(--side) 55%, transparent);
+}
+.res-first-step > article.card {
+  display: contents;
+}
+.ext-first-browser {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-2);
+  font-size: var(--t-sm);
+}
+.res-first-step .btn-row {
+  display: inline-flex;
+  margin: 0;
+}
+.res-area {
+  margin: var(--sp-2) 0;
+  padding: var(--sp-3) var(--sp-4);
+  border: 1px solid var(--line);
+  border-radius: var(--r-md);
+  background: color-mix(in srgb, var(--side) 38%, transparent);
+}
+.res-area > summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--sp-3);
+  cursor: pointer;
+  font-size: var(--t-lg);
+  font-weight: 700;
+}
+.res-area[open] > summary {
+  margin-bottom: var(--sp-3);
+}
+.res-area .sec-title {
+  margin-top: var(--sp-3);
+}
+.res-deeper {
+  margin: var(--sp-3) 0;
+  padding: var(--sp-2) var(--sp-3);
+  border: 1px solid var(--line);
+  border-radius: var(--r-md);
+}
+.res-deeper > summary {
+  cursor: pointer;
+  font-weight: 650;
+}
+.lb-plain-step > p:first-child {
+  margin-top: 0;
+  font-weight: 700;
+}
+.lb-card-excerpt {
+  overflow-wrap: anywhere;
+  color: var(--muted);
+  font-size: var(--t-sm);
+}
+.lb-show-all {
+  padding: var(--sp-2);
+  border: 1px solid var(--line);
+  border-radius: var(--r-sm);
+}
+.lb-show-all > summary {
+  cursor: pointer;
+}

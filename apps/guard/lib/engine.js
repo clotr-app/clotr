@@ -1,10 +1,10 @@
 "use strict";
 /* global require, module, __dirname */
 
-const fs = require("node:fs");
-const vm = require("node:vm");
+const fs = require("fs");
+const vm = require("vm");
 const { valueFingerprint } = require("./clotrignore.js");
-const ENGINE_PATH = require("node:path").join(__dirname, "..", "dist", "clotr-engine.js");
+const ENGINE_PATH = require("path").join(__dirname, "..", "dist", "clotr-engine.js");
 
 function loadEngine() {
   const context = vm.createContext({});

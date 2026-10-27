@@ -278,6 +278,7 @@
   // "double five" = 55, "triple seven" = 777.
   const REPEATS = { double: 2, triple: 3 };
   const ALL_WORDS = { ...NUMBER_WORDS, ...TENS_WORDS, ...HUNDRED_WORDS, ...WEAK_WORDS, ...MULTIPLIERS, ...REPEATS };
+  const UNIT_HINT_RE = new RegExp(`\\d|${Object.keys(ALL_WORDS).join("|")}`, "i");
   // Longest words first, so "seventeen" wins over "seven" and "three" over "thre".
   const UNIT_RE = new RegExp(
     `\\d|${Object.keys(ALL_WORDS)
@@ -327,27 +328,57 @@
     );
   }
 
+  // A number run with no digits or number words can only start from one of these one-letter slips. A quick pass
+  // over whole words lets ordinary prose skip the per-character reader without losing misspelled digit words.
+  const SLIP_WORD_KEYS = Object.keys(SLIP_WORDS);
+  const SLIP_CANDIDATES = new Set(SLIP_WORD_KEYS);
+  const SLIP_ALPHABET = "abcdefghijklmnopqrstuvwxyz";
+  for (const word of SLIP_WORD_KEYS) {
+    for (let i = 0; i < word.length; i++) {
+      SLIP_CANDIDATES.add(word.slice(0, i) + word.slice(i + 1));
+      for (const letter of SLIP_ALPHABET) {
+        SLIP_CANDIDATES.add(word.slice(0, i) + letter + word.slice(i + 1));
+        SLIP_CANDIDATES.add(word.slice(0, i) + letter + word.slice(i));
+      }
+    }
+    for (let i = 0; i + 1 < word.length; i++) {
+      SLIP_CANDIDATES.add(word.slice(0, i) + word[i + 1] + word[i] + word.slice(i + 2));
+    }
+    for (const letter of SLIP_ALPHABET) SLIP_CANDIDATES.add(word + letter);
+  }
+  function hasSlipCandidate(text) {
+    for (const m of text.matchAll(/\p{L}+/gu)) {
+      const word = m[0].toLowerCase();
+      if (word.length < 4 || word.length > 7) continue;
+      if (SLIP_CANDIDATES.has(word)) return true;
+      if (/[^\x00-\x7f]/.test(word) && SLIP_WORD_KEYS.some((candidate) => oneSlip(word, candidate))) return true;
+    }
+    return false;
+  }
+
   // A whole word that is a slip of a digit word (SLIP_WORDS), read as a sound-alike. A slip of two different
   // digits ("fine": "five" or "nine") is neither.
   const WORD_AT = /\p{L}+/uy;
-  function readSlip(text, start) {
+  function readSlip(text, start, cache) {
     WORD_AT.lastIndex = start;
     const s = WORD_AT.exec(text)[0];
     const w = s.toLowerCase();
-    if (s.length < 4 || s.length > 7 || Object.hasOwn(ALL_WORDS, w)) return null;
+    const end = start + s.length;
+    if (cache?.has(w)) {
+      const cached = cache.get(w);
+      return cached ? { start, end, ...cached, kind: "weak", isWord: true, slip: true } : null;
+    }
+    const remember = (digits, lang) => {
+      const cached = digits ? { digits, lang } : null;
+      cache?.set(w, cached);
+      return cached ? { start, end, ...cached, kind: "weak", isWord: true, slip: true } : null;
+    };
+    if (s.length < 4 || s.length > 7 || Object.prototype.hasOwnProperty.call(ALL_WORDS, w)) return remember(null);
     const words = Object.keys(SLIP_WORDS).filter((word) => oneSlip(w, word));
     const digits = new Set(words.map((word) => SLIP_WORDS[word]));
-    if (digits.size !== 1) return null;
+    if (digits.size !== 1) return remember(null);
     const es = words.filter((word) => SPANISH.has(word)).length;
-    return {
-      start,
-      end: start + s.length,
-      digits: [...digits][0],
-      kind: "weak",
-      isWord: true,
-      slip: true,
-      lang: es === words.length ? "es" : es === 0 ? "en" : undefined,
-    };
+    return remember([...digits][0], es === words.length ? "es" : es === 0 ? "en" : undefined);
   }
 
   // Splits text into runs of digits. A run is a list of groups, where a group is digits written together
@@ -368,10 +399,12 @@
   // treat every sound-alike and slip as a real digit. The exception is "to" and "for", since "three to four
   // digits" is describing a range, not giving a number.
   function readNumberRuns(text, labelled = false) {
+    if (!UNIT_HINT_RE.test(text) && !hasSlipCandidate(text)) return [];
     const units = [];
+    const slipCache = new Map();
     for (let i = 0; i < text.length;) {
       UNIT_RE.lastIndex = i;
-      const slip = isLetter(text[i]) && !isLetter(text[i - 1]) ? readSlip(text, i) : null;
+      const slip = isLetter(text[i]) && !isLetter(text[i - 1]) ? readSlip(text, i, slipCache) : null;
       const m = !slip && UNIT_RE.exec(text);
       const u = slip || (m && readUnit(m[0], i));
       if (!u) {
@@ -589,12 +622,13 @@
         if (soft(u) && !u.slip && !u.lang && !linking(u) && between(k)) kept.add(u);
       });
       const first = units.findIndex(strong);
-      const last = units.findLastIndex(strong);
+      let lastIndex = units.length - 1;
+      while (lastIndex >= 0 && !strong(units[lastIndex])) lastIndex -= 1;
       if (first < 0) {
         keepSoundAlikePhones(units);
         continue;
       }
-      const core = units.slice(first, last + 1);
+      const core = units.slice(first, lastIndex + 1);
       const words = core.filter(strong);
       if (core.some((u) => u.kind === "letter")) continue; // a look-alike letter is too ambiguous to guess a shape around
       const lang = words.every((u) => u.lang === "es") ? "es" : words.every((u) => u.lang === "en") ? "en" : null;
@@ -644,7 +678,7 @@
         return out;
       };
       const before = edge(first - 1, -1);
-      const after = edge(last + 1, 1);
+      const after = edge(lastIndex + 1, 1);
       // Every edge-word combination, fewest first (a 7-digit local phone number only with none).
       const combos = [];
       for (let n = 0; n <= before.length + after.length; n++) {
@@ -709,7 +743,8 @@
   // A chant, not a number: digits that repeat every one, two or three characters, like "4242424242".
   const chant = (d) => [1, 2, 3].some((p) => [...d].every((c, k) => k < p || c === d[k - p]));
 
-  const spanText = (text, groups) => text.slice(groups[0][0].start, groups[groups.length - 1].at(-1).end);
+  const lastItem = (items) => items[items.length - 1];
+  const spanText = (text, groups) => text.slice(groups[0][0].start, lastItem(groups[groups.length - 1]).end);
   const digitsOf = (groups) =>
     groups
       .flat()
@@ -772,21 +807,28 @@
     }
     const digits = digitsOf(run.groups.slice(0, end + 1)).length - (plus ? 0 : 2);
     if (digits < 8) return null;
-    return text.slice(start - (plus ? plus[0].length : 0), run.groups[end].at(-1).end);
+    return text.slice(start - (plus ? plus[0].length : 0), lastItem(run.groups[end]).end);
   }
 
   // A phone number cut out of a longer run of digits still has to be phone-shaped, so a list like "1, 2, 3, 5,
   // 8, 13, 21, 34" isn't read as one. A whole run, on the other hand, can be grouped any way and still count.
   const PHONE_SHAPES = new Set(["10", "11", "3,3,4", "1,3,3,4", "3,4", "3,7"]);
+  // Six or more plain digit groups split only by spaces read as a list of numbers, like an RSA ciphertext or a row of
+  // readings. A phone-shaped slice from its middle is two neighbours that happen to fit ("824 1992"), so only a
+  // slice that starts or ends the list can be a phone.
+  const spacedList = (text, groups) =>
+    groups.length >= 6 &&
+    groups.every((g) => g.every((u) => u.kind === "digit")) &&
+    groups.every((g, i) => i === 0 || /^[ \t]+$/.test(text.slice(lastItem(groups[i - 1]).end, g[0].start)));
   // Digits glued to letters belong to a bigger token (a hash, UUID or model number).
   const glued = (text, span) => {
     const first = span[0][0];
-    const last = span.at(-1).at(-1);
+    const end = lastItem(lastItem(span));
     // An extension right after the number ("555-555-0136x12") doesn't make it part of a word.
-    const extension = /^x\d{1,5}\b/i.test(text.slice(last.end, last.end + 7));
+    const extension = /^x\d{1,5}\b/i.test(text.slice(end.end, end.end + 7));
     return (
       (first.kind === "digit" && isLetter(text[first.start - 1])) ||
-      (last.kind === "digit" && isLetter(text[last.end]) && !extension)
+      (end.kind === "digit" && isLetter(text[end.end]) && !extension)
     );
   };
 
@@ -811,16 +853,16 @@
   };
   function inFileName(text, run) {
     const first = run.units[0].start;
-    const last = run.units.at(-1).end;
-    const extension = /^x\d{1,5}\b/i.test(text.slice(last, last + 7));
+    const end = lastItem(run.units).end;
+    const extension = /^x\d{1,5}\b/i.test(text.slice(end, end + 7));
     if (extension) return false;
     const before = sideToken(text, first - 1, -1);
-    const after = sideToken(text, last, 1);
-    const parts = (before + text.slice(first, last) + after).split(".");
+    const after = sideToken(text, end, 1);
+    const parts = (before + text.slice(first, end) + after).split(".");
     return (
       (parts.length >= 3 && /[A-Za-z]/.test(before) && /[A-Za-z]/.test(after)) ||
-      /^(?:2160|1440|1080|720|480)p$/i.test(text.slice(first, last) + after) ||
-      /^(?:x265|x264|h265|h264)$/i.test(before + text.slice(first, last))
+      /^(?:2160|1440|1080|720|480)p$/i.test(text.slice(first, end) + after) ||
+      /^(?:x265|x264|h265|h264)$/i.test(before + text.slice(first, end))
     );
   }
 
@@ -846,7 +888,7 @@
   const SSN_WINDOW = 60;
   const bareSSNContext = (text, run) => {
     const start = run.units[0].start;
-    const end = run.units.at(-1).end;
+    const end = lastItem(run.units).end;
     // "The message is just the number": only worth checking once the whole text is already about that short
     // (a cheap length check avoids scanning a long paste per occurrence).
     if (text.length <= 9 + SSN_WINDOW * 2) {
@@ -988,6 +1030,7 @@
     /(?<![\w-])["']?(?:@timestamp|ts|timestamp|time|created_at|createdAt|eventTime|timeCreated)["']?\s*:\s*["']?(\d{10}(?:\d{3})?)["']?/gi,
     /\b(?:took|lasted|duration|elapsed)(?:\s+(?:for|of))?\s+(\d+(?:\.\d+)?)\s*(?:ms|milliseconds?)\b/gi,
   ];
+  const UUID_SHAPE = /(?<![a-z0-9])[0-9a-f]{8}-(?:[0-9a-f]{4}-){3}[0-9a-f]{12}(?![a-z0-9])/gi;
   function logTimestampRanges(text) {
     const ranges = [];
     for (const pattern of LOG_TIMESTAMP_PATTERNS) {
@@ -1008,9 +1051,20 @@
   function findPhones(text) {
     const found = [];
     let timestamps;
+    const overlapsUuid = (start, end) => {
+      // UUIDs are uncommon, so look for one only around a phone-shaped candidate instead of scanning every paste.
+      const from = Math.max(0, start - 37);
+      const nearby = text.slice(from, Math.min(text.length, end + 37));
+      for (const match of nearby.matchAll(UUID_SHAPE)) {
+        const uuidStart = from + match.index;
+        if (uuidStart < end && uuidStart + match[0].length > start) return true;
+      }
+      return false;
+    };
     const addPhone = (start, end) => {
+      if (overlapsUuid(start, end)) return;
       // Most text has no phone candidate, so don't scan it for log shapes.
-      timestamps ??= logTimestampRanges(text);
+      if (!timestamps) timestamps = logTimestampRanges(text);
       if (!timestamps.some(([begin, finish]) => start >= begin && end <= finish)) found.push(text.slice(start, end));
     };
     for (const m of text.matchAll(/(?<![\p{L}\d])([A-Za-z])(\d{10})(?![\p{L}\d])/gu)) {
@@ -1023,15 +1077,15 @@
         continue;
       }
       if (localPhone(text, run)) {
-        addPhone(run.groups[0][0].start, run.groups.at(-1).at(-1).end);
+        addPhone(run.groups[0][0].start, lastItem(lastItem(run.groups)).end);
         continue;
       }
       if (europeanNationalPhone(text, run)) {
-        addPhone(run.groups[0][0].start, run.groups.at(-1).at(-1).end);
+        addPhone(run.groups[0][0].start, lastItem(lastItem(run.groups)).end);
         continue;
       }
       if (digitsOf(run.groups).length === 9 && phoneContextBefore(text, run)) {
-        addPhone(run.groups[0][0].start, run.groups.at(-1).at(-1).end);
+        addPhone(run.groups[0][0].start, lastItem(lastItem(run.groups)).end);
         continue;
       }
       // A dotted IPv4 address ("73.162.44.201") has phone-like digits but isn't one.
@@ -1039,10 +1093,12 @@
       if (ip && ip.slice(1).every((n) => Number(n) <= 255)) continue;
       const intl = internationalPhone(text, run);
       if (intl) {
-        found.push(intl);
+        const start = text.indexOf(intl, Math.max(0, run.units[0].start - 6));
+        if (start >= 0 && !overlapsUuid(start, start + intl.length)) found.push(intl);
         continue;
       }
       const g = run.groups;
+      const list = spacedList(text, g);
       for (let s = 0; s < g.length;) {
         let bestEnd = -1;
         let len = 0; // digits in g[s..e], counted as the span grows
@@ -1050,6 +1106,7 @@
           for (const u of g[e]) len += u.digits.length;
           if (len > 11) break;
           if (len !== 7 && len < 10) continue; // a phone has 7, 10 or 11 digits (isPhone)
+          if (list && s > 0 && e < g.length - 1) continue;
           const span = g.slice(s, e + 1);
           // Spelled out, from a list break to a list break counts as whole ("…six three six, two one nine…" is
           // two numbers). Digits keep the stricter rule, so "1, 2, 3, 5, 8, 13" stays a list.
@@ -1066,7 +1123,7 @@
           // Include an opening "(" or "+" right before the number, so redaction doesn't leave it behind.
           const first = g[s][0].start;
           const lead = /[(+]/.test(text[first - 1] || "") ? 1 : 0;
-          addPhone(first - lead, g[bestEnd].at(-1).end);
+          addPhone(first - lead, lastItem(g[bestEnd]).end);
           s = bestEnd + 1;
         } else {
           s++;
@@ -1120,7 +1177,7 @@
     let ibans = null;
     let k = 0;
     const inIban = (m) => {
-      ibans ??= [...text.matchAll(IBAN_SHAPED)].map((i) => [i.index, i.index + i[0].length]);
+      if (!ibans) ibans = [...text.matchAll(IBAN_SHAPED)].map((i) => [i.index, i.index + i[0].length]);
       while (k < ibans.length && ibans[k][1] <= m.index) k++;
       return k < ibans.length && ibans[k][0] < m.index + m[0].length;
     };
@@ -1163,11 +1220,11 @@
   // spelled-out phone number, so the number reader keeps those in one run instead of splitting them here.
   // This cuts a run at its list breaks into [[group, …], …].
   const listBreakAfter = (text, groups, i) =>
-    i < groups.length - 1 && /[,;]/.test(text.slice(groups[i].at(-1).end, groups[i + 1][0].start));
+    i < groups.length - 1 && /[,;]/.test(text.slice(lastItem(groups[i]).end, groups[i + 1][0].start));
   function listChunks(text, groups) {
     const chunks = [[]];
     groups.forEach((g, i) => {
-      chunks.at(-1).push(g);
+      lastItem(chunks).push(g);
       if (listBreakAfter(text, groups, i)) chunks.push([]);
     });
     return chunks;
@@ -1236,7 +1293,7 @@
         continue;
       }
       if (!/^(?!000|666|9)\d{3}(?!00)\d{2}(?!0000)\d{4}$/.test(d)) continue;
-      if (isLetter(text[run.units.at(-1).end]) && !ssnLabelBefore(text, run)) continue;
+      if (isLetter(text[lastItem(run.units).end]) && !ssnLabelBefore(text, run)) continue;
       found.push(spanText(text, run.groups));
     }
     return found;
@@ -1514,8 +1571,8 @@
   const BEFORE_A_TITLE = /^(?:with|and|see|seeing|con|el|la|y|ver)$/i;
   function doctorNotDrive(text, m) {
     const { name, suf } = m.groups;
-    const last = name.split(/\s+/).at(-1);
-    if (!/^Dr\.?$/.test(suf) || !(/^\p{Ll}/u.test(last) || BEFORE_A_TITLE.test(last))) return false;
+    const surname = lastItem(name.split(/\s+/));
+    if (!/^Dr\.?$/.test(suf) || !(/^\p{Ll}/u.test(surname) || BEFORE_A_TITLE.test(surname))) return false;
     const at = m.index + m[0].lastIndexOf(suf);
     if (!NAME_AFTER_TITLE.test(text.slice(at, at + 60))) return false;
     const tail = CITY_STATE_ZIP.exec(text.slice(at + suf.length));
@@ -1715,7 +1772,7 @@
     for (const re of labels) {
       for (const m of text.matchAll(re)) {
         const at = m.index + m[0].length;
-        byStart ??= new Map(numberRuns(text).map((r) => [r.units[0].start, r]));
+        if (!byStart) byStart = new Map(numberRuns(text).map((r) => [r.units[0].start, r]));
         const run = byStart.get(at);
         if (run && okDigits(digitsOf(run.groups))) found.push(spanText(text, run.groups));
       }
@@ -1767,10 +1824,10 @@
     let byStart = null;
     const found = [];
     for (const m of text.matchAll(re)) {
-      byStart ??= new Map(numberRuns(text).map((r) => [r.units[0].start, r]));
+      if (!byStart) byStart = new Map(numberRuns(text).map((r) => [r.units[0].start, r]));
       const run = byStart.get(m.index + m[0].length);
       if (!run || !okDigits(digitsOf(run.groups))) continue;
-      const end = run.groups.at(-1).at(-1).end;
+      const end = lastItem(lastItem(run.groups)).end;
       if (!AMOUNT_AFTER.test(text.slice(end, end + 12))) found.push(spanText(text, run.groups));
     }
     return found;
@@ -1810,7 +1867,7 @@
     let runs = null;
     let k = 0; // the first run that starts after the last name read: names come in order, so each run is passed once
     for (const m of text.matchAll(CHECKED_LABEL)) {
-      runs ??= numberRuns(text);
+      if (!runs) runs = numberRuns(text);
       const from = m.index + m[0].length;
       const valid = m[1].toLowerCase() === "clabe" ? clabeValid : cbuValid;
       while (k < runs.length && runs[k].units[0].start < from) k++;
@@ -2238,7 +2295,7 @@
       if (!hasWord(run.groups)) continue;
       const digits = digitsOf(run.groups);
       const start = run.units[0].start;
-      const end = run.units.at(-1).end;
+      const end = lastItem(run.units).end;
       const check = /^\s*([A-HJ-NP-TV-Z])\b/.exec(text.slice(end));
       if (!check) continue;
       const before = text.slice(Math.max(0, start - 4), start);
@@ -2803,11 +2860,26 @@
     let checked = 0;
     for (const n of SEED_LENGTHS) {
       if (n > run.length) continue;
+      const counts = new Map();
+      for (let i = 0; i < n; i++) counts.set(run[i].word, (counts.get(run[i].word) || 0) + 1);
       for (let s = 0; s + n <= run.length; s++) {
-        const window = run.slice(s, s + n);
-        const words = window.map((u) => u.word);
-        if (checked++ >= SEED_WINDOW_CAP) return found;
-        if (bip39ChecksumValid(words)) found.push(window);
+        const edge = s === 0 || s + n === run.length;
+        // A valid phrase embedded in a longer run is extremely unlikely to repeat a word. Skipping those windows
+        // avoids hashing every overlapping slice of a long everyday-word run, while checking run edges preserves
+        // legitimate vectors with repeated words at the start or end.
+        if (edge || counts.size === n) {
+          if (checked++ >= SEED_WINDOW_CAP) return found;
+          const window = run.slice(s, s + n);
+          if (bip39ChecksumValid(window.map((u) => u.word))) found.push(window);
+        }
+        if (s + n < run.length) {
+          const outgoing = run[s].word;
+          const remaining = counts.get(outgoing) - 1;
+          if (remaining) counts.set(outgoing, remaining);
+          else counts.delete(outgoing);
+          const incoming = run[s + n].word;
+          counts.set(incoming, (counts.get(incoming) || 0) + 1);
+        }
       }
     }
     return found;
@@ -2823,7 +2895,7 @@
     const allNumbers = () => run.every((w) => ALL_WORDS[w.word] !== undefined);
     const close = () => {
       if (run.length >= 12 && !allNumbers()) {
-        for (const window of seedWindows(run)) found.push(text.slice(window[0].start, window.at(-1).end));
+        for (const window of seedWindows(run)) found.push(text.slice(window[0].start, lastItem(window).end));
       }
       run = [];
     };
@@ -2982,8 +3054,9 @@
   // A PEM or OpenSSH header and a JWK private key both count as the same `private_key` kind.
   function findPrivateKeys(text) {
     const found = [];
-    const headers = [...text.matchAll(PEM_HEADER_RE)];
-    const footers = [...text.matchAll(PEM_FOOTER_RE)];
+    const hasPemMarker = text.includes("-----");
+    const headers = hasPemMarker ? [...text.matchAll(PEM_HEADER_RE)] : [];
+    const footers = hasPemMarker ? [...text.matchAll(PEM_FOOTER_RE)] : [];
     let footerIndex = 0;
     for (let i = 0; i < headers.length; i++) {
       const header = headers[i];
@@ -3002,28 +3075,33 @@
     const base64Pem = [];
     const alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
     // Decode only the recognizable prefix so arbitrary base64 data stays out of the private-key path.
-    for (const match of text.matchAll(/LS0tLS1CRUdJTi[A-Za-z0-9+/=]{40,}(?:\r?\n[ \t]*[A-Za-z0-9+/=]{8,})*/g)) {
-      let bits = 0;
-      let buffer = 0;
-      let decoded = "";
-      const prefix = match[0].replace(/[\r\n \t]/g, "").slice(0, 64);
-      for (const character of prefix) {
-        if (character === "=") break;
-        const value = alphabet.indexOf(character);
-        if (value < 0) break;
-        buffer = (buffer << 6) | value;
-        bits += 6;
-        if (bits >= 8) {
-          bits -= 8;
-          decoded += String.fromCharCode((buffer >> bits) & 255);
+    if (text.includes("LS0tLS1CRUdJTi")) {
+      for (const match of text.matchAll(/LS0tLS1CRUdJTi[A-Za-z0-9+/=]{40,}(?:\r?\n[ \t]*[A-Za-z0-9+/=]{8,})*/g)) {
+        let bits = 0;
+        let buffer = 0;
+        let decoded = "";
+        const prefix = match[0].replace(/[\r\n \t]/g, "").slice(0, 64);
+        for (const character of prefix) {
+          if (character === "=") break;
+          const value = alphabet.indexOf(character);
+          if (value < 0) break;
+          buffer = (buffer << 6) | value;
+          bits += 6;
+          if (bits >= 8) {
+            bits -= 8;
+            decoded += String.fromCharCode((buffer >> bits) & 255);
+          }
         }
+        if (decoded.includes("PRIVATE KEY")) base64Pem.push(match[0]);
       }
-      if (decoded.includes("PRIVATE KEY")) base64Pem.push(match[0]);
     }
     // A WireGuard config's own key and its peer's shared key (the public key beside them is meant to be shared), and
     // an age key file's secret line.
-    for (const m of text.matchAll(OTHER_PRIVATE_KEY_RE)) found.push(m[0]);
-    return found.concat(findJwkPrivateKeys(text), base64Pem);
+    if (text.includes("PrivateKey") || text.includes("PresharedKey") || text.includes("AGE-SECRET-KEY-")) {
+      for (const m of text.matchAll(OTHER_PRIVATE_KEY_RE)) found.push(m[0]);
+    }
+    const jwk = text.includes("{") ? findJwkPrivateKeys(text) : [];
+    return found.concat(jwk, base64Pem);
   }
   const OTHER_PRIVATE_KEY_RE =
     /\b(?:PrivateKey|PresharedKey)[^\S\n]*=[^\S\n]*[A-Za-z0-9+/]{43}=(?![A-Za-z0-9+/=])|\bAGE-SECRET-KEY-1[02-9AC-HJ-NP-Z]{58}\b/g;
@@ -3071,7 +3149,7 @@
       // A key can run on into the sentence, as in "… kd7e what do I do", so a four-letter word right
       // after it isn't part of the key.
       if (/^ [A-Za-z]/.test(rest.slice(m.index + m[0].length))) {
-        while (groups.length > 4 && !/[2-7]/.test(groups.at(-1))) groups = groups.slice(0, -1);
+        while (groups.length > 4 && !/[2-7]/.test(lastItem(groups))) groups = groups.slice(0, -1);
       }
       const value = groups.join(" ");
       const key = groups.join("");
@@ -3517,28 +3595,33 @@
   // PowerShell's ConvertTo-SecureString "…" -AsPlainText. The sentence forms want a digit or a symbol in the value,
   // since "the login is broken and it's Friday" and "use Bitwarden as the password manager" are just sentences.
   const TOLD_SECRET_DE_FR =
-    /(?<![\p{L}])(?:(?:mein|dein|unser|das|mon|ton|notre|le)\s+)?(?:(?:wlan|e-?mail)-?\s*)?(?:passwort|kennwort|mot\s+de\s+passe)\s+(?:ist|lautet|war|est|était|etait)\s*(?::\s*)?["'“‘„«]?\s*([^\s"'”’“,;!?»]+)/giu;
+    /(?<![\p{L}])(?:(?:mein|dein|unser|das|mon|ton|notre|le)\s+)?(?:(?:wlan|e-?mail)-?\s*)?(?:passwort|kennwort|mot\s+de\s+passe)\s+(?:ist|lautet|war|est|était|etait)(?:\s*:)?(?:\s*["'“‘„«]\s*|\s*)([^\s"'”’“,;!?»]+)/giu;
   // The same in other languages: "minha senha é …", "mijn wachtwoord is …", "мой пароль: …", "ο κωδικός μου
   // είναι …", "senha: …". A few short words can sit between the password word and "is" ("a senha do wifi é …").
   // Where "is" is often left out, as in Russian, Turkish or Indonesian ("şifrem …", "kata sandi saya …"), the
   // word right before a value is enough when the value has a digit and is six characters or more. Each
   // language's "is" or a colon wants a value with a digit or a symbol, like the German and French forms.
   const PW_WORD_INTL = String.raw`(?:senha|wachtwoord|has[łl]o|heslo|(?<!la )parola|parolă|[şs]ifre(?:m|niz)?|parolam|пароль|kennwort|passwort|mot\s+de\s+passe|l[öo]senord(?:et)?|passord(?:et)?|adgangskoden?|kodeord(?:et)?|salasana(?:ni)?|jelsz[óo]|jelszavam|contrasenya|lozinka|geslo|κωδικ[όο]ς(?:\s+πρόσβασης)?|m[ậa]t\s+kh[ẩa]u|kata\s+sandi|كلمة\s+(?:ال)?(?:مرور|سر)|ה?סיסמ[הא]|पासवर्ड)(?![\p{L}\p{M}])`;
-  const INTL_VALUE = String.raw`["'“‘„«]?\s*([^\s"'”’“,;!?»，。、：！？]+)`;
+  const INTL_VALUE = String.raw`([^\s"'”’“,;!?»，。、：！？]+)`;
+  // One whitespace path when the value isn't quoted; the quote separates the two paths when it is.
+  const INTL_TOLD_GAP = String.raw`(?:\s*["'“‘„«]\s*|\s*)`;
+  // Bare labels require horizontal whitespace first. The first branch handles a quote after horizontal spaces;
+  // otherwise one required space and the remaining whitespace form a single run.
+  const INTL_BARE_GAP = String.raw`(?=[^\S\n])(?:[^\S\n]*["'“‘„«]\s*|[^\S\n]\s*)`;
   const TOLD_SECRET_INTL = new RegExp(
-    String.raw`(?<![\p{L}\p{M}\d])${PW_WORD_INTL}(?:\s+[\p{L}\p{M}'’]{1,14}){0,3}?(?:\s*[:：=]|\s+(?:è|é|e|és|ist|is|est|är|er|on|je|jest|to|este|είναι|ειναι|là|adalah|ialah|هي|היא|это|—|–|-)(?![\p{L}\p{M}])\s*:?)\s*${INTL_VALUE}`,
+    String.raw`(?<![\p{L}\p{M}\d])${PW_WORD_INTL}(?:\s+[\p{L}\p{M}'’]{1,14}){0,3}?(?:\s*[:：=]|\s+(?:è|é|e|és|ist|is|est|är|er|on|je|jest|to|este|είναι|ειναι|là|adalah|ialah|هي|היא|это|—|–|-)(?![\p{L}\p{M}])(?:\s*:)?)${INTL_TOLD_GAP}${INTL_VALUE}`,
     "giu",
   );
   const BARE_SECRET_INTL = new RegExp(
-    String.raw`(?<![\p{L}\p{M}\d])${PW_WORD_INTL}(?:\s+(?:saya|ku|của\s+(?:tôi|mình)|الخاصة\s+بي|שלי|μου|mea|mia|mitt|min|ko))?[^\S\n]+${INTL_VALUE}`,
+    String.raw`(?<![\p{L}\p{M}\d])${PW_WORD_INTL}(?:\s+(?:saya|ku|của\s+(?:tôi|mình)|الخاصة\s+بي|שלי|μου|mea|mia|mitt|min|ko))?${INTL_BARE_GAP}${INTL_VALUE}`,
     "giu",
   );
   // "Password" borrowed into Italian or Tagalog: "la mia password è …", "ang password ko ay …". English's own
   // "is" is TOLD_SECRET's.
   const TOLD_SECRET_LOANWORD =
-    /(?<![\p{L}\d])password(?:\s+[\p{L}'’]{1,14}){0,3}?\s+(?:è|é|ay|là|adalah|este|ist|är)(?![\p{L}])\s*:?\s*["'“‘„«]?\s*([^\s"'”’“,;!?»]+)/giu;
+    /(?<![\p{L}\d])password(?:\s+[\p{L}'’]{1,14}){0,3}?\s+(?:è|é|ay|là|adalah|este|ist|är)(?![\p{L}])(?:\s*:)?(?:\s*["'“‘„«]\s*|\s*)([^\s"'”’“,;!?»]+)/giu;
   // French "mdp", lower case only, since an "MDP" in a maths or AI question is a Markov decision process.
-  const TOLD_SECRET_MDP = /(?<![\p{L}\d])[Mm]dp\s*(?:[:=]|\s+est(?![\p{L}]))\s*["'“‘„«]?\s*([^\s"'”’“,;!?»]+)/gu;
+  const TOLD_SECRET_MDP = /(?<![\p{L}\d])[Mm]dp(?:\s*[:=]|\s+est(?![\p{L}]))(?:\s*["'“‘„«]\s*|\s*)([^\s"'”’“,;!?»]+)/gu;
   // Chinese, Japanese, Korean and Thai join "password" to "is" with no space, and the value ends where their
   // own letters or punctuation start again: "我的密码是…，", "パスワードは…です", "비밀번호는 … 입니다".
   const PW_WORD_CJK = String.raw`(?:密码|密碼|口令|パスワード|暗証番号|비밀번호|암호|รหัสผ่าน)`;
@@ -3659,7 +3742,7 @@
     return values;
   }
   const LOGIN_THEN_SECRET =
-    /\b(?:log-?in|user(?:\s*name)?)\s+(?:is\s+)?["']?[^\s"']{2,64}["']?\s*(?:,\s*|\s+)(?:and\s+)?(?:it['’]s|it\s+is|the\s+password\s+is|password\s+is)\s+["'“‘]?([^\s"'”’,;!?]+)/gi;
+    /\b(?:log-?in|user(?:\s*name)?)\s+(?:is\s+)?["']?[^\s"']{2,64}["']?(?:\s*,\s*|\s+)(?:and\s+)?(?:it['’]s|it\s+is|the\s+password\s+is|password\s+is)\s+["'“‘]?([^\s"'”’,;!?]+)/gi;
   const USE_AS_SECRET = new RegExp(
     String.raw`(?<![\p{L}\d])(?:use|using|try|enter)\s+["'“‘]?([^\s"'”’]{4,64})["'”’]?\s+as\s+(?:the|my|your|a|our)\s+(?:new\s+)?${PW_WORD}(?![\p{L}]|\s+(?:manager|reset|hint|field|box|generator|vault|app|policy|rule|requirement)s?(?![\p{L}]))`,
     "giu",
@@ -3839,7 +3922,7 @@
       if (!units || units[0].start !== 0 || !units.some((u) => u.isWord)) return null;
       if (units.some((u, k) => k && !CODE_GAP.test(rest.slice(units[k - 1].end, u.start)))) return null;
       const size = units.reduce((n, u) => n + u.digits.length, 0);
-      end = units.at(-1).end;
+      end = lastItem(units).end;
       if (size < 3 || size > 4 || (end === rest.length && at + end < text.length)) return null;
     }
     return CODE_SIZE.test(rest.slice(end)) ? null : rest.slice(0, end);
@@ -3945,6 +4028,15 @@
   // characters with letters and digits in it still counts, up to a size no token reaches.
   const longToken = (v) =>
     v.length <= 4096 && /^[\w+/=.~:%-]+$/.test(v) && !v.includes("://") && /\d/.test(v) && /[A-Za-z]/.test(v);
+  let secretValuePatterns = null;
+  function matchesSecretPattern(value) {
+    if (!secretValuePatterns) {
+      secretValuePatterns = PATTERNS.filter((pattern) => pattern.secret && pattern.regex).map(
+        (pattern) => new RegExp(pattern.regex.source),
+      );
+    }
+    return secretValuePatterns.some((pattern) => pattern.test(value));
+  }
   function secretValue(raw, needsComplexity, minLength = 4) {
     const v = trimTrailing(raw, /[.)\]}>]/);
     if (v.length < minLength || (v.length > 128 && !longToken(v)) || NOT_A_SECRET.has(v.toLowerCase())) return null;
@@ -3974,7 +4066,7 @@
       return null;
     }
     // A recognizable key after the label is reported by its own pattern.
-    if (PATTERNS.some((p) => p.secret && p.regex && new RegExp(p.regex.source).test(v))) return null;
+    if (matchesSecretPattern(v)) return null;
     return v;
   }
 
@@ -4124,7 +4216,7 @@
     const close = () => {
       if (!run.length) return;
       const start = run[0].start;
-      const value = text.slice(start, run.at(-1).end);
+      const value = text.slice(start, lastItem(run).end);
       run = [];
       if (!giftCode(value) || NAMED_OTHER.test(text.slice(Math.max(0, start - 40), start))) return;
       out.push(value);
@@ -4139,7 +4231,7 @@
         p.ok &&
         !p.dash &&
         !first.dash &&
-        text.slice(run.at(-1).end, p.start) === " " &&
+        text.slice(lastItem(run).end, p.start) === " " &&
         (p.s.length === first.s.length || (p.s.length < first.s.length && /\d/.test(p.s)));
       if (joins) {
         run.push(p);
@@ -4174,6 +4266,80 @@
   // the words on screen say, and nothing about it gets stored.
   const ASK_REASONS = ["login_code", "remote_code", "recovery_codes", "security_answer", "home_code"];
   const REMOTE_LABEL = new RegExp(REMOTE_WORDS_ES, "i");
+  // Used only for matching label text. Secret values and ordinary Russian or Greek text stay unchanged.
+  const CONFUSABLE_LABELS = Object.freeze({
+    "\u0430": "a",
+    "\u0410": "A",
+    "\u0435": "e",
+    "\u0415": "E",
+    "\u043e": "o",
+    "\u041e": "O",
+    "\u0440": "p",
+    "\u0420": "P",
+    "\u0441": "c",
+    "\u0421": "C",
+    "\u0445": "x",
+    "\u0425": "X",
+    "\u0443": "y",
+    "\u0423": "Y",
+    "\u0456": "i",
+    "\u0406": "I",
+    "\u0458": "j",
+    "\u0408": "J",
+    "\u043a": "k",
+    "\u041a": "K",
+    "\u043c": "m",
+    "\u041c": "M",
+    "\u0442": "t",
+    "\u0422": "T",
+    "\u0432": "b",
+    "\u0412": "B",
+    "\u043d": "h",
+    "\u041d": "H",
+    "\u0455": "s",
+    "\u0405": "S",
+    "\u04cf": "l",
+    "\u04c0": "I",
+    "\u03b1": "a",
+    "\u0391": "A",
+    "\u03b5": "e",
+    "\u0395": "E",
+    "\u03bf": "o",
+    "\u039f": "O",
+    "\u03c1": "p",
+    "\u03a1": "P",
+    "\u03c4": "t",
+    "\u03a4": "T",
+    "\u03c7": "x",
+    "\u03a7": "X",
+    "\u03b9": "i",
+    "\u0399": "I",
+    "\u03ba": "k",
+    "\u039a": "K",
+    "\u03bc": "m",
+    "\u039c": "M",
+    "\u03bd": "v",
+    "\u039d": "N",
+    "\u0392": "B",
+    "\u0396": "Z",
+    "\u0397": "H",
+    "\u03a5": "Y",
+  });
+  const CONFUSABLE_LABEL_CHARS = new RegExp(`[${Object.keys(CONFUSABLE_LABELS).join("")}]`, "g");
+  const CONFUSABLE_LABEL_CHAR = new RegExp(`[${Object.keys(CONFUSABLE_LABELS).join("")}]`);
+  function forConfusableLabelMatches(source, re, visit, hasConfusableLabel = CONFUSABLE_LABEL_CHAR.test(source)) {
+    if (!hasConfusableLabel) return;
+    const folded = source.replace(CONFUSABLE_LABEL_CHARS, (ch) => CONFUSABLE_LABELS[ch]);
+    for (const m of folded.matchAll(re)) {
+      const at = m.index + m[0].length - m[1].length;
+      if (!CONFUSABLE_LABEL_CHAR.test(source.slice(m.index, at))) continue;
+      const original = Array.from(m);
+      original[1] = source.slice(at, at + m[1].length);
+      original.index = m.index;
+      original.input = source;
+      visit(original);
+    }
+  }
 
   // The labels above, reused here for a message that asks for one of these codes, as in "tell me the code
   // we texted you". This is what scam-signs.js reads, matching labels only and never an actual value, in
@@ -4194,6 +4360,7 @@
     const found = [];
     const reasons = new Map();
     const inTwilio = twilioLookup(text);
+    const hasConfusableLabel = CONFUSABLE_LABEL_CHAR.test(text);
     // The first reason in ASK_REASONS' order wins when two rules take the same value ("my ATM pin is 4821").
     const rank = (reason) => (reason ? ASK_REASONS.indexOf(reason) : ASK_REASONS.length);
     const because = (v, reason) => {
@@ -4205,7 +4372,7 @@
       ...findCardCodes(text),
       ...findGiftCards(text),
       ...findAwsAccessKeys(text),
-      ...findServiceTokens(text),
+      ...findServiceTokens(text, inTwilio, hasConfusableLabel),
       ...findConnectionStrings(text),
     ]);
     // A two-step sign-in key or link is already reported as its own otp_secret kind, even a documentation
@@ -4223,6 +4390,7 @@
     }
     // The pairs as the label finders below see the text, with those sign-in keys blanked.
     const labelTwilio = text === rawText ? inTwilio : twilioLookup(text);
+    const labelHasConfusableLabel = text === rawText ? hasConfusableLabel : CONFUSABLE_LABEL_CHAR.test(text);
     // Returns the value taken as a secret, or false.
     const add = (raw, needsComplexity, minLength = 4) => {
       const v = secretValue(raw, needsComplexity, minLength);
@@ -4260,12 +4428,20 @@
       const later = LATER_SECRET.exec(text.slice(m.index + m[0].length, m.index + m[0].length + 40));
       if (later) add(later[0], true);
     };
-    for (const m of text.matchAll(LABELLED_SECRET)) {
+    // Qt's PASS result lines can look like `PASS : TestCipher::testRoundTrip(QByteArray, 42)`. Neutralize only
+    // that label at the same length, so a password later on the line (including a test argument) still gets checked.
+    const labelledSecretText = text.replace(
+      /^[\t ]*(?:>[\t ]*)?PASS(?=\s*:\s*Test[\w.$]*::test[\w$]*\()/gm,
+      (match) => `${match.slice(0, -4)}    `,
+    );
+    const labelledSecret = (m) => {
       const at = valueStart(m);
-      if (inTwilio(at, at + m[1].length)) continue;
-      if (isProviderCredentialLabel(m[0], labelTwilio, m[1], at)) continue;
+      if (inTwilio(at, at + m[1].length)) return;
+      if (isProviderCredentialLabel(m[0], labelTwilio, m[1], at)) return;
       if (!addWhole(m, true)) passphraseAt(at);
-    }
+    };
+    for (const m of labelledSecretText.matchAll(LABELLED_SECRET)) labelledSecret(m);
+    forConfusableLabelMatches(text, LABELLED_SECRET, labelledSecret, labelHasConfusableLabel);
     for (const m of text.matchAll(AUTH_HEADER)) {
       // Twilio's SID and auth token are two labeled fields, so a bearer-style wrapper can capture the SID as text.
       if (/^TWILIO_(?:ACCOUNT_SID|AUTH_TOKEN)=/i.test(m[1])) continue;
@@ -4273,6 +4449,8 @@
     }
     for (const m of text.matchAll(TOLD_SECRET)) told(m);
     for (const m of text.matchAll(TOLD_SECRET_ES)) told(m);
+    forConfusableLabelMatches(text, TOLD_SECRET, told, labelHasConfusableLabel);
+    forConfusableLabelMatches(text, TOLD_SECRET_ES, told, labelHasConfusableLabel);
     // Not a range ("8-16 characters") or a describing word ("one-time", "case-sensitive").
     for (const m of text.matchAll(TOLD_SECRET_MORE)) {
       if (/\p{L}/u.test(m[1]) && !/^\p{Ll}+(?:-\p{Ll}+)+$/u.test(m[1])) addWhole(m, true);
@@ -4360,6 +4538,9 @@
   const SERVICE_TOKEN_RE = new RegExp(
     [
       String.raw`\bnpm_[A-Za-z0-9]{36}\b`,
+      String.raw`\bovsxat_(?:[A-Za-z0-9]{43}|[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12})(?![A-Za-z0-9_-])`,
+      String.raw`\brubygems_[0-9a-f]{48}(?![A-Za-z0-9_-])`,
+      String.raw`\bperm:(?:[A-Za-z0-9+/=_-]{16,}(?:\.[A-Za-z0-9+/=_-]{8,})*|[A-Za-z0-9+/=_-]{4,}(?:\.[A-Za-z0-9+/=_-]{8,}){2,})(?![A-Za-z0-9+/=_-])`,
       String.raw`\bgsk_[A-Za-z0-9]{52}(?![A-Za-z0-9_-])`,
       String.raw`\bsk-or-v1-[0-9a-f]{64}(?![A-Za-z0-9_-])`,
       String.raw`\bsb_secret_[A-Za-z0-9_-]{22}_[A-Za-z0-9_-]{8}(?![A-Za-z0-9_-])`,
@@ -4381,15 +4562,18 @@
     ].join("|"),
     "g",
   );
-  function findServiceTokens(text) {
+  function findServiceTokens(
+    text,
+    inTwilio = twilioLookup(text),
+    hasConfusableLabel = CONFUSABLE_LABEL_CHAR.test(text),
+  ) {
     const found = [...text.matchAll(SERVICE_TOKEN_RE)].map((m) => m[0]);
     const awsKeys = new Set(findAwsAccessKeys(text));
-    const inTwilio = twilioLookup(text);
-    for (const m of text.matchAll(LABELLED_API_KEY)) {
+    const labelledApiKey = (m) => {
       const at = m.index + m[0].length - m[1].length;
       // A provider label only takes this path when its value matches that provider's own token shape.
-      if (isProviderCredentialLabel(m[0], inTwilio, m[1], at)) continue;
-      if (inTwilio(at, at + m[1].length)) continue;
+      if (isProviderCredentialLabel(m[0], inTwilio, m[1], at)) return;
+      if (inTwilio(at, at + m[1].length)) return;
       const lookupLabel = m[0].slice(0, m[0].length - m[1].length);
       if (LOOKUP_KEY_LABEL.test(lookupLabel)) {
         const rawValue = m[1].split(/\\[nrt]/)[0];
@@ -4403,7 +4587,7 @@
           /\bprimary[ _.-]key\b/i.test(lookupLabel) &&
           !duplicateDatabaseKey &&
           ((hexKey(value) && !isPlaceholder(value)) || (/^[A-Za-z0-9+/]{40,88}={0,2}$/.test(value) && keyLike(value)));
-        if (!primaryCredential) continue;
+        if (!primaryCredential) return;
       }
       // A JSON string's \n or \t ends the value; what follows one is read again on its own (detector.js).
       const raw = m[1].split(/\\[nrt]/)[0];
@@ -4414,11 +4598,13 @@
       const publicKey = /pub(?:lic|lishable)?[ _.-]?key/i.test(m[0].slice(0, -m[1].length));
       if (!publicKey && hexKey(hex) && !isPlaceholder(hex)) {
         if (!takenByItsOwnRule(hex)) found.push(hex);
-        continue;
+        return;
       }
       const value = secretValue(raw, true, 16);
       if (value && (!publicKey || value.length <= 128) && keyLike(value) && !awsKeys.has(value)) found.push(value);
-    }
+    };
+    for (const m of text.matchAll(LABELLED_API_KEY)) labelledApiKey(m);
+    forConfusableLabelMatches(text, LABELLED_API_KEY, labelledApiKey, hasConfusableLabel);
     for (const setting of namedSettings(text)) {
       const value = setting.kind === "key" && secretValue(setting.value, true, 16);
       if (value && (keyLike(value) || hexKey(value)) && !awsKeys.has(value)) found.push(value);
@@ -4453,7 +4639,7 @@
     });
 
   const TWILIO_CREDENTIALS_RE =
-    /\b(?:TWILIO_ACCOUNT_SID|accountSid)\s*[:=]\s*["']?(AC[0-9a-fA-F]{32})["']?\s*(?:\r?\n|[,; ]+)\s*(?:TWILIO_AUTH_TOKEN|authToken)\s*[:=]\s*["']?([A-Za-z0-9_-]{16,256})/gi;
+    /\b(?:TWILIO_ACCOUNT_SID|accountSid)\s*[:=]\s*["']?(AC[0-9a-fA-F]{32})["']?(?=[\s,;]*[,\n ;])[\s,;]+(?:TWILIO_AUTH_TOKEN|authToken)\s*[:=]\s*["']?([A-Za-z0-9_-]{16,256})/gi;
   const TWILIO_LABEL = /^(?:TWILIO_ACCOUNT_SID|accountSid|TWILIO_AUTH_TOKEN|authToken)\s*[:=]/i;
   // A credential wrapped onto a new line is read again with the break taken out. A line that starts one of its
   // labels is a setting of its own, not a wrap, and what the lines as written already hold wins, so the word on

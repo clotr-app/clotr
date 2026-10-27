@@ -567,13 +567,15 @@ chrome.storage.onChanged.addListener((changes, area) => {
 
 // ---------- Toolbar: tooltip (all tabs) and badge (protected tabs only) ----------
 
-function todaySummary(events) {
+function todaySummary(events, mentions = []) {
   const start = new Date().setHours(0, 0, 0, 0);
   const today = events.filter((e) => e.t >= start);
+  const replies = mentions.filter((e) => e.t >= start && e.action === "mentioned");
   const sum = (list) => list.reduce((n, e) => n + weight(e), 0); // a record for a long list counts as its n
   const count = (a) => sum(today.filter((e) => e.action === a));
   return {
     total: sum(today),
+    replyMentions: replies.length,
     redacted: count("redacted"),
     allowed: count("allowed"),
     silenced: count("suppressed"),
@@ -588,10 +590,14 @@ async function getProtectedTabs() {
 }
 
 async function refreshToolbar() {
-  const { events = [] } = await chrome.storage.local.get("events");
-  const s = todaySummary(events);
-  const title = s.total
-    ? `Clotr — today: ${s.total} found\n${s.redacted} hidden · ${s.allowed} sent · ${s.silenced} just counted`
+  const { events = [], mentions = [] } = await chrome.storage.local.get(["events", "mentions"]);
+  const s = todaySummary(events, mentions);
+  const replySummary = `${s.replyMentions} AI ${s.replyMentions === 1 ? "reply" : "replies"} mentioned your details`;
+  const todaySummaryText = [s.total ? `${s.total} found` : "", s.replyMentions ? replySummary : ""]
+    .filter(Boolean)
+    .join(" · ");
+  const title = todaySummaryText
+    ? `Clotr — today: ${todaySummaryText}\n${s.redacted} hidden · ${s.allowed} sent · ${s.silenced} just counted`
     : "Clotr — nothing found today";
   await chrome.action.setTitle({ title });
 
@@ -600,14 +606,15 @@ async function refreshToolbar() {
     const tabId = Number(id);
     // Self-check: a failed edit outranks the count, so a blind tab never looks fine.
     const failed = (state.editFailed || state.uiRemoved) && !state.paused;
-    const text = failed ? "!" : !state.paused && s.total ? String(s.total) : "";
+    const count = s.total + s.replyMentions;
+    const text = failed ? "!" : !state.paused && count ? String(count) : "";
     try {
       await chrome.action.setBadgeText({ tabId, text });
       if (text) {
         try {
           await chrome.action.setBadgeBackgroundColor({
             tabId,
-            color: failed || s.riskyAllowed ? BADGE_RED : BADGE_BRAND,
+            color: failed || s.riskyAllowed || s.replyMentions ? BADGE_RED : BADGE_BRAND,
           });
         } catch {
           /* Safari: badges have no colour there (it refuses this one); the count still shows */

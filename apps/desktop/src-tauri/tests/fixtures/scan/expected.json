@@ -1,0 +1,103 @@
+{
+  "_comment": "Every scan fixture (tools/make-scan-fixtures.js) and what Check my files should do with it. 'committed' fixtures are in this folder in git; the rest are written fresh each run and gitignored (the header comment in make-scan-fixtures.js says why each one can't be committed). 'windowsOnly' fixtures are written on Windows alone, because what they test (an NTFS file attribute) doesn't exist elsewhere.",
+  "fixtures": [
+    {
+      "path": "tax-form-1099.pdf",
+      "kind": "doc",
+      "committed": true,
+      "note": "real text, not scanned: wages, a made-up SSN and EIN"
+    },
+    {
+      "path": "logins.txt",
+      "kind": "text",
+      "committed": true,
+      "note": "made-up site logins, an AWS-style key and a phone number"
+    },
+    {
+      "path": "budget.xlsx",
+      "kind": "doc",
+      "committed": true,
+      "note": "a cell with a made-up card number, and a cell comment with another made-up detail (not read yet: attachments.js's OFFICE_PART doesn't cover xl/comments*.xml)"
+    },
+    {
+      "path": "vacation-photo.jpg",
+      "kind": "picture",
+      "committed": true,
+      "note": "a made-up place (the Eiffel Tower) in its EXIF GPS"
+    },
+    {
+      "path": "profile-photo.jpg",
+      "kind": "picture",
+      "committed": true,
+      "note": "no location: a plain photo"
+    },
+    {
+      "path": "projects/2024/notes/deep-notes.txt",
+      "kind": "text",
+      "committed": true,
+      "note": "three folders deep: nesting, a made-up email and phone number"
+    },
+    {
+      "path": "id_rsa",
+      "kind": "text",
+      "committed": true,
+      "note": "no extension at all, named exactly as ssh-keygen leaves it: a made-up OpenSSH private key, plus the same made-up AWS key as logins.txt so the same detail shows up in two files"
+    },
+    {
+      "path": "contract-locked.pdf",
+      "kind": "doc",
+      "committed": true,
+      "note": "a made-up /Encrypt reference in its trailer: locked, so 'weren't read', never counted as clean"
+    },
+    {
+      "path": "scan-only.pdf",
+      "kind": "doc",
+      "committed": true,
+      "note": "the browser fixtures' own image-only page (make-picture-fixtures.js's pdf({ scanned: true })): a picture of a page, no text layer, so 'weren't read' names it a scan"
+    },
+    {
+      "path": "contract-locked.docx",
+      "kind": "doc",
+      "committed": true,
+      "note": "Office's own password wrapper (the Compound File Binary magic bytes), never a zip: locked, so 'weren't read'"
+    },
+    {
+      "path": "budget-truncated.xlsx",
+      "kind": "doc",
+      "committed": true,
+      "note": "budget.xlsx cut short before its own central directory: damaged, so 'weren't read'"
+    },
+    {
+      "path": "big-photo-21mb.jpg",
+      "kind": "skip-too-big",
+      "committed": false,
+      "note": "21 MB: over the picture cap (20 MB); counted, never read. Written under tests/e2e/output/scan/, not here: kept out of apps/ so it never trips the \"no AI inside\" rule check's big-file guard"
+    },
+    {
+      "path": "hidden-ssn.txt",
+      "kind": "skip-hidden",
+      "committed": false,
+      "windowsOnly": true,
+      "note": "the hidden attribute; never counted or opened"
+    },
+    {
+      "path": "system-config.ini",
+      "kind": "skip-system",
+      "committed": false,
+      "windowsOnly": true,
+      "note": "the system attribute; never counted or opened"
+    },
+    {
+      "path": "node_modules/legacy-secret.js",
+      "kind": "skip-build-folder",
+      "committed": false,
+      "note": "inside a build folder; never opened, never even looked inside"
+    },
+    {
+      "path": "loop-back",
+      "kind": "skip-link",
+      "committed": false,
+      "note": "a directory junction back to this folder itself (a link loop); never followed"
+    }
+  ]
+}

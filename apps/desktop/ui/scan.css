@@ -1,0 +1,1155 @@
+/* Clotr for Windows' Scan screen: the growing web (trace.js draws it: each folder a node joined to its parent that
+   grows as it's read and takes a colour once done, the card for the file being read beside its folder, one row of
+   kept finds and the count of the rest), the steps, the feed and the Quick scan / Folders I choose picker. scan.js
+   draws every number and word; this only holds the look. A find also reads from a shape (a red dot, an amber
+   triangle) and a word as well as its colour. Under reduced
+   motion (Windows' Animation effects off, or Settings > Motion > Still) nothing moves and every state still
+   shows. */
+
+/* The map's own colours on top of the theme's: Ember (the default, dark), then Light, then Plum. */
+:root {
+  --tm-well: #2f2339;
+  --tm-grid: rgba(255, 255, 255, 0.075);
+  --tm-ghost: rgba(255, 255, 255, 0.1);
+  --tm-pulse: #ff8a3d;
+  --tm-pulse-wash: rgba(255, 138, 61, 0.16);
+  --tm-pulse-text: #ff9a60;
+  --tm-warn: #f4c25c;
+  --tm-warn-fill: #f4c25c;
+  --tm-warn-wash: #463822;
+  --tm-on-warn: #2b1a00;
+  --tm-on-good: #14261b;
+  --tm-err-wash: #4a2a2c;
+  --tm-good-wash: var(--good-wash);
+  --tm-g1: #ff9550;
+  --tm-g2: #9b6bd0;
+  --tm-pop: cubic-bezier(0.34, 1.56, 0.64, 1);
+  --tm-ease: cubic-bezier(0.22, 0.9, 0.26, 1);
+}
+@media (prefers-color-scheme: light) {
+  :root:not([data-theme="dark"]):not([data-theme="plum"]):not([data-theme="ember"]) {
+    --tm-well: #f4ebe1;
+    --tm-grid: rgba(120, 60, 20, 0.14);
+    --tm-ghost: rgba(43, 31, 23, 0.12);
+    --tm-pulse: #f2701f;
+    --tm-pulse-wash: rgba(242, 112, 31, 0.14);
+    --tm-pulse-text: #9c3f08;
+    --tm-warn: #7a4e00;
+    --tm-warn-fill: #e3a41f;
+    --tm-warn-wash: #f6e4bf;
+    --tm-on-warn: #2b1a00;
+    --tm-on-good: #ffffff;
+    --tm-err-wash: #f3d9d4;
+    --tm-good-wash: #e8f1e8;
+    --tm-g1: #ff9550;
+    --tm-g2: #b8551a;
+  }
+}
+:root[data-theme="light"] {
+  --tm-well: #f4ebe1;
+  --tm-grid: rgba(120, 60, 20, 0.14);
+  --tm-ghost: rgba(43, 31, 23, 0.12);
+  --tm-pulse: #f2701f;
+  --tm-pulse-wash: rgba(242, 112, 31, 0.14);
+  --tm-pulse-text: #9c3f08;
+  --tm-warn: #7a4e00;
+  --tm-warn-fill: #e3a41f;
+  --tm-warn-wash: #f6e4bf;
+  --tm-on-warn: #2b1a00;
+  --tm-on-good: #ffffff;
+  --tm-err-wash: #f3d9d4;
+  --tm-good-wash: #e8f1e8;
+  --tm-g1: #ff9550;
+  --tm-g2: #b8551a;
+}
+:root[data-theme="plum"] {
+  --tm-well: #f5f3f7;
+  --tm-grid: rgba(91, 58, 99, 0.14);
+  --tm-ghost: rgba(31, 34, 38, 0.13);
+  --tm-pulse: #ff7a2a;
+  --tm-pulse-wash: rgba(255, 122, 42, 0.13);
+  --tm-pulse-text: #b84a0c;
+  --tm-warn: #8a5800;
+  --tm-warn-fill: #e3a41f;
+  --tm-warn-wash: #fbf0d8;
+  --tm-on-warn: #2b1a00;
+  --tm-on-good: #ffffff;
+  --tm-err-wash: #f6e1e2;
+  --tm-good-wash: var(--good-wash);
+  --tm-g1: #ff9550;
+  --tm-g2: #5b3a63;
+}
+:root[data-theme="ember"] {
+  --tm-well: #2f2339;
+  --tm-grid: rgba(255, 255, 255, 0.075);
+  --tm-ghost: rgba(255, 255, 255, 0.1);
+  --tm-pulse: #ff8a3d;
+  --tm-pulse-wash: rgba(255, 138, 61, 0.16);
+  --tm-pulse-text: #ff9a60;
+  --tm-warn: #f4c25c;
+  --tm-warn-fill: #f4c25c;
+  --tm-warn-wash: #463822;
+  --tm-on-warn: #2b1a00;
+  --tm-on-good: #14261b;
+  --tm-err-wash: #4a2a2c;
+  --tm-good-wash: var(--good-wash);
+  --tm-g1: #ff9550;
+  --tm-g2: #9b6bd0;
+}
+
+.scan-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--s-5);
+}
+.scan-stage {
+  position: relative;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--s-4);
+  padding: var(--s-5) var(--s-6) var(--s-6);
+  border-radius: var(--r-panel);
+  box-shadow: var(--edge), var(--lift);
+  container-type: inline-size;
+}
+.stage-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--s-3) var(--s-6);
+}
+.stage-head .stage-words {
+  flex: 1 1 340px;
+  min-width: 0;
+}
+.stage-after:not(:has(> :not([hidden]))) {
+  display: none;
+}
+
+/* ---------- How far through: a thin bar in the progress colours, filled by transform only ---------- */
+.scan-progress {
+  height: 4px;
+  overflow: hidden;
+  border-radius: var(--r-pill);
+  background: var(--faint);
+}
+.scan-progress i {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: var(--progress);
+  transform-origin: left center;
+  transform: scaleX(var(--p, 0));
+  transition: transform var(--t-slow) var(--ease);
+}
+
+/* ---------- The growing web ---------- */
+.tm svg.tm-icon {
+  width: 15px;
+  height: 15px;
+  flex: none;
+  stroke: none;
+}
+.tm-board {
+  position: relative;
+  min-width: 0;
+  overflow: hidden;
+  border-radius: var(--r-tile);
+  background-color: var(--tm-well);
+  background-image: radial-gradient(var(--tm-grid) 1.1px, transparent 1.5px);
+  background-size: 18px 18px;
+  box-shadow: inset 0 0 0 1px var(--faint);
+}
+.tm-web {
+  position: relative;
+  height: 440px;
+}
+.tm-web-svg {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+  pointer-events: none;
+}
+.tm-idle {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 18px;
+  color: var(--muted);
+  font-size: 13px;
+  text-align: center;
+}
+
+/* The lines joining each folder to its parent, in the progress colours, bolder along the path being read. */
+.wl {
+  fill: none;
+  stroke: url(#tm-wg);
+  stroke-width: 1.6;
+  stroke-opacity: 0.5;
+  stroke-linecap: round;
+  stroke-dasharray: 1 2;
+  transition:
+    d 0.5s var(--tm-ease),
+    stroke-width 0.4s,
+    stroke-opacity 0.4s;
+}
+.wl.on {
+  stroke-width: 2.6;
+  stroke-opacity: 1;
+}
+/* The dotted trace from the card to its folder, and the dots it sends along it. */
+.tm-leader {
+  fill: none;
+  stroke: var(--tm-pulse);
+  stroke-opacity: 0.6;
+  stroke-width: 1.4;
+  stroke-dasharray: 2 5;
+  stroke-linecap: round;
+  transition: d 0.5s var(--tm-ease);
+}
+.tm-dot {
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--tm-pulse);
+  box-shadow: 0 0 0 1.5px var(--tm-well);
+  offset-rotate: 0deg;
+  offset-distance: 0%;
+  opacity: 0;
+  pointer-events: none;
+  animation: tm-fly 1.2s cubic-bezier(0.45, 0, 0.35, 1) infinite;
+}
+.tm-dot:nth-of-type(2) {
+  animation-delay: -0.4s;
+}
+.tm-dot:nth-of-type(3) {
+  animation-delay: -0.8s;
+}
+@keyframes tm-fly {
+  0% {
+    offset-distance: 0%;
+    opacity: 0;
+  }
+  15%,
+  85% {
+    opacity: 1;
+  }
+  100% {
+    offset-distance: 100%;
+    opacity: 0;
+  }
+}
+
+/* A folder: a dot that grows, plain while it's read, then green, amber or red once Clotr is done with it. */
+.wn {
+  transition: transform 0.5s var(--tm-ease);
+}
+.wn-dot {
+  fill: var(--surface);
+  stroke: var(--line);
+  stroke-width: 1.6;
+  transition:
+    r 0.5s var(--tm-pop),
+    fill 0.5s,
+    stroke 0.5s;
+}
+.wn.has-pers .wn-dot {
+  fill: var(--tm-warn-wash);
+}
+.wn.has-look .wn-dot {
+  fill: var(--tm-err-wash);
+}
+.wn.active .wn-dot {
+  stroke: var(--tm-pulse);
+  stroke-width: 2.2;
+}
+.wn.s-clean .wn-dot {
+  fill: color-mix(in srgb, var(--good) 22%, var(--tm-well));
+  stroke: var(--good);
+}
+.wn.s-unread .wn-dot {
+  fill: var(--tm-well);
+  stroke: var(--muted);
+  stroke-dasharray: 2 2;
+}
+.wn.s-personal .wn-dot {
+  fill: color-mix(in srgb, var(--tm-warn-fill) 45%, var(--tm-well));
+  stroke: var(--tm-warn-fill);
+  stroke-width: 2;
+}
+.wn.s-look .wn-dot {
+  fill: color-mix(in srgb, var(--err) 45%, var(--tm-well));
+  stroke: var(--err);
+  stroke-width: 2.2;
+}
+.wn.root .wn-dot {
+  fill: var(--signal);
+  stroke: var(--surface);
+  stroke-width: 2;
+}
+:root[data-theme="plum"] .wn.root .wn-dot {
+  fill: var(--plum);
+}
+.wn-halo {
+  fill: none;
+  stroke: var(--tm-pulse);
+  stroke-width: 1.6;
+  opacity: 0;
+}
+.wn.lead .wn-halo {
+  opacity: 0.45;
+  animation: wn-breathe 1.7s ease-in-out infinite;
+}
+@keyframes wn-breathe {
+  0%,
+  100% {
+    opacity: 0.12;
+  }
+  50% {
+    opacity: 0.6;
+  }
+}
+.wn-label {
+  font: 700 12.5px var(--font);
+  fill: var(--ink-2);
+  paint-order: stroke;
+  stroke: var(--tm-well);
+  stroke-width: 5px;
+  stroke-linejoin: round;
+}
+.wn.d1 .wn-label,
+.wn.root .wn-label {
+  font-size: 13.5px;
+  fill: var(--ink);
+}
+.wn.lead .wn-name {
+  fill: var(--ink);
+}
+.wn-count {
+  font-weight: 400;
+  fill: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+.wn-look {
+  fill: var(--err);
+}
+.wn-pers {
+  fill: var(--tm-warn);
+}
+/* A bead per find, hanging off its folder: a red dot for worth a look, an amber triangle for personal details. */
+.wsat {
+  stroke: var(--tm-well);
+  stroke-width: 1.5;
+}
+.wbead.look .wsat {
+  fill: var(--err);
+}
+.wbead.personal .wsat {
+  fill: var(--tm-warn-fill);
+}
+.wstub {
+  stroke-width: 1.4;
+  stroke-linecap: round;
+}
+.wbead.look .wstub {
+  stroke: var(--err);
+}
+.wbead.personal .wstub {
+  stroke: var(--tm-warn-fill);
+}
+.wbead {
+  animation: wbead-pop 0.5s var(--tm-pop) both;
+}
+@keyframes wbead-pop {
+  from {
+    opacity: 0;
+  }
+}
+
+/* ---------- A file's card ---------- */
+.tm-card {
+  position: absolute;
+  left: 0;
+  top: 0;
+  z-index: 3;
+  width: 210px;
+  height: 136px;
+  padding: 11px 12px 10px;
+  border-radius: var(--r-tile);
+  background: var(--surface);
+  box-shadow:
+    0 0 0 1px var(--faint),
+    var(--lift);
+  /* Placed with `translate`, which `scale` never multiplies (a transform would move it by its own scale). */
+  transition:
+    translate 0.5s var(--tm-ease),
+    scale 0.5s var(--tm-pop),
+    opacity 0.35s var(--tm-ease),
+    box-shadow 0.4s var(--tm-ease);
+}
+.tm-card.swap {
+  animation: tm-swap 0.35s var(--tm-ease);
+}
+@keyframes tm-swap {
+  from {
+    opacity: 0.2;
+  }
+}
+.tm-card[data-s="reading"] {
+  scale: 1.035;
+  box-shadow:
+    0 0 0 1.6px var(--tm-pulse),
+    var(--lift);
+}
+.tm-card[data-s="look"] {
+  box-shadow:
+    0 0 0 1.5px var(--err),
+    var(--lift);
+}
+.tm-card[data-s="personal"] {
+  box-shadow:
+    0 0 0 1.5px var(--tm-warn-fill),
+    var(--lift);
+}
+.tm-glow {
+  position: absolute;
+  inset: -8px;
+  border-radius: 20px;
+  box-shadow: 0 0 26px 2px var(--tm-pulse);
+  opacity: 0;
+  pointer-events: none;
+}
+.tm-card[data-s="reading"] .tm-glow {
+  animation: tm-breathe 1.7s ease-in-out infinite;
+}
+@keyframes tm-breathe {
+  0%,
+  100% {
+    opacity: 0.08;
+  }
+  50% {
+    opacity: 0.42;
+  }
+}
+/* The corner brackets round the card being read, in the colour of what it shows. */
+.tm-brk {
+  position: absolute;
+  inset: -6px;
+  pointer-events: none;
+}
+.tm-pin > .tm-brk {
+  display: none;
+}
+.tm-brk i {
+  position: absolute;
+  width: 11px;
+  height: 11px;
+  border: 2px solid var(--tm-pulse);
+}
+.tm-card[data-s="look"] > .tm-brk i {
+  border-color: var(--err);
+}
+.tm-card[data-s="personal"] > .tm-brk i {
+  border-color: var(--tm-warn-fill);
+}
+.tm-brk i:nth-child(1) {
+  left: 0;
+  top: 0;
+  border-right: 0;
+  border-bottom: 0;
+}
+.tm-brk i:nth-child(2) {
+  right: 0;
+  top: 0;
+  border-left: 0;
+  border-bottom: 0;
+}
+.tm-brk i:nth-child(3) {
+  left: 0;
+  bottom: 0;
+  border-right: 0;
+  border-top: 0;
+}
+.tm-brk i:nth-child(4) {
+  right: 0;
+  bottom: 0;
+  border-left: 0;
+  border-top: 0;
+}
+.tm-ch {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  min-width: 0;
+}
+.tm-ch b {
+  overflow: hidden;
+  font: 700 13.5px var(--mono);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.tm-dir {
+  margin-top: 1px;
+  overflow: hidden;
+  color: var(--muted);
+  font-size: 12px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.tm-lines {
+  position: relative;
+  height: 44px;
+  margin: 10px 0 0;
+}
+.tm-lines i {
+  display: block;
+  height: 4px;
+  margin-bottom: 5px;
+  border-radius: 2px;
+  background: var(--tm-ghost);
+  transition:
+    background-color 0.4s,
+    opacity 0.4s;
+}
+.tm-card[data-s="look"] .tm-lines i:not(.hit),
+.tm-card[data-s="personal"] .tm-lines i:not(.hit) {
+  opacity: 0.5;
+}
+.tm-card[data-s="look"] .tm-lines i.hit {
+  background: var(--err);
+}
+.tm-card[data-s="personal"] .tm-lines i.hit {
+  background: var(--tm-warn-fill);
+}
+/* Reading: an orange band steps down the five grey lines and back up, settling on each, 9 px apart. Still, it rests
+   on the middle line. */
+.tm-band {
+  position: absolute;
+  left: -12px;
+  right: -12px;
+  top: -4px;
+  height: 12px;
+  opacity: 0;
+  pointer-events: none;
+  background: linear-gradient(
+    90deg,
+    transparent,
+    color-mix(in srgb, var(--tm-pulse) 26%, transparent) 12%,
+    color-mix(in srgb, var(--tm-pulse) 18%, transparent) 88%,
+    transparent
+  );
+  box-shadow: inset 3px 0 0 var(--tm-pulse);
+  translate: 0 18px;
+}
+.tm-card[data-s="reading"] .tm-band {
+  opacity: 1;
+  animation: tm-band 1.8s cubic-bezier(0.55, 0, 0.3, 1) infinite;
+}
+@keyframes tm-band {
+  0%,
+  100% {
+    translate: 0 0;
+  }
+  12.5%,
+  87.5% {
+    translate: 0 9px;
+  }
+  25%,
+  75% {
+    translate: 0 18px;
+  }
+  37.5%,
+  62.5% {
+    translate: 0 27px;
+  }
+  50% {
+    translate: 0 36px;
+  }
+}
+/* A find: the band settles on its line and pulses softly, red for worth a look, amber (slower, quieter) for
+   personal details. */
+.tm-hl {
+  position: absolute;
+  left: -12px;
+  right: -12px;
+  height: 12px;
+  opacity: 0;
+  pointer-events: none;
+  border-radius: 3px;
+}
+.tm-card[data-s="look"] .tm-hl {
+  opacity: 1;
+  background: linear-gradient(
+    90deg,
+    transparent,
+    color-mix(in srgb, var(--err) 30%, transparent) 12%,
+    color-mix(in srgb, var(--err) 20%, transparent) 88%,
+    transparent
+  );
+  box-shadow: inset 3px 0 0 var(--err);
+  animation: tm-throb 1.5s ease-in-out infinite alternate;
+}
+.tm-card[data-s="personal"] .tm-hl {
+  opacity: 1;
+  background: linear-gradient(
+    90deg,
+    transparent,
+    color-mix(in srgb, var(--tm-warn-fill) 34%, transparent) 12%,
+    color-mix(in srgb, var(--tm-warn-fill) 22%, transparent) 88%,
+    transparent
+  );
+  box-shadow: inset 3px 0 0 var(--tm-warn-fill);
+  animation: tm-throb-soft 2.4s ease-in-out infinite alternate;
+}
+@keyframes tm-throb {
+  from {
+    opacity: 0.4;
+  }
+}
+@keyframes tm-throb-soft {
+  from {
+    opacity: 0.6;
+  }
+}
+.tm-tag {
+  position: absolute;
+  right: 0;
+  max-width: 72%;
+  overflow: hidden;
+  padding: 0 6px;
+  border-radius: 5px;
+  background: var(--surface);
+  color: var(--err);
+  box-shadow: 0 0 0 1px var(--err);
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 17px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  opacity: 0;
+}
+.tm-card[data-s="personal"] .tm-tag {
+  color: var(--tm-warn);
+  box-shadow: 0 0 0 1px var(--tm-warn-fill);
+}
+.tm-card[data-s="look"] .tm-tag:not(:empty),
+.tm-card[data-s="personal"] .tm-tag:not(:empty) {
+  opacity: 1;
+}
+/* The plaster that lands on a leak, as on the welcome page. */
+svg.tm-clot {
+  position: absolute;
+  left: 8%;
+  width: 40px;
+  height: 40px;
+  display: none;
+  filter: drop-shadow(0 3px 4px rgba(34, 25, 43, 0.3));
+}
+.tm-card[data-s="look"] svg.tm-clot {
+  display: block;
+  animation: tm-land 0.55s var(--tm-pop) 0.1s both;
+}
+@keyframes tm-land {
+  from {
+    opacity: 0;
+    transform: scale(2) rotate(-40deg);
+  }
+  60% {
+    opacity: 1;
+  }
+}
+.tm-foot {
+  position: absolute;
+  left: 12px;
+  right: 12px;
+  bottom: 10px;
+  display: flex;
+}
+
+/* The state words: an icon and a word, coloured to match. */
+.tm-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  height: 24px;
+  padding: 0 9px 0 6px;
+  border-radius: var(--r-pill);
+  background: var(--tm-well);
+  color: var(--muted);
+  box-shadow: inset 0 0 0 1px var(--faint);
+  font-size: 12.5px;
+  font-weight: 700;
+  white-space: nowrap;
+}
+.tm-chip.clean {
+  background: var(--tm-good-wash);
+  color: var(--good);
+  box-shadow: none;
+}
+.tm-chip.personal {
+  background: var(--tm-warn-wash);
+  color: var(--tm-warn);
+  box-shadow: none;
+}
+.tm-chip.look {
+  background: var(--tm-err-wash);
+  color: var(--err);
+  box-shadow: none;
+}
+.tm-chip.reading {
+  background: var(--tm-pulse-wash);
+  color: var(--tm-pulse-text);
+  box-shadow: none;
+}
+.tm-chip.unread {
+  color: var(--ink-2);
+}
+
+/* ---------- Anything worth a look: one row, then "+N more", and the rest counted ---------- */
+.tm-kept {
+  margin: 0 28px;
+  border-top: 1px dashed var(--faint);
+}
+.tm-kept-head {
+  padding: 10px 0;
+  color: var(--muted);
+  font-size: 12.5px;
+  font-weight: 700;
+}
+.tm-kept-row {
+  display: grid;
+  grid-template-columns: repeat(var(--tm-slots, 4), minmax(0, 1fr));
+  gap: 18px;
+}
+.tm-kept.has .tm-kept-row,
+.tm-kept-row:has(> .tm-more-tile:not([hidden])) {
+  padding: 4px 0 8px;
+}
+.tm-pin {
+  position: relative;
+  z-index: 1;
+  width: auto;
+  height: 104px;
+}
+.tm-pin .tm-lines {
+  height: 16px;
+  margin-top: 13px;
+}
+.tm-pin .tm-lines i {
+  display: none;
+}
+.tm-pin .tm-lines i.hit {
+  display: block;
+  width: 64% !important;
+}
+.tm-pin .tm-hl {
+  top: -4px !important;
+  animation: none;
+  opacity: 0.8;
+}
+.tm-pin .tm-tag {
+  top: -7px !important;
+}
+.tm-pin svg.tm-clot {
+  top: -13px !important;
+  width: 32px;
+  height: 32px;
+}
+.tm-more-tile {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  align-content: center;
+  height: 104px;
+  padding: 12px 14px;
+  border-radius: var(--r-tile);
+  outline: 1.4px dashed var(--err);
+  outline-offset: -1px;
+  color: var(--err);
+  font-size: 13px;
+  font-weight: 700;
+  line-height: 1.35;
+}
+.tm-more {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 12px 28px 16px;
+}
+.tm-more:not(:has(> :not([hidden]))) {
+  padding-top: 0;
+}
+
+/* ---------- The stage's words ---------- */
+.stage-title {
+  margin: 0;
+  font-size: var(--text-2xl);
+  font-weight: 700;
+  line-height: 1.2;
+  letter-spacing: -0.018em;
+}
+.stage-sub {
+  margin: var(--s-2) 0 var(--s-2);
+  color: var(--ink-2);
+}
+.stage-stats {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--s-3) var(--s-5);
+  margin: 4px 0 0;
+}
+.stage-stats dt {
+  color: var(--muted);
+  font-size: var(--text-xs);
+}
+.stage-stats dd {
+  margin: 0;
+  min-width: 3.2ch;
+  font-size: var(--text-2xl);
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.01em;
+}
+/* The crumb: the folder and the name of the file being read, as the trace map shows it. */
+.stage-where {
+  min-height: 1.5em;
+  margin: 0 0 var(--s-3);
+  overflow: hidden;
+  color: var(--muted);
+  font: 13px/1.5 var(--mono);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.phases {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--s-2);
+  margin: 0 0 var(--s-4);
+  padding: 0;
+  list-style: none;
+  counter-reset: ph;
+}
+.phases li {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 12px 4px 6px;
+  border-radius: var(--r-pill);
+  background: var(--faint);
+  color: var(--ink-2);
+  font-size: var(--text-xs);
+  font-weight: 700;
+  counter-increment: ph;
+}
+.phases li::before {
+  content: counter(ph);
+  display: grid;
+  place-items: center;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  background: color-mix(in srgb, var(--surface) 70%, transparent);
+  font-size: 11px;
+}
+.phases li.now {
+  background: var(--signal-wash);
+  color: var(--signal);
+}
+.phases li.did {
+  background: var(--good-wash);
+  color: var(--good);
+}
+.phases li.did::before {
+  content: "\2713";
+}
+
+/* ---------- A clean moment: the calm tick list of what Clotr looked for, the honest-limits line, one next
+   step. Same checkmark as a finished phase, so "done" reads the same way everywhere on this screen. ---------- */
+.clean-list {
+  margin: 0 0 var(--s-3);
+  padding: 0;
+  list-style: none;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 4px;
+}
+.clean-list li {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  font-size: var(--text-sm);
+  color: var(--ink-2);
+}
+.clean-list li::before {
+  content: "\2713";
+  color: var(--good);
+  font-weight: 700;
+}
+.clean-limits {
+  margin: 0 0 var(--s-3);
+}
+.stage-next {
+  margin: 0 0 var(--s-4);
+}
+.stage-chosen {
+  margin: 0 0 var(--s-3);
+  font-size: var(--text-sm);
+  color: var(--ink-2);
+  overflow-wrap: anywhere;
+}
+.stage-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--s-3);
+  margin: 0;
+}
+
+/* ---------- Choose a scan ---------- */
+.scan-below h2 {
+  margin: 0 0 var(--s-3);
+  font-size: var(--text-lg);
+}
+.picks {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--s-3);
+}
+.pick {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  grid-template-rows: auto 1fr auto;
+  gap: 4px;
+  padding: 14px 16px 14px 44px;
+  position: relative;
+  border: 1px solid color-mix(in srgb, var(--signal) 8%, var(--faint));
+  border-radius: var(--r-row);
+  background: color-mix(in srgb, var(--surface) 78%, transparent);
+  box-shadow: var(--edge);
+  text-align: left;
+  cursor: pointer;
+  transition:
+    transform var(--t-fast) var(--ease),
+    border-color 0.2s;
+}
+.pick:hover {
+  border-color: color-mix(in srgb, var(--signal) 36%, var(--faint));
+  transform: translateY(-1px);
+}
+.pick::before {
+  content: "";
+  position: absolute;
+  left: 16px;
+  top: 15px;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  border: 2px solid var(--line);
+}
+.pick[aria-checked="true"] {
+  border-color: color-mix(in srgb, var(--signal) 55%, var(--faint));
+  background:
+    var(--gloss), linear-gradient(180deg, var(--surface), color-mix(in srgb, var(--signal) 7%, var(--surface)));
+}
+.pick[aria-checked="true"]::before {
+  border-color: var(--signal);
+  background: radial-gradient(circle, var(--signal) 0 4px, transparent 4.5px);
+}
+.pick b {
+  font-size: var(--text);
+}
+.pick span {
+  color: var(--ink-2);
+  font-size: var(--text-sm);
+  line-height: 1.4;
+}
+.pick small {
+  color: var(--muted);
+  font-size: var(--text-xs);
+}
+
+/* ---------- Found so far ---------- */
+.feed {
+  padding: var(--s-5);
+  border-radius: var(--r-card);
+  background: color-mix(in srgb, var(--surface) 78%, transparent);
+  border: 1px solid var(--faint);
+  box-shadow: var(--edge);
+}
+/* The finds as they come in, in the same groups as Results: a fold per group, rows only ever added at the end. */
+.feed-groups {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--s-2);
+}
+.fg {
+  border-radius: var(--r-row);
+  background: var(--surface);
+  box-shadow: var(--edge);
+}
+.fg > summary {
+  display: flex;
+  align-items: center;
+  gap: var(--s-2);
+  min-height: 44px;
+  padding: 0 var(--s-3);
+  font-size: var(--text-sm);
+  list-style: none;
+}
+.fg > summary::-webkit-details-marker {
+  display: none;
+}
+.fg > summary::before {
+  content: "";
+  flex: none;
+  width: 6px;
+  height: 6px;
+  margin: 0 4px 0 2px;
+  border-right: 2px solid var(--muted);
+  border-bottom: 2px solid var(--muted);
+  transform: rotate(-45deg);
+}
+.fg[open] > summary::before {
+  transform: rotate(45deg);
+}
+.fg-count {
+  margin-left: auto;
+  color: var(--muted);
+  font-size: var(--text-xs);
+  font-weight: 700;
+  white-space: nowrap;
+}
+.fg-rows {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  column-gap: var(--s-4);
+  margin: 0;
+  padding: 0 var(--s-3) var(--s-2);
+  list-style: none;
+}
+.fg-rows li {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  min-width: 0;
+  padding: 6px 0;
+  border-top: 1px solid var(--faint);
+  animation: scan-rise var(--t-med) var(--ease) both;
+}
+@keyframes scan-rise {
+  from {
+    transform: translateY(8px);
+    opacity: 0;
+  }
+}
+.fg-rows b,
+.fg-rows small {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.fg-rows b {
+  font-size: var(--text-sm);
+}
+.fg-rows small {
+  color: var(--muted);
+  font-size: var(--text-xs);
+}
+.fg-more {
+  margin: 0;
+  padding: 0 var(--s-3) var(--s-3);
+  color: var(--muted);
+  font-size: var(--text-xs);
+}
+.feed-none {
+  margin: 0;
+  color: var(--muted);
+  font-size: var(--text-sm);
+}
+
+@media (max-width: 1080px) {
+  .scan-stage {
+    padding: var(--s-5);
+  }
+}
+/* A narrow window: the card keeps its name and state and leaves the kind to the row of kept finds. */
+@container (max-width: 620px) {
+  .tm-web .tm-tag {
+    display: none;
+  }
+}
+@media (max-width: 760px) {
+  .picks {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+/* ---------- Reduced motion: nothing moves, everything still shows ---------- */
+@media (prefers-reduced-motion: reduce) {
+  .tm *,
+  .scan-progress i,
+  .fg-rows li {
+    animation: none !important;
+    transition: none !important;
+  }
+  .pick {
+    transition: none !important;
+  }
+  /* The file being read keeps a steady glow instead of breathing, and no dots fly. */
+  .tm-card[data-s="reading"] .tm-glow {
+    opacity: 0.25;
+  }
+  .tm-dot {
+    display: none;
+  }
+}
+/* Settings > Motion > Still: the same, chosen by hand instead of Windows' own setting. */
+:root[data-motion="still"] .tm *,
+:root[data-motion="still"] .scan-progress i,
+:root[data-motion="still"] .fg-rows li,
+:root[data-motion="still"] .pick {
+  animation: none !important;
+  transition: none !important;
+}
+:root[data-motion="still"] .tm-card[data-s="reading"] .tm-glow {
+  opacity: 0.25;
+}
+:root[data-motion="still"] .tm-dot {
+  display: none;
+}
+/* Nobody's touched the window for a while (main.js's data-idle): the board goes still the same way, so a long scan
+   left alone doesn't keep asking for a frame every refresh. Off rather than paused, so a plaster that lands while
+   idle shows at once instead of holding on its first, invisible frame. */
+:root[data-idle="true"] .tm * {
+  animation: none !important;
+}
+:root[data-idle="true"] .tm-card[data-s="reading"] .tm-glow {
+  opacity: 0.25;
+}
+:root[data-idle="true"] .tm-dot {
+  display: none;
+}
+.stage-words .stage-offer {
+  margin: var(--s-3) 0 0;
+}
+#projects-note {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--s-2) var(--s-3);
+  color: var(--muted);
+}
+#projects-note[hidden] {
+  display: none;
+}
+.pick-leave {
+  margin: var(--s-3) 0 0;
+  font-size: var(--text-sm);
+}
+.scan-stage:not([data-state="running"]) .stage-where {
+  display: none;
+}

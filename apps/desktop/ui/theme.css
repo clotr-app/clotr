@@ -1,0 +1,743 @@
+/* Clotr for Windows' look: shared tokens for type, buttons, chips, cards, rows and tables. Three themes: Light (warm
+   paper, orange), Plum (plum on steel and white) and Ember (dark plum with orange). Settings > Look writes data-theme on the root; with no choice the
+   window follows Windows, Light when it's light and Ember when it's dark. "dark" is the old name for Ember and
+   still works, since a saved setting from before keeps it.
+
+   The website uses separate styles and doesn't load these tokens. Legacy names in the app's CSS (--page, --text-sm,
+   --s-4, --r-panel and the rest) are mapped to these. */
+
+@font-face {
+  font-family: "Atkinson Hyperlegible";
+  src: url("dist/kit/fonts/atkinson-hyperlegible-400.woff2") format("woff2");
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+@font-face {
+  font-family: "Atkinson Hyperlegible";
+  src: url("dist/kit/fonts/atkinson-hyperlegible-700.woff2") format("woff2");
+  font-weight: 700;
+  font-style: normal;
+  font-display: swap;
+}
+
+/* ---------- 1. Tokens ---------- */
+
+/* Shapes, type, spacing and motion: the same in every theme. */
+:root {
+  --font: "Atkinson Hyperlegible", "Segoe UI Variable Text", "Segoe UI", system-ui, sans-serif;
+  --mono: "Cascadia Mono", Consolas, ui-monospace, monospace;
+  /* Spacing: one 4 px scale. */
+  --sp-1: 4px;
+  --sp-2: 8px;
+  --sp-3: 12px;
+  --sp-4: 16px;
+  --sp-5: 20px;
+  --sp-6: 24px;
+  --sp-7: 32px;
+  --sp-8: 40px;
+  /* Radius: 8 controls, 12 rows, 14 cards, 18 panels. */
+  --r-sm: 8px;
+  --r-md: 12px;
+  --r-lg: 14px;
+  --r-xl: 18px;
+  /* Type: one scale. */
+  --t-2xs: 11.5px;
+  --t-xs: 12.5px;
+  --t-sm: 13.5px;
+  --t-base: 14.5px;
+  --t-md: 15px;
+  --t-lg: 16px;
+  --t-xl: 17px;
+  --t-2xl: 19px;
+  --t-display: 24px;
+  --t-hero: 34px;
+  --ease: cubic-bezier(0.22, 0.9, 0.26, 1);
+  --t-fast: 0.15s;
+  --t-med: 0.25s;
+  --t-slow: 0.4s;
+
+  /* The old names retained for compatibility with the app's existing CSS. */
+  --text-xs: var(--t-xs);
+  --text-sm: var(--t-sm);
+  --text: var(--t-base);
+  --text-lg: var(--t-lg);
+  --text-xl: var(--t-xl);
+  --text-2xl: var(--t-2xl);
+  --text-3xl: var(--t-display);
+  --text-5xl: var(--t-hero);
+  --leading: 1.5;
+  --leading-tight: 1.2;
+  --s-1: 4px;
+  --s-2: 8px;
+  --s-3: 12px;
+  --s-4: 16px;
+  --s-5: 24px;
+  --s-6: 32px;
+  --s-7: 40px;
+  --r-control: var(--r-sm);
+  --r-row: var(--r-md);
+  --r-tile: var(--r-lg);
+  --r-card: var(--r-lg);
+  --r-panel: var(--r-xl);
+  --r-pill: 999px;
+  --page: var(--paper);
+  --soft: var(--muted);
+  --rule: var(--faint);
+  --frame: var(--line);
+  --link: var(--orange-text);
+  --shadow: var(--float);
+  --progress: var(--grad);
+  --gloss: none;
+  --sheen: var(--signal);
+  /* Scam check's marked words: a warm highlight that reads in every theme. */
+  --caught-hi: #ffd9b8;
+  --warn-ink: #1f2226;
+}
+
+/* Light is the default: warm paper, whiter at the top, an orange glow at the foot. Also the fallback before
+   any of the rules below match. */
+:root {
+  color-scheme: light;
+  --paper: #fdf8f2;
+  --side: #f9f0e7;
+  --surface: #fffdfa;
+  --surface-2: #faf3eb;
+  --faint: #eee2d6;
+  --line: #a89a8d;
+  --ink: #2b1f17;
+  --ink-2: #594a3e;
+  --muted: #75655a;
+  --wash: rgba(120, 60, 20, 0.05);
+  --signal: #ff6700;
+  --on-signal: #2b1206;
+  --signal-wash: #fff0e6;
+  --orange-text: #b84a0c;
+  --plum: #5b3a63;
+  --plum-wash: #efe6f1;
+  --good: #1f7a3f;
+  --good-wash: #e6f4ea;
+  --err: #b3261e;
+  --err-wash: #fce8e6;
+  --warn: #8a5800;
+  --warn-fill: #e3a41f;
+  --warn-wash: #fbf0d8;
+  --on-warn: #2b1a00;
+  --accept: #2e8b57;
+  --focus: #b84a0c;
+  --grad: linear-gradient(90deg, #ff9550, #5b3a63);
+  --g1: #ff9550;
+  --g2: #5b3a63;
+  --glint: #ff9550;
+  --glow-top: rgba(255, 140, 60, 0.2);
+  --glow-dawn: rgba(255, 190, 110, 0.24);
+  --glow-soft: rgba(255, 165, 140, 0.15);
+  --edge: inset 0 1px 0 rgba(255, 255, 255, 0.95);
+  --lift:
+    inset 0 1px 0 rgba(255, 255, 255, 0.9), 0 1px 2px rgba(60, 30, 10, 0.06), 0 16px 38px -18px rgba(140, 70, 20, 0.2);
+  --float: 0 18px 50px rgba(60, 30, 10, 0.16);
+}
+@media (prefers-color-scheme: light) {
+  :root:not([data-theme]) {
+    color-scheme: light;
+    --paper: #fdf8f2;
+    --side: #f9f0e7;
+    --surface: #fffdfa;
+    --surface-2: #faf3eb;
+    --faint: #eee2d6;
+    --line: #a89a8d;
+    --ink: #2b1f17;
+    --ink-2: #594a3e;
+    --muted: #75655a;
+    --wash: rgba(120, 60, 20, 0.05);
+    --signal: #ff6700;
+    --on-signal: #2b1206;
+    --signal-wash: #fff0e6;
+    --orange-text: #b84a0c;
+    --plum: #5b3a63;
+    --plum-wash: #efe6f1;
+    --good: #1f7a3f;
+    --good-wash: #e6f4ea;
+    --err: #b3261e;
+    --err-wash: #fce8e6;
+    --warn: #8a5800;
+    --warn-fill: #e3a41f;
+    --warn-wash: #fbf0d8;
+    --on-warn: #2b1a00;
+    --accept: #2e8b57;
+    --focus: #b84a0c;
+    --grad: linear-gradient(90deg, #ff9550, #5b3a63);
+    --g1: #ff9550;
+    --g2: #5b3a63;
+    --glint: #ff9550;
+    --glow-top: rgba(255, 140, 60, 0.2);
+    --glow-dawn: rgba(255, 190, 110, 0.24);
+    --glow-soft: rgba(255, 165, 140, 0.15);
+    --edge: inset 0 1px 0 rgba(255, 255, 255, 0.95);
+    --lift:
+      inset 0 1px 0 rgba(255, 255, 255, 0.9), 0 1px 2px rgba(60, 30, 10, 0.06), 0 16px 38px -18px rgba(140, 70, 20, 0.2);
+    --float: 0 18px 50px rgba(60, 30, 10, 0.16);
+  }
+}
+:root[data-theme="light"] {
+  color-scheme: light;
+  --paper: #fdf8f2;
+  --side: #f9f0e7;
+  --surface: #fffdfa;
+  --surface-2: #faf3eb;
+  --faint: #eee2d6;
+  --line: #a89a8d;
+  --ink: #2b1f17;
+  --ink-2: #594a3e;
+  --muted: #75655a;
+  --wash: rgba(120, 60, 20, 0.05);
+  --signal: #ff6700;
+  --on-signal: #2b1206;
+  --signal-wash: #fff0e6;
+  --orange-text: #b84a0c;
+  --plum: #5b3a63;
+  --plum-wash: #efe6f1;
+  --good: #1f7a3f;
+  --good-wash: #e6f4ea;
+  --err: #b3261e;
+  --err-wash: #fce8e6;
+  --warn: #8a5800;
+  --warn-fill: #e3a41f;
+  --warn-wash: #fbf0d8;
+  --on-warn: #2b1a00;
+  --accept: #2e8b57;
+  --focus: #b84a0c;
+  --grad: linear-gradient(90deg, #ff9550, #5b3a63);
+  --g1: #ff9550;
+  --g2: #5b3a63;
+  --glint: #ff9550;
+  --glow-top: rgba(255, 140, 60, 0.2);
+  --glow-dawn: rgba(255, 190, 110, 0.24);
+  --glow-soft: rgba(255, 165, 140, 0.15);
+  --edge: inset 0 1px 0 rgba(255, 255, 255, 0.95);
+  --lift:
+    inset 0 1px 0 rgba(255, 255, 255, 0.9), 0 1px 2px rgba(60, 30, 10, 0.06), 0 16px 38px -18px rgba(140, 70, 20, 0.2);
+  --float: 0 18px 50px rgba(60, 30, 10, 0.16);
+}
+
+/* Plum: the website's palette, plum on steel and white. Only Settings > Look turns it on. */
+:root[data-theme="plum"] {
+  color-scheme: light;
+  --paper: #ffffff;
+  --side: #bdc2c7;
+  --surface: #ffffff;
+  --surface-2: #f3f5f6;
+  --faint: #c9ced3;
+  --line: #8d949b;
+  --ink: #1f2226;
+  --ink-2: #3a3f45;
+  --muted: #4a4f55;
+  --wash: rgba(91, 58, 99, 0.07);
+  --signal: #5b3a63;
+  --on-signal: #ffffff;
+  --signal-wash: #ece4ee;
+  --orange-text: #5b3a63;
+  --plum: #5b3a63;
+  --plum-wash: #ece4ee;
+  --good: #1f7a3f;
+  --good-wash: #e1efe5;
+  --err: #b3261e;
+  --err-wash: #f6e1e2;
+  --warn: #8a5800;
+  --warn-fill: #e3a41f;
+  --warn-wash: #fbf0d8;
+  --on-warn: #2b1a00;
+  --accept: #7d4f8c;
+  --focus: #5b3a63;
+  --grad: linear-gradient(90deg, #ff9550, #5b3a63);
+  --g1: #ff9550;
+  --g2: #5b3a63;
+  --glint: #ff9550;
+  --glow-top: rgba(91, 58, 99, 0.14);
+  --glow-dawn: rgba(194, 199, 204, 0.22);
+  --glow-soft: rgba(91, 58, 99, 0.08);
+  --edge: inset 0 1px 0 rgba(255, 255, 255, 0.95);
+  --lift:
+    inset 0 1px 0 rgba(255, 255, 255, 0.9), 0 1px 2px rgba(31, 34, 38, 0.06), 0 16px 38px -18px rgba(91, 58, 99, 0.22);
+  --float: 0 18px 50px rgba(31, 34, 38, 0.14);
+}
+
+/* Ember: dark plum with orange, the emblem's colours. Windows' dark mode lands here too. */
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme]) {
+    color-scheme: dark;
+    --paper: #2b2135;
+    --side: #1a1221;
+    --surface: #372a44;
+    --surface-2: #31253d;
+    --faint: #4c3b5c;
+    --line: #93819f;
+    --ink: #f7f1fb;
+    --ink-2: #e0d4ea;
+    --muted: #bba9c9;
+    --wash: rgba(255, 255, 255, 0.05);
+    --signal: #ff6700;
+    --on-signal: #0b0b0b;
+    --signal-wash: #4a2f28;
+    --orange-text: #ff9a60;
+    --plum: #b98cf0;
+    --plum-wash: #3f2f52;
+    --good: #7fd19f;
+    --good-wash: #23402f;
+    --err: #ff8a80;
+    --err-wash: #4a2a2c;
+    --warn: #f4c25c;
+    --warn-fill: #f4c25c;
+    --warn-wash: #463822;
+    --on-warn: #2b1a00;
+    --accept: #b98cf0;
+    --focus: #ff8a3d;
+    --grad: linear-gradient(90deg, #ff9550, #9b6bd0);
+    --g1: #ff9550;
+    --g2: #9b6bd0;
+    --glint: #ffffff;
+    --glow-top: rgba(255, 150, 80, 0.1);
+    --glow-dawn: rgba(155, 107, 208, 0.14);
+    --glow-soft: rgba(255, 103, 0, 0.1);
+    --edge: inset 0 1px 0 rgba(255, 255, 255, 0.05);
+    --lift: inset 0 1px 0 rgba(255, 255, 255, 0.05), 0 18px 40px -24px rgba(0, 0, 0, 0.65);
+    --float: 0 18px 50px rgba(0, 0, 0, 0.5);
+  }
+}
+:root[data-theme="ember"],
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --paper: #2b2135;
+  --side: #1a1221;
+  --surface: #372a44;
+  --surface-2: #31253d;
+  --faint: #4c3b5c;
+  --line: #93819f;
+  --ink: #f7f1fb;
+  --ink-2: #e0d4ea;
+  --muted: #bba9c9;
+  --wash: rgba(255, 255, 255, 0.05);
+  --signal: #ff6700;
+  --on-signal: #0b0b0b;
+  --signal-wash: #4a2f28;
+  --orange-text: #ff9a60;
+  --plum: #b98cf0;
+  --plum-wash: #3f2f52;
+  --good: #7fd19f;
+  --good-wash: #23402f;
+  --err: #ff8a80;
+  --err-wash: #4a2a2c;
+  --warn: #f4c25c;
+  --warn-fill: #f4c25c;
+  --warn-wash: #463822;
+  --on-warn: #2b1a00;
+  --accept: #b98cf0;
+  --focus: #ff8a3d;
+  --grad: linear-gradient(90deg, #ff9550, #9b6bd0);
+  --g1: #ff9550;
+  --g2: #9b6bd0;
+  --glint: #ffffff;
+  --glow-top: rgba(255, 150, 80, 0.1);
+  --glow-dawn: rgba(155, 107, 208, 0.14);
+  --glow-soft: rgba(255, 103, 0, 0.1);
+  --edge: inset 0 1px 0 rgba(255, 255, 255, 0.05);
+  --lift: inset 0 1px 0 rgba(255, 255, 255, 0.05), 0 18px 40px -24px rgba(0, 0, 0, 0.65);
+  --float: 0 18px 50px rgba(0, 0, 0, 0.5);
+}
+
+/* ---------- 2. Base ---------- */
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+html,
+body {
+  margin: 0;
+}
+body {
+  font: 400 var(--t-base) / 1.5 var(--font);
+  color: var(--ink);
+  background: var(--paper);
+}
+button,
+input,
+textarea,
+select {
+  font: inherit;
+  color: inherit;
+}
+h1,
+h2,
+h3 {
+  margin: 0;
+  line-height: 1.25;
+  font-weight: 700;
+}
+p {
+  margin: 0;
+}
+a {
+  color: var(--orange-text);
+  text-decoration-thickness: 1px;
+  text-underline-offset: 2px;
+}
+:focus-visible {
+  outline: 3px solid var(--focus);
+  outline-offset: 2px;
+}
+/* A summary is a control: at least 24 px tall, like every other target. */
+summary {
+  min-height: 24px;
+  padding: 2px 0;
+  cursor: pointer;
+}
+/* A button's own display would otherwise beat the hidden attribute and leave an empty one showing. */
+[hidden] {
+  display: none !important;
+}
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+.muted {
+  color: var(--muted);
+}
+.small {
+  font-size: var(--t-xs);
+}
+.skip {
+  position: absolute;
+  left: -999px;
+  top: 0;
+  padding: var(--sp-2) var(--sp-3);
+  border-radius: var(--r-sm);
+  background: var(--signal);
+  color: var(--on-signal);
+  font-weight: 700;
+  text-decoration: none;
+}
+.skip:focus {
+  left: var(--sp-2);
+  top: var(--sp-2);
+  z-index: 50;
+}
+
+/* The web view is kept awake (src-tauri/src/webview.rs, AWAKE_ARGS) so the card never freezes while hidden, which
+   means Windows hiding a window doesn't slow its animations on its own. tauri.js sets this the moment nobody can
+   see the window, and nothing needs to keep moving until that changes back. */
+:root[data-visible="false"] * {
+  animation-play-state: paused !important;
+}
+
+/* ---------- 3. Buttons ---------- */
+
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--sp-2);
+  min-height: 40px;
+  padding: 0 var(--sp-4);
+  border: 1px solid var(--line);
+  border-radius: var(--r-sm);
+  background: var(--surface);
+  color: var(--ink);
+  font-weight: 700;
+  font-size: var(--t-base);
+  line-height: 1.2;
+  text-align: center;
+  text-decoration: none;
+  cursor: pointer;
+  box-shadow: var(--edge);
+  transition:
+    background-color 0.12s,
+    border-color 0.12s,
+    color 0.12s;
+}
+.btn:hover {
+  border-color: var(--accept);
+  background: color-mix(in srgb, var(--accept) 12%, var(--surface));
+}
+.btn:active {
+  transform: translateY(1px);
+}
+.btn:disabled,
+.btn[aria-disabled="true"] {
+  opacity: 0.5;
+  cursor: not-allowed;
+  transform: none;
+}
+.btn.primary {
+  background: var(--signal);
+  border-color: var(--signal);
+  color: var(--on-signal);
+  box-shadow: var(--lift);
+}
+.btn.primary:hover {
+  background: color-mix(in srgb, var(--accept) 25%, var(--signal));
+  border-color: color-mix(in srgb, var(--accept) 25%, var(--signal));
+}
+.btn.sm {
+  min-height: 32px;
+  padding: 0 var(--sp-3);
+  font-size: var(--t-sm);
+}
+/* A link-like action inside a card ("Open History"): a transparent text button. */
+.btn.text {
+  min-height: 32px;
+  padding: 0 var(--sp-2);
+  margin-left: calc(-1 * var(--sp-2));
+  border-color: transparent;
+  background: none;
+  box-shadow: none;
+  color: var(--ink-2);
+  font-size: var(--t-sm);
+}
+.btn.text:hover {
+  background: color-mix(in srgb, var(--accept) 12%, transparent);
+  border-color: transparent;
+  color: var(--ink);
+}
+.btn-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--sp-2);
+}
+
+/* ---------- 4. Chips (.tag) and dots: a word beside every colour ---------- */
+
+.tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  width: max-content;
+  max-width: 100%;
+  height: 24px;
+  padding: 0 var(--sp-2);
+  border-radius: 999px;
+  background: var(--faint);
+  color: var(--ink-2);
+  font-size: var(--t-xs);
+  font-weight: 700;
+  line-height: 1;
+  white-space: nowrap;
+}
+.tag.good {
+  background: var(--good-wash);
+  color: var(--good);
+}
+.tag.err {
+  background: var(--err-wash);
+  color: var(--err);
+}
+.tag.test {
+  background: var(--warn-wash);
+  color: var(--warn);
+}
+.tag.soon {
+  background: var(--signal-wash);
+  color: var(--orange-text);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--signal) 45%, transparent);
+}
+.dot {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--line);
+  flex: none;
+}
+.dot.good {
+  background: var(--good);
+}
+.dot.err {
+  background: var(--err);
+}
+.dot.test {
+  background: var(--warn-fill);
+}
+.dot.soon {
+  background: var(--signal);
+}
+
+/* ---------- 5. Cards, panels, rows ---------- */
+
+.card {
+  position: relative;
+  padding: var(--sp-4);
+  border-radius: var(--r-lg);
+  background: var(--surface);
+  border: 1px solid color-mix(in srgb, var(--line) 60%, transparent);
+  box-shadow: var(--lift);
+}
+/* A card that opens with its heading uses a small-caps band at the top. */
+.card > h2:first-child {
+  margin: calc(-1 * var(--sp-4)) calc(-1 * var(--sp-4)) var(--sp-3);
+  padding: var(--sp-3) var(--sp-4);
+  border-bottom: 1px solid var(--faint);
+  border-radius: var(--r-lg) var(--r-lg) 0 0;
+  background: color-mix(in srgb, var(--side) 60%, transparent);
+  color: var(--muted);
+  font-size: var(--t-sm);
+  font-weight: 700;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+}
+.panel {
+  background: var(--surface);
+  border: 1px solid color-mix(in srgb, var(--line) 60%, transparent);
+  border-radius: var(--r-xl);
+}
+.panel.glass {
+  box-shadow: var(--lift);
+}
+.rows {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.rows .row {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: var(--sp-3);
+  min-height: 52px;
+  padding: var(--sp-2) 0;
+  border-top: 1px solid var(--faint);
+}
+.rows .row:first-child {
+  border-top: 0;
+}
+.rows .row b {
+  display: block;
+  font-weight: 700;
+}
+.rows .row small {
+  display: block;
+  color: var(--muted);
+  font-size: var(--t-sm);
+  overflow-wrap: anywhere;
+}
+/* A short message in a screen: a quiet box, never an alarm. */
+.note {
+  margin: 0;
+  padding: var(--sp-3) var(--sp-4);
+  border-radius: var(--r-md);
+  border: 1px solid var(--faint);
+  border-left: 4px solid var(--signal);
+  background: var(--surface);
+  color: var(--ink-2);
+}
+
+/* ---------- 6. Tables ---------- */
+
+.events {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: var(--t-sm);
+}
+.events th {
+  padding: var(--sp-2) var(--sp-3);
+  border-bottom: 1px solid var(--line);
+  color: var(--muted);
+  font-size: var(--t-xs);
+  font-weight: 700;
+  letter-spacing: 0.03em;
+  text-align: left;
+  text-transform: uppercase;
+}
+.events td {
+  padding: var(--sp-2) var(--sp-3);
+  border-bottom: 1px solid var(--faint);
+  color: var(--ink-2);
+  vertical-align: top;
+}
+.events tr:last-child td {
+  border-bottom: 0;
+}
+.events tbody tr:hover td {
+  background: color-mix(in srgb, var(--accept) 8%, transparent);
+}
+
+/* ---------- 7. Inputs, selects and switches ---------- */
+
+select,
+input:not([type="checkbox"], [type="radio"], [type="file"]) {
+  min-height: 40px;
+  padding: 0 var(--sp-3);
+  border: 1px solid var(--line);
+  border-radius: var(--r-sm);
+  background: var(--surface);
+  color: var(--ink);
+  font-size: var(--t-sm);
+  box-shadow: var(--edge);
+}
+select {
+  padding-right: var(--sp-2);
+}
+select:focus-visible,
+input:focus-visible,
+textarea:focus-visible {
+  border-color: var(--signal);
+}
+.switch {
+  position: relative;
+  flex: none;
+  width: 44px;
+  height: 26px;
+  padding: 0;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: var(--faint);
+  cursor: pointer;
+  transition:
+    background-color var(--t-fast),
+    border-color var(--t-fast);
+}
+.switch::after {
+  content: "";
+  position: absolute;
+  top: 3px;
+  left: 3px;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: var(--muted);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.2);
+  transition: transform var(--t-fast) var(--ease);
+}
+.switch[aria-checked="true"] {
+  border-color: var(--signal);
+  background: var(--signal);
+}
+.switch[aria-checked="true"]::after {
+  background: var(--surface);
+  transform: translateX(18px);
+}
+.switch:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+/* ---------- 8. Reduced motion: nothing moves, everything still shows ---------- */
+
+@media (prefers-reduced-motion: reduce) {
+  .btn,
+  .switch,
+  .switch::after {
+    transition: none;
+  }
+}
+:root[data-motion="still"] .btn,
+:root[data-motion="still"] .switch,
+:root[data-motion="still"] .switch::after {
+  transition: none;
+}

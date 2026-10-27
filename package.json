@@ -4,7 +4,7 @@
   "license": "AGPL-3.0-or-later",
   "description": "Dev tooling for the Clotr extension (the extension itself is in extension/ and has no dependencies).",
   "scripts": {
-    "test": "node --test --test-reporter=dot \"tests/*.test.js\"",
+    "test": "node --test --test-reporter=dot --test-concurrency=1 \"tests/*.test.js\"",
     "test:e2e": "node tests/e2e/run.js",
     "test:e2e:packaged": "node tools/package.js --no-zip --folder dist/e2e-packaged && node tests/e2e/run.js --ext dist/e2e-packaged",
     "test:firefox": "node tests/e2e/firefox.js",
