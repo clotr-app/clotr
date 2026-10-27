@@ -1,0 +1,113 @@
+/* Clotr for Windows -- the note for your helper's overlay (note.js): a modal appended straight to <body>, so it
+   never shares a stylesheet rule with a .screen section. Everything inside it but this positioning and the print
+   rule below reuses the suite kit's own .panel, .glass, .toggles, .switch, .btn, .btn-row and .events table. */
+
+.note-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 50;
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  overflow-y: auto;
+  padding: var(--s-6) var(--s-4);
+  background: color-mix(in srgb, var(--ink) 45%, transparent);
+}
+
+.note-panel {
+  width: 100%;
+  max-width: 760px;
+  margin: auto;
+  padding: var(--s-6);
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-4);
+}
+
+.note-count {
+  font-weight: 700;
+  margin: 0;
+}
+
+.note-done {
+  width: 2.4em;
+}
+
+.note-check {
+  display: inline-block;
+  width: 15px;
+  height: 15px;
+  border: 1.5px solid var(--ink);
+  border-radius: 2px;
+}
+
+.note-steps h3,
+.note-is h3 {
+  margin: 0 0 var(--s-2);
+  padding-bottom: var(--s-1);
+  border-bottom: 2px solid var(--line);
+}
+
+.note-step {
+  margin: 0 0 var(--s-4);
+}
+
+.note-step b {
+  display: block;
+  margin: 0 0 var(--s-1);
+}
+
+.note-step ol {
+  margin: 0;
+  padding-left: 20px;
+}
+
+.note-email-hint {
+  align-self: center;
+}
+
+/* note.js moves focus to the heading on open so a screen reader announces it every time, mouse-opened or not;
+   that focus() call lands after an await, which some browsers then always treat as focus-visible. This keeps
+   the heading's own outline tied to real keyboard focus, like the rest of the app's :focus-visible rule. */
+#note-heading:focus {
+  outline: 3px solid var(--focus);
+  outline-offset: 2px;
+}
+
+#note-heading:focus:not(:focus-visible) {
+  outline: none;
+}
+
+/* Printing the note (note.js's Print button): the live preview panel above, never Results, Settings or anything
+   else on the page. The same approach as main.css's body.printing-summary, simpler here since the overlay is
+   appended straight to <body> instead of nested under #main -- hiding its siblings is enough. */
+@media print {
+  body.printing-note > *:not(#clotr-note-overlay) {
+    display: none;
+  }
+  body.printing-note #clotr-note-overlay {
+    position: static;
+    inset: auto;
+    overflow: visible;
+    padding: 0;
+    background: none;
+    display: block;
+  }
+  body.printing-note .note-panel {
+    box-shadow: none;
+    border: none;
+    max-width: none;
+    margin: 0;
+  }
+  body.printing-note .toggles,
+  body.printing-note .note-panel .btn-row,
+  body.printing-note #note-status {
+    display: none;
+  }
+  body.printing-note tr {
+    break-inside: avoid;
+  }
+  body.printing-note h3 {
+    break-after: avoid;
+  }
+}

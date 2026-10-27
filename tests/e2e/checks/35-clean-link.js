@@ -19,7 +19,7 @@ module.exports = async function (env) {
       expect(note, "no note after pasting a tracked link");
       const names = note.buttons.map((b) => b.text);
       expect(names.includes("Remove the share code"), `buttons: ${JSON.stringify(names)}`);
-      expect(!names.includes("Cover it"), `link-only note still said "Cover it": ${JSON.stringify(names)}`);
+      expect(!names.includes("Clot this leak"), `link-only note still said "Clot this leak": ${JSON.stringify(names)}`);
     }),
   );
 
@@ -76,7 +76,7 @@ module.exports = async function (env) {
       await typeText(page, `${AD_LINK}\nmy email is bob@example.com`);
       const note = await waitForNotice(page);
       const names = note.buttons.map((b) => b.text);
-      expect(names.includes("Cover it"), `mixed note: ${JSON.stringify(names)}`);
+      expect(names.includes("Clot this leak"), `mixed note: ${JSON.stringify(names)}`);
       expect(!names.includes("Remove the share code"), `mixed note kept link-only wording: ${note.text}`);
     }),
   );

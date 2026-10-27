@@ -142,7 +142,7 @@ module.exports = async function (env) {
 
   await check(
     "TW3",
-    "Step 2, Try it: the made-up example, Clotr's real masked warning, Hide it, then Edit it, then Send anyway, each explained",
+    "Step 2, Try it: the made-up example, Clotr's real masked warning, Clot this leak, then Edit it, then Send anyway, each explained",
     async () => {
       const page = await openTraining();
       try {
@@ -170,13 +170,16 @@ module.exports = async function (env) {
         expect(!s.resultText.includes("219-09-9999"), `the full number shown in the notice: ${s.resultText}`);
         await shots(page, "training-try-notice");
 
-        // Hide it.
+        // Clot this leak.
         await page.click(".try-notice .btn.primary");
         await sleep(150);
         s = await shellState(page);
         expect(/Hidden\. On a real chat, the AI would never see the number/.test(s.bodyText), `hide: ${s.bodyText}`);
         const hidden = await page.$eval("#tw-try-text", (t) => t.value);
-        expect(hidden.includes("[REDACTED") && !hidden.includes("219-09-9999"), `textarea after Hide it: ${hidden}`);
+        expect(
+          hidden.includes("[REDACTED") && !hidden.includes("219-09-9999"),
+          `textarea after Clot this leak: ${hidden}`,
+        );
 
         // Start over, then Edit it.
         await page.click("#tw-try-reset");
@@ -191,7 +194,7 @@ module.exports = async function (env) {
         const edited = await page.$eval("#tw-try-text", (t) => t.value);
         expect(edited.includes("219-09-9999"), `textarea after Edit it: ${edited}`);
 
-        // Send anyway (Leave it in).
+        // Send anyway (Leave it alone).
         await page.click("#tw-try-send");
         await sleep(150);
         await page.click(".try-notice .btn.leave");

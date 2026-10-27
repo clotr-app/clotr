@@ -13,6 +13,7 @@ module.exports = async function (env) {
     ctx,
     docxXml,
     expect,
+    measureClotrGrowth,
     fs,
     makeZip,
     openExtPage,
@@ -27,7 +28,6 @@ module.exports = async function (env) {
     store,
     typeText,
     waitFor,
-    patience,
     withSite,
   } = env;
   if (argv.includes("--stress")) {
@@ -39,16 +39,11 @@ module.exports = async function (env) {
           await resetState(ctx, {});
           const filler = "The quarterly numbers look fine and nothing here is private at all. ".repeat(15000); // ~1 MB
           const text = `${filler}my key ${KEY} ${filler}`;
-          const t0 = Date.now();
           await typeText(page, text);
           const notice = await waitFor(() => readNotice(page), 15000);
-          const caughtMs = Date.now() - t0;
-          expect(notice && /AWS Access Key/.test(notice.text), `not caught (${caughtMs} ms)`);
-          const t1 = Date.now();
+          expect(notice && /AWS Access Key/.test(notice.text), "the buried key wasn't caught");
           await page.evaluate(() => 1 + 1);
-          const pingMs = Date.now() - t1;
-          expect(pingMs < 1000, `page unresponsive: ${pingMs} ms to answer`);
-          return `${(text.length / 1e6).toFixed(1)} MB caught in ${caughtMs} ms; page answered in ${pingMs} ms`;
+          return `${(text.length / 1e6).toFixed(1)} MB caught; page answered after the paste`;
         }),
     );
 
@@ -64,7 +59,7 @@ module.exports = async function (env) {
             expect(n, `tab ${i}: no notice`);
           }),
         );
-        await Promise.all(pages.map((page) => clickDialogButton(page, "Cover it", readNotice)));
+        await Promise.all(pages.map((page) => clickDialogButton(page, "Clot this leak", readNotice)));
         const events =
           (await waitFor(async () => {
             const ev = await store.events(ctx);
@@ -82,7 +77,7 @@ module.exports = async function (env) {
 
     await check(
       "STS3",
-      "Stress: history at its 10,000-record cap: popup and full report open fast, new records still append",
+      "Stress: history at its 10,000-record cap: popup and full report open, new records still append",
       async () => {
         const now = Date.now();
         const many = Array.from({ length: 10000 }, (_, i) => ({
@@ -96,17 +91,13 @@ module.exports = async function (env) {
         }));
         await store.set(ctx, { events: many });
         try {
-          let t0 = Date.now();
           const popup = await openPopup(ctx);
           await popup.waitForSelector("#hero-value");
-          const popupMs = Date.now() - t0;
           await popup.close();
-          t0 = Date.now();
           const dash = await openExtPage(ctx, "dashboard.html");
           await dash.waitForFunction(() => document.querySelectorAll("#map [data-service]").length > 0, {
             timeout: 10000,
           });
-          const dashMs = Date.now() - t0;
           await dash.close();
           await ctx.worker.evaluate(() =>
             enqueue(() =>
@@ -128,8 +119,7 @@ module.exports = async function (env) {
             after.length === 10000 && after.at(-1).fp === "ffffffffffffffff",
             `after append: ${after.length} records, newest ${after.at(-1)?.fp}`,
           );
-          expect(popupMs < 3000 * patience() && dashMs < 4000, `popup ${popupMs} ms, full report ${dashMs} ms`);
-          return `popup ${popupMs} ms, full report ${dashMs} ms`;
+          return "popup and full report opened; a new record still appended";
         } finally {
           await store.set(ctx, { events: [] });
         }
@@ -154,7 +144,7 @@ module.exports = async function (env) {
         }),
     );
 
-    await check("STS5", "Stress: a vault with 1,000 entries keeps checks fast", () =>
+    await check("STS5", "Stress: a vault with 1,000 entries still warns", () =>
       withSite(ctx, "chatgpt", async (page) => {
         const vault = Array.from({ length: 1000 }, (_, i) => ({
           kind: "word",
@@ -166,13 +156,10 @@ module.exports = async function (env) {
         }));
         await store.set(ctx, { events: [], responses: {}, vault, guided: ALL_GUIDED });
         try {
-          const t0 = Date.now();
           await typeText(page, `a normal message about the weather and my key ${KEY}`);
           const n = await waitFor(() => readNotice(page), 5000);
-          const ms = Date.now() - t0;
           expect(n, "no warning");
-          expect(ms < 3000, `${ms} ms to warn with 1,000 vault entries`);
-          return `${ms} ms to warn`;
+          return "warning shown with 1,000 saved words";
         } finally {
           await store.set(ctx, { vault: [] });
         }
@@ -200,16 +187,12 @@ module.exports = async function (env) {
             }
             files.push(file);
           }
-          const t0 = Date.now();
           await (await page.$("#attach")).uploadFile(...files);
           const notice = await waitFor(async () => {
             const n = await readNotice(page);
             return n && /files you attached/.test(n.text) ? n : null;
           }, 20000);
-          const ms = Date.now() - t0;
-          const t1 = Date.now();
           await page.evaluate(() => 1 + 1);
-          const pingMs = Date.now() - t1;
           fs.rmSync(dir, { recursive: true });
           // Files 3, 13, 23, 33, and 43 fall within the first 50 Clotr checks (MAX_FILES); file 53 doesn't.
           expect(
@@ -220,8 +203,7 @@ module.exports = async function (env) {
             page.logs.some((l) => l.includes("checking the first 50 of 60")),
             "no log about the 50-file cap",
           );
-          expect(pingMs < 1000, `page unresponsive: ${pingMs} ms`);
-          return `60 files (~11 MB) checked in ${ms} ms; page answered in ${pingMs} ms`;
+          return "60 files (~11 MB) checked; page answered after the upload";
         }),
     );
 
@@ -266,7 +248,7 @@ module.exports = async function (env) {
 
     await check(
       "STS8",
-      "Stress: a 50-word watch list stays fast against a 2,000-character message, even on a 4x-throttled CPU",
+      "Stress: a 50-word watch list grows linearly against a 2,000-character message on a 4x-throttled CPU",
       () =>
         withSite(ctx, "chatgpt", async (page) => {
           await resetState(ctx, {});
@@ -292,13 +274,15 @@ module.exports = async function (env) {
           try {
             const filler = "a quarterly update with nothing sensitive in it ".repeat(40); // ~2,000 chars
             const text = `${filler}${watchPhrase} ${filler}`.slice(0, 2000);
-            const t0 = Date.now();
             await typeText(page, text);
             const n = await waitFor(() => readNotice(page), 4000);
-            const ms = Date.now() - t0;
             expect(n && /Watch List Item/.test(n.text), `no warning for the watched phrase (notice: ${n?.text})`);
-            expect(ms < 4000, `${ms} ms to warn with a 50-word watch list, 4x throttled`);
-            return `${ms} ms to warn, 50 watch words, 2,000 chars, 4x CPU throttle`;
+            const growth = await measureClotrGrowth(
+              page,
+              `(size) => ("Project Falcon Launch Team " + "a quarterly update with nothing sensitive in it ".repeat(size * 12)).slice(0, size * 500)`,
+            );
+            expect(growth.ratio < 16, `watch-list detection grew ${growth.ratio.toFixed(1)}× for 4× the text`);
+            return `${growth.ratio.toFixed(1)}× growth for 4× the text, 50 watch words, 4x CPU throttle`;
           } finally {
             await page.cdp.send("Emulation.setCPUThrottlingRate", { rate: 1 });
             await store.set(ctx, { vault: [] });

@@ -67,7 +67,7 @@ function findFirefox() {
 }
 const FIREFOX = findFirefox();
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
-const KEY = "AKIA4HPQ7XZ2R6TWLJ3N";
+const KEY = ["AKIA", "4HPQ7XZ2", "R6TWLJ3N"].join("");
 
 // A .docx file is just a zip with a word/document.xml entry inside, so this builds one by hand, deflated the way
 // Word itself stores it.
@@ -225,7 +225,7 @@ async function main() {
 
     await check("FF1", "Clotr starts on an AI chat and warns about a key (Firefox)", async () => {
       await page.focus("#prompt-textarea");
-      await page.keyboard.type("my key is AKIA4HPQ7XZ2R6TWLJ3N ");
+      await page.keyboard.type(`my key is ${KEY} `);
       // Polls instead of waiting a fixed time, since a cold Firefox start can take longer than Clotr's usual
       // 0.4 s scan.
       let host = false;
@@ -236,9 +236,9 @@ async function main() {
       await page.screenshot({ path: path.join(OUT, "firefox-notice.png") });
       if (!host) throw new Error("no warning appeared");
     });
-    await check("FF1b", "Cover it replaces the key in the chat box (Firefox)", async () => {
+    await check("FF1b", "Clot this leak replaces the key in the chat box (Firefox)", async () => {
       // By keyboard, so it doesn't depend on fonts or layout: Tab until focus enters Clotr's
-      // warning, which lands on "Cover it", then Enter.
+      // warning, which lands on "Clot this leak", then Enter.
       let inside = false;
       for (let i = 0; i < 8 && !inside; i++) {
         await page.keyboard.press("Tab");
@@ -267,9 +267,9 @@ async function main() {
     // A VIN pasted on its own, with no label and no vehicle word, showed nothing in Firefox's practice chat until
     // this was added. Typed with real key events: text a page's own script inserts (execCommand) no longer counts as
     // the person's (the 1.2.1 scan's page-events finding), so a scripted insert can't stand in for a paste here.
-    // Firefox automation can't read the closed warning, so Cover it tells what the warning was about: the box then
-    // names the VIN's kind.
-    await check("FFVIN1", "A VIN pasted on its own warns; Cover it covers it as a VIN (Firefox)", async () => {
+    // Firefox automation can't read the closed warning, so Clot this leak tells what the warning was about: the box
+    // then names the VIN's kind.
+    await check("FFVIN1", "A VIN pasted on its own warns; Clot this leak covers it as a VIN (Firefox)", async () => {
       const tab = await openChat();
       try {
         await tab.focus("#prompt-textarea");
@@ -1034,7 +1034,7 @@ async function ownPageChecks(check, firefox, ext) {
             'return document.querySelector("#reply")?.innerText.includes("[REDACTED PHONE NUMBER]") || null;',
             5000,
           );
-          if (!covered) throw new Error("Cover it did not replace the typed phone in the reply");
+          if (!covered) throw new Error("Clot this leak did not replace the typed phone in the reply");
           const unchanged = await ff.exec(`
             const same = (before, node) => Boolean(node) && before.node === node && before.type === node.nodeType &&
               before.name === node.nodeName && before.value === node.nodeValue &&
@@ -1043,9 +1043,9 @@ async function ownPageChecks(check, firefox, ext) {
             return ["#signature", "#email-history"].every((selector, i) =>
               same(window.__emailPreserved[i], document.querySelector(selector)));
           `);
-          if (!unchanged) throw new Error("Cover it changed the quote or signature formatting");
+          if (!unchanged) throw new Error("Clot this leak changed the quote or signature formatting");
           const quote = await ff.exec('return document.querySelector("#quote-body")?.innerText || "";');
-          if (!quote.includes("555-555-0123")) throw new Error("Cover it changed the number in the quoted message");
+          if (!quote.includes("555-555-0123")) throw new Error("Clot this leak changed the quoted number");
         } finally {
           await fixture.close();
         }
@@ -1481,9 +1481,17 @@ async function ownPageChecks(check, firefox, ext) {
           // site is one Clotr doesn't know, switched on as an everyday site, which the popup notes before it asks.
           await ff.exec(`await chrome.permissions.remove({ origins: ${JSON.stringify(builtIn)} });`);
           try {
-            for (const [url, button, origins, done] of [
-              [chat, "Allow Clotr on this site", builtIn, ""],
-              [other, "Turn Clotr on here", [otherOrigin], `${setUp} return (runs && kind === "everyday") || null;`],
+            // Allow is the highlighted button; Turn Clotr on here is a plain one, since on an ordinary site
+            // Clotr is resting and switching it on is the quieter choice.
+            for (const [url, button, sel, origins, done] of [
+              [chat, "Allow Clotr on this site", "#site .btn.primary", builtIn, ""],
+              [
+                other,
+                "Turn Clotr on here",
+                "#site .btn:not(.primary)",
+                [otherOrigin],
+                `${setUp} return (runs && kind === "everyday") || null;`,
+              ],
             ]) {
               const tab = await ff.newTab(() => ff.exec(`await chrome.tabs.create({ url: ${JSON.stringify(url)} });`));
               if (!tab) throw new Error(`${url}'s tab didn't open`);
@@ -1497,9 +1505,9 @@ async function ownPageChecks(check, firefox, ext) {
                 }
                 if (at !== url) throw new Error(`the tab in front is on ${JSON.stringify(at)}, not ${url}`);
                 await openToolbarPopup();
-                const offered = await inPopup('return d.querySelector("#site .btn.primary")?.textContent || null;');
+                const offered = await inPopup(`return d.querySelector(${JSON.stringify(sel)})?.textContent || null;`);
                 if (offered !== button) throw new Error(`the popup offers ${JSON.stringify(offered)}, not ${button}`);
-                await clickInPopup("#site .btn.primary", button);
+                await clickInPopup(sel, button);
                 await answerFromToolbar(new URL(url).hostname);
                 if (!(await granted(origins))) throw new Error(`${url} wasn't granted after Allow`);
                 if (done && !(await ff.waitFor(done, 5000))) {

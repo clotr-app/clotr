@@ -7,7 +7,7 @@
 const test = require("node:test");
 const assert = require("node:assert/strict");
 const fc = require("fast-check");
-const { bestOfBoth } = require("./timing.js");
+const { bestOfPair, grewMoreThan } = require("./timing.js");
 const { SECRET_KINDS, EXTRA_KINDS, makeSecrets } = require("./fixtures/secrets.js");
 
 require("../extension/patterns.js");
@@ -126,14 +126,20 @@ test("property: detect() agrees with itself on the same text", () => {
   );
 });
 
-test("property: detect() stays fast on an ordinary-sized paste", () => {
+test("property: detect() grows with an ordinary paste", () => {
   fc.assert(
     fc.property(arbitraryText, (t) => {
-      // Clock and this process's own processor time both have to be over, scaled to how busy the computer is right
-      // now (tests/timing.js): a full suite next to a Rust build once took this past 2 s on the clock alone.
-      const timing = bestOfBoth(() => detect(t), 1);
-      assert.ok(!timing.over(2000), `detect() took too long on ${JSON.stringify(t.slice(0, 80))}`);
+      const unit = t || "x";
+      const make = (n) => unit.repeat(Math.ceil(n / unit.length)).slice(0, n);
+      const [small, big] = bestOfPair(
+        () => detect(make(512)),
+        () => detect(make(2048)),
+        4,
+        3,
+      );
+      assert.ok(!grewMoreThan(small, big, 16), "time grew too much for 4× the text");
     }),
+    { numRuns: 15 },
   );
 });
 

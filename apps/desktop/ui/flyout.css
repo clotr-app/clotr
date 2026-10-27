@@ -1,0 +1,83 @@
+/* Clotr for Windows' tray flyout: a small borderless window above the tray icon, the line
+   shield at 54 px, the status in two lines, and four actions. The window itself is the panel (no page chrome around it):
+   flyout.js measures the panel's own content box and tells Rust its real size (flyout_fit), so the window is always
+   exactly as tall as the panel, never taller (a taller window used to leave an empty framed rectangle above the card). */
+
+html,
+body {
+  margin: 0;
+  background: transparent;
+  overflow: hidden;
+}
+
+.flyout-panel {
+  box-sizing: border-box;
+  width: 320px;
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: var(--s-3);
+  padding: var(--s-4);
+  border-radius: var(--r-panel);
+  box-shadow: var(--edge), var(--lift);
+  animation: flyout-in 0.28s var(--ease);
+}
+@media (prefers-reduced-motion: reduce) {
+  .flyout-panel {
+    animation: none;
+  }
+}
+@keyframes flyout-in {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+}
+
+.flyout-head {
+  display: flex;
+  align-items: center;
+  gap: var(--s-3);
+}
+.flyout .shield {
+  --size: 54px;
+  flex: none;
+}
+/* At a quarter of Home's size the fine lines would thin to under a pixel, so they're drawn heavier here and the
+   faintest ring is left out. */
+.flyout .shield .o {
+  stroke-width: 7;
+}
+.flyout .shield .i1 {
+  stroke-width: 4;
+}
+.flyout .shield .i2 {
+  display: none;
+}
+.flyout .shield .k,
+.flyout .shield .k.st {
+  stroke-width: 6;
+}
+.flyout-words {
+  min-width: 0;
+}
+.flyout-words h1 {
+  margin: 0;
+  font-size: var(--text-xl);
+  line-height: 1.1;
+}
+.flyout-words p {
+  margin: 2px 0 0;
+  color: var(--ink-2);
+  font-size: var(--text-sm);
+}
+
+.flyout-actions {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-1);
+}
+.flyout-actions .btn {
+  width: 100%;
+  justify-content: flex-start;
+}

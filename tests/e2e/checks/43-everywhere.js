@@ -11,6 +11,7 @@ module.exports = async function (env) {
     restoreBackgroundReads,
     sentMessages,
     settle,
+    shotAt,
     sleep,
     slowBackgroundReads,
     store,
@@ -202,9 +203,8 @@ module.exports = async function (env) {
       }),
   );
 
-  // The welcome page's "Where should Clotr check?" card settles the common case in one click: "AI chats only"
-  // closes the card without asking the browser anything, and "AI chats and everywhere I type" asks for exactly
-  // the broad origin, the same ask Settings' own "Everywhere I type" switch makes.
+  // The welcome page's "Where should Clotr check?" card names the built-in AI chat sites and keeps Everywhere I
+  // type one click away.
   async function openWhereOffer(answer) {
     const page = await ctx.browser.newPage();
     page.on("pageerror", (err) => ctx.problems.push(`welcome page error: ${err.message}`));
@@ -221,36 +221,101 @@ module.exports = async function (env) {
     return page;
   }
 
-  await check("EW6", "Welcome page: 'AI chats only' asks for nothing, closes the card", async () => {
-    const page = await openWhereOffer(true);
-    try {
-      await page.click("#where-ai-only");
-      await settle(200);
-      const r = await page.evaluate(() => ({
-        asks: window.__asks,
-        hidden: document.getElementById("where-offer").hidden,
-      }));
-      expect(r.asks.length === 0, `AI chats only asked the browser: ${JSON.stringify(r.asks)}`);
-      expect(r.hidden, "the card stayed open after AI chats only");
-    } finally {
-      await page.close();
-    }
-  });
-
   await check(
-    "EW7",
-    "Welcome page: 'AI chats and everywhere I type' asks for exactly the everywhere origin, and closes the card on a yes",
+    "EW6",
+    "Welcome page: the highlighted choice names AI chat sites, asks for nothing, and says where to pause one",
     async () => {
       const page = await openWhereOffer(true);
       try {
-        await page.click("#where-everywhere");
+        const count = await page.evaluate(async () => {
+          const response = await fetch(chrome.runtime.getURL("ai-sites.json"));
+          return (await response.json()).length;
+        });
+        await page.waitForFunction(
+          (n) =>
+            document.getElementById("ai-site-count-choice")?.textContent === n &&
+            document.getElementById("ai-site-count-fact")?.textContent === n,
+          { timeout: 10000 },
+          String(count),
+        );
+        const looks = await page.evaluate(() => ({
+          aiOnly: document.getElementById("where-ai-only").className,
+          everywhere: document.getElementById("where-everywhere").className,
+          aiText: document.getElementById("where-ai-only").textContent.trim(),
+          everywhereText: document.getElementById("where-everywhere").textContent.trim(),
+          lead: document.querySelector("#where-offer .lead")?.textContent.trim(),
+          pause: document.querySelector("#where-offer .ev-hint")?.textContent.trim(),
+          fact: document.getElementById("ai-site-count-fact")?.parentElement.textContent.trim(),
+        }));
+        expect(looks.aiText === "The " + count + " popular AI chats", "AI site label: " + looks.aiText);
+        expect(
+          looks.everywhereText === "AI chats and everywhere I type",
+          "everywhere label changed: " + looks.everywhereText,
+        );
+        expect(looks.lead.includes("Everywhere I type also checks chat boxes"), "lead: " + looks.lead);
+        expect(looks.pause.includes("toolbar popup"), "pause instructions: " + looks.pause);
+        expect(looks.fact.startsWith(count + " AI chats are on from the start."), "fact: " + looks.fact);
+        for (const width of [360, 1280]) {
+          for (const theme of ["light", "dark"]) {
+            await shotAt(page, "welcome-where-choice-" + width + "-" + theme + ".png", {
+              width,
+              height: 900,
+              theme,
+              selector: "#where-offer",
+            });
+          }
+        }
+        expect(/\bprimary\b/.test(looks.aiOnly), `AI chats only isn't the highlighted button: ${looks.aiOnly}`);
+        expect(!/\bprimary\b/.test(looks.everywhere), `everywhere is still highlighted: ${looks.everywhere}`);
+        await page.click("#where-ai-only");
         await settle(200);
         const r = await page.evaluate(() => ({
           asks: window.__asks,
           hidden: document.getElementById("where-offer").hidden,
         }));
+        expect(r.asks.length === 0, `AI chats only asked the browser: ${JSON.stringify(r.asks)}`);
+        expect(r.hidden, "the card stayed open after AI chats only");
+      } finally {
+        await page.close();
+      }
+    },
+  );
+
+  await check(
+    "EW7",
+    "Welcome page: 'AI chats and everywhere I type' stays available, asks for exactly the everywhere origin, says ✓ On after a yes, and has its own words for a No",
+    async () => {
+      const page = await openWhereOffer(true);
+      try {
+        await page.waitForFunction(() => /\d+/.test(document.getElementById("where-ai-only")?.textContent || ""), {
+          timeout: 10000,
+        });
+        const choices = await page.evaluate(() => ({
+          ai: document.getElementById("where-ai-only").textContent.trim(),
+          everywhere: document.getElementById("where-everywhere").textContent.trim(),
+        }));
+        expect(/^The \d+ popular AI chats$/.test(choices.ai), "AI chat choice: " + choices.ai);
+        expect(choices.everywhere === "AI chats and everywhere I type", "everywhere choice: " + choices.everywhere);
+        await page.click("#where-everywhere");
+        await settle(200);
+        const r = await page.evaluate(() => ({
+          asks: window.__asks,
+          hidden: document.getElementById("where-offer").hidden,
+          status: document.getElementById("where-status")?.textContent.trim(),
+          buttons: document.querySelector("#where-offer .ev-actions").hidden,
+          fold: document.getElementById("where-pick-sites").hidden,
+        }));
         expect(JSON.stringify(r.asks) === JSON.stringify([["https://*/*"]]), `asks: ${JSON.stringify(r.asks)}`);
-        expect(r.hidden, "the card stayed open after a yes");
+        expect(!r.hidden && /^✓ On\b/.test(r.status), `after a yes: ${JSON.stringify(r)}`);
+        expect(r.buttons && r.fold, `the question stays open after a yes: ${JSON.stringify(r)}`);
+        for (const theme of ["light", "dark"]) {
+          await shotAt(page, `welcome-everywhere-on-380-${theme}.png`, {
+            width: 380,
+            height: 900,
+            theme,
+            selector: "#where-offer",
+          });
+        }
       } finally {
         await page.close();
       }
@@ -265,6 +330,8 @@ module.exports = async function (env) {
         }));
         expect(!r.hidden, "the card closed after a No");
         expect(/Nothing was switched on/.test(r.status), `status after a No: ${r.status}`);
+        // Nothing here gets ticked, so the tick-boxes' "Tick and try again" doesn't fit this button.
+        expect(!/Tick/.test(r.status), `status after a No talks about ticking: ${r.status}`);
       } finally {
         await refused.close();
       }

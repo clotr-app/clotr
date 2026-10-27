@@ -1,3 +1,6 @@
+import org.jetbrains.intellij.platform.gradle.IntelliJPlatformType
+import org.jetbrains.intellij.platform.gradle.models.ProductRelease
+
 plugins {
     kotlin("jvm") version "2.2.20"
     id("org.jetbrains.intellij.platform") version "2.19.0"
@@ -9,11 +12,11 @@ repositories {
 }
 
 group = "app.clotr"
-version = "0.1.0"
+version = "0.1.1"
 
 kotlin { jvmToolchain(21) }
 
-layout.buildDirectory.set(file("${System.getProperty("java.io.tmpdir")}/clotr-jetbrains-build"))
+val ideSandboxDirectory = layout.buildDirectory.dir("idea-sandbox")
 
 dependencies {
     implementation("org.graalvm.polyglot:polyglot:24.2.2")
@@ -26,18 +29,36 @@ dependencies {
 }
 
 intellijPlatform {
-    sandboxContainer.set(layout.dir(provider { file("${System.getProperty("java.io.tmpdir")}/clotr-jetbrains-sandbox") }))
+    sandboxContainer.set(ideSandboxDirectory)
     pluginConfiguration {
-        ideaVersion { sinceBuild = "253"; untilBuild = provider { null } }
+        ideaVersion { sinceBuild = "253"; untilBuild = "263.*" }
+    }
+    pluginVerification {
+        ides {
+            create(IntelliJPlatformType.IntellijIdea, "2025.3.3")
+            create(IntelliJPlatformType.IntellijIdea, "2026.1.5")
+            create(IntelliJPlatformType.IntellijIdea, "2026.2.3")
+            select {
+                types = listOf(IntelliJPlatformType.IntellijIdea)
+                channels = listOf(ProductRelease.Channel.EAP)
+                sinceBuild = "263"
+                untilBuild = "263.*"
+            }
+        }
     }
 }
 
 tasks {
     test {
         useJUnit()
+        systemProperty("clotr.projectDirectory", projectDir.absolutePath)
+        systemProperty("clotr.buildDirectory", layout.buildDirectory.get().asFile.absolutePath)
+        systemProperty("clotr.sandboxDirectory", ideSandboxDirectory.get().asFile.absolutePath)
         // The tests run the repository's Guard by this exact path; the plugin itself never searches for it.
         systemProperty("clotr.repoGuardCli", rootProject.projectDir.resolve("../guard/bin/clotr-guard.js").canonicalPath)
         systemProperty("clotr.ignoreVectors", rootProject.projectDir.resolve("../../tests/clotrignore-vectors.txt").canonicalPath)
+        systemProperty("clotr.repoRoot", rootProject.projectDir.resolve("../..").canonicalPath)
+        systemProperty("clotr.engineParityReference", rootProject.projectDir.resolve("src/test/resources/engine-parity-reference.js").canonicalPath)
     }
     val engineBundle = layout.buildDirectory.file("generated/clotr/clotr-engine.js")
     register<Exec>("clotrEngineBundle") {

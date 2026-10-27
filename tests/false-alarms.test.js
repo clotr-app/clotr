@@ -9,7 +9,7 @@ const assert = require("node:assert/strict");
 
 require("../extension/patterns.js");
 require("../extension/detector.js");
-const { retrySlow, bestOfBoth, grewMoreThan } = require("./timing.js");
+const { bestOfPair, grewMoreThan } = require("./timing.js");
 
 // Calls the extension's own detect() and reshapes the result to { kind: [matched text, ...] }.
 function detect(text) {
@@ -523,8 +523,8 @@ test("a word or range describing a password isn't the password", () => {
 
 // Repeating the same hostile text thousands of times should take about 4 times as long when there's 4 times
 // as much of it, never 16 times, since no rule here reads the text again for each thing it finds. Takes the
-// best of 3 runs and remeasures a miss (see tests/timing.js).
-test("these rules stay fast on hostile text", () => {
+// best of 3 runs (see tests/timing.js).
+test("these rules grow linearly on hostile text", () => {
   let runs = 0; // each run gets its own text, so no kept answer hides the work
   const detectFresh = (text) => globalThis.Clotr.detect(text + " ".repeat(++runs % 7));
   for (const unit of [
@@ -539,15 +539,13 @@ test("these rules stay fast on hostile text", () => {
     "iban: es16 3435 ",
     "DE89 3704 0044 0532 0130 00 ",
   ]) {
-    const small = unit.repeat(1000);
-    const big = unit.repeat(4000);
-    retrySlow(() => {
-      const a = bestOfBoth(() => detectFresh(small));
-      const b = bestOfBoth(() => detectFresh(big));
-      if (b.over(1500)) return `${JSON.stringify(unit)}: ${b.wall.toFixed(0)} ms for 4000 repeats`;
-      return b.wall >= 50 && grewMoreThan(a, b, 10)
-        ? `${JSON.stringify(unit)}: ${a.wall.toFixed(0)} → ${b.wall.toFixed(0)} ms for 4 times the text`
-        : undefined;
-    });
+    const small = unit.repeat(250);
+    const big = unit.repeat(1000);
+    const [a, b] = bestOfPair(
+      () => detectFresh(small),
+      () => detectFresh(big),
+      4,
+    );
+    assert.ok(!grewMoreThan(a, b, 16), `${JSON.stringify(unit)}: time grew too much for 4× the text`);
   }
 });

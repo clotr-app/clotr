@@ -8,7 +8,7 @@ const test = require("node:test");
 const assert = require("node:assert/strict");
 const fs = require("node:fs");
 const path = require("node:path");
-const { retrySlow } = require("./timing.js");
+const { bestOfPair, grewMoreThan } = require("./timing.js");
 
 const source = fs.readFileSync(path.join(__dirname, "..", "extension", "content.js"), "utf8");
 
@@ -26,15 +26,16 @@ const shapes = {
 };
 
 for (const name of ["FORWARD_WORDS", "GMAIL_FORWARD_HEADER"]) {
-  test(`${name} stays linear on 100,000 characters of blank lines`, () => {
+  test(`${name} grows in step with blank-line text`, () => {
     const pattern = patternNamed(name);
     for (const [shape, text] of Object.entries(shapes)) {
-      retrySlow(() => {
-        const started = performance.now();
-        pattern.test(text);
-        const ms = performance.now() - started;
-        return ms < 50 ? null : `${name} took ${Math.round(ms)} ms on ${shape}`;
-      });
+      const small = text.slice(0, Math.floor(text.length / 4));
+      const [a, b] = bestOfPair(
+        () => pattern.test(small),
+        () => pattern.test(text),
+        4,
+      );
+      assert.ok(!grewMoreThan(a, b, 16), `${name} grew too fast on ${shape}`);
     }
   });
 }

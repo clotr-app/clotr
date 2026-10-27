@@ -4,7 +4,7 @@
 "use strict";
 
 module.exports = async function (env) {
-  const { EXT, check, clotrActive, ctx, expect, expectNoUI, fs, launch, openExtPage, openPopup, os, path } = env;
+  const { EXT, KEY, check, clotrActive, ctx, expect, expectNoUI, fs, launch, openExtPage, openPopup, os, path } = env;
   const { clickDialogButton, evalInClotr, readDialog, readNotice } = env;
   const { editorText, resetState, shotAt, sleep, store, typeText, waitFor, withSite } = env;
   const PHONE = "555-555-0123";
@@ -287,7 +287,7 @@ module.exports = async function (env) {
               await typeText(page, "My phone is 555-555-0123.");
               const notice = await waitFor(() => readNotice(page), 3000);
               expect(notice && /Phone Number/.test(notice.text), `${provider.name} did not warn for my phone`);
-              await clickDialogButton(page, "Send as is", readNotice);
+              await clickDialogButton(page, "Leave it alone", readNotice);
               await typeText(page, " Thanks for the note.");
               await sleep(700);
               const repeated = await readNotice(page);
@@ -302,7 +302,7 @@ module.exports = async function (env) {
             });
 
             await withFixture(provider, provider.reply, async (page) => {
-              await typeText(page, "API key: AKIA4HPQ7XZ2R6TWLJ3N");
+              await typeText(page, `API key: ${KEY}`);
               const notice = await waitFor(async () => (await readNotice(page)) || (await readDialog(page)), 3000);
               expect(notice && /AWS Access Key/.test(notice.text), `${provider.name} did not warn for my key`);
             });
@@ -330,7 +330,7 @@ module.exports = async function (env) {
               "forward",
             );
 
-            await recordRichFailure(provider, "Cover it", () =>
+            await recordRichFailure(provider, "Clot this leak", () =>
               withFixture(provider, provider.reply, async (page) => {
                 await rememberEmailStatic(page);
                 await typeText(page, "Call me at 555-555-0123.");
@@ -339,7 +339,7 @@ module.exports = async function (env) {
                   notice && /Phone Number/.test(notice.text),
                   `${provider.name} did not warn for the typed number`,
                 );
-                await clickDialogButton(page, "Cover it", readNotice);
+                await clickDialogButton(page, "Clot this leak", readNotice);
                 const covered = await waitFor(async () => {
                   const text = await editorText(page);
                   return text.includes("[REDACTED PHONE NUMBER]") ? text : null;
@@ -381,7 +381,7 @@ module.exports = async function (env) {
                   notice && /Phone Number/.test(notice.text),
                   `${provider.name} missed the number split by bold text`,
                 );
-                await clickDialogButton(page, "Cover it", readNotice);
+                await clickDialogButton(page, "Clot this leak", readNotice);
                 const covered = await waitFor(async () => {
                   const text = await editorText(page);
                   return text.includes("[REDACTED PHONE NUMBER]") ? text : null;
@@ -570,7 +570,7 @@ module.exports = async function (env) {
       return {
         shown: Boolean(card && !card.hidden && card.getClientRects().length),
         afterPin: Boolean(card && document.getElementById("pin-step").compareDocumentPosition(card) & 4),
-        beforeTry: Boolean(card && card.compareDocumentPosition(document.getElementById("try")) & 4),
+        afterTry: Boolean(card && document.getElementById("try").compareDocumentPosition(card) & 4),
         groups,
         button: go?.textContent.trim(),
         buttonOff: go?.getAttribute("aria-disabled") === "true",
@@ -612,7 +612,8 @@ module.exports = async function (env) {
       try {
         const first = await readOffer(page);
         expect(first.shown, "no email and chat card on the welcome page");
-        expect(first.afterPin && first.beforeTry, `not between Pin Clotr and Try it: ${JSON.stringify(first)}`);
+        // Try it comes first on the welcome page, then Pin Clotr, then this card.
+        expect(first.afterPin && first.afterTry, `not after Try it and Pin Clotr: ${JSON.stringify(first)}`);
         expect(
           JSON.stringify(first.groups.map((g) => [g.legend, g.apps.map((a) => a.name)])) ===
             JSON.stringify([

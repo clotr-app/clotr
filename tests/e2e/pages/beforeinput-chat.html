@@ -1,6 +1,6 @@
 <!doctype html>
 <!-- Stand-in for a Slate / CKEditor 5 style page. The editor cancels every beforeinput event and applies the edit
-     to its own text model instead, so the browser never touches the DOM and never fires an input event. (BI1, BI2) -->
+     to its own text model instead, normalizing pasted line endings, so the browser never fires an input event. -->
 <html lang="en">
 <head><meta charset="utf-8"><title>Qwen (Clotr test page)</title></head>
 <body>
@@ -47,6 +47,7 @@
       let { start, end } = at;
       let data = e.data ?? e.dataTransfer?.getData("text/plain") ?? "";
       if (e.inputType === "insertParagraph" || e.inputType === "insertLineBreak") data = "\n";
+      else if (e.inputType === "insertFromPaste" || e.inputType === "insertFromDrop") data = data.replace(/\r\n?/g, "\n");
       else if (e.inputType.startsWith("delete")) {
         data = "";
         if (start === end) start = e.inputType.includes("Backward") ? Math.max(0, start - 1) : start;

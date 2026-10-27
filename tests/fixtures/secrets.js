@@ -200,6 +200,12 @@ function secretValue(g, kind, variant = "") {
       if (variant === "groq") return `gsk_${g.chars(g.ALNUM, 52)}`;
       if (variant === "openrouter") return `sk-or-v1-${g.chars(hex, 64)}`;
       if (variant === "supabase") return `sb_secret_${g.b64u(22)}_${g.b64u(8)}`;
+      if (variant === "openvsx") return `ovsxat_${g.chars(g.ALNUM, 43)}`;
+      if (variant === "openvsxLegacy") {
+        return `ovsxat_${g.chars(hex, 8)}-${g.chars(hex, 4)}-${g.chars(hex, 4)}-${g.chars(hex, 4)}-${g.chars(hex, 12)}`;
+      }
+      if (variant === "rubygems") return `rubygems_${g.chars(hex, 48)}`;
+      if (variant === "jetbrains") return `perm:${g.chars(`${g.ALNUM}+/`, 20)}.${g.chars(`${g.ALNUM}+/`, 32)}==`;
       return `npm_${g.chars(g.ALNUM, 36)}`;
     case "stripe_publishable_key":
       return `pk_live_${g.chars(g.ALNUM, 24)}`;
@@ -337,6 +343,14 @@ function primaryShapes(sample, g) {
     shapes.push({ name: "seedPhrase", value: phrase, text: `seed phrase: ${phrase}` });
   }
   if (kind === "service_token") {
+    for (const [name, providerEnvKey, variant] of [
+      ["openvsx", "OVSX_PAT", "openvsx"],
+      ["openvsxLegacy", "OVSX_PAT", "openvsxLegacy"],
+      ["rubygems", "GEM_HOST_API_KEY", "rubygems"],
+      ["jetbrainsMarketplace", "JETBRAINS_PUBLISH_TOKEN", "jetbrains"],
+    ]) {
+      shapes.push(...providerTokenShapes(name, providerEnvKey, secretValue(g, "service_token", variant)));
+    }
     for (const [name, providerEnvKey, variant] of [
       ["groq", "GROQ_API_KEY", "groq"],
       ["openrouter", "OPENROUTER_API_KEY", "openrouter"],

@@ -1,24 +1,25 @@
 # Clotr for JetBrains IDEs
 
-Version 0.1.0.
+Version 0.1.1.
 
-Clotr checks ordinary open files for credentials as you edit and shows a masked finding. Personal details stay quiet
-unless you turn on **Check personal details in open files**. Secret files such as `.env`, private keys and `.npmrc`
-stay silent. If one isn't ignored by Git, Clotr shows one project note with an option to add it to `.gitignore`.
+After you install Clotr, it flags credentials in open files as you edit and shows a masked preview for each finding.
+Credential checks are on by default. Personal details in open files stay quiet until you turn on **Check personal details
+in open files**. Clotr doesn't set up Guard during installation. Secret files such as `.env`, private keys and `.npmrc`
+stay silent in the editor. If Git doesn't ignore one, Clotr shows one project note with an option to add it to
+`.gitignore`.
 
 Use **Clotr: Check my clipboard** or **Clotr: Check selection** before sharing text with an AI assistant. Clotr checks
 up to 1 MB of text behind a progress window, so the editor keeps responding, then shows masked findings and can copy a
 cleaned version with Bandage placeholders. Its status bar item shows the current count. Settings control the minimum
 severity, skipped file patterns and whether open files and personal details are checked.
 
-The JetBrains plugin reads `.clotrignore` at the repository root. Path lines use gitignore syntax (globs, `**`, `!`
-negation, comments, trailing `/` for folders). A finding whose value matches a listed fingerprint is skipped. Secret
-files (the shared secret-file list, `.env` and friends) stay protected even if `.clotrignore` names them:
-`.clotrignore` quiets findings, it never lets an assistant read a secret file.
+The JetBrains plugin reads exact value fingerprints from `.clotrignore` at the repository root. Path patterns in that
+file do not skip files. Use **File patterns to skip** in Clotr settings for deliberate local skips. Secret files (the
+shared secret-file list, `.env` and friends) stay silent in the editor.
 
-Use **Clotr: Check what I send to AI coding assistants** from the Tools menu or Clotr settings to set up or remove Clotr
-Guard for Claude Code, Cursor, Gemini CLI, Codex CLI or Windsurf. Setup runs Guard and Git in the project's
-folder, so it only opens in a project you trust.
+Use **Clotr: Set up or remove Guard** from the Tools menu or Clotr settings to configure Clotr Guard for Claude Code,
+Cursor, Gemini CLI, Codex CLI or Windsurf. Guard checks prompts and file reads. Setup runs Guard and Git in the
+project's folder, so use it only in a project you trust.
 
 Clotr runs the Guard you point it to and never a copy that sits inside the open project. It uses the file chosen under
 **Clotr Guard path** in settings, or else a global install with `npm install -g clotr-guard`. If
@@ -40,11 +41,13 @@ GraalJS is pinned to 24.2.2 in `build.gradle.kts`, through `org.graalvm.polyglot
 for changes to sandboxing, then run `npm run jetbrains:test`. Keep the guest context's settings in `ClotrEngine.kt` as
 they are, with host access, class lookup, file access, threads and native access all off.
 
-The plugin makes no network calls and includes no AI model. Files over 1 MB, binary files and the configured skip
-patterns are left alone. The salt, ignored fingerprints, turned-off files and the Guard path are kept in
-`clotr-local.xml` in the IDE's own settings folder on this computer. They aren't written into the project, so they
-don't travel with it, and settings sync leaves them out. A project that kept them in its workspace file before moves
-them over the first time it opens. Detected values are not saved.
+The plugin makes no network calls and includes no AI model. Files over 1 MiB and binary files show an inspection
+warning and an alert in the status bar; configured skip patterns skip matching files. The random salt, ignored
+fingerprints, turned-off file paths and Guard path are kept in `clotr-local.xml` in the IDE's settings folder on this
+computer. This local XML state is readable by the same computer account and IDE, is not encrypted, and JetBrains
+Settings Sync leaves it out. A project that kept these choices in its workspace file before moves them over the first
+time it opens. Detected values are not saved. Fingerprints in `.clotrignore` use a separate repository salt stored
+beside them, readable by anyone with access to the repository.
 
 ## Stable and preview
 
@@ -53,14 +56,14 @@ The Kotlin tests run against IntelliJ IDEA 2025.3.3 with `npm run jetbrains:test
 
 | Feature | Status | Tests |
 | --- | --- | --- |
-| Warnings in open files, with their quick fixes and the personal details setting | Preview | [ClotrInspectionTest.kt][inspection-tests] |
+| Warnings in open files, with their quick fixes and the personal details setting | Stable | [ClotrInspectionTest.kt][inspection-tests] |
 | Secret files stay silent, with one note when Git doesn't ignore one | Stable | [ClotrInspectionTest.kt][inspection-tests], [jetbrains-rules.test.js][rules-tests] |
 | Check my clipboard and Check selection, with a cleaned copy | Stable | [ClotrInspectionTest.kt][inspection-tests] |
 | The salt and your choices kept on this computer | Stable | [ClotrLocalStateTest.kt][state-tests], [jetbrains-rules.test.js][rules-tests] |
 | Setting up Clotr Guard | Stable | [GuardSetupTest.kt][setup-tests], [jetbrains-rules.test.js][rules-tests] |
 | No network calls and no AI runtime | Stable | [jetbrains-rules.test.js][rules-tests] |
 
-Warnings in open files are a preview until they've been tried in a full IDE as well as in the platform tests.
+Warnings in open files have been tried in a full IDE (PyCharm 2026.2.3) as well as in the platform tests.
 
 [inspection-tests]: https://github.com/clotr-app/clotr/blob/main/apps/jetbrains/src/test/kotlin/app/clotr/jetbrains/ClotrInspectionTest.kt
 [state-tests]: https://github.com/clotr-app/clotr/blob/main/apps/jetbrains/src/test/kotlin/app/clotr/jetbrains/ClotrLocalStateTest.kt
@@ -77,5 +80,5 @@ macOS or Linux, or on Windows with:
 apps\jetbrains\gradlew.bat -p apps\jetbrains runIde
 ```
 
-The first Gradle run downloads development dependencies and the IDE platform. Gradle keeps its build files and IDE
-sandbox in your temporary folder. A plugin built from a clone isn't signed.
+The first Gradle run downloads development dependencies and the IDE platform. Gradle keeps generated files and the IDE
+sandbox under `apps/jetbrains/build/`. A plugin built from a clone isn't signed.

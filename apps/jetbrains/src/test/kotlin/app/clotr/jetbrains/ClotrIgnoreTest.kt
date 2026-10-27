@@ -5,6 +5,13 @@ import java.nio.file.Files
 import java.nio.file.Path
 
 class ClotrIgnoreTest : BasePlatformTestCase() {
+    override fun setUp() {
+        super.setUp()
+        ClotrLocalState.getInstance().project(project.locationHash).apply { ignored = emptyList(); disabledFiles = emptyList() }
+        Path.of(project.basePath!!).resolve(".clotrignore").let(Files::deleteIfExists)
+        myFixture.enableInspections(ClotrInspection())
+    }
+
     fun testParserMatchesTheSharedPathAndFingerprintVectors() {
         val vectorFile = Path.of(requireNotNull(System.getProperty("clotr.ignoreVectors")))
         for (line in Files.readAllLines(vectorFile).filter { it.isNotBlank() && !it.startsWith("#") }) {
@@ -23,6 +30,15 @@ class ClotrIgnoreTest : BasePlatformTestCase() {
         val long = "x" + "a".repeat(60)
         assertFalse(ClotrIgnore.pathIgnored(config, long))
         assertTrue(ClotrIgnore.pathIgnored(config, long + "b"))
+    }
+
+    fun testGitIgnoreMatcherUsesTheSameBoundedGlobWalker() {
+        val pattern = "*a".repeat(40) + "b"
+        val started = System.nanoTime()
+        assertFalse(ClotrIgnore.gitIgnoreMatches(pattern, "a".repeat(120) + "c"))
+        assertTrue(ClotrIgnore.gitIgnoreMatches(pattern, "a".repeat(120) + "b"))
+        val elapsed = (System.nanoTime() - started) / 1_000_000
+        assertTrue("A star-heavy Git ignore rule took $elapsed ms", elapsed < 500)
     }
 
     // Each rule was matched against every folder prefix of a path again from its start, which held a deep path for
@@ -56,13 +72,22 @@ class ClotrIgnoreTest : BasePlatformTestCase() {
         }
     }
 
-    fun testInspectionUsesProjectPathsAndMadeUpValueFingerprints() {
+    fun testProjectPathRulesCannotHideInspectionFindingsButValueFingerprintsCan() {
         val root = Path.of(project.basePath!!)
         Files.createDirectories(root)
         val salt = "00112233445566778899aabbccddeeff00112233445566778899aabbccddeeff"
         val fingerprint = ClotrIgnore.valueFingerprint(salt, "AKIA4HPQ7XZ2R6TWLJ3N")
         val ignoreFile = root.resolve(".clotrignore")
         try {
+            Files.writeString(ignoreFile, "**\n")
+            val pathIgnoredFile = root.resolve("src/PathIgnored.kt")
+            Files.createDirectories(pathIgnoredFile.parent)
+            assertTrue(ClotrIgnore.pathIgnoredForFile(ClotrIgnore.read(root), root, pathIgnoredFile))
+            myFixture.configureByText("PathIgnored.kt", "val key = \"AKIA4HPQ7XZ2R6TWLJ3N\"")
+            val finding = myFixture.doHighlighting().single { it.description?.contains("AWS Access Key") == true }
+            assertTrue(finding.description!!.contains("Sensitive information found. Check before sharing."))
+            assertFalse(finding.description!!.contains("AKIA"))
+
             Files.writeString(ignoreFile, "salt: $salt\nfingerprint: $fingerprint\n")
             myFixture.configureByText("IgnoredValue.kt", "val key = \"AKIA4HPQ7XZ2R6TWLJ3N\"")
             assertEquals(1, project.getService(ClotrProjectService::class.java).engine.check(myFixture.file.text).size)

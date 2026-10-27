@@ -55,7 +55,7 @@ module.exports = async function (env) {
   await check("F1-7", `Disguised phone/SSN/email detected and fully redacted (${DISGUISED.length} forms)`, () =>
     withSite(ctx, "chatgpt", async (page) => {
       await resetState(ctx);
-      // All forms go in one message with one Hide it, which takes one wait instead of one per form. A form that
+      // All forms go in one message with one Clot this leak, which takes one wait instead of one per form. A form that
       // wasn't detected, or wasn't fully hidden, leaves its digits or number words behind. Each form is also
       // checked on its own in the unit tests.
       await typeText(page, DISGUISED.map(([input]) => input).join("\n"));
@@ -65,18 +65,14 @@ module.exports = async function (env) {
       );
       expect(ui, "nothing shown for the disguised details");
       // A high-risk kind in the mix (SSN, bank account, …) asks before sending instead of showing the
-      // notice; that separate dialog wasn't renamed, so it still says "Hide it".
-      await clickDialogButton(
-        page,
-        ui === "notice" ? "Cover it" : "Hide it",
-        ui === "notice" ? readNotice : readDialog,
-      );
+      // notice; both say "Clot this leak".
+      await clickDialogButton(page, "Clot this leak", ui === "notice" ? readNotice : readDialog);
       const after = await editorText(page);
       const covered = (after.match(/\[REDACTED/g) || []).length;
       // Forms that hold the same value share one label, since "555-555-5636" is inside "(555)-555-5636".
       expect(
         covered >= DISGUISED.length - 2 && !/\d{3}|five|three|gmail|example|\bfore\b|\bzeero\b/i.test(after),
-        `after Hide it (${covered} hidden): "${after.replace(/\n/g, " / ")}"`,
+        `after Clot this leak (${covered} hidden): "${after.replace(/\n/g, " / ")}"`,
       );
     }),
   );
@@ -117,7 +113,7 @@ module.exports = async function (env) {
     }),
   );
 
-  // Checks a detail of a kind that warns from the start: the notice names it, Hide it covers all of it, the
+  // Checks a detail of a kind that warns from the start: the notice names it, Clot this leak covers all of it, the
   // message goes without it, and only the kind and a fingerprint are stored, never the number.
   const hidesNewKind = (text, value, name, id) =>
     withSite(ctx, "chatgpt", async (page) => {
@@ -125,12 +121,12 @@ module.exports = async function (env) {
       await typeText(page, text);
       const notice = await waitForNotice(page);
       expect(notice?.text.includes(name), `notice: ${notice?.text}`);
-      await clickDialogButton(page, "Cover it", readNotice);
+      await clickDialogButton(page, "Clot this leak", readNotice);
       const after = await waitFor(async () => {
         const t = await editorText(page);
         return t.includes("[REDACTED") ? t : null;
       }, 3000);
-      expect(after?.includes(`[REDACTED ${name.toUpperCase()}]`), `after Hide it: ${await editorText(page)}`);
+      expect(after?.includes(`[REDACTED ${name.toUpperCase()}]`), `after Clot this leak: ${await editorText(page)}`);
       await pressEnter(page);
       const sent = await waitFor(async () => {
         const messages = await sentMessages(page);
@@ -146,7 +142,7 @@ module.exports = async function (env) {
       expect(!stored.includes(value), "the value itself is in storage");
     });
 
-  await check("VIN1", "A VIN warns; Hide it covers it; only its kind and fingerprint are stored", () =>
+  await check("VIN1", "A VIN warns; Clot this leak covers it; only its kind and fingerprint are stored", () =>
     hidesNewKind(
       "my VIN is 1HGCM82633A004352, is there an open recall?",
       "1HGCM82633A004352",
@@ -173,7 +169,7 @@ module.exports = async function (env) {
       }),
   );
 
-  await check("SID1", "A student ID warns; Hide it covers it; only its kind and fingerprint are stored", () =>
+  await check("SID1", "A student ID warns; Clot this leak covers it; only its kind and fingerprint are stored", () =>
     hidesNewKind(
       "Write to my professor: my student ID is S1234567 and I missed the quiz.",
       "S1234567",

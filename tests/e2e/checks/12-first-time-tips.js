@@ -53,7 +53,7 @@ module.exports = async function (env) {
         await typeText(page, "and email ann.lee@example.com");
         const next = await waitForNotice(page);
         expect(next?.text.includes("How should Clotr handle an Email Address"), `second kind: ${next?.text}`);
-        await clickDialogButton(page, "Send as is", readNotice);
+        await clickDialogButton(page, "Leave it alone", readNotice);
         await clearEditor(page);
         await typeText(page, "again ann.lee@example.com");
         const again = await waitForNotice(page);

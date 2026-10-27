@@ -776,6 +776,20 @@ test("changelog.json has notes for the current version", () => {
   }
 });
 
+test("release notes keep UTF-8 text intact", () => {
+  const files = [path.join(EXT, "changelog.json")];
+  const extraFiles = process.env.CLOTR_ENCODING_CHECK_PATHS?.split(path.delimiter).filter(Boolean) || [];
+  files.push(...extraFiles);
+  const damagedText = /\p{L}\?\p{L}|\uFFFD|â€|Ã/u;
+  for (const sample of ["a?b", `a\uFFFDb`, "â€", "Ã"]) {
+    assert.match(sample, damagedText, `the damaged-text check misses ${sample}`);
+  }
+  for (const file of files) {
+    const text = fs.readFileSync(file, "utf8");
+    assert.doesNotMatch(text, damagedText, `${file} contains damaged release-note text`);
+  }
+});
+
 // Windows PowerShell 5.1 writes UTF-8 with a byte-order mark, and the extension's own JSON reads, like the
 // self-update check fetching manifest.json, fail on one.
 test("extension JSON files have no byte-order mark", () => {
@@ -1144,48 +1158,46 @@ test("only the background writes event history or response overrides to storage 
   );
 });
 
-// The welcome page's note is the author's own words, so a copy edit elsewhere must never change it.
-test("welcome page: the no-AI line stays as written", () => {
-  const html = fs.readFileSync(path.join(EXT, "vault.html"), "utf8");
-  const line = /data-i18n="vault_noteNoAi">([^<]*)</.exec(html)?.[1];
-  assert.equal(line, "Clotr has absolutely NO AI, it defeats the point.");
-  const es = JSON.parse(fs.readFileSync(path.join(EXT, "_locales", "es", "messages.json"), "utf8"));
-  assert.equal(
-    es.vault_noteNoAi.message,
-    "Clotr no tiene absolutamente NADA de IA, eso iría en contra de su propósito.",
-  );
-});
-
-test("welcome page: the note reflects the author's latest words", () => {
+// The welcome page's note is the author's own words (revised 25 Oct 2026), so a copy edit elsewhere must never change it.
+test("welcome page: the note is the author's own words", () => {
   const html = fs.readFileSync(path.join(EXT, "vault.html"), "utf8");
   const copy = (key) => new RegExp(`data-i18n="${key}">([^<]*)<`).exec(html)?.[1] || "";
   assert.equal(
     copy("vault_noteBody"),
-    "I made Clotr after I noticed how much I was telling AI chats without a second thought. I immediately wanted a Tony Stark style \"suit of armor around the world\", but with a computer. It reads what you type into an AI chat, right here on your computer, and speaks up before something private goes out. It's free, it doesn't track you, and it never sends anything anywhere.",
+    "I made Clotr to solve my own needs, because I kept copying or pasting or typing private information and I needed a guardrail. I'm tired of receiving data breach or PII leak letters in the mail from companies I don't even know. I wanted a Tony Stark style \"suit of armor around the world\", but for my computer and phone.",
+  );
+  assert.equal(
+    copy("vault_noteReads"),
+    "Clotr checks what you type into an AI chat on your device. If you choose to send a message, the AI service gets it as usual. Clotr has no server. It's free, and that's the entire point.",
   );
   assert.equal(
     copy("vault_noteWhy"),
-    "My main goal is privacy from big tech, for everyone. Building it is how I'm learning software engineering as a whole, and how I turn what I'm learning at university into something people can actually use.",
+    "My main goal is privacy from big tech and AI, for everyone. Building it is how I'm learning software engineering as a whole, and how I turn what I'm learning at university into something people can actually use.",
   );
-  assert.equal(copy("vault_noteCoding"), "I do, however, employ agentic coding.");
+  assert.equal(
+    copy("vault_noteNoAi"),
+    "There's no AI inside Clotr. I do use AI coding tools to help me build it, and every change has to pass Clotr's human (and AI) created tests before it ships. I have the benefit of student credits and packages that I don't want to stockpile like Smaug, I want to use the gold (the tools) to turn the dragon into a statue.",
+  );
   assert.equal(
     copy("vault_noteReport"),
-    "The more you use Clotr, the more you report bugs, the better it gets. For free.",
+    "Every bug you report makes Clotr better, for everyone, for free. I read these. I consider it fan mail.",
   );
   assert.equal(
     copy("vault_clotrChecksWhatYouType"),
-    "Clotr checks what you type in AI chats, and in email or chat apps you switch on.",
+    "Clotr checks what you type in AI chats, and in email or chat apps YOU switch on.",
   );
+  assert.ok(!html.includes("vault_noteCoding"), "the old agentic-coding line is gone");
   const es = JSON.parse(fs.readFileSync(path.join(EXT, "_locales", "es", "messages.json"), "utf8"));
   assert.ok(es.vault_noteBody.message.includes("Tony Stark"), "the Spanish note says the same");
   assert.ok(
-    es.vault_noteWhy.message.includes("grandes tecnológicas"),
-    "the Spanish note keeps the author's stated goal",
+    es.vault_noteReads.message.toLowerCase().includes("de eso se trata"),
+    "the Spanish note has the new paragraph",
   );
   assert.ok(
-    es.vault_noteCoding.message.includes("programación con agentes"),
-    "the Spanish note mentions agentic coding",
+    es.vault_noteWhy.message.includes("grandes tecnológicas y la IA"),
+    "the Spanish note keeps the stated goal",
   );
+  assert.ok(es.vault_noteNoAi.message.includes("Smaug"), "the Spanish note keeps the no-AI paragraph");
   assert.ok(es.vault_clotrChecksWhatYouType.message.includes("Clotr revisa lo que escribes"));
 });
 

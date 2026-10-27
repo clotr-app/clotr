@@ -1,9 +1,13 @@
 **
 !extension.js
+!ignore-once.js
 !package.json
 !package.nls.json
 !package.nls.es.json
 !README.md
+!icon.png
 !LICENSE
 !guard/
 !guard/**
+!images/
+!images/**

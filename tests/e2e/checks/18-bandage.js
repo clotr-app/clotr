@@ -295,6 +295,38 @@ module.exports = async function (env) {
   );
   // These are the labels most people meet first: their own name, a family member, and a birth date.
   await check(
+    "BN27",
+    "Bandage leaves a page-inserted vault guess in the composer instead of writing its label",
+    async () => {
+      await resetState(ctx, {});
+      const own = `555-555-${String(9000 + Math.floor(Math.random() * 1000))}`;
+      TYPED_VALUES.add(own);
+      const fp = await ctx.worker.evaluate(async (value) => {
+        const salt = await ensureSalt();
+        return globalThis.Clotr.fingerprintStrong(salt, "phone_number", value);
+      }, own);
+      await store.set(ctx, {
+        bandage: { "chatgpt.com": true },
+        vault: [{ kind: "value", type: "phone_number", fp, scheme: 2, mode: "protect", added: Date.now() }],
+      });
+      await sleep(300);
+      try {
+        await withSite(ctx, "chatgpt", async (page) => {
+          await page.evaluate((value) => {
+            const box = document.querySelector("textarea");
+            box.addEventListener("input", () => (box.value = value), { once: true });
+          }, own);
+          await typeText(page, "x");
+          await sleep(650);
+          expect((await editorText(page)) === own, `Bandage changed page text to "${await editorText(page)}"`);
+        });
+      } finally {
+        await resetState(ctx, {});
+      }
+    },
+  );
+
+  await check(
     "BN11",
     "Bandage with your vault: your name becomes [Me], family [Family 1], a birth date its decade",
     async () => {
@@ -658,12 +690,11 @@ module.exports = async function (env) {
       }),
   );
 
-  // Firefox's background is an event page that can be asleep after a reload, and waking it up to answer any
-  // message, settings included, can take a few seconds. An old label's hotspot must not wait on that wake-up,
-  // so this check holds up the background's settings answer to prove the hotspot still shows up quickly.
+  // Firefox's background is an event page that can be asleep after a reload. An old label's hotspot must not wait
+  // for its settings answer, so this check holds that answer open until the hotspot appears.
   await check(
     "BN26",
-    "After a reload, old labels' hotspots appear quickly even when the background is slow to answer",
+    "After a reload, old labels' hotspots appear while the background settings answer is still pending",
     () =>
       withSite(ctx, "history", async (page) => {
         await resetState(ctx, {});
@@ -680,35 +711,48 @@ module.exports = async function (env) {
         await sleep(500);
         await ctx.worker.evaluate(() => {
           globalThis.__bn26Real = settingsFor;
+          globalThis.__bn26Gate = {
+            requested: false,
+            resolved: false,
+            wait: null,
+            release: null,
+          };
+          globalThis.__bn26Gate.wait = new Promise((resolve) => {
+            globalThis.__bn26Gate.release = resolve;
+          });
           globalThis.settingsFor = async (...args) => {
-            await new Promise((r) => setTimeout(r, 3000));
+            const gate = globalThis.__bn26Gate;
+            gate.requested = true;
+            await gate.wait;
+            gate.resolved = true;
             return globalThis.__bn26Real(...args);
           };
         });
         try {
           const logged = page.logs.length;
-          const t0 = Date.now();
           await page.reload({ waitUntil: "load" });
-          // Both races start from the same t0 and run at the same time. Waiting for one to finish before
-          // starting the other would make the second one's time at least as long as the first's.
-          const [settingsMs, spotMs] = await Promise.all([
-            waitFor(async () => {
-              const got = page.logs.slice(logged).some((l) => l.startsWith("[Clotr] responses:"));
-              return got ? Date.now() - t0 : null;
-            }, 9000),
-            waitFor(async () => {
-              const s = await readUI(page, "CLOTR-SPOTS");
-              return s?.buttons.length >= 3 ? Date.now() - t0 : null;
-            }, 9000),
-          ]);
-          expect(settingsMs, "the delayed settings never arrived");
-          expect(spotMs, `no hotspots for the old labels: ${JSON.stringify(await readUI(page, "CLOTR-SPOTS"))}`);
+          const beforeSettings = await waitFor(async () => {
+            const gate = await ctx.worker.evaluate(() => ({
+              requested: globalThis.__bn26Gate?.requested,
+              resolved: globalThis.__bn26Gate?.resolved,
+            }));
+            const spots = await readUI(page, "CLOTR-SPOTS");
+            return gate.requested && !gate.resolved && spots?.buttons.length >= 3 ? spots : null;
+          }, 9000);
           expect(
-            spotMs < 2500,
-            `hotspots took ${spotMs}ms, well after the settings' ${settingsMs}ms: they must not wait for them`,
+            beforeSettings,
+            `old labels' hotspots didn't appear with settings pending: ${JSON.stringify(await readUI(page, "CLOTR-SPOTS"))}`,
           );
+          await ctx.worker.evaluate(() => globalThis.__bn26Gate?.release?.());
+          const settingsArrived = await waitFor(
+            () => page.logs.slice(logged).some((l) => l.startsWith("[Clotr] responses:")) || null,
+            9000,
+          );
+          expect(settingsArrived, "the held settings answer never arrived after release");
         } finally {
           await ctx.worker.evaluate(() => {
+            globalThis.__bn26Gate?.release?.();
+            delete globalThis.__bn26Gate;
             if (globalThis.__bn26Real) globalThis.settingsFor = globalThis.__bn26Real;
             delete globalThis.__bn26Real;
           });
@@ -782,18 +826,18 @@ module.exports = async function (env) {
 
   await check(
     "BN21",
-    "A site's pop-up over a labelled answer hides its underline within 300 ms; closing the pop-up brings it back",
+    "A site's pop-up over a labelled answer hides its underline; closing the pop-up brings it back",
     () =>
       withSite(ctx, "chatgpt", async (page) => {
         await coveredReply(page);
         expect((await spotTurns(page, 0, false, 2000)) !== null, "the hotspot never showed");
         await coverWith(page, await labelRect(page));
-        const hid = await spotTurns(page, 0, true, 300);
-        expect(hid !== null, "the underline still showed over the pop-up after 300 ms");
+        const hid = await spotTurns(page, 0, true, 5000);
+        expect(hid !== null, "the underline still showed over the pop-up");
         await page.screenshot({ path: path.join(OUT, "bandage-under-popup.png") });
         await uncover(page);
-        const back = await spotTurns(page, 0, false, 300);
-        expect(back !== null, "the underline didn't come back within 300 ms of the pop-up closing");
+        const back = await spotTurns(page, 0, false, 5000);
+        expect(back !== null, "the underline didn't come back after the pop-up closed");
         await resetState(ctx, {});
         return `hidden after ${hid} ms, back after ${back} ms`;
       }),

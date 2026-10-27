@@ -1,20 +1,24 @@
 "use strict";
 
-const fs = require("node:fs");
-const path = require("node:path");
-const vm = require("node:vm");
-const crypto = require("node:crypto");
-const os = require("node:os");
-const { spawnSync } = require("node:child_process");
+const fs = require("fs");
+const path = require("path");
+const vm = require("vm");
+const crypto = require("crypto");
+const os = require("os");
+const { spawn } = require("child_process");
 const vscode = require("vscode");
 const guard = require("./guard/bin/clotr-guard.js");
 const { isSecretFile } = require("./guard/lib/secret-files.js");
+const DEMO_AWS_KEY = ["AKIA", "4HPQ7XZ2", "R6TWLJ3N"].join("");
 const {
+  MAX_PATTERN_LENGTH,
+  globMatchesAt,
+  globSteps,
   parseClotrIgnore,
   readClotrIgnore,
   valueFingerprint,
-  pathIgnoredForFile,
 } = require("./guard/lib/clotrignore.js");
+const { pruneIgnoredOnce } = require("./ignore-once.js");
 const english = require("./package.nls.json");
 const spanish = require("./package.nls.es.json");
 const manifest = require("./package.json");
@@ -23,6 +27,54 @@ const MAX_BYTES = 1024 * 1024;
 const SOURCE = "Clotr";
 const EXTENSION_ID = `${manifest.publisher}.${manifest.name}`.toLowerCase();
 const BUNDLED_CLI = path.join(__dirname, "guard", "bin", "clotr-guard.js");
+const GUARD_COMMAND_TIMEOUT_MS = 15_000;
+// The names people know each assistant by, for the picker; Guard's CLI still gets the short tool name.
+const TOOL_LABELS = {
+  claude: "Claude Code",
+  cursor: "Cursor",
+  gemini: "Gemini CLI",
+  codex: "Codex CLI",
+  windsurf: "Windsurf",
+  cline: "Cline",
+  git: "Git",
+};
+
+function runGuardCommand(command, args, options, timeoutMs = GUARD_COMMAND_TIMEOUT_MS, spawnProcess = spawn) {
+  return new Promise((resolve, reject) => {
+    const child = spawnProcess(command, args, {
+      ...options,
+      stdio: ["ignore", "pipe", "pipe"],
+      windowsHide: true,
+    });
+    let stdout = "";
+    let stderr = "";
+    let settled = false;
+    const finish = (callback, value) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      callback(value);
+    };
+    const timer = setTimeout(() => {
+      const error = new Error("Clotr Guard timed out.");
+      error.code = "ETIMEDOUT";
+      try {
+        child.kill();
+      } catch (_error) {
+        // The process may already have exited.
+      }
+      finish(reject, error);
+    }, timeoutMs);
+    child.stdout?.on("data", (chunk) => {
+      stdout += String(chunk);
+    });
+    child.stderr?.on("data", (chunk) => {
+      stderr += String(chunk);
+    });
+    child.once("error", (error) => finish(reject, error));
+    child.once("close", (status) => finish(resolve, { status: status ?? 1, stdout, stderr }));
+  });
+}
 
 function isFile(file) {
   try {
@@ -32,18 +84,110 @@ function isFile(file) {
   }
 }
 
+function gitIgnoreStat(file) {
+  let info;
+  try {
+    info = fs.lstatSync(file);
+  } catch (error) {
+    if (error.code === "ENOENT") return null;
+    throw error;
+  }
+  if (!info.isFile() || info.isSymbolicLink()) throw new Error("unsafe-gitignore-file");
+  return info;
+}
+
+function assertOpenedGitIgnore(descriptor, before) {
+  const opened = fs.fstatSync(descriptor);
+  if (!opened.isFile() || (before?.ino && opened.ino && before.ino !== opened.ino)) {
+    throw new Error("unsafe-gitignore-file");
+  }
+}
+
+function readGitIgnore(file) {
+  const before = gitIgnoreStat(file);
+  if (!before) return "";
+  const descriptor = fs.openSync(file, fs.constants.O_RDONLY | (fs.constants.O_NOFOLLOW || 0));
+  try {
+    assertOpenedGitIgnore(descriptor, before);
+    return fs.readFileSync(descriptor, "utf8");
+  } finally {
+    fs.closeSync(descriptor);
+  }
+}
+
+function appendGitIgnore(file, content) {
+  const before = gitIgnoreStat(file);
+  const flags = fs.constants.O_WRONLY | fs.constants.O_APPEND | (fs.constants.O_NOFOLLOW || 0);
+  const descriptor = before
+    ? fs.openSync(file, flags)
+    : fs.openSync(file, flags | fs.constants.O_CREAT | fs.constants.O_EXCL, 0o666);
+  try {
+    assertOpenedGitIgnore(descriptor, before);
+    fs.writeSync(descriptor, content, null, "utf8");
+  } finally {
+    fs.closeSync(descriptor);
+  }
+}
+
+function gitIgnoreLine(file) {
+  if (!file || /[\u0000-\u001f\u007f-\u009f]/.test(file)) return null;
+  if (file.startsWith("/") || /^\p{L}:/u.test(file)) return null;
+  if (file.split("/").some((segment) => !segment || segment === "." || segment === "..")) return null;
+  let escaped = "";
+  for (let index = 0; index < file.length; index += 1) {
+    const character = file[index];
+    const trailingSpace = character === " " && /^ *$/.test(file.slice(index));
+    if ("\\*?[]".includes(character) || (index === 0 && "#!".includes(character)) || trailingSpace) escaped += "\\";
+    escaped += character;
+  }
+  return escaped.length <= MAX_PATTERN_LENGTH ? escaped : null;
+}
+
+function normalizeGitIgnoreLine(line) {
+  let normalized = line.trimStart();
+  while (normalized.endsWith(" ") && !normalized.endsWith("\\ ")) normalized = normalized.slice(0, -1);
+  return normalized;
+}
+
 // An executable from an absolute PATH folder, looked up here rather than by the system, so the open workspace can't
 // supply one. npm is a batch file on Windows, unless a version manager put an .exe there.
-function executable(name, env = process.env, platform = process.platform) {
+function isInside(root, candidate) {
+  if (!root) return false;
+  let realRoot = path.resolve(root);
+  let realCandidate = path.resolve(candidate);
+  try {
+    realRoot = fs.realpathSync(realRoot);
+  } catch {
+    // A workspace or PATH entry may disappear during executable lookup.
+  }
+  try {
+    realCandidate = fs.realpathSync(realCandidate);
+  } catch {
+    // A workspace or PATH entry may disappear during executable lookup.
+  }
+  const relative = path.relative(realRoot, realCandidate);
+  return relative === "" || (relative !== ".." && !relative.startsWith(`..${path.sep}`) && !path.isAbsolute(relative));
+}
+
+function executable(name, env = process.env, platform = process.platform, excludedWorkspace = null) {
   const names = platform !== "win32" ? [name] : name === "npm" ? ["npm.exe", "npm.cmd"] : [`${name}.exe`];
   for (const entry of (env.PATH || "").split(path.delimiter)) {
     const folder = entry.trim().replace(/^"(.*)"$/, "$1");
     if (!folder || !path.isAbsolute(folder)) continue;
-    for (const candidate of names.map((item) => path.join(folder, item))) {
+    let realFolder;
+    try {
+      realFolder = fs.realpathSync(folder);
+    } catch {
+      continue;
+    }
+    if (isInside(excludedWorkspace, realFolder)) continue;
+    for (const candidate of names.map((item) => path.join(realFolder, item))) {
       try {
         if (isFile(candidate)) {
-          if (platform !== "win32") fs.accessSync(candidate, fs.constants.X_OK);
-          return candidate;
+          const realCandidate = fs.realpathSync(candidate);
+          if (isInside(excludedWorkspace, realCandidate)) continue;
+          if (platform !== "win32") fs.accessSync(realCandidate, fs.constants.X_OK);
+          return realCandidate;
         }
       } catch (_error) {
         // Not executable here; keep looking.
@@ -53,27 +197,81 @@ function executable(name, env = process.env, platform = process.platform) {
   return null;
 }
 
+function commandOnPath(name, env = process.env, platform = process.platform, excludedWorkspace = null) {
+  const names = platform === "win32" ? [`${name}.exe`, `${name}.cmd`, `${name}.bat`] : [name];
+  for (const entry of (env.PATH || "").split(path.delimiter)) {
+    const folder = entry.trim().replace(/^"(.*)"$/, "$1");
+    if (!folder || !path.isAbsolute(folder)) continue;
+    let realFolder;
+    try {
+      realFolder = fs.realpathSync(folder);
+    } catch {
+      continue;
+    }
+    if (isInside(excludedWorkspace, realFolder)) continue;
+    for (const candidate of names.map((item) => path.join(realFolder, item))) {
+      try {
+        if (!isFile(candidate)) continue;
+        if (isInside(excludedWorkspace, fs.realpathSync(candidate))) continue;
+        return true;
+      } catch {
+        // A PATH entry may change while the picker is open.
+      }
+    }
+  }
+  return false;
+}
+
 // Guard installed with npm install -g, found through npm root -g the way the JetBrains plugin finds it. Hooks that
 // name a global Guard keep working when an update replaces this extension's folder, so the copy inside it is only
 // the fallback.
-function globalGuardCli(node) {
-  const npm = executable("npm");
+async function globalGuardCli(node, excludedWorkspace = null) {
+  const npm = executable("npm", process.env, process.platform, excludedWorkspace);
   if (!npm || !node) return null;
   // Node starts a .cmd file only through a shell, so the npm script beside it runs on Node directly instead.
   const script = path.join(path.dirname(npm), "node_modules", "npm", "bin", "npm-cli.js");
   const [command, args] = /\.cmd$/i.test(npm) ? [node, [script, "root", "-g"]] : [npm, ["root", "-g"]];
   if (command === node && !isFile(script)) return null;
   // From the home folder, so no project's own npm settings take part.
-  const result = spawnSync(command, args, { cwd: os.homedir(), encoding: "utf8", timeout: 15000, windowsHide: true });
+  let result;
+  try {
+    result = await runGuardCommand(command, args, { cwd: os.homedir() });
+  } catch (_error) {
+    return null;
+  }
   if (result.status !== 0) return null;
-  const root = (result.stdout || "")
+  const roots = (result.stdout || "")
     .split(/\r?\n/)
     .map((line) => line.trim())
-    .filter(Boolean)
-    .at(-1);
+    .filter(Boolean);
+  const root = roots[roots.length - 1];
   if (!root || !path.isAbsolute(root)) return null;
   const cli = path.join(root, "clotr-guard", "bin", "clotr-guard.js");
   return isFile(cli) ? cli : null;
+}
+
+function editorName(appName, uriScheme) {
+  const known = [appName, uriScheme].map((value) =>
+    String(value || "")
+      .trim()
+      .toLowerCase(),
+  );
+  const names = [
+    ["cursor", "Cursor"],
+    ["windsurf", "Windsurf"],
+    ["vscodium", "VSCodium"],
+    ["kiro", "Kiro"],
+    ["trae", "Trae"],
+    ["code-server", "code-server"],
+    ["codeserver", "code-server"],
+    ["visual studio code", "VS Code"],
+    ["vscode", "VS Code"],
+  ];
+  for (const [fragment, label] of names) {
+    if (known.some((value) => value.includes(fragment))) return label;
+  }
+  const application = String(appName || "").trim();
+  return application && application.toLowerCase() !== "code" ? application : "VS Code";
 }
 
 // Whether a hook's Guard sits in another version's folder of this extension. In this editor's extensions folder any
@@ -87,17 +285,27 @@ function inOldExtensionFolder(script) {
 }
 
 function activate(context) {
-  const words = /^es(?:-|$)/i.test(vscode.env.language) ? spanish : english;
+  const isSpanish = /^es(?:-|$)/i.test(vscode.env.language);
+  const editor = editorName(vscode.env.appName, vscode.env.uriScheme);
+  const words = isSpanish ? spanish : english;
   const t = (key) => words[key] || english[key] || key;
+  const findingName = (entry) => words[`finding_${entry.type}`] || (isSpanish ? t("sensitiveFinding") : entry.name);
+  const hostPlatform = context.clotrPlatform || process.platform;
   const diagnostics = vscode.languages.createDiagnosticCollection(SOURCE);
+  const diagnosticData = new Map();
+  const ignoredOnce = new Map();
+  const clotrIgnoreCache = new Map();
+  const checkedDocuments = new Set();
+  const unchecked = new Set();
+  const workspaceSecretScanned = new Set();
   const state = context.workspaceState;
   let host;
   let vmContext;
   let timer;
   let refreshing = false;
+  const pendingDocuments = new Map();
   let rawIgnoreWarningShown = false;
   const disabled = new Set(state.get("disabledFiles", []));
-  const ignored = new Set(state.get("ignored", []));
   let workspaceSecretNoteShown = state.get("workspaceSecretNoteShown", false);
   let salt = state.get("salt");
   if (!salt) {
@@ -121,17 +329,28 @@ function activate(context) {
   function uriKey(uri) {
     return uri.toString();
   }
+  function cachedClotrIgnore(root) {
+    const key = path.resolve(root);
+    if (!clotrIgnoreCache.has(key)) clotrIgnoreCache.set(key, readClotrIgnore(key));
+    return clotrIgnoreCache.get(key);
+  }
+  function boundedDocumentText(document) {
+    try {
+      if (document.offsetAt(document.positionAt(MAX_BYTES + 1)) > MAX_BYTES) return { kind: "large" };
+      const text = document.getText();
+      if (Buffer.byteLength(text, "utf8") > MAX_BYTES) return { kind: "large" };
+      if (text.includes("\0")) return { kind: "binary" };
+      return { kind: "text", text };
+    } catch (_error) {
+      return { kind: "failed" };
+    }
+  }
   function fileSkipped(document) {
     const uri = document.uri;
-    if (uri.scheme !== "file" || document.isUntitled) return true;
-    if (isSecretFile(uri.fsPath, document.getText())) return true;
-    if (document.getText().includes("\0") || Buffer.byteLength(document.getText(), "utf8") > MAX_BYTES) return true;
-    const ignore = clotrIgnoreForDocument(document);
-    if (ignore.config.reason === "raw-value" && !rawIgnoreWarningShown) {
-      rawIgnoreWarningShown = true;
-      void vscode.window.showWarningMessage("Use clotr-guard ignore-value.");
-    }
-    if (ignore.root && pathIgnoredForFile(ignore.config, ignore.root, uri.fsPath)) return true;
+    const untitled = uri.scheme === "untitled" || document.isUntitled;
+    if (uri.scheme !== "file" && !untitled) return true;
+    if (!untitled && isSecretFile(uri.fsPath)) return true;
+    if (untitled) return false;
     const rel = vscode.workspace.asRelativePath(uri, false).replace(/\\/g, "/");
     return (config().get("skipList", []) || []).some((pattern) => matchGlob(pattern, rel));
   }
@@ -143,22 +362,28 @@ function activate(context) {
         relative === "" || (relative !== ".." && !relative.startsWith(`..${path.sep}`) && !path.isAbsolute(relative))
       );
     });
+    // Stop at the opened workspace so an unrelated .git above it can't redirect a secret into a shared folder.
     let directory = path.dirname(filePath);
-    let root = workspace?.uri.fsPath || null;
+    const workspaceRoot = workspace ? path.resolve(workspace.uri.fsPath) : null;
+    let root = workspaceRoot;
     while (true) {
+      if (!workspaceRoot) break;
+      const relative = path.relative(workspaceRoot, directory);
+      if (relative === ".." || relative.startsWith(`..${path.sep}`) || path.isAbsolute(relative)) break;
       if (fs.existsSync(path.join(directory, ".git"))) {
         root = directory;
         break;
       }
+      if (!relative) break;
       const parent = path.dirname(directory);
       if (parent === directory) break;
       directory = parent;
     }
-    return { root, config: root ? readClotrIgnore(root) : parseClotrIgnore("") };
+    return { root, config: root ? cachedClotrIgnore(root) : parseClotrIgnore("") };
   }
   function clotrIgnoreForWorkspace() {
     const root = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
-    return { root, config: root ? readClotrIgnore(root) : parseClotrIgnore("") };
+    return { root, config: root ? cachedClotrIgnore(root) : parseClotrIgnore("") };
   }
   function matchGlob(pattern, value) {
     const escaped = pattern
@@ -177,39 +402,119 @@ function activate(context) {
       .join("(?:.*/)?");
     return new RegExp(`^${escaped}$`, "i").test(value);
   }
-  function addDiagnostic(document, entry, start, end) {
+  function addDiagnostic(document, entry, start, end, activeIgnored) {
     const range = new vscode.Range(document.positionAt(start), document.positionAt(end));
-    const message = `${entry.name}: ${entry.preview}\n${t("whyOpenFiles")}`;
-    const diagnostic = new vscode.Diagnostic(range, message, vscode.DiagnosticSeverity.Warning);
+    const message = `${findingName(entry)}: ${t("findingDetected")}\n${t("whyOpenFiles").replace("{0}", editor)}`;
+    const severity =
+      {
+        high: vscode.DiagnosticSeverity.Error,
+        medium: vscode.DiagnosticSeverity.Warning,
+        low: vscode.DiagnosticSeverity.Information,
+      }[entry.severity] ?? vscode.DiagnosticSeverity.Warning;
+    const diagnostic = new vscode.Diagnostic(range, message, severity);
     diagnostic.source = SOURCE;
     diagnostic.code = entry.type;
-    diagnostic.data = { fingerprint: entry.fp, kind: entry.type, masked: entry.preview };
+    const key = uriKey(document.uri);
+    const occurrence = diagnosticKey(diagnostic);
+    activeIgnored.set(occurrence, entry.fp);
+    if (ignoredOnce.get(key)?.get(occurrence) === entry.fp) return null;
+    const byRange = diagnosticData.get(key) || new Map();
+    byRange.set(occurrence, { fingerprint: entry.fp, kind: entry.type, range });
+    diagnosticData.set(key, byRange);
     return diagnostic;
+  }
+  function diagnosticKey(diagnostic) {
+    const { start, end } = diagnostic.range;
+    return `${diagnostic.code}:${start.line}:${start.character}:${end.line}:${end.character}`;
+  }
+  function markUnchecked(document, message) {
+    const key = uriKey(document.uri);
+    ignoredOnce.delete(key);
+    const diagnostic = new vscode.Diagnostic(
+      new vscode.Range(document.positionAt(0), document.positionAt(0)),
+      message,
+      vscode.DiagnosticSeverity.Warning,
+    );
+    diagnostic.source = SOURCE;
+    diagnostic.code = "check_unavailable";
+    diagnostics.set(document.uri, [diagnostic]);
+    diagnosticData.delete(key);
+    checkedDocuments.delete(key);
+    unchecked.add(key);
+  }
+  function findingDiagnostics(document) {
+    const byRange = diagnosticData.get(uriKey(document.uri));
+    return (diagnostics.get(document.uri) || []).filter((diagnostic) => byRange?.has(diagnosticKey(diagnostic)));
   }
   function analyze(document) {
     const key = uriKey(document.uri);
-    if (!config().get("enabled", true) || disabled.has(key) || fileSkipped(document)) {
+    const untitled = document.uri.scheme === "untitled" || document.isUntitled;
+    if (!config().get("enabled", true) || disabled.has(key) || (document.uri.scheme !== "file" && !untitled)) {
+      ignoredOnce.delete(key);
       diagnostics.delete(document.uri);
+      diagnosticData.delete(key);
+      checkedDocuments.delete(key);
+      unchecked.delete(key);
       return [];
     }
-    const text = document.getText();
-    if (isSecretFile(document.uri.fsPath, text)) {
+    if (fileSkipped(document)) {
+      ignoredOnce.delete(key);
       diagnostics.delete(document.uri);
+      diagnosticData.delete(key);
+      checkedDocuments.delete(key);
+      unchecked.delete(key);
       return [];
     }
+    const bounded = boundedDocumentText(document);
+    if (bounded.kind !== "text") {
+      ignoredOnce.delete(key);
+      const message =
+        bounded.kind === "large"
+          ? t("notCheckedLarge")
+          : bounded.kind === "binary"
+            ? t("notCheckedBinary")
+            : t("fileCheckFailed");
+      markUnchecked(document, message);
+      return diagnostics.get(document.uri);
+    }
+    const text = bounded.text;
+    if (!untitled && isSecretFile(document.uri.fsPath, text)) {
+      ignoredOnce.delete(key);
+      diagnostics.delete(document.uri);
+      diagnosticData.delete(key);
+      checkedDocuments.delete(key);
+      unchecked.delete(key);
+      return [];
+    }
+    const ignore = document.uri.scheme === "file" ? clotrIgnoreForDocument(document) : null;
+    if (ignore?.config.reason === "raw-value" && !rawIgnoreWarningShown) {
+      rawIgnoreWarningShown = true;
+      void vscode.window.showWarningMessage(t("rawIgnoreValue"));
+    }
+    unchecked.delete(key);
+    checkedDocuments.add(key);
     const minimum = config().get("minSeverity", "medium");
     const allowed = new Set(["high", "medium", "low"].slice(0, ["high", "medium", "low"].indexOf(minimum) + 1));
     const personalDetails = config().get("personalDetailsInFiles", false);
     const { checked, groups } = checkWithDetection(text, { app: "vscode", source: "typed" });
     const found = checked.findings.filter((entry) => personalDetails || !isPersonalDetail(entry.type));
-    const ranges = findRanges(text, found, groups, clotrIgnoreForDocument(document).config);
+    const ignoreConfig = ignore?.config || parseClotrIgnore("");
+    const ranges = findRanges(text, found, groups, ignoreConfig);
     const next = [];
+    const activeIgnored = new Map();
+    diagnosticData.set(key, new Map());
     for (const entry of found) {
-      if (!allowed.has(entry.severity) || ignored.has(entry.fp)) continue;
+      if (!allowed.has(entry.severity)) continue;
       const positions = ranges.get(entry.fp);
-      const range = positions?.shift();
-      if (range) next.push(addDiagnostic(document, entry, range.start, range.end));
+      let range = positions?.shift();
+      while (range) {
+        const diagnostic = addDiagnostic(document, entry, range.start, range.end, activeIgnored);
+        if (diagnostic) next.push(diagnostic);
+        range = positions?.shift();
+      }
     }
+    pruneIgnoredOnce(ignoredOnce.get(key), activeIgnored);
+    if (!ignoredOnce.get(key)?.size) ignoredOnce.delete(key);
     diagnostics.set(document.uri, next);
     return next;
   }
@@ -234,14 +539,22 @@ function activate(context) {
     );
   }
 
-  function globRegex(pattern) {
-    const escaped = pattern.replace(/[.+^${}()|[\]\\]/g, "\\$&").replace(/\*\*/g, "\u0000");
-    return new RegExp(
-      `^${escaped
-        .replace(/\*/g, "[^/]*")
-        .replace(/\?/g, "[^/]")
-        .replace(/\u0000/g, ".*")}(?:/.*)?$`,
-    );
+  function gitIgnoreMatches(pattern, candidate) {
+    if (!pattern || pattern.length > MAX_PATTERN_LENGTH) return false;
+    let steps;
+    try {
+      steps = globSteps(pattern);
+    } catch {
+      return false;
+    }
+    // A Git ignore rule also covers descendants of a matched directory. Check every path prefix in one pass with
+    // Guard's state-set glob walker; compiling a regex here let star-heavy rules backtrack for an unbounded time.
+    const ends = [];
+    for (let end = candidate.indexOf("/"); end >= 0; end = candidate.indexOf("/", end + 1)) {
+      if (end > 0) ends.push(end);
+    }
+    ends.push(candidate.length);
+    return globMatchesAt(steps, candidate, ends).some(Boolean);
   }
   async function secretIgnored(uri) {
     try {
@@ -270,29 +583,43 @@ function activate(context) {
     let ignoredBy = false;
     for (const current of directories) {
       const gitignore = path.join(current, ".gitignore");
-      if (fs.existsSync(gitignore)) {
+      let contents;
+      try {
+        contents = readGitIgnore(gitignore);
+      } catch (_error) {
+        continue;
+      }
+      if (contents) {
         const prefix = path.relative(current, uri.fsPath).replace(/\\/g, "/");
-        for (const raw of fs.readFileSync(gitignore, "utf8").split(/\r?\n/)) {
-          const rule = raw.trim();
+        for (const raw of contents.split(/\r\n|\n|\r/)) {
+          const rule = normalizeGitIgnoreLine(raw);
           if (!rule || rule.startsWith("#")) continue;
           const negate = rule.startsWith("!");
           const pattern = (negate ? rule.slice(1) : rule).replace(/^\//, "");
           const candidate = pattern.includes("/") ? prefix : path.posix.basename(prefix);
-          if (globRegex(pattern).test(candidate)) ignoredBy = !negate;
+          if (gitIgnoreMatches(pattern, candidate)) ignoredBy = !negate;
         }
       }
     }
     return ignoredBy;
   }
 
-  async function checkWorkspaceSecrets() {
+  async function checkWorkspaceSecrets(documents = vscode.workspace.textDocuments) {
     if (workspaceSecretNoteShown || !vscode.workspace.workspaceFolders?.length) return;
-    const workspaceFiles = vscode.workspace.textDocuments.filter((doc) =>
+    const workspaceFiles = documents.filter((doc) =>
       vscode.workspace.workspaceFolders.some((folder) => doc.uri.fsPath.startsWith(folder.uri.fsPath)),
     );
     const unignored = [];
     for (const doc of workspaceFiles) {
-      if (isSecretFile(doc.uri.fsPath, doc.getText())) {
+      const key = uriKey(doc.uri);
+      if (workspaceSecretScanned.has(key)) continue;
+      workspaceSecretScanned.add(key);
+      let secret = isSecretFile(doc.uri.fsPath);
+      if (!secret) {
+        const bounded = boundedDocumentText(doc);
+        secret = bounded.kind === "text" && isSecretFile(doc.uri.fsPath, bounded.text);
+      }
+      if (secret) {
         const folder = vscode.workspace.workspaceFolders.find((item) =>
           doc.uri.fsPath.toLowerCase().startsWith(`${item.uri.fsPath.replace(/[\\/]$/, "").toLowerCase()}${path.sep}`),
         );
@@ -305,21 +632,25 @@ function activate(context) {
     workspaceSecretNoteShown = true;
     const action = await vscode.window.showInformationMessage(t("unignoredSecretNote"), t("addToGitignore"));
     if (action !== t("addToGitignore")) return;
-    for (const root of new Set(unignored.map((item) => item.root))) {
-      const ignoreFile = path.join(root, ".gitignore");
-      let existing = "";
-      try {
-        existing = fs.readFileSync(ignoreFile, "utf8");
-      } catch (_error) {
-        // The action creates the workspace ignore file when it isn't there yet.
+    try {
+      const safePaths = unignored.map((item) => {
+        const line = gitIgnoreLine(item.relativePath);
+        if (line === null) throw new Error("unsafe-gitignore-path");
+        return { ...item, line };
+      });
+      for (const root of new Set(unignored.map((item) => item.root))) {
+        const ignoreFile = path.join(root, ".gitignore");
+        const existing = readGitIgnore(ignoreFile);
+        const lines = new Set(existing.split(/\r\n|\n|\r/).map(normalizeGitIgnoreLine));
+        const additions = [...new Set(safePaths.filter((item) => item.root === root).map((item) => item.line))].filter(
+          (file) => !lines.has(file),
+        );
+        if (additions.length) {
+          appendGitIgnore(ignoreFile, `${existing && !existing.endsWith("\n") ? "\n" : ""}${additions.join("\n")}\n`);
+        }
       }
-      const lines = new Set(existing.split(/\r?\n/).map((line) => line.trim()));
-      const additions = [
-        ...new Set(unignored.filter((item) => item.root === root).map((item) => item.relativePath)),
-      ].filter((file) => !lines.has(file));
-      if (additions.length) {
-        fs.appendFileSync(ignoreFile, `${existing && !existing.endsWith("\n") ? "\n" : ""}${additions.join("\n")}\n`);
-      }
+    } catch {
+      await vscode.window.showWarningMessage(t("gitIgnoreWriteError"));
     }
   }
   function findRanges(text, findings, groups, ignore) {
@@ -328,19 +659,26 @@ function activate(context) {
     // Detection supplies only transient match strings; the host's salted fingerprint maps each range to its safe finding.
     for (const group of groups || []) {
       for (const value of group.matches) {
-        const start = text.indexOf(value, cursor.get(group.id) || 0);
-        if (start < 0) continue;
-        const end = start + value.length;
-        cursor.set(group.id, end);
-        const ignoredValue = valueFingerprint(ignore?.salt, value);
-        if (ignoredValue && ignore?.fingerprints.has(ignoredValue)) continue;
-        const fp = host.fingerprintFor(group.id, value);
-        if (findings.some((item) => item.fp === fp)) ranges.set(fp, [...(ranges.get(fp) || []), { start, end }]);
+        const cursorKey = `${group.id}\0${value}`;
+        let start = text.indexOf(value, cursor.get(cursorKey) || 0);
+        while (start >= 0) {
+          const end = start + value.length;
+          cursor.set(cursorKey, end);
+          const ignoredValue = valueFingerprint(ignore?.salt, value);
+          if (!ignoredValue || !ignore?.fingerprints.has(ignoredValue)) {
+            const fp = host.fingerprintFor(group.id, value);
+            if (findings.some((item) => item.fp === fp)) ranges.set(fp, [...(ranges.get(fp) || []), { start, end }]);
+          }
+          start = text.indexOf(value, end);
+        }
       }
     }
     return ranges;
   }
   function refreshAll() {
+    clearTimeout(timer);
+    timer = undefined;
+    pendingDocuments.clear();
     refreshing = true;
     try {
       for (const doc of vscode.workspace.textDocuments) {
@@ -348,7 +686,11 @@ function activate(context) {
         try {
           analyze(doc);
         } catch (_error) {
-          // Its next edit checks it again.
+          try {
+            markUnchecked(doc, t("fileCheckFailed"));
+          } catch (_markError) {
+            // A failed status update must not interfere with the editor.
+          }
         }
       }
     } finally {
@@ -358,21 +700,51 @@ function activate(context) {
     updateStatus();
     void checkWorkspaceSecrets();
   }
-  function schedule() {
+  function refreshDirty() {
+    timer = undefined;
+    const documents = [...pendingDocuments.values()];
+    pendingDocuments.clear();
+    if (!documents.length) return;
+    refreshing = true;
+    try {
+      for (const doc of documents) {
+        try {
+          analyze(doc);
+        } catch (_error) {
+          try {
+            markUnchecked(doc, t("fileCheckFailed"));
+          } catch (_markError) {
+            // A failed status update must not interfere with the editor.
+          }
+        }
+      }
+    } finally {
+      refreshing = false;
+    }
+    findingEmitter.fire();
+    updateStatus();
+    void checkWorkspaceSecrets(documents);
+  }
+  function schedule(document) {
     if (refreshing) return;
+    if (document) pendingDocuments.set(uriKey(document.uri), document);
     clearTimeout(timer);
-    timer = setTimeout(refreshAll, 250);
+    timer = setTimeout(refreshDirty, 250);
   }
   const status = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Left, 10);
   status.command = "clotr.focusView";
-  status.tooltip = t("openFindings");
+  status.tooltip = t("statusProtected").replace("{0}", "0").replace("{1}", "0");
   const findingEmitter = new vscode.EventEmitter();
   const treeProvider = {
     onDidChangeTreeData: findingEmitter.event,
     getChildren(element) {
-      if (element?.document) return element.findings.map((finding) => ({ document: element.document, finding }));
+      if (element?.document) {
+        return element.findings
+          .filter((finding) => diagnosticData.get(uriKey(element.document.uri))?.has(diagnosticKey(finding)))
+          .map((finding) => ({ document: element.document, finding }));
+      }
       return vscode.workspace.textDocuments
-        .map((document) => ({ document, findings: diagnostics.get(document.uri) || [] }))
+        .map((document) => ({ document, findings: findingDiagnostics(document) }))
         .filter((entry) => entry.findings.length);
     },
     getTreeItem(element) {
@@ -382,9 +754,7 @@ function activate(context) {
           vscode.TreeItemCollapsibleState.Expanded,
         );
       }
-      const item = new vscode.TreeItem(
-        `${element.finding.data?.kind || "private_detail"}: ${element.finding.data?.masked || ""}`,
-      );
+      const item = new vscode.TreeItem(element.finding.message.split(/\r?\n/, 1)[0]);
       item.command = {
         command: "vscode.open",
         title: t("openFinding"),
@@ -395,28 +765,173 @@ function activate(context) {
   };
   const findingView = vscode.window.createTreeView("clotr.findings", { treeDataProvider: treeProvider });
   function updateStatus() {
-    const count = vscode.workspace.textDocuments.reduce((sum, doc) => sum + (diagnostics.get(doc.uri) || []).length, 0);
-    status.text = `$(shield) Clotr${count ? ` ${count}` : ""}`;
+    const count = vscode.workspace.textDocuments.reduce((sum, doc) => sum + findingDiagnostics(doc).length, 0);
+    const files = checkedDocuments.size;
+    const findingWord = t(count === 1 ? "statusFinding" : "statusFindings");
+    const fileWord = t(files === 1 ? "statusFile" : "statusFiles");
+    status.text = `$(shield) Clotr · ${files} ${fileWord}${count ? ` · ${count} ${findingWord}` : ""}`;
+    if (unchecked.size) {
+      status.text += ` ! ${t("statusNotChecked").replace("{0}", String(unchecked.size))}`;
+      status.tooltip = t("statusUnchecked").replace("{0}", String(unchecked.size));
+    } else {
+      status.tooltip = t("statusProtected").replace("{0}", String(files)).replace("{1}", String(count));
+    }
     status.show();
   }
   const actions = {
     provideCodeActions(document, _range, ctx) {
       return ctx.diagnostics
-        .filter((d) => d.source === SOURCE && d.data?.fingerprint)
+        .filter((d) => d.source === SOURCE && diagnosticData.get(uriKey(document.uri))?.has(diagnosticKey(d)))
         .flatMap((diag) => {
+          const detail = diagnosticData.get(uriKey(document.uri)).get(diagnosticKey(diag));
           const ignore = new vscode.CodeAction(t("ignoreOne"), vscode.CodeActionKind.QuickFix);
           ignore.diagnostics = [diag];
           ignore.command = {
             command: "clotr.ignore",
             title: ignore.title,
-            arguments: [document.uri, diag.data.fingerprint],
+            arguments: [document.uri, diagnosticKey(diag), detail.fingerprint],
           };
           const off = new vscode.CodeAction(t("turnOffFile"), vscode.CodeActionKind.QuickFix);
           off.command = { command: "clotr.turnOffFile", title: off.title, arguments: [document.uri] };
-          return [ignore, off];
+          const result = [ignore];
+          const ignoreTarget = clotrIgnoreForDocument(document);
+          if (ignoreTarget.root && ignoreTarget.config.valid) {
+            const addToIgnore = new vscode.CodeAction(t("addFingerprintToIgnore"), vscode.CodeActionKind.QuickFix);
+            addToIgnore.diagnostics = [diag];
+            addToIgnore.command = {
+              command: "clotr.addToClotrIgnore",
+              title: addToIgnore.title,
+              arguments: [document.uri, diagnosticKey(diag)],
+            };
+            result.push(addToIgnore);
+          }
+          if (canMoveToEnv(document, diag, detail)) {
+            const move = new vscode.CodeAction(t("moveToEnv"), vscode.CodeActionKind.QuickFix);
+            move.diagnostics = [diag];
+            move.command = {
+              command: "clotr.moveToEnv",
+              title: move.title,
+              arguments: [document.uri, diagnosticKey(diag)],
+            };
+            result.push(move);
+          }
+          return [...result, off];
         });
     },
   };
+  function documentFor(uri) {
+    return vscode.workspace.textDocuments.find((document) => uriKey(document.uri) === uriKey(uri));
+  }
+  function findingForAction(document, occurrence) {
+    const detail = diagnosticData.get(uriKey(document.uri))?.get(occurrence);
+    if (!detail) return null;
+    const value = document.getText(detail.range);
+    if (!value || host.fingerprintFor(detail.kind, value) !== detail.fingerprint) return null;
+    return { ...detail, value };
+  }
+  function safeEnvValue(value) {
+    return /^[A-Za-z0-9._/:+=-]+$/.test(value);
+  }
+  function canMoveToEnv(document, diagnostic, detail) {
+    if (!/^(javascript|javascriptreact|typescript|typescriptreact)$/.test(document.languageId || "")) return false;
+    const start = document.offsetAt(diagnostic.range.start);
+    const end = document.offsetAt(diagnostic.range.end);
+    const text = document.getText();
+    const quote = text[start - 1];
+    const value = document.getText(diagnostic.range);
+    const root = clotrIgnoreForDocument(document).root;
+    const envText = root ? safeExistingEnv(path.join(root, ".env")) : null;
+    return (
+      ["'", '"'].includes(quote) &&
+      text[end] === quote &&
+      safeEnvValue(value) &&
+      host.fingerprintFor(detail.kind, value) === detail.fingerprint &&
+      envText !== null
+    );
+  }
+  function appendPosition(text) {
+    let line = 0;
+    let lastBreak = -1;
+    for (let index = 0; index < text.length; index += 1) {
+      if (text.charCodeAt(index) === 10) {
+        line += 1;
+        lastBreak = index;
+      }
+    }
+    return new vscode.Position(line, text.length - lastBreak - 1);
+  }
+  function safeExistingEnv(file) {
+    try {
+      const info = fs.lstatSync(file);
+      if (!info.isFile() || info.isSymbolicLink() || info.size > MAX_BYTES) return null;
+      const text = fs.readFileSync(file, "utf8");
+      if (text.includes("\0") || Buffer.byteLength(text, "utf8") > MAX_BYTES) return null;
+      return text;
+    } catch (error) {
+      if (error.code === "ENOENT") return undefined;
+      return null;
+    }
+  }
+  async function addToClotrIgnore(uri, occurrence) {
+    const document = documentFor(uri);
+    const finding = document && findingForAction(document, occurrence);
+    const root = document && clotrIgnoreForDocument(document).root;
+    if (!finding || !root) return;
+    // Guard's writer: the salt sits in the committed file, so it refuses values that are easy to guess.
+    try {
+      if (!guard.addIgnoredValue(root, finding.value, finding.kind)) return;
+    } catch (error) {
+      await vscode.window.showWarningMessage(
+        t(error.message === "guessable-value" ? "clotrIgnoreGuessable" : "clotrIgnoreWriteError"),
+      );
+      return;
+    }
+    clotrIgnoreCache.delete(path.resolve(root));
+    refreshAll();
+  }
+  async function moveToEnv(uri, occurrence) {
+    const document = documentFor(uri);
+    const finding = document && findingForAction(document, occurrence);
+    const detail = document && diagnosticData.get(uriKey(document.uri))?.get(occurrence);
+    const root = document && clotrIgnoreForDocument(document).root;
+    if (!document || !finding || !detail || !root || !safeEnvValue(finding.value)) return;
+    const start = document.offsetAt(detail.range.start);
+    const end = document.offsetAt(detail.range.end);
+    const source = document.getText();
+    const quote = source[start - 1];
+    if (!["'", '"'].includes(quote) || source[end] !== quote) return;
+    const envFile = path.join(root, ".env");
+    const envText = safeExistingEnv(envFile);
+    if (envText === null) {
+      await vscode.window.showWarningMessage(t("moveToEnvError"));
+      return;
+    }
+    const base = `CLOTR_${detail.kind.toUpperCase().replace(/[^A-Z0-9]+/g, "_")}`;
+    let variable = base;
+    let suffix = 2;
+    while (new RegExp(`^${variable.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}=`, "m").test(envText || "")) {
+      variable = `${base}_${suffix++}`;
+    }
+    const newline = envText?.includes("\r\n") ? "\r\n" : "\n";
+    const insertion = `${envText && !/[\r\n]$/.test(envText) ? newline : ""}${variable}=${finding.value}${newline}`;
+    const edit = new vscode.WorkspaceEdit();
+    edit.replace(
+      document.uri,
+      new vscode.Range(document.positionAt(start - 1), document.positionAt(end + 1)),
+      `process.env.${variable}`,
+    );
+    const envUri = vscode.Uri.file(envFile);
+    if (envText === undefined) edit.createFile(envUri);
+    edit.insert(envUri, appendPosition(envText || ""), insertion);
+    try {
+      if (!(await vscode.workspace.applyEdit(edit))) throw new Error("edit failed");
+      analyze(document);
+      findingEmitter.fire();
+      updateStatus();
+    } catch (_error) {
+      await vscode.window.showWarningMessage(t("moveToEnvError"));
+    }
+  }
   context.subscriptions.push(
     diagnostics,
     status,
@@ -427,20 +942,29 @@ function activate(context) {
     }),
   );
   context.subscriptions.push(
-    vscode.commands.registerCommand("clotr.ignore", async (uri, fp) => {
-      ignored.add(fp);
-      await state.update("ignored", [...ignored]);
-      const doc = vscode.workspace.textDocuments.find((d) => uriKey(d.uri) === uriKey(uri));
+    vscode.commands.registerCommand("clotr.ignore", async (uri, occurrence, fingerprint) => {
+      const key = uriKey(uri);
+      const byOccurrence = ignoredOnce.get(key) || new Map();
+      byOccurrence.set(occurrence, fingerprint);
+      ignoredOnce.set(key, byOccurrence);
+      const doc = documentFor(uri);
       if (doc) analyze(doc);
       findingEmitter.fire();
       updateStatus();
     }),
   );
+  context.subscriptions.push(vscode.commands.registerCommand("clotr.addToClotrIgnore", addToClotrIgnore));
+  context.subscriptions.push(vscode.commands.registerCommand("clotr.moveToEnv", moveToEnv));
   context.subscriptions.push(
     vscode.commands.registerCommand("clotr.turnOffFile", async (uri) => {
       disabled.add(uriKey(uri));
       await state.update("disabledFiles", [...disabled]);
       diagnostics.delete(uri);
+      const key = uriKey(uri);
+      diagnosticData.delete(key);
+      ignoredOnce.delete(key);
+      checkedDocuments.delete(key);
+      unchecked.delete(key);
       findingEmitter.fire();
       updateStatus();
     }),
@@ -448,14 +972,33 @@ function activate(context) {
   context.subscriptions.push(
     vscode.commands.registerCommand("clotr.focusView", () => vscode.commands.executeCommand("workbench.view.explorer")),
   );
+  const ignoreWatcher = vscode.workspace.createFileSystemWatcher("**/.clotrignore");
+  const invalidateIgnore = (uri) => clotrIgnoreCache.delete(path.resolve(path.dirname(uri.fsPath)));
+  context.subscriptions.push(
+    ignoreWatcher,
+    ignoreWatcher.onDidCreate(invalidateIgnore),
+    ignoreWatcher.onDidChange(invalidateIgnore),
+    ignoreWatcher.onDidDelete(invalidateIgnore),
+  );
   context.subscriptions.push(vscode.commands.registerCommand("clotr.setupGuard", () => configureGuard()));
+  context.subscriptions.push(vscode.commands.registerCommand("clotr.tryIt", tryIt));
   context.subscriptions.push(vscode.commands.registerCommand("clotr.checkClipboard", checkClipboard));
   context.subscriptions.push(vscode.commands.registerCommand("clotr.checkSelection", checkSelection));
   context.subscriptions.push(
-    vscode.workspace.onDidOpenTextDocument(schedule),
-    vscode.workspace.onDidChangeTextDocument(schedule),
+    vscode.workspace.onDidOpenTextDocument((document) => schedule(document)),
+    vscode.workspace.onDidChangeTextDocument((event) => {
+      workspaceSecretScanned.delete(uriKey(event.document.uri));
+      schedule(event.document);
+    }),
     vscode.workspace.onDidCloseTextDocument((event) => {
       diagnostics.delete(event.document.uri);
+      const key = uriKey(event.document.uri);
+      pendingDocuments.delete(key);
+      diagnosticData.delete(key);
+      ignoredOnce.delete(key);
+      checkedDocuments.delete(key);
+      unchecked.delete(key);
+      workspaceSecretScanned.delete(key);
       findingEmitter.fire();
       updateStatus();
     }),
@@ -464,8 +1007,38 @@ function activate(context) {
     }),
   );
   refreshAll();
+  void showWelcome().catch(() => {});
+
+  async function tryIt() {
+    try {
+      const document = await vscode.workspace.openTextDocument({
+        language: "javascript",
+        content: `const AWS_ACCESS_KEY_ID = "${DEMO_AWS_KEY}";\n`,
+      });
+      await vscode.window.showTextDocument(document);
+      analyze(document);
+      findingEmitter.fire();
+      updateStatus();
+    } catch (_error) {
+      await vscode.window.showWarningMessage(t("tryItError"));
+    }
+  }
+
+  async function showWelcome() {
+    if (context.globalState.get("welcomeShown", false)) return;
+    await context.globalState.update("welcomeShown", true);
+    const choice = await vscode.window.showInformationMessage(
+      t("welcomeMessage").replace("{0}", editor),
+      t("tryItButton"),
+    );
+    if (choice === t("tryItButton")) await vscode.commands.executeCommand("clotr.tryIt");
+  }
 
   async function showChecked(text) {
+    if (Buffer.byteLength(text, "utf8") > MAX_BYTES) {
+      await vscode.window.showInformationMessage(t("notCheckedLarge"));
+      return;
+    }
     const rank = { high: 3, medium: 2, low: 1 };
     const minimum = config().get("minSeverity", "medium");
     const checked = host.check(text, { app: "vscode", source: "copied" }).findings;
@@ -498,7 +1071,7 @@ function activate(context) {
       await vscode.window.showInformationMessage(t("nothingFound"));
       return;
     }
-    const details = findings.map(({ finding }) => `${finding.name}: ${finding.preview}`).join("\n");
+    const details = findings.map(({ finding }) => `${findingName(finding)}: ${t("findingDetected")}`).join("\n");
     const choice = await vscode.window.showWarningMessage(`${t("foundDetails")}\n${details}`, t("copyClean"));
     if (choice) {
       const cleaned = host.redact(
@@ -510,22 +1083,62 @@ function activate(context) {
     }
   }
   async function checkClipboard() {
-    await showChecked(await vscode.env.clipboard.readText());
+    try {
+      await showChecked(await vscode.env.clipboard.readText());
+    } catch (_error) {
+      await vscode.window.showErrorMessage(t("checkFailed"));
+    }
   }
   async function checkSelection() {
-    const editor = vscode.window.activeTextEditor;
-    if (!editor || editor.selection.isEmpty) {
-      await vscode.window.showInformationMessage(t("selectText"));
-      return;
+    try {
+      const selectionEditor = vscode.window.activeTextEditor;
+      if (!selectionEditor || selectionEditor.selection.isEmpty) {
+        await vscode.window.showInformationMessage(t("selectText"));
+        return;
+      }
+      await showChecked(selectionEditor.document.getText(selectionEditor.selection));
+    } catch (_error) {
+      await vscode.window.showErrorMessage(t("checkFailed"));
     }
-    await showChecked(editor.document.getText(editor.selection));
   }
   // The extension host's own process.execPath is the editor's binary, not Node, so the CLI runs on the node from
   // PATH, the same one the written hooks will use.
-  function nodeCommand() {
-    const node = context.clotrNodeCommand || executable("node");
+  async function nodeCommand(workspace = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath) {
+    const node = context.clotrNodeCommand || executable("node", process.env, process.platform, workspace);
     if (!node) return null;
-    return spawnSync(node, ["--version"], { encoding: "utf8", windowsHide: true }).status === 0 ? node : null;
+    try {
+      const result = await runGuardCommand(node, ["--version"], {}, 5000);
+      const version = /^v?(\d+)\.\d+\.\d+/.exec(result.stdout.trim());
+      return result.status === 0 && version && Number(version[1]) >= 20 ? node : null;
+    } catch (error) {
+      if (error?.code === "ETIMEDOUT") throw error;
+      return null;
+    }
+  }
+  function assistantFound(tool, home, workspace) {
+    const settingsFolder = path.dirname(guard.toolSettingsPath(tool, { home }));
+    const editorTool = { Cursor: "cursor", Windsurf: "windsurf" }[editor];
+    if (tool === editorTool || fs.existsSync(settingsFolder)) return true;
+    const command = { claude: "claude", codex: "codex", gemini: "gemini" }[tool];
+    if (command && commandOnPath(command, context.clotrEnv || process.env, hostPlatform, workspace)) return true;
+    return tool === "cline" && Boolean(vscode.extensions?.getExtension?.("saoudrizwan.claude-dev"));
+  }
+  function localizedGuardPreview(tool, output, remove) {
+    const firstLine = output.split(/\r?\n/, 1)[0];
+    if (tool !== "git") {
+      const jsonStart = output.indexOf("\n{");
+      return jsonStart < 0 ? t("guardAssistantPreview") : `${firstLine}\n${output.slice(jsonStart + 1).trim()}`;
+    }
+    const kept = /^Clotr left the pre-commit hook at (.+?) as it was/.exec(firstLine);
+    if (kept) return t("guardGitKept").replace("{0}", kept[1]);
+    const hook = /^(?:Set up|Removed) Git pre-commit hook at (.+?)(?: \(no change\))?\.$/.exec(firstLine);
+    if (!hook) return t("guardPreviewError");
+    const key = firstLine.includes("(no change)")
+      ? "guardGitNoChange"
+      : remove
+        ? "guardGitWillRemove"
+        : "guardGitWillAdd";
+    return t(key).replace("{0}", hook[1]);
   }
   let repairPromptShown = false;
   // An update removes the old extension folder, leaving hooks that name a script that's gone.
@@ -534,8 +1147,8 @@ function activate(context) {
     const home = context.clotrGuardHome || os.homedir();
     const workspace = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
     const targets = [];
-    for (const tool of guard.TOOL_NAMES) {
-      if (tool === "cline" && process.platform === "win32") continue;
+    for (const tool of guard.IMPLEMENTED_TOOL_NAMES) {
+      if (tool === "cline" && hostPlatform === "win32") continue;
       const stale = guard.managedHooks(tool, { home }).find((entry) => inOldExtensionFolder(entry.script));
       if (!stale) continue;
       targets.push(tool);
@@ -569,7 +1182,15 @@ function activate(context) {
       await vscode.window.showInformationMessage(t("guardWorkspaceRequired"));
       return;
     }
-    const node = nodeCommand();
+    let node;
+    try {
+      node = await nodeCommand(workspace);
+    } catch (error) {
+      if (error?.code === "ETIMEDOUT") {
+        await vscode.window.showErrorMessage(t("guardTimeout"));
+        return;
+      }
+    }
     if (!node) {
       await vscode.window.showInformationMessage(t("nodeRequired"));
       return;
@@ -583,49 +1204,67 @@ function activate(context) {
     );
     if (!operation) return;
     const remove = operation.remove;
-    const toolList = guard.TOOL_NAMES.filter((tool) => tool !== "cline").map((tool) => {
-      const folder = path.dirname(guard.toolSettingsPath(tool, { home }));
-      const installed = fs.existsSync(folder);
-      return { label: tool, description: t(installed ? "assistantInstalled" : "assistantNotFound"), picked: installed };
+    // Cline hooks don't run on Windows, so there it's offered only for removing hooks set up elsewhere.
+    const toolList = guard.IMPLEMENTED_TOOL_NAMES.filter(
+      (tool) => tool !== "cline" || hostPlatform !== "win32" || remove,
+    ).map((tool) => {
+      const detected = assistantFound(tool, home, workspace);
+      const configured = remove && guard.managedHooks(tool, { home }).length > 0;
+      return {
+        label: TOOL_LABELS[tool] || tool,
+        tool,
+        description: t(
+          remove
+            ? configured
+              ? "guardHooksFound"
+              : "guardHooksNotFound"
+            : detected
+              ? "assistantDetected"
+              : "assistantNotFound",
+        ),
+        picked: remove ? configured : detected,
+      };
     });
-    if (!remove) toolList.push({ label: "git", description: t("gitAvailable"), picked: false });
+    toolList.push({
+      label: TOOL_LABELS.git,
+      tool: "git",
+      description: t(remove ? "gitRemoveAvailable" : "gitAvailable"),
+      picked: false,
+    });
     const selected = await vscode.window.showQuickPick(toolList, {
       canPickMany: true,
       placeHolder: t("chooseAssistants"),
     });
     if (!selected?.length) return;
-    if (selected.every(({ label }) => label === "cline" && process.platform === "win32")) {
-      await vscode.window.showInformationMessage(t("clineWindowsLimit"));
-      return;
-    }
-    const cli = globalGuardCli(node) || BUNDLED_CLI;
-    const argsFor = (label, dryRun) => [
+    const cli = (await globalGuardCli(node, workspace)) || BUNDLED_CLI;
+    const argsFor = (tool, dryRun) => [
       cli,
       remove ? "remove" : "setup",
-      label,
-      ...(label === "git" ? ["--project"] : []),
+      tool,
+      ...(tool === "git" ? ["--project"] : []),
       ...(dryRun ? ["--dry-run"] : []),
-      ...(label !== "git" && config().get("minSeverity", "medium") !== "medium"
+      ...(tool !== "git" && config().get("minSeverity", "medium") !== "medium"
         ? ["--min-severity", config().get("minSeverity", "medium")]
         : []),
-      ...(label !== "git" && config().get("personalDetailsInFiles", false) ? ["--personal-details"] : []),
+      ...(tool !== "git" && config().get("personalDetailsInFiles", false) ? ["--personal-details"] : []),
     ];
     const previews = [];
-    for (const { label } of selected) {
-      if (label === "cline" && process.platform === "win32") {
-        previews.push(`${label}: ${t("clineWindowsLimit")}`);
-        continue;
-      }
-      const result = spawnSync(node, argsFor(label, true), {
-        cwd: workspace,
-        encoding: "utf8",
-        env: { ...process.env, USERPROFILE: home, HOME: home },
-      });
-      if (result.status !== 0) {
-        await vscode.window.showErrorMessage(result.stderr?.trim() || t("guardPreviewError"));
+    for (const { label, tool } of selected) {
+      let result;
+      try {
+        result = await runGuardCommand(node, argsFor(tool, true), {
+          cwd: workspace,
+          env: { ...process.env, USERPROFILE: home, HOME: home },
+        });
+      } catch (error) {
+        await vscode.window.showErrorMessage(t(error?.code === "ETIMEDOUT" ? "guardTimeout" : "guardPreviewError"));
         return;
       }
-      previews.push(`${label}:\n${result.stdout.trim()}`);
+      if (result.status !== 0) {
+        await vscode.window.showErrorMessage(t("guardPreviewError"));
+        return;
+      }
+      previews.push(`${label}:\n${localizedGuardPreview(tool, result.stdout.trim(), remove)}`);
     }
     const action = t("applyGuardChange");
     const confirm = await vscode.window.showWarningMessage(
@@ -634,19 +1273,23 @@ function activate(context) {
       action,
     );
     if (confirm !== action) return;
-    for (const { label } of selected) {
-      if (label === "cline" && process.platform === "win32") continue;
-      const result = spawnSync(node, argsFor(label, false), {
-        cwd: workspace,
-        encoding: "utf8",
-        env: { ...process.env, USERPROFILE: home, HOME: home },
-      });
+    for (const { tool } of selected) {
+      let result;
+      try {
+        result = await runGuardCommand(node, argsFor(tool, false), {
+          cwd: workspace,
+          env: { ...process.env, USERPROFILE: home, HOME: home },
+        });
+      } catch (error) {
+        await vscode.window.showErrorMessage(t(error?.code === "ETIMEDOUT" ? "guardTimeout" : "guardApplyError"));
+        return;
+      }
       if (result.status !== 0) {
-        await vscode.window.showErrorMessage(result.stderr?.trim() || t("guardApplyError"));
+        await vscode.window.showErrorMessage(t("guardApplyError"));
         return;
       }
     }
-    await vscode.window.showInformationMessage(t("guardUpdated"));
+    await vscode.window.showInformationMessage(t(remove ? "guardRemoved" : "guardUpdated"));
   }
   return {
     dispose() {
@@ -660,4 +1303,4 @@ function activate(context) {
   };
 }
 
-module.exports = { activate };
+module.exports = { activate, executable, globalGuardCli, runGuardCommand };

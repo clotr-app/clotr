@@ -1,0 +1,23 @@
+{
+  "productName": "Clotr",
+  "version": "1.6.0",
+  "identifier": "app.clotr.windows",
+  "build": {
+    "frontendDist": "../ui"
+  },
+  "app": {
+    "withGlobalTauri": true,
+    "windows": [],
+    "security": {
+      "csp": "default-src 'self'; connect-src ipc: http://ipc.localhost; style-src 'self' 'unsafe-inline'; img-src 'self' data:; object-src 'none'; base-uri 'none'; form-action 'none'; frame-src 'none'",
+      "dangerousDisableAssetCspModification": ["style-src"],
+      "freezePrototype": true,
+      "capabilities": ["card", "main", "flyout"]
+    }
+  },
+  "bundle": {
+    "active": false,
+    "icon": ["icons/32x32.png", "icons/128x128.png", "icons/128x128@2x.png", "icons/icon.ico"]
+  },
+  "plugins": {}
+}

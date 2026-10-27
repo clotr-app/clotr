@@ -320,7 +320,7 @@
     }
 
     // ---------- The choices, in plain words ----------
-    // Every warning offers a choice for right now, hide it or leave it in, plus an optional lasting one:
+    // Every warning offers a choice for right now, clot this leak or leave it alone, plus an optional lasting one:
     // remember this one item, or stop warning about this whole kind of data.
 
     // Builds the "More choices" section. Each button pairs today's answer with a lasting one. cover is null
@@ -362,8 +362,8 @@
           ? [
               choice(
                 one
-                  ? msg("choiceAllowOne", "Leave it in, and don't warn me about this one again")
-                  : msg("choiceAllowMany", "Leave it in, and don't warn me about these again"),
+                  ? msg("choiceAllowOne", "Leave it alone, and don't warn me about this one again")
+                  : msg("choiceAllowMany", "Leave them alone, and don't warn me about these again"),
                 () => {
                   app.addToVault(results, "allow");
                   leave();
@@ -373,7 +373,7 @@
           : []),
         ...(loosen && own.length
           ? [
-              choice(msg("choiceLogKinds", "Leave it in, and stop warning me about: $1", kindsOf(own)), () => {
+              choice(msg("choiceLogKinds", "Leave it alone, and stop warning me about: $1", kindsOf(own)), () => {
                 app.setToLog(own.map((r) => r.id));
                 leave();
               }),
@@ -383,8 +383,8 @@
           ? [
               choice(
                 one
-                  ? msg("choiceProtectOne", "Hide it, and always watch for this one, however it's written")
-                  : msg("choiceProtectMany", "Hide them, and always watch for these, however they're written"),
+                  ? msg("choiceProtectOne", "Clot this leak, and always watch for this one, however it's written")
+                  : msg("choiceProtectMany", "Clot these leaks, and always watch for these, however they're written"),
                 () => {
                   app.addToVault(results, "protect");
                   cover();
@@ -541,9 +541,17 @@
       const line = warningLine(results);
       const more = moreChoices(results, { leave, cover, general });
 
-      const redactBtn = el("button", { className: "primary", textContent: msg("coverIt", "Hide it") });
+      // "Clot this leak" is the brand's verb, so each choice's tooltip says plainly what it does.
+      const redactBtn = el("button", {
+        className: "primary",
+        textContent: msg("coverIt", "Clot this leak"),
+        title: msg("coverItHint", "Covers the detail before it's sent"),
+      });
       const allowBtn = el("button", {
-        textContent: resend ? msg("leaveItSend", "Leave it in and send") : msg("leaveIt", "Leave it in"),
+        textContent: resend ? msg("leaveItSend", "Leave it and send") : msg("leaveIt", "Leave it alone"),
+        title: resend
+          ? msg("leaveItSendHint", "Sends your message as it is, with nothing covered")
+          : msg("leaveItHint", "Closes this warning and leaves your message as it is"),
       });
       const backBtn = el("button", {
         className: "link",
@@ -570,13 +578,16 @@
           className: "note",
           textContent: msg(
             "dialogNote",
-            "Clotr checked this on your computer, and nothing's been sent yet. Hide it swaps it for a label like $1.",
+            "Clotr checked this on your computer, and nothing's been sent yet. Clot this leak swaps it for a label like $1.",
             `[REDACTED ${results[0].name.toUpperCase()}]`,
           ),
         }),
         el("div", { className: "actions" }, [allowBtn, redactBtn]),
         ...(more ? [more] : []),
-        el("div", { className: "keys" }, [el("span", { textContent: msg("enterCovers", "Enter: Hide it") }), backBtn]),
+        el("div", { className: "keys" }, [
+          el("span", { textContent: msg("enterCovers", "Enter: Clot this leak") }),
+          backBtn,
+        ]),
       ]);
       box.setAttribute("role", "alertdialog");
       box.setAttribute("aria-modal", "true");
@@ -935,7 +946,7 @@
     const whyBody = () =>
       msg(
         "whyBody",
-        "Whatever you send an AI can stay on its servers, be read by the people who run it, or be used to train it. Nothing has left your computer yet, and it's your call: hide it, leave it in, or use More choices to decide how Clotr handles this from now on.",
+        "Whatever you send an AI can stay on its servers, be read by the people who run it, or be used to train it. Nothing has left your computer yet, and it's your call: clot this leak, leave it alone, or use More choices to decide how Clotr handles this from now on.",
       );
 
     // Builds what's behind "Why am I seeing this?": what Clotr found and what happens next if it's sent. If
@@ -1002,13 +1013,13 @@
               app.responseOf(t.id) === "block"
                 ? msg(
                     "tqTipAsks",
-                    "Tourniquet is on, so Clotr asks before $1 goes out. You can always leave it in.",
+                    "Tourniquet is on, so Clotr asks before $1 goes out. You can always leave it alone.",
                     aName(t.name),
                     t.name,
                   )
                 : msg(
                     "tqTipNotes",
-                    "Tourniquet is on, so Clotr warns about $1 every time. You can always leave it in.",
+                    "Tourniquet is on, so Clotr warns about $1 every time. You can always leave it alone.",
                     aName(t.name),
                     t.name,
                   ),
@@ -1170,9 +1181,13 @@
         : words.items.flatMap((item, i) => [...(i ? [", "] : []), el("code", { textContent: item })]);
       const redactBtn = el("button", {
         className: "primary",
-        textContent: linkOnly ? msg("cl_remove", "Remove the share code") : msg("noticeCover", "Cover it"),
+        textContent: linkOnly ? msg("cl_remove", "Remove the share code") : msg("noticeCover", "Clot this leak"),
+        ...(linkOnly ? {} : { title: msg("coverItHint", "Covers the detail before it's sent") }),
       });
-      const keepBtn = el("button", { textContent: file ? msg("ok", "OK") : msg("noticeSendAsIs", "Send as is") });
+      const keepBtn = el("button", {
+        textContent: file ? msg("ok", "OK") : msg("noticeSendAsIs", "Leave it alone"),
+        ...(file ? {} : { title: msg("leaveItHint", "Closes this warning and leaves your message as it is") }),
+      });
       // Offered only for one attached photo whose place was found, and only when content.js actually has a
       // way to rebuild it (strip is null for every other warning, and for HEIC or WebP, which aren't rebuilt).
       const stripOffered = Boolean(strip) && file && !file.count && results.some((r) => r.id === "photo_location");
@@ -1601,7 +1616,7 @@
       });
     }
 
-    // Hide it didn't take: say so plainly, so nobody sends a key they think is gone.
+    // Clot this leak didn't take: say so plainly, so nobody sends a key they think is gone.
     function tellCoverFailed(results) {
       const names = [...new Set(results.map((r) => r.name))].join(", ");
       showOffer({
@@ -1687,20 +1702,6 @@
         yes: msg("askFirstNextTime", "Ask me first next time"),
         no: msg("ok", "OK"),
         onYes: onAskFirst,
-      });
-    }
-
-    // An AI reply brought up your own details that you didn't type here.
-    function tellReplyMentions(results) {
-      const names = [...new Set(results.map((r) => r.name))].join(", ");
-      showOffer({
-        title: msg("replyTitle", "ℹ️ The AI's reply mentions your $1", names),
-        text: msg(
-          "replyText",
-          "You didn't type it here, so this AI probably has it from an earlier chat or its memory. You can delete old chats and turn its memory off in the AI's settings.",
-        ),
-        yes: msg("ok", "OK"),
-        no: null,
       });
     }
 
@@ -2194,7 +2195,6 @@
       offerVault,
       offerRelax,
       tellJustSent,
-      tellReplyMentions,
       tellCantReadPictures,
       tellTruncated,
       tellCommandCopied,

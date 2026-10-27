@@ -8,10 +8,11 @@
       <div>Forwarded message</div>
       <div>From: Professor Example &lt;professor@example.test&gt;</div>
       <blockquote type="cite">
-        <div class="quote-body">To: student@example.test<br>Cc: helper@example.test<br>API key: AKIA4HPQ7XZ2R6TWLJ3N</div>
+        <div class="quote-body">To: student@example.test<br>Cc: helper@example.test<br>API key: <span id="demo-key"></span></div>
       </blockquote>
     </div>
   </div>
   <button id="send" type="button">Send</button>
+  <script>document.getElementById("demo-key").textContent = ["AKIA", "4HPQ7XZ2", "R6TWLJ3N"].join("");</script>
 </body>
 </html>

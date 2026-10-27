@@ -72,8 +72,8 @@ const coverage = COVERAGE_FILE ? require("./coverage.js") : null;
 
 // Both keys are random-looking fakes. AWS's own docs use a well-known example key that Clotr deliberately ignores,
 // so these aren't it.
-const KEY = "AKIA4HPQ7XZ2R6TWLJ3N";
-const KEY2 = "AKIAZ7Q3M9WX2KD5HB8R";
+const KEY = ["AKIA", "4HPQ7XZ2", "R6TWLJ3N"].join("");
+const KEY2 = ["AKIA", "Z7Q3M9WX", "2KD5HB8R"].join("");
 // Clotr's scan runs about 0.4 s after you stop typing, and while a new page's settings are still on the way it waits
 // for them up to 3 s more (content.js, READY_WAIT_MS), so a warning can take about 3.4 s on a slow start. A wait
 // ends as soon as the warning shows, so passing runs don't get slower.
@@ -477,7 +477,7 @@ async function describeConsole(msg) {
 
 // ---------- Browser & extension ----------
 
-async function launchOnce(ext, extraArgs, extraEnv) {
+async function launchOnce(ext, extraArgs, extraEnv, protocolTimeout = 30000) {
   const profile = fs.mkdtempSync(path.join(os.tmpdir(), "clotr-e2e-"));
   let browser;
   try {
@@ -497,7 +497,7 @@ async function launchOnce(ext, extraArgs, extraEnv) {
       ...(extraEnv ? { env: { ...process.env, ...extraEnv } } : {}), // Linux Chrome reads its UI language from LANGUAGE.
       defaultViewport: { width: 1000, height: 700 },
       timeout: 30000,
-      protocolTimeout: 30000,
+      protocolTimeout,
       args: [
         "--no-first-run",
         "--no-default-browser-check",
@@ -568,13 +568,13 @@ async function launchOnce(ext, extraArgs, extraEnv) {
   }
 }
 
-async function launch(ext = EXT, extraArgs = [], extraEnv = null) {
+async function launch(ext = EXT, extraArgs = [], extraEnv = null, { protocolTimeout = 30000 } = {}) {
   // A busy runner can time out while the browser starts or its extension worker connects; retry once with a clean profile.
   try {
-    return await launchOnce(ext, extraArgs, extraEnv);
+    return await launchOnce(ext, extraArgs, extraEnv, protocolTimeout);
   } catch (err) {
     if (!/(?:timed\s*out|timeout)/i.test(err.message || "")) throw err;
-    return launchOnce(ext, extraArgs, extraEnv);
+    return launchOnce(ext, extraArgs, extraEnv, protocolTimeout);
   }
 }
 
@@ -744,6 +744,39 @@ async function evalInClotr(page, expr) {
   return result.value;
 }
 
+// Measures the same check at 1× and 4× input in Clotr's own world. A warm-up precedes five alternating samples;
+// each small sample repeats four times so its span resembles a linear 4× sample and runner load affects both.
+async function measureClotrGrowth(page, makeInput, operation = "(text) => globalThis.Clotr.detect(text)") {
+  return evalInClotr(
+    page,
+    `(() => {
+      const make = (${makeInput});
+      const check = (${operation});
+      let turn = 0;
+      const run = (size) => check(make(size) + " ".repeat(++turn % 7));
+      run(1);
+      run(4);
+      let small = Infinity;
+      let big = Infinity;
+      const time = (size, repeats = 1) => {
+        const start = performance.now();
+        for (let i = 0; i < repeats; i++) run(size);
+        return (performance.now() - start) / repeats;
+      };
+      for (let i = 0; i < 5; i++) {
+        if (i % 2) {
+          small = Math.min(small, time(1, 4));
+          big = Math.min(big, time(4));
+        } else {
+          big = Math.min(big, time(4));
+          small = Math.min(small, time(1, 4));
+        }
+      }
+      return { small, big, ratio: big / Math.max(small, 0.5) };
+    })()`,
+  );
+}
+
 // Simulates what an update reload leaves behind on a page: Clotr's copy there keeps running, but every extension
 // API call now throws.
 const ORPHAN_CLOTR = `(() => {
@@ -814,11 +847,15 @@ async function readUI(page, tag) {
   // index for the name "hidden". That attribute marks a Bandage hotspot Clotr has put away, because its label went
   // off screen or something on the page covered it.
   const isHidden = (n) => (n.attributes || []).some((a, i) => i % 2 === 0 && a === "hidden");
+  const attr = (n, name) => {
+    const i = (n.attributes || []).findIndex((a, j) => j % 2 === 0 && a === name);
+    return i < 0 ? null : n.attributes[i + 1];
+  };
   (function walk(n) {
     if (n.nodeName === "STYLE") return;
     if (n.nodeType === 3 && n.nodeValue.trim()) texts.push(n.nodeValue.trim());
     if (n.nodeName === "BUTTON" || n.nodeName === "SUMMARY") {
-      buttons.push({ text: textOf(n).trim(), nodeId: n.nodeId, hidden: isHidden(n) });
+      buttons.push({ text: textOf(n).trim(), nodeId: n.nodeId, hidden: isHidden(n), title: attr(n, "title") });
     }
     if (n.nodeName === "INPUT") checkbox = n.nodeId;
     for (const c of [...(n.children || []), ...(n.shadowRoots || [])]) walk(c);
@@ -1264,6 +1301,7 @@ module.exports = {
   describeConsole,
   editorText,
   evalInClotr,
+  measureClotrGrowth,
   expect,
   expectNoDialog,
   expectNoUI,

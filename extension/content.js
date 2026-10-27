@@ -30,8 +30,18 @@
   } = globalThis.Clotr;
   // Looked up fresh at each call, like readAttachment below, so a test can stand in a result that was cut short.
   const detect = (text) => globalThis.Clotr.detect(text);
-  const { realTarget, findEditor, getText, replaceText, replaceMatchesInPlace, isChatComposer, composerInfo } =
-    globalThis.Clotr.editor;
+  const {
+    realTarget,
+    findEditor,
+    getText,
+    replaceText,
+    replaceMatchesInPlace,
+    isChatComposer,
+    composerInfo,
+    sourceInputText,
+    appendSourceText,
+    removeSourceText,
+  } = globalThis.Clotr.editor;
   const IS_TOP = window === window.top;
   // Which held-back features this build ships (`clotr_features` in manifest.json).
   const FEATURES = chrome.runtime.getManifest().clotr_features || {};
@@ -287,7 +297,9 @@
   window.addEventListener(
     "focusin",
     safely((e) => {
-      if (!health.editor && qualifyingEditor(realTarget(e))) noteEditor();
+      const editor = qualifyingEditor(realTarget(e));
+      if (!editor) return;
+      if (!health.editor) noteEditor();
     }),
     true,
   );
@@ -365,6 +377,10 @@
   // "allow" = OK to share: never warns, still recorded (as "Just counted") like everything else. Words and ID formats are matched in patterns.js.
 
   let vaultEntries = [];
+  const userInputTexts = new WeakMap(); // text the person supplied to each editor, bounded and kept only on this page
+  const pendingUserEdits = new WeakMap(); // beforeinput details for editors that apply edits without firing input
+  const enteredDetailsByEditor = new WeakMap(); // values supplied during this draft, for the offer after hand deletion
+  const OWN_WORD_TYPES = new Set(["my_name", "family_name", "employer", "watch_list"]);
   // A team's own kinds from its policy: [{ id, name, cover }], their words among the vault's entries as
   // fingerprints. Never stored here; they come with the settings each time.
   let teamKinds = [];
@@ -436,7 +452,6 @@
 
   // Your vault's word on one value: "protect", "allow" or null, hashed once per page (cleared with the vault).
   const vaultMode = (patternId, match) => globalThis.Clotr.vaultMode(patternId, match, known());
-
   // With a fingerprint of your own ID in the vault, IDs that only share its format are
   // named apart ("Account/ID Number") and ranked lower than yours ("Your Account/ID Number").
   const splitOwnIds = (results) => globalThis.Clotr.splitOwnIds(results, known());
@@ -636,7 +651,7 @@
 
   // Both only last for the message currently being written. Once it's sent or the box is cleared, the next
   // message warns and logs again like normal.
-  const allowedValues = new Set(); // values the user kept ("Leave it in" in the dialog or notice) in this message
+  const allowedValues = new Set(); // values the user kept ("Leave it alone" in the dialog or notice) in this message
   const loggedSilenced = new Set(); // log-only values already recorded for this message
   function newMessage() {
     backToEdit = false;
@@ -691,16 +706,42 @@
   // itself isn't held to isTrusted: Chrome marks one committed through its DevTools input untrusted, so a real
   // input method might hit the same path.
   let composing = false;
-  addEventListener("compositionstart", (e) => e.isTrusted && (composing = true), true);
+  let compositionEditor = null;
+  const compositionStartText = new WeakMap();
+  addEventListener(
+    "compositionstart",
+    (e) => {
+      if (!e.isTrusted) return;
+      composing = true;
+      const editor = qualifyingEditor(realTarget(e));
+      compositionEditor = editor;
+      if (!editor) return;
+      activeEditor = editor;
+      const text = getText(editor);
+      compositionStartText.set(editor, text);
+      if (!text) resetUserInput(editor);
+    },
+    true,
+  );
   addEventListener(
     "compositionend",
-    safely(() => {
+    safely((e) => {
       if (!composing) return;
       composing = false;
-      if (!activeEditor?.isConnected) return;
+      const editor = compositionEditor;
+      compositionEditor = null;
+      if (!editor?.isConnected) return;
+      const after = getText(editor);
+      const before = compositionStartText.get(editor) || "";
+      const delta = textChange(before, after);
+      let source = removeSourceText(userInputTexts.get(editor) || "", delta.removed);
+      const committed = delta.inserted || (e.data && after.includes(e.data) ? e.data : "");
+      if (committed) source = appendSourceText(source, committed);
+      userInputTexts.set(editor, source);
+      compositionStartText.delete(editor);
       clearTimeout(scanTimer);
       scanTimer = setTimeout(
-        safely(() => scanWhenReady(activeEditor)),
+        safely(() => scanWhenReady(editor)),
         SCAN_DELAY_MS,
       );
     }),
@@ -743,8 +784,8 @@
     labelWatch.nodes.clear();
     labelWatch.unseen.clear();
     if (labelWatch.observer && !labelWatch.timer) labelWatch.timer = setTimeout(safely(bandageReadPage), LABEL_READ_MS);
-    replyChat = null;
     replyNodes.clear();
+    replyChat = null;
   }
 
   // Picks the label word for a kind of detail. Anything else personal just becomes "ID". The kind also
@@ -1406,7 +1447,7 @@
   }
 
   // ---------- What the person's choices do (warning-ui.js draws them) ----------
-  // Every warning offers a choice for just this once, Hide it or Leave it in, plus a lasting choice: either
+  // Every warning offers a choice for just this once, Clot this leak or Leave it alone, plus a lasting choice: either
   // for this exact item, saved to the vault as "fine to share" or "always watch", or for this whole kind of
   // data.
 
@@ -1735,7 +1776,7 @@
       .catch((err) => console.warn(LOG, "could not record choice", err));
   }
 
-  // The user kept the warned items (clicked "Leave it in" or sent anyway): count them as allowed.
+  // The user kept the warned items (clicked "Leave it alone" or sent anyway): count them as allowed.
   function allowWarnings() {
     const kept = warnings.concat(fileWarnings);
     if (!kept.length) return;
@@ -1819,7 +1860,9 @@
     }
     if (isPaused()) return null;
     const draft = getText(editor);
+    syncPendingUserEdit(editor, draft);
     if (!draft.trim()) {
+      resetUserInput(editor);
       newMessage();
       pastedEditors.delete(editor);
     }
@@ -1833,8 +1876,17 @@
     const raw = cachedRaw || detect(currentScanText);
     const forwarded = addForwardCredentials(raw, parts.forwarded);
     const truncated = Boolean(raw.truncated || forwarded.truncated);
-    const all = splitOwnIds(raw);
-    noteTyped(all);
+    const found = splitOwnIds(raw);
+    const sourceFingerprints = found.length ? personSourceFingerprints(editor) : new Set();
+    const fromPerson = (r, m) =>
+      Boolean(saltValue) && sourceFingerprints.has(`${r.id}\0${fingerprint(saltValue, r.id, m)}`);
+    const isSavedMatch = (r, m) =>
+      vaultMode(r.id, m) !== null ||
+      isTeamKind(r.id) ||
+      vaultEntries.some((entry) => entry.type === r.id && entry.kind !== "value");
+    const all = filterMatches(found, (r, m) => !isSavedMatch(r, m) || fromPerson(r, m));
+    const entered = filterMatches(found, fromPerson);
+    if (entered.length) noteTyped(entered, editor);
 
     // Log-only patterns don't interrupt, but are still counted (once per value per page).
     const silenced = filterMatches(all, (r, m) => respFor(r, m) === "log" && !loggedSilenced.has(m));
@@ -1894,7 +1946,12 @@
       } else if (ui.isNoticeOpen() && ui.noticeKind() === "warn") {
         ui.closeNotice();
       }
-      if (!warnings.length && removed.length && !lost) offerVault(removed);
+      const enteredDetails = enteredDetailsByEditor.get(editor) || new Set();
+      const removedByPerson = removed.filter((f) => {
+        const fp = saltValue && fingerprint(saltValue, f.id, f.value);
+        return fp && enteredDetails.has(`${f.id}\0${fp}`);
+      });
+      if (!warnings.length && removedByPerson.length && !lost) offerVault(removedByPerson);
       // Nothing found, but the check itself gave up partway: silence here would read as "all clear", so say
       // so even with nothing to warn about. Once per message, so it doesn't reopen on every keystroke.
       else if (!warnings.length && truncated && !truncatedNoted && !lost && !ui.isDialogOpen() && !ui.isNoticeOpen()) {
@@ -2057,7 +2114,7 @@
     setTimeout(check, CONFIRM_POLL_MS);
   }
 
-  // When "Leave it in and send" answers a dialog that stopped a send, I send the message the same way it
+  // When "Leave it and send" answers a dialog that stopped a send, I send the message the same way it
   // was originally sent: the button or form the user used, or for Enter, the site's own send button near
   // the chat box, since a script click works on every site, and failing that, Enter again. If none of that
   // actually sends anything, the text stays in the box and the next real Enter goes through on its own,
@@ -2124,6 +2181,57 @@
   const REAL_EDIT_MS = 1000;
   let realEditAt = 0;
   const isBulkInput = (type) => /^insertFrom(?:Paste|Drop)/i.test(type || "");
+  function textChange(before, after) {
+    let start = 0;
+    while (start < before.length && start < after.length && before[start] === after[start]) start++;
+    let beforeEnd = before.length;
+    let afterEnd = after.length;
+    while (beforeEnd > start && afterEnd > start && before[beforeEnd - 1] === after[afterEnd - 1]) {
+      beforeEnd--;
+      afterEnd--;
+    }
+    return { removed: before.slice(start, beforeEnd), inserted: after.slice(start, afterEnd) };
+  }
+  function resetUserInput(editor) {
+    userInputTexts.delete(editor);
+    pendingUserEdits.delete(editor);
+    enteredDetailsByEditor.delete(editor);
+  }
+  function applyUserEdit(editor, edit, after) {
+    const delta = textChange(edit.before, after);
+    let text = removeSourceText(userInputTexts.get(editor) || "", delta.removed);
+    if (/^history(?:Undo|Redo)$/i.test(edit.inputType) && delta.inserted) {
+      text = appendSourceText(text, delta.inserted);
+    } else if (edit.sourceText && delta.inserted) {
+      text = appendSourceText(text, edit.sourceText);
+    }
+    userInputTexts.set(editor, text);
+    if (!after.length) resetUserInput(editor);
+  }
+  function noteTrustedBeforeInput(editor, e) {
+    const before = getText(editor);
+    syncPendingUserEdit(editor, before);
+    const inputType = e.inputType || "";
+    const paste = isBulkInput(inputType) ? pastedEditors.get(editor) : null;
+    if (!before.length) resetUserInput(editor);
+    const transferText = e.dataTransfer?.getData("text/plain") || "";
+    const inserted = sourceInputText(inputType, e.data || transferText, paste?.text || transferText);
+    const sourceText = /^insert.*Composition/i.test(inputType) ? null : inserted;
+    pendingUserEdits.set(editor, { before, inputType, sourceText });
+  }
+  function noteTrustedInput(editor, e) {
+    const after = getText(editor);
+    const edit = pendingUserEdits.get(editor);
+    if (!edit) return;
+    pendingUserEdits.delete(editor);
+    applyUserEdit(editor, { ...edit, inputType: e.inputType || edit.inputType }, after);
+  }
+  function syncPendingUserEdit(editor, after) {
+    const edit = pendingUserEdits.get(editor);
+    if (!edit) return;
+    pendingUserEdits.delete(editor);
+    applyUserEdit(editor, edit, after);
+  }
   const onTyping = safely((e) => {
     let editor;
     if (e.type === "beforeinput" && e.isTrusted) {
@@ -2131,7 +2239,9 @@
       if (isBulkInput(e.inputType) || everyday) {
         editor = qualifyingEditor(realTarget(e));
         if (editor && isBulkInput(e.inputType)) {
-          pastedEditors.set(editor, { text: typeof e.data === "string" && e.data ? e.data : null });
+          const paste = pastedEditors.get(editor);
+          const text = typeof e.data === "string" && e.data ? e.data : paste?.text || null;
+          pastedEditors.set(editor, { ...paste, text });
         }
         if (editor) seedQuoteOrigins(editor); // before this edit lands
       }
@@ -2140,6 +2250,8 @@
     if (isPaused() || globalThis.Clotr.editor.isEditing() || !byUser(e)) return;
     editor ??= qualifyingEditor(realTarget(e));
     if (!editor) return;
+    if (e.type === "beforeinput") noteTrustedBeforeInput(editor, e);
+    if (e.type === "input") noteTrustedInput(editor, e);
     activeEditor = editor;
     noteEditor();
     clearTimeout(scanTimer);
@@ -2161,7 +2273,24 @@
         const editor = qualifyingEditor(realTarget(e));
         if (!editor) return;
         const text = type === "paste" ? e.clipboardData?.getData("text/plain") : e.dataTransfer?.getData("text/plain");
-        if (text || !pastedEditors.has(editor)) pastedEditors.set(editor, { text: text || null });
+        if (text || !pastedEditors.has(editor)) {
+          const paste = { text: text || null };
+          pastedEditors.set(editor, paste);
+          if (text) {
+            const before = getText(editor);
+            if (!before) resetUserInput(editor);
+            pendingUserEdits.set(editor, {
+              before,
+              inputType: type === "paste" ? "insertFromPaste" : "insertFromDrop",
+              sourceText: text,
+            });
+          }
+          clearTimeout(scanTimer);
+          scanTimer = setTimeout(
+            safely(() => scanWhenReady(editor)),
+            SCAN_DELAY_MS,
+          );
+        }
       }),
       true,
     );
@@ -2264,37 +2393,50 @@
   // Checks only for your own vault details, matched by fingerprint, and only in text that shows up within
   // 90 seconds of you sending, so an old conversation loading back up never counts. It never flags anything
   // you typed yourself on this page, and each detail only ever gets flagged once. I run one check per
-  // message you send, after the reply has gone quiet for a moment, because the page controls what appears
-  // on screen and more frequent checks would let it test guess after guess against your vault.
+  // message you send, after the reply has gone quiet, because the page controls what appears and more frequent
+  // checks would let it test guess after guess against your vault. Results stay in Clotr's UI and local history.
   const REPLY_WINDOW_MS = 90000;
   const REPLY_QUIET_MS = 3000;
-  const OWN_WORD_TYPES = new Set(["my_name", "family_name", "employer", "watch_list"]);
   const typedHere = new Set(); // fingerprints of everything detected in the chat box on this page
   const mentioned = new Set(); // fingerprints already pointed out
   const replyNodes = new Set();
-  let replyChat = null; // the Bandage chat the message was sent in: its labels are marked while it's still the chat
+  let replyChat = null; // the Bandage chat the message was sent in: its labels are marked only while it's still current
   let replyWindowUntil = 0;
   let replyTimer = null;
   let replyObserver = null;
   let replyChecked = false; // this message's reply check is done
 
-  // scan() calls this for every found value on every keystroke, so it uses the single-round fingerprint: these two
-  // sets live only in this page's memory and are never stored, and the strong one (slow on purpose, about 15 ms
-  // each) would hold the tab for seconds on a pasted list of hundreds of details.
+  // These sets live only in this page's memory and are never stored. The single-round fingerprint keeps checking
+  // a long reply from holding the tab for seconds.
   const fpOf = (r, m) => (saltValue ? fingerprint(saltValue, r.id, m) : null);
-  function noteTyped(results) {
+  function personSourceFingerprints(editor) {
+    const text = userInputTexts.get(editor) || "";
+    if (!text || !saltValue) return new Set();
+    const found = detect(text);
+    const matches = new Set();
+    for (const r of found) {
+      for (const m of r.matches) {
+        matches.add(`${r.id}\0${fingerprint(saltValue, r.id, m)}`);
+      }
+    }
+    return matches;
+  }
+  function noteTyped(results, editor) {
+    let entered = enteredDetailsByEditor.get(editor);
+    if (!entered) enteredDetailsByEditor.set(editor, (entered = new Set()));
     for (const r of results) {
       for (const m of r.matches) {
         const fp = fpOf(r, m);
-        if (fp) typedHere.add(fp);
+        if (fp) {
+          typedHere.add(fp);
+          entered.add(`${r.id}\0${fp}`);
+        }
       }
     }
   }
   const isOwn = (r, m) => OWN_WORD_TYPES.has(r.id) || (vaultMode(r.id, m) !== null && vaultMode(r.id, m) !== "allow");
 
   function openReplyWindow() {
-    // Nothing to look for: reply check is off or the vault is still empty, and Bandage hasn't covered
-    // anything in this chat either.
     const wantsReplyCheck = replyCheck && saltValue && vaultEntries.length;
     const wantsBandage = bandageOn() && bandageChat().byLabel.size;
     if (!wantsReplyCheck && !wantsBandage) return;
@@ -2339,11 +2481,6 @@
     if (isPaused() || health.uiRemoved) return;
     const nodes = [...replyNodes].filter(validReplyNode);
     replyNodes.clear();
-    // Bandage checks every quiet pause until the window ends, since an AI can go quiet for several seconds
-    // before answering at all (Copilot builds a new chat's own page first, for instance), and finding
-    // Clotr's own labels on the page tells it nothing useful anyway. This only runs while the chat the
-    // message was sent in is still the page's current chat; bandageSwitched clears it once that's no
-    // longer true.
     const labelsToFind = bandageOn() && replyChat === bandageChat() && replyChat.byLabel.size > 0;
     if (labelsToFind) bandageMarkLabels(nodes, replyChat);
     if (!replyCheck || replyChecked) {
@@ -2365,13 +2502,6 @@
     if (!own.length) return;
     for (const r of own) for (const m of r.matches) mentioned.add(fpOf(r, m));
     report(own, "mentioned"); // kind and fingerprint only, for the mind map, recorded even when a warning has priority
-    if (ui.isDialogOpen() || (ui.isNoticeOpen() && ui.noticeKind() !== "offer")) return; // a warning has priority
-    console.info(
-      LOG,
-      "a reply mentions your own details",
-      own.map((r) => r.id),
-    );
-    ui.tellReplyMentions(own);
   }
 
   // ---------- The command check: a copied "paste this command" trick ----------
@@ -2497,15 +2627,15 @@
   );
 
   // ---------- Bandage step 2: hover a label in the AI's answer to see the real detail ----------
-  // The AI's page itself never gets changed, since rewriting a reply's text under a site's own framework,
-  // React and the like, can break the chat outright. Instead, Clotr finds each known label with a live
-  // Range, and warning-ui.js lays its own invisible, focusable hotspot over it, with a small bubble that
-  // shows the real detail on hover. The label-to-detail map is just the in-memory one built in step 1,
-  // bandageChat().byLabel, so nothing new gets stored here.
+  // The AI's page itself never gets changed, since rewriting a reply's text under a site's own framework, React
+  // and the like, can break the chat outright. Instead, content.js finds each known label with a live Range, and
+  // warning-ui.js lays its own invisible, focusable hotspot over it, with a small bubble that shows the real detail
+  // on hover. The label-to-detail map is just the in-memory one built in step 1, bandageChat().byLabel, so nothing
+  // new gets stored here.
   const LABEL_RE = /\[[^[\]]{1,60}\]/g;
 
   function bandageMarkLabels(nodes, chat) {
-    if (retired || !chat.byLabel.size) return; // retired: the updated copy marks labels now
+    if (retired || !chat.byLabel.size) return;
     for (const root of nodes) {
       try {
         bandageFindLabels(root, chat);
@@ -2529,7 +2659,6 @@
     return false;
   }
 
-  // Remembers where each known label sits in `root`'s text, without touching it.
   function bandageFindLabels(root, chat) {
     const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
     for (let t = walker.nextNode(); t; t = walker.nextNode()) {

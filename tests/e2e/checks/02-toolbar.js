@@ -22,7 +22,7 @@ module.exports = async function (env) {
       await resetState(ctx);
       await typeText(page, KEY);
       await waitForDialog(page);
-      await clickDialogButton(page, "Leave it in");
+      await clickDialogButton(page, "Leave it alone");
       const b1 = await waitFor(async () => {
         const b = await activeBadge(ctx);
         return b.text === "1" ? b : null;
@@ -32,7 +32,7 @@ module.exports = async function (env) {
       await clearEditor(page);
       await typeText(page, KEY2);
       await waitForDialog(page);
-      await clickDialogButton(page, "Hide it");
+      await clickDialogButton(page, "Clot this leak");
       const b2 = await waitFor(async () => ((await activeBadge(ctx)).text === "2" ? true : null), 2000);
       expect(b2, `badge text after 2nd: "${(await activeBadge(ctx)).text}"`);
     }),

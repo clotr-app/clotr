@@ -1,10 +1,10 @@
 "use strict";
 /* global Buffer, require, module */
 
-const fs = require("node:fs");
-const path = require("node:path");
-const crypto = require("node:crypto");
-const { TextDecoder } = require("node:util");
+const fs = require("fs");
+const path = require("path");
+const crypto = require("crypto");
+const { TextDecoder } = require("util");
 
 const MAX_BYTES = 64 * 1024;
 const MAX_LINES = 8192;
@@ -251,4 +251,15 @@ function pathIgnoredForFile(config, root, filePath) {
   return pathIgnored(config, relative);
 }
 
-module.exports = { MAX_BYTES, parseClotrIgnore, readClotrIgnore, valueFingerprint, pathIgnored, pathIgnoredForFile };
+module.exports = {
+  MAX_BYTES,
+  MAX_PATTERN_LENGTH,
+  globSteps,
+  globMatchesAt,
+  globMatches,
+  parseClotrIgnore,
+  readClotrIgnore,
+  valueFingerprint,
+  pathIgnored,
+  pathIgnoredForFile,
+};

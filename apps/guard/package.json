@@ -1,22 +1,46 @@
 {
   "name": "clotr-guard",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Checks what you send to an AI coding assistant for credentials and personal details, on your device.",
+  "keywords": [
+    "secrets",
+    "credentials",
+    "pii",
+    "ai",
+    "claude-code",
+    "cursor",
+    "gemini-cli",
+    "codex-cli",
+    "windsurf",
+    "cline",
+    "mcp",
+    "pre-commit",
+    "privacy"
+  ],
   "license": "AGPL-3.0-or-later",
   "repository": {
     "type": "git",
-    "url": "https://github.com/clotr-app/clotr"
+    "url": "https://github.com/clotr-app/clotr",
+    "directory": "apps/guard"
   },
-  "homepage": "https://github.com/clotr-app/clotr",
+  "homepage": "https://github.com/clotr-app/clotr/tree/main/apps/guard#readme",
   "bugs": {
     "url": "https://github.com/clotr-app/clotr/issues"
   },
+  "mcpName": "io.github.clotr-app/clotr-guard",
   "private": true,
   "bin": {
     "clotr-guard": "bin/clotr-guard.js",
     "clotr-mcp": "bin/clotr-mcp.js"
   },
-  "files": ["bin", "lib", "dist", "skills", "README.md", "LICENSE"],
+  "files": [
+    "bin",
+    "lib",
+    "dist",
+    "skills",
+    "README.md",
+    "LICENSE"
+  ],
   "engines": {
     "node": ">=20"
   },

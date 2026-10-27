@@ -1,0 +1,340 @@
+/* Clotr for Windows -- Detailed results (detailed.js): a left rail of filters, a middle list
+   grouped by kind then place, and a right pane that's always open on the selected file. Built entirely on
+   theme.css's own tokens and parts (.btn, .tag, .dot, .switch, .small, .muted): no colour of its own. */
+
+.wb {
+  display: grid;
+  grid-template-columns: 200px minmax(260px, 1fr) 340px;
+  align-items: start;
+  gap: var(--sp-4);
+}
+/* ---------- The rail: one card per filter type, a checkbox row per value ---------- */
+.wb-rail {
+  position: sticky;
+  top: var(--sp-5);
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--sp-4);
+  min-width: 0;
+}
+.wb-facet {
+  padding: var(--sp-3);
+  border-radius: var(--r-lg);
+  border: 1px solid color-mix(in srgb, var(--line) 60%, transparent);
+  background: var(--surface);
+  box-shadow: var(--lift);
+}
+.wb-facet-title {
+  margin: 0 0 var(--sp-2);
+  color: var(--muted);
+  font-size: var(--t-xs);
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+.wb-facet-row {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  min-height: 32px;
+}
+.wb-facet-label {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  color: var(--ink);
+  font-size: var(--t-sm);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  cursor: pointer;
+}
+.wb-facet-count {
+  flex: none;
+  color: var(--muted);
+  font-size: var(--t-xs);
+  font-weight: 700;
+}
+/* A small square checkbox, the same on/off language as .switch (border and fill flip together). */
+.wb-box {
+  position: relative;
+  flex: none;
+  width: 18px;
+  height: 18px;
+  padding: 0;
+  border: 1px solid var(--line);
+  border-radius: 5px;
+  background: var(--surface);
+  cursor: pointer;
+}
+.wb-box[aria-checked="true"] {
+  border-color: var(--signal);
+  background: var(--signal);
+}
+.wb-box[aria-checked="true"]::after {
+  content: "";
+  position: absolute;
+  inset: 3px;
+  background: var(--on-signal);
+  clip-path: polygon(14% 44%, 0 63%, 39% 100%, 100% 20%, 82% 4%, 36% 66%);
+}
+.wb-box:focus-visible {
+  outline: 2px solid var(--signal);
+  outline-offset: 1px;
+}
+
+/* ---------- The list: search, then sections (kind), places and rows ---------- */
+.wb-list {
+  min-width: 0;
+}
+.wb-find {
+  width: 100%;
+  margin: 0 0 var(--sp-4);
+}
+.wb-sections {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--sp-6);
+}
+.wb-section-title {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  margin: 0;
+  font-size: var(--t-lg);
+}
+.wb-section-why {
+  margin: var(--sp-1) 0 var(--sp-3);
+  color: var(--ink-2);
+}
+.wb-place {
+  margin: 0 0 var(--sp-3);
+}
+.wb-place-title {
+  display: flex;
+  align-items: baseline;
+  gap: var(--sp-2);
+  margin: 0 0 var(--sp-1);
+  color: var(--muted);
+  font-size: var(--t-sm);
+}
+.wb-place-count {
+  color: var(--muted);
+  font-weight: 700;
+}
+.wb-row-wrap {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  min-width: 0;
+}
+.wb-row-wrap + .wb-row-wrap {
+  margin-top: var(--sp-1);
+}
+.wb-row {
+  display: flex;
+  flex: 1;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--sp-3);
+  min-width: 0;
+  min-height: 40px;
+  padding: var(--sp-2) var(--sp-3);
+  border: 1px solid transparent;
+  border-radius: var(--r-md);
+  background: var(--surface);
+  color: var(--ink);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  transition: border-color var(--t-fast);
+}
+.wb-row:hover {
+  border-color: color-mix(in srgb, var(--line) 60%, transparent);
+}
+.wb-row:focus-visible {
+  outline: none;
+  border-color: var(--signal);
+}
+.wb-row.current {
+  border-color: var(--signal);
+  background: var(--signal-wash);
+}
+.wb-row-name {
+  display: flex;
+  flex: 1 1 auto;
+  align-items: center;
+  gap: var(--sp-2);
+  min-width: 0;
+  overflow: hidden;
+}
+.wb-row-name b {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
+}
+/* "What's in it" shares the row with the name so the pane and Open button do not overflow it. */
+.wb-row-meta {
+  flex: 1 1 auto;
+  max-width: 50%;
+  min-width: 0;
+  overflow: hidden;
+  color: var(--muted);
+  font-size: var(--t-sm);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.wb-row-open {
+  flex: none;
+}
+.wb-more {
+  margin-top: var(--sp-1);
+}
+.wb-empty {
+  padding: var(--sp-4) 0;
+}
+
+/* ---------- The pane: Next up, then the selected file -- what it is, why it matters, what to do ---------- */
+.wb-pane {
+  position: sticky;
+  top: var(--sp-5);
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--sp-4);
+  min-width: 0;
+}
+.wb-nextup,
+.wb-file {
+  padding: var(--sp-4);
+  border-radius: var(--r-lg);
+  border: 1px solid color-mix(in srgb, var(--line) 60%, transparent);
+  background: var(--surface);
+  box-shadow: var(--lift);
+}
+.wb-nextup {
+  border-left: 4px solid var(--signal);
+}
+.wb-nextup-label {
+  margin: 0;
+  color: var(--muted);
+  font-size: var(--t-xs);
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+.wb-nextup-what {
+  margin: var(--sp-1) 0 0;
+  font-weight: 700;
+}
+.wb-file h3 {
+  margin: 0;
+  overflow: hidden;
+  font-size: var(--t-xl);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.wb-pane-label {
+  margin: var(--sp-3) 0 0;
+  color: var(--muted);
+  font-size: var(--t-xs);
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+.wb-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--sp-2);
+  margin-top: var(--sp-3);
+}
+.wb-actions-confirm {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--sp-2);
+  margin-top: var(--sp-3);
+}
+.wb-actions-confirm p {
+  flex-basis: 100%;
+  margin: 0;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .wb-row {
+    transition: none;
+  }
+}
+:root[data-motion="still"] .wb-row {
+  transition: none;
+}
+
+/* ---------- The tiers: wide, medium and narrow. Last in the file on purpose: each overrides a base rule above
+   (the rail's and the pane's `position: sticky`), and with the same specificity only the later rule wins. When
+   these sat first, the folded Filters stayed sticky and slid over the top of the list. ---------- */
+/* Wide only: the summary that folds the rail stays hidden, so nothing can close what's already open. */
+.wb-rail-toggle {
+  display: none;
+}
+/* Medium: the rail folds into a "Filters" bar across the top instead of its own column (list + pane keep theirs). */
+@media (max-width: 1180px) {
+  .wb {
+    grid-template-columns: minmax(260px, 1fr) 300px;
+  }
+  .wb-rail {
+    grid-column: 1 / -1;
+    position: static;
+  }
+  .wb-rail-toggle {
+    display: flex;
+    align-items: center;
+    gap: var(--sp-2);
+    width: 100%;
+    margin: 0;
+    padding: var(--sp-2) var(--sp-3);
+    border: 1px solid var(--line);
+    border-radius: var(--r-md);
+    background: var(--surface);
+    list-style: none;
+    cursor: pointer;
+    font-weight: 700;
+  }
+  .wb-rail-toggle::-webkit-details-marker {
+    display: none;
+  }
+  .wb-rail-toggle::before {
+    content: "";
+    flex: none;
+    width: 7px;
+    height: 7px;
+    border-right: 2px solid var(--muted);
+    border-bottom: 2px solid var(--muted);
+    transform: rotate(45deg);
+    transition: transform var(--t-fast) var(--ease);
+  }
+  .wb-rail[open] > .wb-rail-toggle::before {
+    transform: rotate(-135deg);
+  }
+  .wb-rail-body {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+    gap: var(--sp-3);
+    margin-top: var(--sp-3);
+  }
+}
+/* Narrow: one column, the pane under the list (the rail's own fold from the tier above still applies). */
+@media (max-width: 760px) {
+  .wb {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .wb-pane {
+    position: static;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .wb-rail-toggle::before {
+    transition: none;
+  }
+}
+:root[data-motion="still"] .wb-rail-toggle::before {
+  transition: none;
+}

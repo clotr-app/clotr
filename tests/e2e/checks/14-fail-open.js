@@ -77,7 +77,7 @@ module.exports = async function (env) {
         expect(dialog, "no dialog");
         await evalInClotr(page, ORPHAN_CLOTR);
         await clickDialogButton(page, "More choices"); // "stop warning me" needs storage, which is gone
-        await clickDialogButton(page, "Leave it in, and stop warning me about: AWS Access Key");
+        await clickDialogButton(page, "Leave it alone, and stop warning me about: AWS Access Key");
         expect(!(await readDialog(page)), "the dialog couldn't be closed");
         // Warning less on every site takes a yes on Clotr's own page, which an orphaned copy can't reach, so the
         // tick above changed nothing: the key was left in for this message, and an orphaned copy only ever warns.
@@ -111,7 +111,7 @@ module.exports = async function (env) {
       );
       expect(await waitFor(() => readReloadPrompt(page), DIALOG_WAIT), "no reload prompt");
       await clickDialogButton(page, "Later", readReloadPrompt);
-      await clickDialogButton(page, "Cover it", readNotice);
+      await clickDialogButton(page, "Clot this leak", readNotice);
       const text = await editorText(page);
       expect(text.includes("[REDACTED AWS ACCESS KEY]"), `Redact didn't work while orphaned: "${text}"`);
       await pressEnter(page);

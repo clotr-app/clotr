@@ -1,0 +1,2 @@
+# The repo's line length (Prettier's printWidth), for Rust too.
+max_width = 120

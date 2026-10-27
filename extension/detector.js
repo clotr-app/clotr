@@ -25,6 +25,17 @@
   // slowness, where no budget could finish fast and stay honest about what it checked.
   const DETECT_BUDGET_CHARS = 1_000_000_000;
   const DETECT_BACKSTOP_MS = 10000;
+  const DETECT_WINDOW_CHARS = 40 * 1024;
+  const DETECT_WINDOW_OVERLAP = 8 * 1024;
+  const DETECT_PRIVATE_KEY_FALLBACK_CHARS = 64 * 1024;
+  const PEM_BEGIN = /-----[ \t]*BEGIN (?:[A-Z]+ )?PRIVATE KEY(?: BLOCK)?[ \t]*-----(?!-)/;
+  const PEM_END_SHAPE = /-----[ \t]*END (?:[A-Z]+ )?PRIVATE KEY(?: BLOCK)?[ \t]*-----(?!-)/;
+  const PEM_END = /-----[ \t]*END (?:[A-Z]+ )?PRIVATE KEY(?: BLOCK)?[ \t]*-----(?!-)/g;
+
+  function partialPem(value) {
+    const begin = PEM_BEGIN.exec(value);
+    return begin && !PEM_END_SHAPE.test(value) && value.length > begin[0].length ? begin[0] : null;
+  }
 
   // ---------- Text as copied from web pages, documents and chat apps ----------
   // Invisible characters, exotic spaces and dashes, and full-width or other-script digits could hide a leak, so
@@ -181,6 +192,76 @@
     return clean.charCodeAt(next) === 10 ? next + 1 : newline + 1;
   }
 
+  // YAML literal scalars indent every content line. Keep that indentation in the source map, but omit it from
+  // the joined reading so a wrapped value can still match its provider rule.
+  function yamlLiteralBlockLines(clean) {
+    if (!clean.includes("\n") || !clean.includes(":") || !clean.includes("|")) return null;
+    const headerPattern = /:[ \t]*\|[+-]?[1-9]?[+-]?[ \t]*(?:#[^\r\n]*)?\r?$/m;
+    if (!headerPattern.test(clean)) return null;
+
+    const lines = new Map();
+    let block = null;
+    for (let lineStart = 0; lineStart < clean.length;) {
+      let lineEnd = clean.indexOf("\n", lineStart);
+      if (lineEnd < 0) lineEnd = clean.length;
+      let contentEnd = lineEnd;
+      if (contentEnd > lineStart && clean.charCodeAt(contentEnd - 1) === 13) contentEnd--;
+      let firstText = lineStart;
+      while (firstText < contentEnd && clean.charCodeAt(firstText) === 32) firstText++;
+      const indent = firstText - lineStart;
+      const blank = firstText === contentEnd;
+
+      if (block?.contentIndent === null) {
+        if (!blank) {
+          if (indent <= block.parentIndent) block = null;
+          else {
+            const contentIndent = block.explicitIndent === null ? indent : block.parentIndent + block.explicitIndent;
+            if (indent < contentIndent) block = null;
+            else {
+              block.contentIndent = contentIndent;
+              const line = { contentStart: lineStart + contentIndent, block };
+              lines.set(lineStart, line);
+              lines.set(line.contentStart, line);
+            }
+          }
+        }
+      } else if (block) {
+        if (!blank) {
+          if (indent < block.contentIndent) block = null;
+          else {
+            const line = { contentStart: lineStart + block.contentIndent, block };
+            lines.set(lineStart, line);
+            lines.set(line.contentStart, line);
+          }
+        }
+      }
+
+      if (!block && !blank) {
+        const header = /^([^:]+):[ \t]*\|([+-]?[1-9]?[+-]?)[ \t]*(?:#[^\r\n]*)?$/.exec(
+          clean.slice(firstText, contentEnd),
+        );
+        if (header) {
+          const explicitIndent = /[1-9]/.exec(header[2])?.[0];
+          const label = header[1].replace(/^['"]|['"]$/g, "");
+          block = {
+            parentIndent: indent,
+            explicitIndent: explicitIndent === undefined ? null : Number(explicitIndent),
+            contentIndent: null,
+            sensitive: /(?:credential|secret|token|api[_. -]?key|password|private[_. -]?key)/i.test(label),
+          };
+        }
+      }
+
+      if (lineEnd === clean.length) break;
+      lineStart = lineEnd + 1;
+    }
+    return lines.size ? lines : null;
+  }
+
+  function yamlContentLine(yamlLines, lineStart) {
+    return yamlLines?.get(lineStart) || null;
+  }
+
   // The start of a key whose own shape says what it is, so even a short first line of it is worth joining. An
   // email's quoted-printable "=" ending one of those lines is its soft break, not base64 padding.
   const KEY_START = /^(?:AKIA|ASIA|gh[pousr]_|github_pat_|glpat-|sk-|[sr]k_(?:live|test)_|xox[abpors]-|AIza|hf_|npm_)/;
@@ -195,12 +276,13 @@
     return start < lineEnd - 1 ? lineEnd - 1 : lineEnd;
   }
 
-  function hasTokenLineBreak(clean) {
+  function hasTokenLineBreak(clean, yamlLines) {
     for (let newline = clean.indexOf("\n"); newline >= 0; newline = clean.indexOf("\n", newline + 1)) {
       let before = newline - 1;
       if (before >= 0 && clean.charCodeAt(before) === 13) before--;
       if (before > 0 && clean.charCodeAt(before) === 92) before--;
-      const after = afterBreak(clean, newline);
+      const afterBreakStart = afterBreak(clean, newline);
+      const after = yamlContentLine(yamlLines, afterBreakStart)?.contentStart ?? afterBreakStart;
       if (
         before >= 0 &&
         after < clean.length &&
@@ -217,7 +299,7 @@
   const TAIL_WORD = /^[A-Z]?[a-z]+\.*$/;
 
   // Keep the removed line breaks in the source positions so Cover it can replace the exact pasted span.
-  function withoutTokenLineBreaks(clean, jsonBreaks) {
+  function withoutTokenLineBreaks(clean, jsonBreaks, yamlLines) {
     const joined = [];
     let current = null;
     let joinedRuns = 0;
@@ -231,18 +313,29 @@
     let lineStart = 0;
     for (let newline = clean.indexOf("\n"); newline >= 0; newline = clean.indexOf("\n", newline + 1)) {
       const fromJson = Boolean(jsonBreaks?.has(newline));
+      const currentYamlLine = yamlContentLine(yamlLines, lineStart);
+      const currentStart = currentYamlLine?.contentStart ?? lineStart;
       let lineEnd = newline;
       if (lineEnd > lineStart && clean.charCodeAt(lineEnd - 1) === 13) lineEnd--;
-      lineEnd = wordEnd(clean, lineStart, lineEnd);
+      lineEnd = wordEnd(clean, currentStart, lineEnd);
       let leftStart = lineEnd;
-      while (leftStart > lineStart && isTokenCode(clean.charCodeAt(leftStart - 1))) leftStart--;
-      const rightStart = afterBreak(clean, newline);
-      newline = rightStart - 1;
+      while (leftStart > currentStart && isTokenCode(clean.charCodeAt(leftStart - 1))) leftStart--;
+      const afterBreakStart = afterBreak(clean, newline);
+      const nextYamlLine = yamlContentLine(yamlLines, afterBreakStart);
+      const sameYamlBlock = currentYamlLine && nextYamlLine && currentYamlLine.block === nextYamlLine.block;
+      const rightStart = sameYamlBlock ? nextYamlLine.contentStart : afterBreakStart;
       let rightEnd = rightStart;
       while (rightEnd < clean.length && isTokenCode(clean.charCodeAt(rightEnd))) rightEnd++;
       const leftLength = lineEnd - leftStart;
       const rightLength = rightEnd - rightStart;
-      const assignment = /^[A-Z][A-Z0-9_]{1,39}=/.test(clean.slice(rightStart, rightStart + 42));
+      const sensitiveYamlWrap =
+        sameYamlBlock && currentYamlLine.block.sensitive && lineEnd - currentStart >= 16 && leftLength >= 8;
+      const continuationAssignment = /^[A-Z][A-Z0-9_]{1,39}=/.test(clean.slice(rightStart, rightStart + 42));
+      const splitAssignmentLabel =
+        sensitiveYamlWrap &&
+        continuationAssignment &&
+        (clean.charCodeAt(lineEnd - 1) === 95 || /^TWILIO_[A-Z0-9_]+$/.test(clean.slice(leftStart, lineEnd)));
+      const assignment = continuationAssignment && !splitAssignmentLabel;
       // A wrap goes on from a whole line, but a short line ends it.
       const continues = current && !current.tail && current.rightStart === leftStart && current.rightEnd === lineEnd;
       // A JSON string's \n right after its value's first few characters, like {"secret":"AK\nIA…"} or a connection
@@ -252,8 +345,11 @@
       while (firstLine > lineStart && !/[\s"]/.test(clean[firstLine - 1])) firstLine--;
       const valueStart =
         fromJson && lineEnd > firstLine && clean.charCodeAt(firstLine - 1) === 34 && /[^\s"]/.test(clean[rightStart]);
-      const leftLong = leftLength >= 16 || (leftLength >= 8 && KEY_START.test(clean.slice(leftStart, lineEnd)));
+      const leftLong =
+        leftLength >= 16 || (leftLength >= 8 && (KEY_START.test(clean.slice(leftStart, lineEnd)) || sensitiveYamlWrap));
       const eligible = (leftLong || continues || valueStart) && (rightLength > 0 || valueStart) && !assignment;
+      const nextLineStart = eligible && sameYamlBlock ? rightStart : afterBreakStart;
+      newline = nextLineStart - 1;
       // A next line under 8 characters is either a wrapped value's last bit or the next word, like the "Thanks"
       // under a key, so it joins only as a tail, which detect() keeps when the value needs it.
       const tail = rightLength < 8;
@@ -290,7 +386,7 @@
       } else {
         keepCurrent();
       }
-      lineStart = newline + 1;
+      lineStart = nextLineStart;
     }
     keepCurrent();
     if (!joined.length) return null;
@@ -341,7 +437,130 @@
   // words shown on screen, since decide.js's whoAsks turns a reason into that wording. Nothing about a reason is
   // ever stored.
   function detect(text) {
+    const scan = { deadline: Date.now() + DETECT_BACKSTOP_MS, charsLeft: DETECT_BUDGET_CHARS, timedOut: false };
+    if (text.length <= DETECT_WINDOW_CHARS) return detectWindow(text, scan);
+
+    // Keep every rule's input bounded, and share one budget across the whole paste. The overlap preserves values
+    // that cross a seam; matches returned from a window are mapped to the text as the person wrote it. A PEM key
+    // longer than the overlap gets one bounded, key-only pass below so its body is not split across results.
+    const merged = new Map();
+    const partialPrivateKeys = new Map();
+    const merge = (results, windowText, windowStart) => {
+      for (const result of results) {
+        if (result.id === "private_key") {
+          for (const match of result.matches) {
+            if (!partialPem(match)) continue;
+            let at = 0;
+            while ((at = windowText.indexOf(match, at)) >= 0) {
+              let partials = partialPrivateKeys.get(windowStart + at);
+              if (!partials) {
+                partials = new Set();
+                partialPrivateKeys.set(windowStart + at, partials);
+              }
+              partials.add(match);
+              at += Math.max(1, match.length);
+            }
+          }
+        }
+        let entry = merged.get(result.id);
+        if (!entry) {
+          entry = { pattern: result, matches: new Set(), reasonOf: new Map(), asks: new Set() };
+          merged.set(result.id, entry);
+        }
+        for (const match of result.matches) entry.matches.add(match);
+        for (const [match, reason] of result.reasonOf || []) entry.reasonOf.set(match, reason);
+        for (const ask of result.asks || []) entry.asks.add(ask);
+      }
+    };
+
+    let from = 0;
+    while (from < text.length) {
+      let to = Math.min(from + DETECT_WINDOW_CHARS, text.length);
+      if (to < text.length && text.charCodeAt(to - 1) >= 0xd800 && text.charCodeAt(to - 1) <= 0xdbff) to--;
+      const windowText = text.slice(from, to);
+      merge(detectWindow(windowText, scan), windowText, from);
+      if (scan.timedOut || to === text.length) break;
+      from = to - DETECT_WINDOW_OVERLAP;
+      if (from > 0 && text.charCodeAt(from) >= 0xdc00 && text.charCodeAt(from) <= 0xdfff) from--;
+    }
+
+    if (!scan.timedOut && partialPrivateKeys.size) {
+      const pattern = PATTERNS.find((item) => item.id === "private_key");
+      const entry = merged.get("private_key");
+      const partialCounts = new Map();
+      for (const partials of partialPrivateKeys.values()) {
+        for (const partial of partials) partialCounts.set(partial, (partialCounts.get(partial) || 0) + 1);
+      }
+      for (const [at, partials] of partialPrivateKeys) {
+        const partial = partials.values().next().value;
+        const begin = PEM_BEGIN.exec(partial);
+        if (!begin) {
+          scan.truncated = true;
+          continue;
+        }
+        PEM_END.lastIndex = at + begin[0].length;
+        const footer = PEM_END.exec(text);
+        const footerEnd = footer ? footer.index + footer[0].length : -1;
+        if (
+          (footerEnd >= 0 && footerEnd - at > DETECT_PRIVATE_KEY_FALLBACK_CHARS) ||
+          (footerEnd < 0 && text.length - at > DETECT_PRIVATE_KEY_FALLBACK_CHARS)
+        ) {
+          scan.truncated = true;
+          continue;
+        }
+        const to = footerEnd >= 0 ? footerEnd : text.length;
+        const block = text.slice(at, to);
+        const cost = block.length * 2; // clean the candidate and run the private-key rule once
+        scan.charsLeft -= cost;
+        if (scan.charsLeft <= 0 || Date.now() > scan.deadline) {
+          scan.timedOut = true;
+          scan.truncated = true;
+          console.info(LOG, "a scan ran past its time limit; sending what it found so far");
+          break;
+        }
+        const cleaned = cleanText(block);
+        for (const match of pattern.find(cleaned.clean)) {
+          const matchAt = cleaned.clean.indexOf(match);
+          if (matchAt < 0) continue;
+          const raw =
+            cleaned.start === null
+              ? match
+              : block.slice(cleaned.start[matchAt], cleaned.end[matchAt + match.length - 1]);
+          if (!raw) continue;
+          for (const previous of partials) {
+            if (!raw.includes(previous)) continue;
+            const remaining = partialCounts.get(previous) - 1;
+            if (remaining <= 0) {
+              partialCounts.delete(previous);
+              entry.matches.delete(previous);
+            } else {
+              partialCounts.set(previous, remaining);
+            }
+          }
+          entry.matches.add(raw);
+        }
+      }
+    }
+
+    const order = new Map([...PATTERNS, ...vaultKinds()].map((pattern, index) => [pattern.id, index]));
+    const results = [...merged.values()].map(({ pattern, matches, reasonOf, asks }) => {
+      const result = { ...pattern, matches: [...matches] };
+      if (reasonOf.size) result.reasonOf = reasonOf;
+      if (asks.size) result.asks = [...asks];
+      return result;
+    });
+    results.sort(
+      (a, b) =>
+        SEVERITY_RANK[b.severity] - SEVERITY_RANK[a.severity] ||
+        (order.get(a.id) ?? Number.MAX_SAFE_INTEGER) - (order.get(b.id) ?? Number.MAX_SAFE_INTEGER),
+    );
+    if (scan.truncated || scan.timedOut) results.truncated = true;
+    return results;
+  }
+
+  function detectWindow(text, scan) {
     const { clean, start, end, jsonBreaks } = cleanText(text);
+    const yamlLines = yamlLiteralBlockLines(clean);
     const results = [];
     const kinds = [...PATTERNS, ...vaultKinds()];
     const why = [new Map(), new Map(), new Map()]; // one per reading: value → reason
@@ -351,16 +570,19 @@
           ? pattern.find(t, reasons)
           : pattern.find(t)
         : t.match(pattern.regex) || [];
-    const deadline = Date.now() + DETECT_BACKSTOP_MS;
-    let charsLeft = DETECT_BUDGET_CHARS;
-    let timedOut = false;
+    const { deadline } = scan;
+    let charsLeft = scan.charsLeft;
+    let timedOut = scan.timedOut;
     // `cost` is the length of text this call is about to hand a pattern, spent from the character budget before
     // the wall clock is even looked at, since that budget alone is enough for anything normal.
     const withinBudget = (cost) => {
-      if (timedOut) return false;
+      if (timedOut || scan.timedOut) return false;
       charsLeft -= cost;
+      scan.charsLeft = charsLeft;
       if (charsLeft > 0 && Date.now() <= deadline) return true;
       timedOut = true;
+      scan.timedOut = true;
+      scan.truncated = true;
       console.info(LOG, "a scan ran past its time limit; sending what it found so far");
       return false;
     };
@@ -375,8 +597,8 @@
         )
       : [];
     const joinedReading =
-      (jsonBreaks?.size || hasTokenLineBreak(clean)) && withinBudget(clean.length)
-        ? withoutTokenLineBreaks(clean, jsonBreaks)
+      (jsonBreaks?.size || hasTokenLineBreak(clean, yamlLines)) && withinBudget(clean.length)
+        ? withoutTokenLineBreaks(clean, jsonBreaks, yamlLines)
         : null;
     // The vault's own words and formats don't read Bandage labels (patterns.js' findVault), and a team's kinds are
     // just more vault entries.
@@ -630,7 +852,7 @@
     // already reads. A host has to read this flag off detect()'s own return value, since map/filter/flatMap
     // all build a new array and leave it behind.
     const flagged = (arr) => {
-      if (timedOut) arr.truncated = true;
+      if (timedOut || scan.timedOut || scan.truncated) arr.truncated = true;
       return arr;
     };
     if (!start) return flagged(kept);
@@ -1325,6 +1547,9 @@
     SEVERITY_RANK,
     DETECT_BUDGET_CHARS,
     DETECT_BACKSTOP_MS,
+    DETECT_WINDOW_CHARS,
+    DETECT_WINDOW_OVERLAP,
+    DETECT_PRIVATE_KEY_FALLBACK_CHARS,
     detect,
     redact,
     generalize,

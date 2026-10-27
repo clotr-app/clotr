@@ -15,13 +15,19 @@
     globalThis.Clotr?.msg ||
     ((_key, english, ...subs) => english.replace(/\$(\d)/g, (_match, n) => String(subs[n - 1] ?? "")));
 
-  // Brave's user agent reads as Chrome, so it shares the Chrome Web Store link; only Firefox and Edge need
-  // their own. Takes a user agent string so it can be tested without a browser.
-  function rateUrl(ua) {
+  // Which browser family this is: "firefox", "edge" or "chrome". Brave's user agent reads as Chrome, so it
+  // counts as Chrome, which is right for both its store and its menus. The welcome page's pin steps use it too.
+  // Takes a user agent string so it can be tested without a browser.
+  function browserFor(ua) {
     const s = typeof ua === "string" ? ua : (typeof navigator !== "undefined" && navigator.userAgent) || "";
-    if (/\bFirefox\//.test(s)) return STORE_URLS.firefox;
-    if (/\bEdg\//.test(s)) return STORE_URLS.edge;
-    return STORE_URLS.chrome;
+    if (/\bFirefox\//.test(s)) return "firefox";
+    if (/\bEdg\//.test(s)) return "edge";
+    return "chrome";
+  }
+
+  // Only Firefox and Edge need their own store link; Brave shares the Chrome Web Store.
+  function rateUrl(ua) {
+    return STORE_URLS[browserFor(ua)];
   }
 
   // Fills the placeholder element with this id. Safe to call more than once; only the first mount does
@@ -39,7 +45,7 @@
     host.append(link);
   }
 
-  globalThis.Clotr = { ...(globalThis.Clotr || {}), Rate: { mount, rateUrl, STORE_URLS } };
+  globalThis.Clotr = { ...(globalThis.Clotr || {}), Rate: { mount, rateUrl, browserFor, STORE_URLS } };
 
   if (typeof document !== "undefined") for (const id of ["rate-root", "rate-root-whatsnew"]) mount(id);
 })();

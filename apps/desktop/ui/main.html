@@ -1,0 +1,920 @@
+<!doctype html>
+
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="color-scheme" content="dark light" />
+    <title>Clotr</title>
+
+    <link rel="icon" href="data:," />
+    <link rel="stylesheet" href="theme.css" />
+    <link rel="stylesheet" href="main.css" />
+    <link rel="stylesheet" href="shield.css" />
+    <link rel="stylesheet" href="scan.css" />
+    <link rel="stylesheet" href="lookback.css" />
+    <link rel="stylesheet" href="note.css" />
+    <link rel="stylesheet" href="detailed.css" />
+    <script defer src="dist/desktop-features.js"></script>
+    <script defer src="dist/clotr-engine.js"></script>
+    <script defer src="dist/app-words.js"></script>
+    <script defer src="dist/ai-sites.js"></script>
+    <script defer src="words.js"></script>
+    <script defer src="tauri.js"></script>
+    <script defer src="move-file.js"></script>
+    <script defer src="tourniquet.js"></script>
+    <script defer src="scamcheck.js"></script>
+    <script defer src="home.js"></script>
+    <script defer src="findings.js"></script>
+    <script defer src="plan.js"></script>
+    <script defer src="file-kinds.js"></script>
+    <script defer src="results-note.js"></script>
+    <script defer src="note.js"></script>
+    <script defer src="guided.js"></script>
+    <script defer src="actions.js"></script>
+    <script defer src="found-feed.js"></script>
+    <script defer src="trace.js"></script>
+    <script defer src="eta.js"></script>
+    <script defer src="scan.js"></script>
+    <script defer src="lookback.js"></script>
+    <script defer src="summary.js"></script>
+    <script defer src="scope.js"></script>
+    <script defer src="detailed.js"></script>
+    <script defer src="results.js"></script>
+    <script defer src="protection.js"></script>
+    <script defer src="history.js"></script>
+    <script defer src="settings.js"></script>
+    <script defer src="main.js"></script>
+  </head>
+  <body class="glow">
+
+    <svg class="sprite" aria-hidden="true" focusable="false">
+      <symbol id="i-home" viewBox="0 0 24 24"><path d="M4 10.5 12 4l8 6.5V19a1 1 0 0 1-1 1h-4.5v-6h-5v6H5a1 1 0 0 1-1-1z" /></symbol>
+      <symbol id="i-scan" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8.5" /><circle cx="12" cy="12" r="3.5" /><path d="M12 12l6-6" /></symbol>
+      <symbol id="i-results" viewBox="0 0 24 24"><path d="M9.5 6.5H20M9.5 12H20M9.5 17.5H20" /><path d="M4.5 6.5h.01M4.5 12h.01M4.5 17.5h.01" class="dotted" /></symbol>
+      <symbol id="i-protect" viewBox="0 0 24 24"><path d="M12 3.2 5 6v5.4c0 4.3 2.9 7.9 7 9.4 4.1-1.5 7-5.1 7-9.4V6z" /><path d="m9 12 2.2 2.2L15.5 10" /></symbol>
+      <symbol id="i-history" viewBox="0 0 24 24"><path d="M3.5 12a8.5 8.5 0 1 0 2.6-6.1L3.5 8.5" /><path d="M3.5 3.8v4.7h4.7" /><path d="M12 7.5V12l3 2" /></symbol>
+      <symbol id="i-settings" viewBox="0 0 24 24"><path d="M4 7h9.5M18.5 7H20M4 17h3.5M12.5 17H20" /><circle cx="16" cy="7" r="2.5" /><circle cx="10" cy="17" r="2.5" /></symbol>
+      <symbol id="i-file" viewBox="0 0 24 24"><path d="M13.5 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8.5z" /><path d="M13.5 3v5.5H19" /><path d="M8.5 13h7M8.5 16.5h5" /></symbol>
+      <symbol id="i-puzzle" viewBox="0 0 24 24"><path d="M9.5 4.5a2.5 2.5 0 0 1 5 0V6H18v3.5h-1.5a2.5 2.5 0 0 0 0 5H18V18h-3.5v-1.5a2.5 2.5 0 0 0-5 0V18H6v-3.5h1.5a2.5 2.5 0 0 0 0-5H6V6h3.5z" /></symbol>
+      <symbol id="i-lookback" viewBox="0 0 24 24"><path d="M20.5 11.5a8 8 0 0 1-11.7 7.1L4 19.8l1.2-4.4a8 8 0 1 1 15.3-3.9z" /><path d="M12.5 8v4l2.5 1.5" /></symbol>
+      <symbol id="i-checkup" viewBox="0 0 24 24"><rect x="5" y="4.5" width="14" height="16.5" rx="2.5" /><path d="M9 4.5V3h6v1.5" /><path d="m8.5 11 1.6 1.6 3-3M8.5 16.5h7" /></symbol>
+      <symbol id="i-folder" viewBox="0 0 24 24"><path d="M3.5 7.5a2 2 0 0 1 2-2h3.8l2 2h7.2a2 2 0 0 1 2 2v7.5a2 2 0 0 1-2 2h-13a2 2 0 0 1-2-2z" /></symbol>
+      <symbol id="i-offline" viewBox="0 0 24 24"><path d="M3.5 3.5l17 17" /><path d="M8.5 17.5H7a4.2 4.2 0 0 1-1.1-8.3M10.6 6.3A6 6 0 0 1 17.9 11h.6a3.4 3.4 0 0 1 2 6.2" /></symbol>
+      <symbol id="i-info" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8.5" /><path d="M12 11v5.5M12 7.8h.01" /></symbol>
+
+      <symbol id="i-st-clean" viewBox="0 0 16 16">
+        <circle cx="8" cy="8" r="7.5" style="fill: var(--good); stroke: none" />
+        <path d="M4.6 8.4l2.2 2.2 4.6-4.8" style="fill: none; stroke: var(--tm-on-good); stroke-width: 1.9" />
+      </symbol>
+      <symbol id="i-st-personal" viewBox="0 0 16 16">
+        <path d="M8 1.6 14.6 13.9H1.4z" style="fill: var(--tm-warn-fill); stroke: var(--tm-warn-fill); stroke-width: 1.6" />
+        <path d="M8 5.9v3.7" style="stroke: var(--tm-on-warn); stroke-width: 1.8" />
+        <circle cx="8" cy="11.8" r="1" style="fill: var(--tm-on-warn); stroke: none" />
+      </symbol>
+      <symbol id="i-st-look" viewBox="0 0 16 16">
+        <circle cx="8" cy="8" r="7.5" style="fill: var(--err); stroke: none" />
+        <g transform="rotate(-35 8 8)">
+          <rect x="2.4" y="5.6" width="11.2" height="4.8" rx="1" style="fill: #fff8f0; stroke: #1f2226; stroke-width: 0.8" />
+          <rect x="6.3" y="6.6" width="3.4" height="2.8" rx="0.5" style="fill: #ff6700; stroke: none" />
+        </g>
+      </symbol>
+      <symbol id="i-st-reading" viewBox="0 0 16 16">
+        <circle cx="8" cy="8" r="6.6" style="fill: none; stroke: var(--tm-pulse); stroke-width: 1.8" />
+        <circle cx="8" cy="8" r="2.6" style="fill: var(--tm-pulse); stroke: none" />
+      </symbol>
+      <symbol id="i-st-waiting" viewBox="0 0 16 16">
+        <circle cx="8" cy="8" r="6" style="fill: none; stroke: var(--line); stroke-width: 1.4; stroke-dasharray: 2.2 2.2" />
+      </symbol>
+      <symbol id="i-st-unread" viewBox="0 0 16 16">
+        <circle cx="8" cy="8" r="6.6" style="fill: none; stroke: var(--muted); stroke-width: 1.6" />
+        <path d="M4.2 11.8 11.8 4.2" style="stroke: var(--muted); stroke-width: 1.6" />
+      </symbol>
+    </svg>
+
+    <a class="skip" href="#main" data-w="ws.skip"></a>
+
+    <div class="app">
+
+      <aside class="side glass" aria-label="Clotr">
+        <div class="brand">
+          <img class="brand-icon" src="app-icon.svg" alt="" width="34" height="34" />
+          <span class="brand-words"><b>Clotr</b><small data-w="ws.brandFor"></small></span>
+        </div>
+        <nav class="nav" data-w-label="ws.sections">
+          <a href="#home" data-screen="home" data-w-title="ws.navHome"><svg aria-hidden="true"><use href="#i-home" /></svg><span data-w="ws.navHome"></span></a>
+          <a href="#scan" data-screen="scan" data-w-title="ws.navScan"><svg aria-hidden="true"><use href="#i-scan" /></svg><span data-w="ws.navScan"></span></a>
+          <a href="#results" data-screen="results" data-w-title="ws.navResults"><svg aria-hidden="true"><use href="#i-results" /></svg><span data-w="ws.navResults"></span></a>
+          <a href="#protection" data-screen="protection" data-w-title="ws.navProtection"><svg aria-hidden="true"><use href="#i-protect" /></svg><span data-w="ws.navProtection"></span></a>
+          <a href="#history" data-screen="history" data-w-title="ws.navHistory"><svg aria-hidden="true"><use href="#i-history" /></svg><span data-w="ws.navHistory"></span></a>
+          <a href="#settings" data-screen="settings" data-w-title="ws.navSettings"><svg aria-hidden="true"><use href="#i-settings" /></svg><span data-w="ws.navSettings"></span></a>
+        </nav>
+        <div class="offline" id="offline">
+          <svg aria-hidden="true"><use href="#i-offline" /></svg>
+          <p><b data-w="ws.offline"></b><span data-w="ws.offlineSub"></span></p>
+        </div>
+      </aside>
+
+      <main class="main" id="main" tabindex="-1">
+
+        <section class="screen" data-screen="home" id="screen-home" aria-labelledby="title-home">
+          <div class="hero panel glass">
+
+            <div class="shield" id="home-shield" data-status="quiet" aria-hidden="true">
+              <svg viewBox="0 0 196 196" focusable="false">
+                <defs>
+                  <linearGradient id="shield-line" x1="0" y1="0" x2="1" y2="1"><stop offset="0" class="g1" /><stop offset="1" class="g2" /></linearGradient>
+                  <linearGradient id="shield-seam" gradientUnits="userSpaceOnUse" x1="0" y1="54" x2="0" y2="146"><stop offset="0" class="g2" /><stop offset="1" class="g1" /></linearGradient>
+                </defs>
+                <path class="o draw" pathLength="1" style="--d: 1.8s" d="M98 12 C126 24 150 28 172 30 V92 C172 136 140 166 98 184 C56 166 24 136 24 92 V30 C46 28 70 24 98 12 Z" />
+                <path class="i1 draw" pathLength="1" style="--d: 1.6s; --w: 0.25s" transform="translate(98 98) scale(0.84) translate(-98 -98)" d="M98 12 C126 24 150 28 172 30 V92 C172 136 140 166 98 184 C56 166 24 136 24 92 V30 C46 28 70 24 98 12 Z" />
+                <path class="i2 draw" pathLength="1" style="--d: 1.5s; --w: 0.45s" transform="translate(98 98) scale(0.68) translate(-98 -98)" d="M98 12 C126 24 150 28 172 30 V92 C172 136 140 166 98 184 C56 166 24 136 24 92 V30 C46 28 70 24 98 12 Z" />
+                <path class="k draw" pathLength="1" style="--d: 0.8s; --w: 1.1s" d="M98 54 L98 146" />
+                <path class="k st draw" pathLength="1" style="--d: 0.28s; --w: 1.70s" d="M88 61 L108 71" />
+                <path class="k st draw" pathLength="1" style="--d: 0.28s; --w: 1.88s" d="M88 78 L108 88" />
+                <path class="k st draw" pathLength="1" style="--d: 0.28s; --w: 2.06s" d="M88 95 L108 105" />
+                <path class="k st draw" pathLength="1" style="--d: 0.28s; --w: 2.24s" d="M88 112 L108 122" />
+                <path class="k st draw" pathLength="1" style="--d: 0.28s; --w: 2.42s" d="M88 129 L108 139" />
+                <path class="glint" pathLength="1" d="M98 12 C126 24 150 28 172 30 V92 C172 136 140 166 98 184 C56 166 24 136 24 92 V30 C46 28 70 24 98 12 Z" />
+                <g class="flag" transform="translate(152 34)"><circle class="f" r="13" /><path d="M0 -6 V1.5" /><circle class="d" cy="6" r="1.6" /></g>
+
+                <circle class="scan-ring" pathLength="1" cx="98" cy="98" r="92" />
+              </svg>
+            </div>
+            <div class="hero-words" role="status">
+              <p class="hero-kicker"><span class="dot good" id="home-dot" aria-hidden="true"></span><span id="home-kicker"></span></p>
+              <h1 id="title-home" tabindex="-1"></h1>
+              <p class="hero-lead" id="home-lead"></p>
+              <p class="hero-link" id="home-browser"><button class="btn text" id="home-extension" type="button" data-w="ws.getExtension"></button></p>
+              <p class="hero-start" id="home-start" hidden>
+                <span id="home-start-label"></span>
+                <button class="switch" id="home-start-switch" type="button" role="switch" aria-checked="false" aria-labelledby="home-start-label"></button>
+              </p>
+              <p class="hero-lead" id="home-unmatched-maker" hidden></p>
+              <p class="hero-lead" id="home-typing-blind" hidden></p>
+
+              <p class="hero-lead" id="home-scanning" hidden>
+                <span id="home-scanning-text"></span>
+              </p>
+              <p class="hero-actions" id="home-actions-default">
+                <a class="btn primary" href="#scan" id="home-run" data-w="ws.runQuick"></a>
+                <a class="btn" href="#scan" id="home-choose" data-w="ws.choose"></a>
+                <button class="btn primary" id="home-resume" type="button" data-w="ws.resume" hidden></button>
+              </p>
+              <p class="hero-actions" id="home-actions-scanning" hidden>
+                <a class="btn primary" href="#scan" id="home-scanning-link" data-w="ws.homeSeeScan"></a>
+              </p>
+            </div>
+          </div>
+
+          <h2 class="sec-title" id="scans-title" data-w="ws.scans"></h2>
+          <ul class="scan-cards" aria-labelledby="scans-title">
+            <li>
+              <a class="card go scan-card" href="#scan" id="home-files">
+                <span class="sc-icon" aria-hidden="true"><svg><use href="#i-file" /></svg></span>
+                <b data-w="ws.files"></b>
+                <span data-w="ws.filesSub"></span>
+              </a>
+            </li>
+            <li hidden>
+              <a class="card go scan-card" href="#scan">
+                <span class="sc-icon" aria-hidden="true"><svg><use href="#i-puzzle" /></svg></span>
+                <b data-w="ws.ext"></b>
+                <span data-w="ws.extSub"></span>
+                <span class="tag soon" data-w="ws.soon"></span>
+              </a>
+            </li>
+            <li>
+              <a class="card go scan-card" href="#scan" id="home-lookback">
+                <span class="sc-icon" aria-hidden="true"><svg><use href="#i-lookback" /></svg></span>
+                <b data-w="ws.lookback"></b>
+                <span data-w="ws.lookbackSubHome"></span>
+              </a>
+            </li>
+            <li hidden>
+              <a class="card go scan-card" href="#scan">
+                <span class="sc-icon" aria-hidden="true"><svg><use href="#i-checkup" /></svg></span>
+                <b data-w="ws.checkup"></b>
+                <span data-w="ws.checkupSub"></span>
+                <span class="tag soon" data-w="ws.soon"></span>
+              </a>
+            </li>
+          </ul>
+
+          <div class="home-row">
+            <section class="card prot-sum" aria-labelledby="sum-title">
+              <h2 id="sum-title" data-w="ws.navProtection"></h2>
+              <ul class="rows">
+                <li class="row">
+                  <span class="dot good" id="sum-copy-dot" aria-hidden="true"></span>
+                  <span><b data-w="ws.copyCheck"></b><small id="sum-copy-apps"></small></span>
+                  <span class="tag good" id="sum-copy-tag"></span>
+                </li>
+                <li class="row" id="sum-typing-row">
+                  <span class="dot good" id="sum-typing-dot" aria-hidden="true"></span>
+                  <span id="sum-typing-label"><b data-w="ws.typingCheck"></b><small id="sum-typing-apps"></small></span>
+                  <button class="switch" id="typing-check" type="button" role="switch" aria-checked="true" aria-labelledby="sum-typing-label"></button>
+                </li>
+                <li class="row" hidden>
+                  <span class="dot good" aria-hidden="true"></span>
+                  <span><b data-w="ws.antibody"></b><small data-w="ws.antibodySub"></small></span>
+                  <span class="tag good" data-w="ws.on"></span>
+                </li>
+                <li class="row" id="sum-tq-row">
+                  <span class="dot good" id="sum-tq-dot" aria-hidden="true"></span>
+                  <span><b data-w="ws.tourniquet"></b><small id="sum-tq-sub"></small></span>
+                  <span class="tag good" id="sum-tq-tag"></span>
+                </li>
+              </ul>
+              <a class="btn text" href="#protection" data-w="ws.changeProt"></a>
+            </section>
+            <section class="card month" aria-labelledby="month-title">
+              <h2 id="month-title" data-w="ws.month"></h2>
+              <dl class="month-list">
+                <div><dt data-w="settings.redacted"></dt><dd id="month-redacted"></dd></div>
+                <div><dt data-w="settings.allowed"></dt><dd id="month-allowed"></dd></div>
+                <div><dt data-w="settings.suppressed"></dt><dd id="month-suppressed"></dd></div>
+              </dl>
+              <a class="btn text" href="#history" data-w="ws.openHistory"></a>
+            </section>
+          </div>
+
+          <section class="card sc-teaser" aria-labelledby="sc-teaser-title">
+            <h2 id="sc-teaser-title"></h2>
+            <p class="muted" id="sc-teaser-lead"></p>
+            <a class="btn" href="#scamcheck" id="sc-teaser-link"></a>
+          </section>
+        </section>
+
+        <section class="screen" data-screen="scan" id="screen-scan" aria-labelledby="title-scan">
+          <header class="screen-head">
+            <h1 id="title-scan" tabindex="-1" data-w="ws.navScan"></h1>
+            <p data-w="ws.readOnly"></p>
+          </header>
+
+          <div class="scan-layout">
+            <div class="scan-stage panel glass" id="scan-stage">
+              <div class="stage-head">
+                <div class="stage-words">
+                  <p class="stage-title" id="stage-title"></p>
+                  <p class="stage-sub" id="stage-sub"></p>
+                  <p class="stage-where" id="stage-where" aria-hidden="true"></p>
+                  <p class="stage-looking small" id="stage-looking" data-w="ws.lookingFor" hidden></p>
+                  <ol class="phases" id="phases" aria-label="Steps">
+                    <li data-phase="count" data-w="ws.stepCount"></li>
+                    <li data-phase="read" data-w="ws.stepRead"></li>
+                  </ol>
+                  <p class="stage-chosen" id="chosen-folders" hidden><span id="chosen-names"></span></p>
+                  <p class="stage-actions">
+                    <button class="btn primary" type="button" id="scan-start"></button>
+                    <button class="btn" type="button" id="scan-full-all" data-w="ws.readAll" hidden></button>
+                    <button class="btn" type="button" id="scan-rechoose" data-w="ws.rechoose" hidden></button>
+                    <button class="btn" type="button" id="scan-stop" data-w="ws.stop" hidden></button>
+                    <a class="btn primary" href="#results" id="scan-see" hidden></a>
+                    <button class="btn" type="button" id="scan-again" data-w="ws.again" hidden></button>
+                  </p>
+                  <p class="stage-offer" id="full-offer" hidden>
+                    <button class="btn sm" type="button" id="scan-offer-full" data-w="ws.offerFull"></button>
+                  </p>
+                  <p class="stage-offer" id="projects-note" hidden>
+                    <span id="projects-text"></span>
+                    <a class="btn sm" href="#settings" id="projects-change" data-w="ws.projectsChange"></a>
+                  </p>
+                </div>
+                <dl class="stage-stats" id="stage-stats">
+                  <div><dt data-w="ws.statFiles"></dt><dd id="st-files"></dd></div>
+                  <div><dt data-w="ws.statLook"></dt><dd id="st-found"></dd></div>
+                  <div><dt data-w="ws.statTime"></dt><dd id="st-time"></dd></div>
+                  <div id="st-left-row" hidden><dt data-w="ws.statLeft"></dt><dd id="st-left"></dd></div>
+                </dl>
+              </div>
+
+              <div class="scan-progress" id="scan-progress" aria-hidden="true" hidden><i id="scan-progress-fill"></i></div>
+
+              <div class="tm" id="trace" aria-hidden="true"></div>
+
+              <div class="stage-after">
+                <ul class="clean-list" id="clean-list" hidden></ul>
+                <p class="small muted" id="clean-limits" data-w="ws.nothingKnown" hidden></p>
+                <p class="stage-next" id="clean-next" hidden>
+                  <button class="btn sm" type="button" id="clean-lookback" data-w="ws.cleanNext"></button>
+                </p>
+                <p class="stage-offer" id="weekly-offer" hidden>
+                  <span data-w="ws.weeklyOfferAsk"></span>
+                  <button class="btn sm" type="button" id="weekly-offer-yes" data-w="ws.weeklyOfferYes"></button>
+                  <button class="btn sm" type="button" id="weekly-offer-no" data-w="ws.weeklyOfferNo"></button>
+                </p>
+              </div>
+              <p class="sr-only" id="scan-live" role="status" aria-live="polite"></p>
+            </div>
+
+            <div class="scan-below">
+              <section class="scan-pick" id="scan-pick" aria-labelledby="pick-title">
+                <h2 id="pick-title" data-w="ws.choose"></h2>
+                <div class="picks" role="radiogroup" aria-labelledby="pick-title">
+                  <button class="pick" type="button" role="radio" aria-checked="true" data-kind="quick" tabindex="0">
+                    <b data-w="ws.quick"></b><span data-w="ws.quickSub"></span><small data-w="ws.quickTime"></small><small hidden data-desktop-feature="scanTimes" data-last-scan="quick"></small>
+                  </button>
+                  <button class="pick" type="button" role="radio" aria-checked="false" data-kind="full" tabindex="-1">
+                    <b data-w="ws.full"></b><span data-w="ws.fullSub"></span><small data-w="ws.fullTime"></small><small hidden data-desktop-feature="scanTimes" data-last-scan="full"></small>
+                  </button>
+                  <button class="pick" type="button" role="radio" aria-checked="false" data-kind="chosen" tabindex="-1">
+                    <b data-w="ws.folders"></b><span data-w="ws.foldersSub"></span><small data-w="ws.foldersTime"></small><small hidden data-desktop-feature="scanTimes" data-last-scan="chosen"></small>
+                  </button>
+                  <button class="pick" type="button" role="radio" aria-checked="false" data-kind="lookback" tabindex="-1">
+                    <b data-w="ws.lookback"></b><span data-w="ws.lookbackSub"></span><small hidden data-desktop-feature="scanTimes" data-last-scan="lookback"></small>
+                  </button>
+                </div>
+                <p class="pick-leave"><a href="#settings" id="scan-leave-link" data-w="ws.leaveLink"></a></p>
+              </section>
+
+              <section class="feed" id="feed" aria-labelledby="feed-title" hidden>
+                <h2 id="feed-title" data-w="ws.soFar"></h2>
+                <div class="feed-groups" id="feed-list"></div>
+                <p class="feed-none" id="feed-none" data-w="ws.feedEmpty"></p>
+              </section>
+            </div>
+          </div>
+
+          <div class="scan-layout" id="lookback-flow" hidden>
+            <div class="lb-card panel glass" id="lb-start">
+              <h2 data-w="ws.lbStep1"></h2>
+              <p class="muted" id="lb-last-scan" hidden data-desktop-feature="scanTimes"></p>
+              <div class="lb-tabs" id="lb-tool-tabs" role="tablist" aria-label="Tool">
+                <button class="lb-tab" type="button" role="tab" data-tool="chatgpt" aria-selected="false"></button>
+                <button class="lb-tab" type="button" role="tab" data-tool="claude" aria-selected="false"></button>
+                <button class="lb-tab" type="button" role="tab" data-tool="gemini" aria-selected="false"></button>
+              </div>
+              <ol class="lb-tool-steps" id="lb-tool-steps"></ol>
+              <p class="btn-row">
+                <button class="btn" type="button" id="lb-open-tool"></button>
+                <button class="btn text" type="button" id="lb-open-help"></button>
+              </p>
+              <p class="muted small" data-w="ws.lbWait"></p>
+              <p class="muted small" data-w="ws.lbOnlyYou"></p>
+
+              <h2 data-w="ws.lbStep2"></h2>
+              <p class="muted small" data-w="ws.lbKinds"></p>
+              <div class="lb-drop" id="lb-dropzone" tabindex="0" role="button" data-w-label="ws.lbDropLabel">
+                <span data-w="ws.lbDrop"></span>
+              </div>
+              <p class="btn-row">
+                <button class="btn primary" type="button" id="lb-choose-file" data-w="ws.lbChoose"></button>
+                <button class="btn text" type="button" id="lb-choose-folder" data-w="ws.lbFolder"></button>
+              </p>
+              <input type="file" id="lb-file-input" hidden accept=".zip,.json" />
+              <input type="file" id="lb-folder-input" hidden webkitdirectory />
+              <p class="muted small" data-w="ws.lbLocal"></p>
+              <p class="note" id="lb-unsupported" role="status" hidden></p>
+              <p class="btn-row"><button class="btn" type="button" id="lb-try-again" data-w="ws.lbTryAgain" hidden></button></p>
+            </div>
+
+            <div class="lb-card panel glass" id="lb-reading" hidden>
+              <h2 id="lb-reading-heading"></h2>
+              <div class="lb-progress" id="lb-progress-bar" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0">
+                <div class="lb-progress-fill" id="lb-progress-fill"></div>
+              </div>
+              <p class="lb-progress-text">
+                <span id="lb-bytes-text"></span>
+                <span id="lb-time-left"></span>
+              </p>
+              <dl class="stage-stats">
+                <div><dd id="lb-stat-chats-line"></dd></div>
+                <div><dd id="lb-stat-found-line" data-n="0"></dd></div>
+              </dl>
+              <ol class="lb-steps" id="lb-steps-list"></ol>
+              <div class="lb-feed" id="lb-live-feed"></div>
+              <p class="sr-only" id="lb-live-region" role="status" aria-live="polite"></p>
+              <p class="btn-row">
+                <button class="btn" type="button" id="lb-stop" data-w="ws.stop"></button>
+                <span class="muted small" data-w="ws.lbStopNote"></span>
+              </p>
+            </div>
+
+            <div class="lb-card panel glass" id="lb-done" hidden>
+              <h2 id="lb-done-heading"></h2>
+              <p id="lb-done-sub"></p>
+              <p class="btn-row">
+                <a class="btn primary" href="#results" data-w="ws.seeFound"></a>
+                <button class="btn text" type="button" id="lb-again" data-w="ws.lbAnother"></button>
+              </p>
+              <p class="muted small" data-w="ws.lbHabit"></p>
+            </div>
+          </div>
+        </section>
+
+        <section class="screen" data-screen="results" id="screen-results" aria-labelledby="title-results">
+          <header class="screen-head row-head">
+            <div>
+              <h1 id="title-results" tabindex="-1" data-w="ws.navResults"></h1>
+              <p data-w="ws.resNote"></p>
+              <p class="small muted" id="res-scan-reach" data-w="ws.fullReach" hidden></p>
+              <p class="small muted" id="res-since" hidden>
+                <span id="res-since-text"></span>
+                <a class="btn sm" href="#scan" id="res-read-all" data-w="ws.readAll"></a>
+              </p>
+              <p class="small muted" id="res-skipped" hidden></p>
+            </div>
+            <p class="head-actions">
+              <button class="btn text" type="button" id="res-mode-switch" hidden></button>
+              <button class="btn" type="button" id="res-summary-open" data-w="ws.summary" hidden></button>
+              <button class="btn text" type="button" id="res-report" data-w="ws.reportProblem"></button>
+            </p>
+          </header>
+
+          <section id="res-chooser" class="card" hidden aria-labelledby="res-chooser-title">
+            <h2 id="res-chooser-title" data-w="ws.chooserTitle"></h2>
+            <div class="chooser-options">
+              <button class="chooser-opt" type="button" id="chooser-guided">
+                <span class="chooser-opt-head">
+                  <b data-w="ws.chooserGuided"></b>
+                  <span class="tag chooser-recommended" data-w="ws.recommended"></span>
+                </span>
+                <small data-w="ws.chooserGuidedLine"></small>
+              </button>
+              <button class="chooser-opt" type="button" id="chooser-detailed">
+                <span class="chooser-opt-head"><b data-w="ws.chooserDetailed"></b></span>
+                <small data-w="ws.chooserDetailedLine"></small>
+              </button>
+            </div>
+            <p class="small muted" data-w="ws.chooserNote"></p>
+          </section>
+
+          <section id="res-guided" hidden aria-labelledby="res-guided-title">
+            <h2 class="sr-only" id="res-guided-title" data-w="ws.navResults"></h2>
+            <div class="guided">
+              <div class="guided-rail">
+                <p class="guided-rail-top">
+                  <span data-w="ws.guidedTop"></span>
+                  <span id="guided-count"></span>
+                </p>
+                <div class="guided-progress" id="guided-progress" aria-hidden="true"></div>
+                <ol class="guided-rail-list" id="guided-rail-list"></ol>
+              </div>
+              <div class="guided-card" id="guided-card"></div>
+            </div>
+          </section>
+
+          <p class="res-lead" id="res-lead" hidden></p>
+          <section class="res-first" id="res-first" hidden aria-labelledby="res-first-title">
+            <h2 class="sec-title" id="res-first-title" data-w="ws.firstTitle"></h2>
+            <ol class="plan-steps" id="res-first-steps"></ol>
+          </section>
+
+          <details class="res-area" id="res-files" hidden>
+            <summary><span data-w="ws.areaFiles"></span><span class="rg-count" id="res-files-count"></span></summary>
+            <section id="res-plan" hidden aria-labelledby="res-plan-title">
+              <h2 class="sec-title" id="res-plan-title" data-w="ws.planTitle"></h2>
+              <p class="small muted" data-w="ws.planLead"></p>
+              <ol class="plan-steps" id="res-plan-steps"></ol>
+            </section>
+            <div class="wb" id="res-workbench"></div>
+            <p class="small all-done" id="res-all-done" hidden data-w="ws.allDone"></p>
+            <details class="res-deeper" id="res-scan-details" hidden>
+              <summary data-w="ws.seeDetails"></summary>
+              <div class="res-summary" id="res-files-summary"></div>
+            </details>
+          </details>
+
+          <details class="res-area" id="res-ext" hidden>
+            <summary><span data-w="ws.areaExt"></span><span class="rg-count" id="res-ext-count"></span></summary>
+            <p class="small muted" data-w="ws.extPlainLead"></p>
+            <p id="res-ext-headline"></p>
+            <p class="small muted" id="res-ext-checked"></p>
+
+            <div id="res-ext-worth">
+              <h3 class="sec-title" id="res-ext-worth-heading"></h3>
+              <div class="scan-cards" id="res-ext-worth-cards"></div>
+            </div>
+            <p class="muted" id="res-ext-none" data-w="ws.extNone" hidden></p>
+
+            <div id="res-ext-can-read">
+              <h3 class="sec-title" id="res-ext-can-read-heading"></h3>
+              <div class="scan-cards" id="res-ext-can-read-rows"></div>
+              <p class="small muted" data-w="ws.normal"></p>
+            </div>
+
+            <details id="res-ext-cant" hidden>
+              <summary></summary>
+              <div class="scan-cards"></div>
+            </details>
+            <details id="res-ext-off" hidden>
+              <summary></summary>
+              <div class="scan-cards"></div>
+            </details>
+          </details>
+
+          <details class="res-area" id="res-chats" hidden>
+            <summary><span data-w="ws.areaChats"></span><span class="rg-count" id="res-chats-count"></span></summary>
+            <p id="res-chats-found"></p>
+            <p class="small muted" id="res-chats-note"></p>
+            <p class="small muted" id="res-chats-gemini-days" data-w="ws.lbGeminiDays" hidden></p>
+
+            <div id="res-chats-steps"></div>
+            <details class="res-deeper" id="res-chat-details" hidden>
+              <summary data-w="ws.seeDetails"></summary>
+              <div class="lb-card" id="res-chats-what-now">
+                <h3 data-w="ws.whatToDo"></h3>
+                <ul class="lb-advice" id="res-chats-what-now-advice"></ul>
+                <div class="btn-row" id="res-chats-what-now-actions"></div>
+              </div>
+              <div class="lb-card">
+                <h3 data-w="ws.lbShared"></h3>
+                <div class="lb-shared-rows" id="res-chats-shared-rows"></div>
+                <p class="small muted" id="res-chats-different-note" data-w="ws.lbDifferentNote" hidden></p>
+              </div>
+            </details>
+
+            <div class="lb-card" id="res-chats-instructions" hidden>
+              <h3 data-w="ws.lbInstructions"></h3>
+              <p class="small muted" data-w="ws.lbInstructionsWhy"></p>
+              <div class="lb-tags" id="res-chats-instructions-kinds"></div>
+            </div>
+
+            <p class="small muted" data-w="ws.lbNewest"></p>
+            <div class="lb-cards" id="res-chats-cards"></div>
+            <p class="small muted" id="res-chats-more" hidden></p>
+
+            <div class="lb-card">
+              <h3 data-w="ws.lbNotRead"></h3>
+              <ul id="res-chats-notread-list"></ul>
+            </div>
+
+            <p class="btn-row"><button class="btn" type="button" id="res-chats-forget" data-w="ws.lbForget"></button></p>
+          </details>
+
+          <section id="res-letter" hidden aria-labelledby="res-letter-heading">
+            <h2 class="sec-title" id="res-letter-heading"></h2>
+            <p class="muted" data-w="ws.lbLetterLead"></p>
+            <p class="small muted" data-w="ws.lbQuicker"></p>
+
+            <fieldset class="lb-which">
+              <legend data-w="ws.lbWhichChats"></legend>
+              <div class="lb-chat-picks" id="res-letter-chat-picks"></div>
+            </fieldset>
+
+            <fieldset class="lb-places">
+              <legend data-w="ws.lbWherePlace"></legend>
+              <p class="small muted" data-w="ws.lbPlaceNote"></p>
+              <div class="lb-place-options">
+                <label><input type="radio" name="lb-letter-place" value="eu" /><span data-w="ws.lbPlaceEu"></span></label>
+                <label><input type="radio" name="lb-letter-place" value="uk" /><span data-w="ws.lbPlaceUk"></span></label>
+                <label><input type="radio" name="lb-letter-place" value="california" /><span data-w="ws.lbPlaceCalifornia"></span></label>
+                <label><input type="radio" name="lb-letter-place" value="other" /><span data-w="ws.lbPlaceOther"></span></label>
+              </div>
+            </fieldset>
+
+            <label class="lb-letter-label" for="res-letter-box" data-w="ws.lbYourLetter"></label>
+            <textarea class="lb-letter-box" id="res-letter-box" rows="12"></textarea>
+            <p class="small muted" id="res-letter-blanks"></p>
+            <p class="btn-row">
+              <button class="btn primary" type="button" id="res-letter-copy" data-w="ws.lbCopyLetter"></button>
+              <span class="small muted" id="res-letter-copy-status" role="status"></span>
+            </p>
+
+            <div id="res-letter-requests" hidden>
+              <button class="btn text" type="button" id="res-letter-requests-link"></button>
+            </div>
+            <p class="small muted" id="res-letter-email" hidden></p>
+
+            <h3 id="res-letter-next-title"></h3>
+            <p class="small muted" data-w="ws.lbNextText"></p>
+
+            <p class="btn-row"><button class="btn text" type="button" id="res-letter-back" data-w="ws.back"></button></p>
+          </section>
+
+          <section id="res-summary-panel" class="panel glass" hidden aria-labelledby="res-summary-heading">
+            <h2 class="sec-title" id="res-summary-heading" tabindex="-1" data-w="ws.summary"></h2>
+            <p class="muted" data-w="ws.summaryLead"></p>
+            <ul class="toggles">
+              <li>
+                <span id="sum-names-label" data-w="ws.summaryNames"></span>
+                <button class="switch" id="sum-names" type="button" role="switch" aria-checked="true" aria-labelledby="sum-names-label"></button>
+              </li>
+            </ul>
+            <div id="res-summary-preview"></div>
+            <p class="btn-row">
+              <button class="btn primary" type="button" id="res-summary-save" data-w="ws.summarySave"></button>
+              <button class="btn" type="button" id="res-summary-print" data-w="ws.summaryPrint"></button>
+              <button class="btn text" type="button" id="res-summary-close" data-w="ws.summaryClose"></button>
+            </p>
+            <p class="small muted" id="res-summary-status" role="status"></p>
+          </section>
+        </section>
+
+        <section class="screen" data-screen="protection" id="screen-protection" aria-labelledby="title-protection">
+          <header class="screen-head">
+            <h1 id="title-protection" tabindex="-1" data-w="ws.navProtection"></h1>
+            <p data-w="ws.protLead"></p>
+            <p><a class="btn text" href="#scamcheck" id="sc-prot-link"></a></p>
+          </header>
+          <p class="note paused-note" id="prot-paused" role="status" data-w="settings.paused" hidden></p>
+          <div class="prot-grid">
+            <section class="card prot-copy" aria-labelledby="copy-title">
+              <h2 id="copy-title" data-w="ws.copyCheck"></h2>
+              <p class="muted" data-w="ws.copyCheckLead"></p>
+              <p><button class="btn text" id="prot-extension" type="button" data-w="ws.getExtension"></button></p>
+              <ul class="app-rows" id="apps"></ul>
+              <p class="foot-note" data-w="settings.appsHint"></p>
+            </section>
+            <section class="card prot-warn" aria-labelledby="warn-title">
+              <h2 id="warn-title" data-w="ws.warnings"></h2>
+              <ul class="toggles">
+                <li>
+                  <span id="large-label"><b data-w="settings.largeTitle"></b><small data-w="settings.largeHint"></small></span>
+                  <button class="switch" id="large" type="button" role="switch" aria-checked="false" aria-labelledby="large-label"></button>
+                </li>
+              </ul>
+            </section>
+            <section class="card prot-more" aria-labelledby="more-title" hidden>
+              <h2 id="more-title" data-w="ws.protMore"></h2>
+              <ul class="rows">
+                <li class="row">
+                  <span class="dot good" aria-hidden="true"></span>
+                  <span><b data-w="ws.antibody"></b><small data-w="ws.antibodySub"></small></span>
+                  <span class="tag good" data-w="ws.on"></span>
+                </li>
+              </ul>
+            </section>
+            <section class="card prot-tourniquet" aria-labelledby="tq-title">
+              <h2 id="tq-title" data-w="ws.tourniquet"></h2>
+              <p class="muted" data-w="ws.tourniquetSub"></p>
+              <label class="sel inline" for="tq-pick"><span data-w="ws.tqPick"></span>
+                <select id="tq-pick">
+                  <option value="" data-w="ws.tqOffOpt"></option>
+                  <option value="child" data-w="ws.tqChildOpt"></option>
+                  <option value="adult" data-w="ws.tqAdultOpt"></option>
+                  <option value="after_scam" data-w="ws.tqScamOpt"></option>
+                </select>
+              </label>
+              <p class="foot-note" id="tq-days" hidden></p>
+            </section>
+            <section class="card prot-kinds" aria-labelledby="kinds-title">
+              <h2 id="kinds-title" data-w="settings.kindsTitle"></h2>
+              <p class="muted" data-w="settings.kindsHint"></p>
+              <div class="kinds" id="kinds"></div>
+            </section>
+          </div>
+        </section>
+
+        <section class="screen" data-screen="history" id="screen-history" aria-labelledby="title-history">
+          <header class="screen-head row-head">
+            <div>
+              <h1 id="title-history" tabindex="-1" data-w="ws.navHistory"></h1>
+              <p data-w="settings.historyHint"></p>
+            </div>
+            <p class="head-actions">
+              <label class="sel inline" for="keep"><span data-w="settings.keep"></span>
+                <select id="keep">
+                  <option value="90" data-w="settings.keep90"></option>
+                  <option value="365" data-w="settings.keep365"></option>
+                  <option value="730" data-w="settings.keep730"></option>
+                </select>
+              </label>
+              <button class="btn sm" id="clear" type="button" data-w="settings.clear"></button>
+            </p>
+          </header>
+          <section class="card chart-card" aria-labelledby="chart-title">
+            <h2 id="chart-title" data-w="ws.last12Weeks"></h2>
+            <div class="weeks" id="weeks" aria-hidden="true"></div>
+            <dl class="month-list" id="weeks-totals">
+              <div><dt data-w="settings.redacted"></dt><dd id="weeks-redacted"></dd></div>
+              <div><dt data-w="settings.allowed"></dt><dd id="weeks-allowed"></dd></div>
+              <div><dt data-w="settings.suppressed"></dt><dd id="weeks-suppressed"></dd></div>
+            </dl>
+          </section>
+          <section class="card table-card" aria-labelledby="scans-hist-title">
+            <h2 id="scans-hist-title" data-w="ws.scans"></h2>
+            <p class="muted" id="scans-empty" data-w="ws.scansEmpty"></p>
+            <div class="table-wrap">
+              <table class="events" id="scans-table" hidden>
+                <thead>
+                  <tr>
+                    <th scope="col" data-w="settings.colWhen"></th>
+                    <th scope="col" data-w="ws.scanRowKind"></th>
+                    <th scope="col" data-w="ws.scanRowRead"></th>
+                    <th scope="col" data-w="ws.scanRowFound"></th>
+                    <th scope="col" hidden data-desktop-feature="scanTimes" data-w="ws.scanRowTime"></th>
+                    <th scope="col" hidden data-desktop-feature="scanTimes" data-w="ws.scanRowChange"></th>
+                  </tr>
+                </thead>
+                <tbody></tbody>
+              </table>
+            </div>
+          </section>
+          <section class="card table-card" aria-labelledby="events-title">
+            <h2 id="events-title" data-w="ws.warnings"></h2>
+            <p class="muted" id="empty" data-w="settings.historyEmpty" hidden></p>
+            <div class="table-wrap">
+              <table class="events" id="history" hidden>
+                <thead>
+                  <tr>
+                    <th scope="col" data-w="settings.colWhen"></th>
+                    <th scope="col" data-w="settings.colApp"></th>
+                    <th scope="col" data-w="settings.colKind"></th>
+                    <th scope="col" data-w="settings.colChoice"></th>
+                  </tr>
+                </thead>
+                <tbody></tbody>
+              </table>
+            </div>
+          </section>
+        </section>
+
+        <section class="screen" data-screen="settings" id="screen-settings" aria-labelledby="title-settings">
+          <header class="screen-head">
+            <h1 id="title-settings" tabindex="-1" data-w="ws.navSettings"></h1>
+            <p data-w="settings.trial"></p>
+          </header>
+          <div class="set-grid">
+            <section class="card" aria-labelledby="general-title">
+              <h2 id="general-title" data-w="ws.general"></h2>
+              <ul class="toggles">
+                <li>
+                  <span id="start-label"><b data-w="ws.start"></b><small data-w="ws.startSub"></small><span class="tag soon" id="start-soon" data-w="ws.soon"></span><small id="start-note" hidden></small></span>
+                  <button class="switch" id="start-windows" type="button" role="switch" aria-checked="false" aria-labelledby="start-label" disabled></button>
+                </li>
+                <li>
+                  <span id="lang-label" data-w="ws.language"></span>
+                  <select id="language" aria-labelledby="lang-label">
+                    <option value="system" data-w="ws.languageSystem"></option>
+                    <option value="en" data-w="ws.languageEn"></option>
+                    <option value="es" data-w="ws.languageEs"></option>
+                  </select>
+                </li>
+                <li>
+                  <span id="look-label" data-w="ws.theme"></span>
+                  <select id="look" aria-labelledby="look-label">
+                    <option value="system" data-w="ws.themeSystem"></option>
+                    <option value="light" data-w="ws.themeLight"></option>
+                    <option value="plum" data-w="ws.themePlum"></option>
+                    <option value="ember" data-w="ws.themeEmber"></option>
+                  </select>
+                </li>
+                <li>
+                  <span id="motion-label" data-w="ws.motion"></span>
+                  <select id="motion" aria-labelledby="motion-label">
+                    <option value="system" data-w="ws.motionSystem"></option>
+                    <option value="still" data-w="ws.motionStill"></option>
+                  </select>
+                </li>
+              </ul>
+            </section>
+            <section id="one-clotr-card" class="card" aria-labelledby="one-clotr-title" data-desktop-feature="oneClotr" hidden>
+              <h2 id="one-clotr-title" data-w="oc_title"></h2>
+              <p id="one-clotr-state" role="status" data-w="oc_notConnected"></p>
+              <p id="one-clotr-consent" hidden></p>
+              <p id="one-clotr-browsers"></p>
+              <div class="head-actions">
+                <button class="btn primary" id="one-clotr-accept" type="button" data-w="oc_accept" hidden></button>
+                <button class="btn" id="one-clotr-decline" type="button" data-w="oc_notNow" hidden></button>
+                <button class="btn" id="one-clotr-disconnect" type="button" data-w="oc_disconnect" hidden></button>
+              </div>
+              <p class="muted" id="one-clotr-disconnect-sub" data-w="oc_disconnectSub" hidden></p>
+            </section>
+            <section class="card" aria-labelledby="results-set-title">
+              <h2 id="results-set-title" data-w="settings.secResults"></h2>
+              <ul class="toggles">
+                <li>
+                  <span id="results-mode-label" data-w="settings.resultsModeLabel"></span>
+                  <select id="results-mode" aria-labelledby="results-mode-label">
+                    <option value="guided" data-w="settings.resultsModeGuided"></option>
+                    <option value="detailed" data-w="settings.resultsModeDetailed"></option>
+                  </select>
+                </li>
+                <li>
+                  <span id="helper-name-label"><b data-w="settings.helperName"></b><small data-w="settings.helperNameHint"></small></span>
+                  <input id="helper-name" type="text" aria-labelledby="helper-name-label" autocomplete="off" maxlength="60" />
+                </li>
+              </ul>
+            </section>
+            <section class="card" aria-labelledby="notif-title">
+              <h2 id="notif-title" data-w="ws.notifTitle"></h2>
+              <p class="muted" data-w="ws.notifyLead"></p>
+              <ul class="toggles">
+                <li>
+                  <span id="weekly-label"><b data-w="ws.weekly"></b><small data-w="ws.weeklySub"></small></span>
+                  <button class="switch" id="weekly-check" type="button" role="switch" aria-checked="false" aria-labelledby="weekly-label"></button>
+                </li>
+                <li>
+                  <span id="notify-label"><b data-w="ws.notifyFind"></b></span>
+                  <button class="switch" id="notify-find" type="button" role="switch" aria-checked="true" aria-labelledby="notify-label"></button>
+                </li>
+              </ul>
+            </section>
+            <section class="card" id="leave-card" aria-labelledby="leave-title">
+              <h2 id="leave-title" data-w="settings.leaveTitle" tabindex="-1"></h2>
+              <ul class="toggles">
+                <li>
+                  <span id="dev-files-label"><b data-w="settings.devFiles"></b><small data-w="settings.devFilesSub"></small></span>
+                  <button class="switch" id="dev-files" type="button" role="switch" aria-checked="false" aria-labelledby="dev-files-label"></button>
+                </li>
+              </ul>
+              <p class="muted" data-w="settings.leaveHint"></p>
+              <ul class="toggles" id="leave-list"></ul>
+              <p class="muted" id="leave-empty" data-w="settings.leaveEmpty"></p>
+              <p class="btn-row">
+                <button class="btn sm" id="leave-folder" type="button" data-w="settings.leaveFolder"></button>
+                <button class="btn sm" id="leave-file" type="button" data-w="settings.leaveFile"></button>
+              </p>
+              <form id="leave-type" class="move">
+                <label for="leave-type-input" data-w="settings.leaveType"></label>
+                <input id="leave-type-input" type="text" autocomplete="off" spellcheck="false" maxlength="17" required />
+                <p class="btn-row"><button class="btn sm" type="submit" data-w="settings.leaveTypeAdd"></button></p>
+              </form>
+              <p id="leave-status" class="status" role="status"></p>
+            </section>
+            <section class="card" aria-labelledby="data-title">
+              <h2 id="data-title" data-w="ws.yourData"></h2>
+              <p class="muted" data-w="settings.storesText"></p>
+              <p class="muted" id="ignored-count"></p>
+              <p class="muted" id="full-scan-kept"></p>
+              <p class="btn-row"><button class="btn sm" id="show-ignored" type="button" data-w="settings.showIgnored"></button></p>
+              <h3 data-w="settings.moveTitle"></h3>
+              <p class="muted small" data-w="settings.moveHint"></p>
+              <form id="move" class="move">
+                <label for="move-file" data-w="settings.moveFile"></label>
+                <input id="move-file" type="file" accept=".clotr,application/json" required />
+                <label for="move-password" data-w="settings.movePassword"></label>
+                <input id="move-password" type="password" autocomplete="off" required />
+                <p class="btn-row"><button class="btn primary sm" type="submit" data-w="settings.moveOpen"></button></p>
+              </form>
+              <p id="move-status" class="status" role="status"></p>
+            </section>
+            <section class="card" aria-labelledby="accuracy-title">
+              <h2 id="accuracy-title" data-w="settings.accuracyTitle"></h2>
+              <p class="muted" data-w="settings.accuracyHint"></p>
+              <p class="muted" id="accuracy-count"></p>
+              <p class="btn-row">
+                <button class="btn sm" id="accuracy-export" type="button" data-w="settings.accuracyExport"></button>
+                <button class="btn sm" id="accuracy-clear" type="button" data-w="settings.accuracyClear"></button>
+              </p>
+              <p id="accuracy-status" class="status" role="status"></p>
+            </section>
+            <section class="card" aria-labelledby="about-title">
+              <h2 id="about-title" data-w="ws.aboutTitle"></h2>
+              <p class="muted" data-w="ws.about"></p>
+              <p class="small muted" id="about-version"></p>
+              <p class="btn-row">
+                <button class="btn sm" id="about-report" type="button" data-w="ws.reportProblem"></button>
+              </p>
+            </section>
+          </div>
+        </section>
+
+        <section class="screen" data-screen="scamcheck" id="screen-scamcheck" aria-labelledby="title-scamcheck">
+          <header class="screen-head">
+            <h1 id="title-scamcheck" tabindex="-1"></h1>
+            <p id="sc-lead"></p>
+          </header>
+          <section class="card sc-ask" id="sc-ask" aria-labelledby="title-scamcheck">
+            <label class="lb-letter-label" for="sc-message" id="sc-box-label"></label>
+            <textarea class="lb-letter-box" id="sc-message" rows="7" autocomplete="off" spellcheck="false"></textarea>
+            <p id="sc-empty" class="note" role="status" hidden></p>
+            <p class="btn-row">
+              <button class="btn primary" type="button" id="sc-check"></button>
+              <button class="btn text" type="button" id="sc-try"></button>
+            </p>
+          </section>
+          <section class="card sc-result" id="sc-result" hidden aria-labelledby="title-scamcheck">
+            <div id="sc-found" hidden>
+              <h2 id="sc-found-title" tabindex="-1"></h2>
+            </div>
+            <div id="sc-none" hidden>
+              <h2 id="sc-none-title" tabindex="-1"></h2>
+              <p id="sc-none-why"></p>
+            </div>
+            <p id="sc-marked" class="muted"></p>
+            <div id="sc-signs"></div>
+            <section class="card" aria-labelledby="sc-before-title">
+              <h3 id="sc-before-title"></h3>
+              <ul>
+                <li id="sc-before-call"></li>
+                <li id="sc-before-talk"></li>
+                <li id="sc-before-phone-row" class="strong" hidden><span id="sc-before-phone"></span></li>
+                <li id="sc-before-link-row" class="strong" hidden><span id="sc-before-link"></span></li>
+              </ul>
+              <p id="sc-before-sources" class="source"></p>
+            </section>
+            <section class="card sc-ask-someone" id="sc-ask-someone" hidden aria-labelledby="sc-ask-someone-title">
+              <h3 id="sc-ask-someone-title"></h3>
+              <p id="sc-ask-someone-text"></p>
+              <p class="btn-row">
+                <button class="btn" type="button" id="sc-ask-someone-copy"></button>
+              </p>
+              <p class="note" role="status" id="sc-ask-someone-copied" hidden></p>
+            </section>
+            <p class="btn-row">
+              <button class="btn" type="button" id="sc-again"></button>
+              <a class="btn text" href="#home" data-w="ws.back"></a>
+            </p>
+          </section>
+          <p id="sc-failed" class="note" role="alert" hidden></p>
+          <p class="small muted" id="sc-never"></p>
+        </section>
+      </main>
+    </div>
+
+    <p class="toast" id="saved" role="status"></p>
+  </body>
+</html>

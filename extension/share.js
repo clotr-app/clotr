@@ -46,17 +46,17 @@ async function showTourniquet() {
     : t.for === "child"
       ? msg(
           "sh_tqChild",
-          "Clotr asks before personal details, passwords and sign-in codes go out. You can always leave them in and send.",
+          "Clotr asks before personal details, passwords and sign-in codes go out. You can always leave them as they are and send.",
         )
       : t.for === "after_scam"
         ? msg(
             "sh_tqUntil",
-            "Until $1, Clotr asks before bank, card and ID numbers, gift card numbers, passwords and sign-in codes go out, and its warnings are bigger. You can always leave them in and send.",
+            "Until $1, Clotr asks before bank, card and ID numbers, gift card numbers, passwords and sign-in codes go out, and its warnings are bigger. You can always leave them as they are and send.",
             shortDay(t.until),
           )
         : msg(
             "sh_tqAdult",
-            "Clotr asks before bank, card and ID numbers, passwords and sign-in codes go out, and its warnings are bigger. You can always leave them in and send.",
+            "Clotr asks before bank, card and ID numbers, passwords and sign-in codes go out, and its warnings are bigger. You can always leave them as they are and send.",
           );
 }
 // "1 November", the browser's own way.

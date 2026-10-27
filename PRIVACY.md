@@ -1,10 +1,10 @@
 # Privacy policy
 
-Last updated 2026-10-19, for Clotr 1.4.1 and Clotr for Windows 1.0.1.
+Last updated 2026-10-25, for Clotr 1.5.0.9 and Clotr for Windows 1.0.2.
 
-Clotr checks what you type into AI chats, on your computer, and warns you before a private detail goes out. The text
-and files Clotr checks stay on your computer, and it never stores what you type. This covers the browser extension
-below, then Clotr for Windows, the desktop app, further down.
+Clotr checks what you type into AI chats on your computer and warns you before a private detail goes out. Clotr does
+not store the text you type or the files it checks. If you choose to send a message, the AI service gets it as usual;
+Clotr has no server. This covers the browser extension below, then Clotr for Windows, the desktop app, further down.
 
 ## What it reads
 
@@ -15,8 +15,9 @@ computer:
 - the text in files you attach (text, PDF, Word, Excel and PowerPoint);
 - for a picture, only whether a photo still has the place it was taken saved inside, and whether its name looks like
   an ID or a document, like passport-scan.jpg. It can't read the words in a picture;
-- the AI's reply on that page for 90 seconds after you send, if you've added details to your list, so it can tell you
-  when the reply mentions one of them. You can turn this off in Settings;
+- the AI's reply on that page for 90 seconds after you send, if you've added details to your list. A match appears
+  as a count on Clotr's toolbar badge and in the popup, and in Activity with the kind and site. The page sees no
+  notice, and Clotr never keeps the reply or detail. You can turn this off in Settings;
 - with Bandage on for a site, the reply and the conversation on that page, only to find its own labels like
   `[Phone 1]` and show you the real detail when you point at one. The labels and details stay in that tab's memory;
 - what you copy to your clipboard on that page and the message it came from, at the moment you copy it, to tell
@@ -79,7 +80,9 @@ handled. Do not add real client names unless your organization has reviewed and 
 
 ## What it sends
 
-Nothing. Clotr has no servers, analytics or third-party services, and it makes no network requests.
+Clotr has no server or analytics service, and its extension code makes no network requests. It does not send chat
+text, attached file contents or findings to Clotr. If you choose to send a message, the AI service receives it through
+your browser as usual.
 
 *Report a problem* and the false-alarm link in a warning only open a GitHub page in a new tab. Its address carries the
 kind of report, Clotr's version, your browser and, for a false alarm, the kind of detail and the site if you tick it,
@@ -87,9 +90,9 @@ never what you typed. If you choose to add what Clotr counted to a report, you s
 only, and you copy them in yourself.
 
 *Move to a new computer* makes one file with your settings, your list's fingerprints and the secret, encrypted with
-AES-256 and a password you choose. Your browser saves it where you say, and Clotr sends it nowhere.
+AES-256 and a password you choose. Your browser saves it where you say; Clotr does not upload it.
 
-Since Clotr sends nothing itself, there's nothing for it to share or sell.
+Clotr does not sell your settings, history or findings.
 
 ## Known limits
 
@@ -101,13 +104,19 @@ computer.
 ## Clotr for Windows
 
 Clotr for Windows watches beside the ChatGPT, Claude and Copilot apps on your computer, once you've opened one,
-instead of in a browser tab. The text and files Clotr checks stay on your computer.
+instead of in a browser tab. It checks text on your computer. When you send a message from one of those apps, that
+service receives it as usual; Clotr has no server.
 
 ### What it reads
 
 While one of those apps is the window in front of you, it reads what you copy to the clipboard, once, the moment you
-copy it, the same check the extension runs on what you paste. When a password manager marks what you copied as
-private, Clotr notices it's there and leaves it unread.
+copy it, the same check the extension runs on what you paste. Something you copied in another window is read once when
+one of those apps comes to the front, since that's when it could be pasted there. When a password manager marks what
+you copied as private, Clotr notices it's there and leaves it unread.
+
+To show which of those apps it covers, Clotr asks Windows whether each one is installed from the Microsoft Store, by
+the app's package name alone, and it remembers an app once it has seen it in front of you. AI sites in a browser
+aren't covered by Clotr for Windows, so Home and Protection point to the browser extension for those.
 
 While one of those apps is in front and you're typing in its message box, Clotr also reads that box through
 Windows' accessibility interface, the one a screen reader uses, about half a second after you pause, and checks it
@@ -115,10 +124,10 @@ the way it checks what you copy. It reads only that app's message box, leaves pa
 alone, and lets go of the text as soon as the check is done. If it can't read an app's box, Home says so. You can
 turn this off on Home with "Check what I type in AI apps".
 
-Clotr also checks a command you've copied when you're about to paste it into the Run box, the same check it runs on
-what you copy into an AI chat, once and without keeping it. A terminal gets that check too, but only when what's on
-the clipboard was last copied in a browser. A browser's own file box isn't watched yet, so a command pasted there
-isn't checked.
+Clotr also checks a command you've copied when you're about to paste it into the Run box, once and without keeping
+it, but only for the "paste this to prove you're human" trick that fake web pages use, not for a password or key. A
+terminal gets that check too, but only when what's on the clipboard was last copied in a browser. A browser's own file
+box isn't watched yet, so a command pasted there isn't checked.
 
 When you run Check my files, a Full scan reads every folder on this computer's fixed drives except Windows' own
 folders, installed programs and games, the Recycle Bin and the page and hibernation files, and after your first Full
@@ -167,9 +176,12 @@ Everything it keeps stays in Clotr's own folder under your Windows profile, on t
 
 - your settings: which AI apps are paused, your look, motion and language, your Protection preset if one is on, and
   whether Clotr starts with Windows;
+- which of the ChatGPT, Claude and Copilot apps it has seen in front of you, so Home can count them, and whether it
+  has already shown each note it shows only once, like the first run's line about Start with Windows;
 - a history of what the copy check, Check my files and Look back found, the same shape the extension keeps, naming
   only the time, the app, the kind of detail, what happened and a fingerprint. A path, a filename, a chat or the
   detail itself is never part of it;
+- A single check gives its first eight findings a strong history fingerprint; later findings are recorded without one.
 - Each history fingerprint uses 1,000 rounds of SHA-256 and the salt.
 - a scrambled code for a file or a browser extension you told Clotr to stop mentioning, never which one it was;
 - after a Full scan, for each file it read, a scrambled code made from where the file is, with the file's size and
@@ -198,12 +210,15 @@ Windows doesn't make one of its own to move elsewhere yet.
 
 ### What it sends
 
-Nothing. Clotr for Windows has no network code built in. Nothing in it can open a connection, reach a server by name,
-or call on Windows' own internet libraries, and a test reads the program Windows actually runs and fails the build if
-a network call is ever found in it.
+Clotr for Windows does not send scan results to a server; it has no network code built in. Nothing in it can open a
+connection, reach a server by name, or call on Windows' own internet libraries, and a test reads the program Windows
+actually runs and fails the build if a network call is ever found in it. If you send a message from an AI app, that
+service receives it as usual.
 
 *Report a problem*, from a Check my files or Look back result, opens the same GitHub page the extension does, in
 whatever browser you normally use, with no detail it found in the address.
+
+*Get the browser extension*, on Home and Protection, opens the extension's page on clotr.app in that same browser.
 
 ## Changes and questions
 

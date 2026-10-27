@@ -1,6 +1,6 @@
 {
   "extDescription": {
-    "message": "Catches passwords, keys and personal details before you send them in AI chats and tools. Everything is checked on your computer."
+    "message": "Warns you before a password, a card number or a personal detail goes into an AI chat."
   },
   "cmdFocusNotice": {
     "message": "Jump to Clotr's warning (Esc goes back to your message)"
@@ -18,5 +18,15 @@
   "oc_waiting": { "message": "Waiting for you to say yes in Clotr for Windows…" },
   "oc_connected": { "message": "Connected to Clotr for Windows" },
   "oc_disconnect": { "message": "Disconnect" },
-  "oc_disconnectSub": { "message": "Settings, your vault and your history stay as they are on each side." }
+  "oc_disconnectSub": { "message": "Settings, your vault and your history stay as they are on each side." },
+  "popup_aboutClotr": { "message": "About Clotr" },
+  "popup_whatsNew": { "message": "What's new" },
+  "popup_checkRepliesForMyDetails": { "message": "Check AI replies for my details" },
+  "popup_replyCheckMeans": { "message": "If your vault has details, Clotr checks the AI's answer for 90 seconds after you send. When it finds one you didn't type in this chat, the toolbar badge and popup show a count, and Activity keeps the kind and chat name. The page never sees a notice, and Clotr never keeps the answer or detail." },
+  "popup_replyMentionsTitle": { "message": "AI replies mentioned your details" },
+  "popup_replyMentionsOne": { "message": "1 AI reply mentioned your details in the last $p1$ days.", "placeholders": { "p1": { "content": "$1" } } },
+  "popup_replyMentionsMany": { "message": "$p2$ AI replies mentioned your details in the last $p1$ days.", "placeholders": { "p1": { "content": "$1" }, "p2": { "content": "$2" } } },
+  "popup_replyMentionsOpen": { "message": "See Activity" },
+  "popup_replyMentioned": { "message": "Mentioned in AI reply" },
+  "pp_whatsNewIn": { "message": "What's new in Clotr $p1$", "placeholders": { "p1": { "content": "$1" } } }
 }

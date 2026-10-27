@@ -1,0 +1,22 @@
+{
+  "name": "clotr-desktop",
+  "private": true,
+  "license": "AGPL-3.0-or-later",
+  "description": "Clotr for Windows. The Tauri command line is installed in this folder, so the browser extension and CI do not need it.",
+  "scripts": {
+    "dev": "node tools/tauri.js dev",
+    "build": "node tools/tauri.js build --no-bundle",
+    "build:try": "node tools/tauri.js build --no-bundle -- --profile try",
+    "test": "node tools/run-cargo.js test",
+    "test:dk": "node tools/run-cargo.js dk",
+    "test:cpu": "node tools/run-cargo.js cpu",
+    "prepare-ui": "node tools/prepare-ui.js",
+    "notice": "node tools/notice.js",
+    "icons": "node tools/make-icons.js",
+    "msix": "powershell -ExecutionPolicy Bypass -File tools/msix.ps1",
+    "build:msix": "npm run build:try && powershell -ExecutionPolicy Bypass -File tools/msix.ps1 -Profile try"
+  },
+  "devDependencies": {
+    "@tauri-apps/cli": "2.12.1"
+  }
+}

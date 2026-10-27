@@ -4,7 +4,9 @@
 module.exports = async function (env) {
   const {
     ALL_GUIDED,
+    activeBadge,
     DIALOG_WAIT,
+    editorText,
     KEY,
     OUT,
     TYPED_VALUES,
@@ -21,6 +23,7 @@ module.exports = async function (env) {
     pressEnter,
     readNotice,
     resetState,
+    sentMessages,
     shot,
     sleep,
     store,
@@ -58,6 +61,8 @@ module.exports = async function (env) {
       await resetState(ctx, {});
       const page = await openExtPage(ctx, "vault.html?welcome=1");
       try {
+        const count = await waitFor(() => page.$eval("#ai-site-count-fact", (el) => el.textContent || null), 3000);
+        expect(count === "19", `AI chat site count: ${count}`);
         const intro = await page.evaluate(() => ({
           visible: !document.getElementById("welcome").hidden,
           h1: document.querySelector("h1").textContent,
@@ -67,11 +72,10 @@ module.exports = async function (env) {
         const pin = await page.evaluate(() => document.getElementById("pin-step")?.innerText || "");
         expect(/puzzle piece/i.test(pin) || /Clotr is pinned/.test(pin), `pin step: ${JSON.stringify(pin)}`);
         for (const fact of [
-          "the sites you've chosen",
-          "leaves this computer",
+          `${count} AI chats are on from the start.`,
+          "There are no Clotr servers",
           "never saves what you type",
-          "it only warns",
-          "only works in this browser",
+          "checks the AI's replies for 90 seconds after you send",
         ]) {
           expect(intro.text.includes(fact), `missing: "${fact}"`);
         }
@@ -91,6 +95,104 @@ module.exports = async function (env) {
       const hidden = await plain.evaluate(() => document.getElementById("welcome").hidden);
       await plain.close();
       expect(hidden, "the welcome shows on the normal vault page too");
+    },
+  );
+
+  // Try it is the first useful moment, so it follows the short facts and comes before Alex's note and the setup
+  // choices. Its Copy button means nobody has to select the key by hand.
+  await check(
+    "WP1",
+    "Welcome page: Try it comes first, under the note, and Copy puts the made-up key on the clipboard and says Copied",
+    async () => {
+      await resetState(ctx, {});
+      const page = await ctx.browser.newPage();
+      page.on("pageerror", (err) => ctx.problems.push(`welcome page error: ${err.message}`));
+      await page.evaluateOnNewDocument(() => {
+        window.__copied = [];
+        Object.defineProperty(navigator, "clipboard", {
+          value: { writeText: async (text) => void window.__copied.push(text) },
+        });
+      });
+      await page.setViewport({ width: 700, height: 900 });
+      await page.goto(`chrome-extension://${new URL(ctx.swTarget.url()).host}/vault.html?welcome=1`);
+      try {
+        await waitFor(() => page.evaluate(() => document.getElementById("where-offer")?.hidden === false), 10000);
+        const order = await page.evaluate(() => {
+          const tryIt = document.querySelector('[data-i18n="vault_tryIt"]');
+          const after = (el) => Boolean(el && tryIt.compareDocumentPosition(el) & Node.DOCUMENT_POSITION_FOLLOWING);
+          return {
+            afterFacts: Boolean(tryIt.previousElementSibling?.classList.contains("facts")),
+            beforePin: after(document.querySelector("h2.pin-title")),
+            beforeWhere: after(document.getElementById("where-offer")),
+          };
+        });
+        expect(order.afterFacts && order.beforePin && order.beforeWhere, `order: ${JSON.stringify(order)}`);
+        for (const width of [380, 1040]) {
+          for (const theme of ["light", "dark"]) {
+            await page.emulateMediaFeatures([{ name: "prefers-color-scheme", value: theme }]);
+            await page.setViewport({ width, height: 900 });
+            await sleep(200);
+            const field = await page.$("#try-field");
+            await field.screenshot({ path: path.join(OUT, `welcome-try-first-${width}-${theme}.png`) });
+          }
+        }
+        await page.emulateMediaFeatures([{ name: "prefers-color-scheme", value: "light" }]);
+        await page.click("#try-copy");
+        const copied = await page.evaluate(() => ({
+          copied: window.__copied,
+          button: document.getElementById("try-copy").textContent.trim(),
+        }));
+        expect(JSON.stringify(copied.copied) === JSON.stringify([KEY]), `copied: ${JSON.stringify(copied.copied)}`);
+        expect(copied.button === "Copied", `button after a click: ${copied.button}`);
+        const back = await waitFor(
+          () => page.evaluate(() => document.getElementById("try-copy").textContent.trim() === "Copy"),
+          4000,
+        );
+        expect(back, "the button still says Copied");
+      } finally {
+        await page.close();
+      }
+    },
+  );
+
+  // The pin steps follow the browser's own menus: Chrome and Brave pin from the puzzle piece, Firefox from a gear
+  // menu's "Pin to Toolbar", Edge from an eye icon. Once pinned, the line names Clotr's icon (a C with a bandage).
+  await check(
+    "WP2",
+    "Welcome page: the pin steps match Chrome, Firefox or Edge, and the pinned line names Clotr's icon",
+    async () => {
+      const UAS = {
+        chrome: "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/130.0.0.0 Safari/537.36",
+        edge: "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/130.0.0.0 Safari/537.36 Edg/130.0.0.0",
+        firefox: "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:132.0) Gecko/20100101 Firefox/132.0",
+      };
+      const WANT = {
+        chrome: [/puzzle piece/, /\bpin\b/],
+        edge: [/extensions button/, /eye/, /Show in toolbar/],
+        firefox: [/extensions button/, /gear/, /Pin to Toolbar/],
+      };
+      const read = async (ua, pinned) => {
+        const page = await ctx.browser.newPage();
+        page.on("pageerror", (err) => ctx.problems.push(`welcome page error: ${err.message}`));
+        if (ua) await page.setUserAgent(ua);
+        await page.evaluateOnNewDocument((on) => {
+          chrome.action.getUserSettings = async () => ({ isOnToolbar: on });
+        }, pinned);
+        await page.setViewport({ width: 1040, height: 900 });
+        await page.goto(`chrome-extension://${new URL(ctx.swTarget.url()).host}/vault.html?welcome=1`);
+        await sleep(400);
+        const text = await page.evaluate(() => document.getElementById("pin-step").innerText);
+        if (ua === UAS.firefox) await shot(page, "welcome-pin-firefox.png");
+        await page.close();
+        return text;
+      };
+      for (const [name, ua] of Object.entries(UAS)) {
+        const text = await read(ua, false);
+        for (const want of WANT[name]) expect(want.test(text), `${name}: no ${want} in ${JSON.stringify(text)}`);
+        if (name !== "chrome") expect(!/puzzle piece|the pin next/.test(text), `${name}, Chrome's steps: ${text}`);
+      }
+      const pinned = await read(null, true);
+      expect(/Clotr's icon/.test(pinned) && !/shield/i.test(pinned), `pinned: ${JSON.stringify(pinned)}`);
     },
   );
 
@@ -198,7 +300,7 @@ module.exports = async function (env) {
               `someone else's ID in your format was called yours: ${n.text}`,
             );
           }
-          await clickDialogButton(page, "Send as is", readNotice);
+          await clickDialogButton(page, "Leave it alone", readNotice);
         }
       });
     },
@@ -236,7 +338,7 @@ module.exports = async function (env) {
       await typeText(page, "call 555.555.5636");
       const n = await waitForNotice(page);
       expect(n?.text.includes("Phone Number"), `your phone wasn't caught: ${n?.text}`);
-      await clickDialogButton(page, "Send as is", readNotice);
+      await clickDialogButton(page, "Leave it alone", readNotice);
       await clearEditor(page);
       await typeText(page, "or 555-555-1234");
       await expectNoUI(page, "other phone numbers are Log only");
@@ -408,7 +510,7 @@ module.exports = async function (env) {
         await clearEditor(page);
         await typeText(page, "call me at 555-555-2222 later");
         await waitForNotice(page);
-        await clickDialogButton(page, "Cover it", readNotice);
+        await clickDialogButton(page, "Clot this leak", readNotice);
         await expectNoUI(page, "after Redact");
         // Deleted by hand: offer.
         await clearEditor(page);
@@ -437,7 +539,7 @@ module.exports = async function (env) {
         await clearEditor(page);
         await typeText(page, `mail me at friend${i}@gmail.com`);
         expect(await waitForNotice(page), `no notice #${i}`);
-        await clickDialogButton(page, "Send as is", readNotice);
+        await clickDialogButton(page, "Leave it alone", readNotice);
         await sleep(300);
       }
       const offer = await waitFor(async () => {
@@ -570,6 +672,273 @@ module.exports = async function (env) {
             }),
           saved,
         );
+      }
+    },
+  );
+
+  await check("V50", "Saved details aren't shown when a chat page puts guesses in the composer", async () => {
+    await resetState(ctx, {});
+    const own = `555-555-${String(9000 + Math.floor(Math.random() * 1000))}`;
+    TYPED_VALUES.add(own);
+    const fp = await ctx.worker.evaluate(async (value) => {
+      const salt = await ensureSalt();
+      return globalThis.Clotr.fingerprintStrong(salt, "phone_number", value);
+    }, own);
+    await store.set(ctx, {
+      vault: [{ kind: "value", type: "phone_number", fp, scheme: 2, mode: "protect", added: Date.now() }],
+    });
+    await sleep(300);
+    try {
+      for (const mode of ["prefilled", "changed after typing"]) {
+        await withSite(ctx, "chatgpt", async (page) => {
+          if (mode === "prefilled") {
+            await page.evaluate((value) => {
+              const box = document.querySelector("textarea");
+              box.value = `${value} `;
+            }, own);
+          } else {
+            await page.evaluate((value) => {
+              const box = document.querySelector("textarea");
+              box.addEventListener("input", () => (box.value = value), { once: true });
+            }, own);
+          }
+          // A one-letter, non-sensitive marker exercises the mixed page/user edit without confusing the privacy check below.
+          await page.evaluate(`${page.site.editor}.focus()`);
+          await page.keyboard.sendCharacter("x");
+          await sleep(650);
+          await expectNoUI(page, `the page's ${mode} guess triggered Clotr`);
+        });
+      }
+    } finally {
+      await resetState(ctx, {});
+    }
+  });
+
+  await check("V52", "Everyday apps don't show saved details when a page inserts a guess in the composer", async () => {
+    await resetState(ctx, {});
+    const originalKinds = (await store.get(ctx, "siteKinds")).siteKinds || {};
+    const own = `555-555-${String(9000 + Math.floor(Math.random() * 1000))}`;
+    TYPED_VALUES.add(own);
+    const fp = await ctx.worker.evaluate(async (value) => {
+      const salt = await ensureSalt();
+      return globalThis.Clotr.fingerprintStrong(salt, "phone_number", value);
+    }, own);
+    await store.set(ctx, {
+      siteKinds: { "chatgpt.com": "everyday" },
+      vault: [{ kind: "value", type: "phone_number", fp, scheme: 2, mode: "protect", added: Date.now() }],
+    });
+    await sleep(300);
+    try {
+      await withSite(ctx, "chatgpt", async (page) => {
+        await page.evaluate((value) => {
+          const box = document.querySelector("textarea");
+          box.addEventListener("input", () => (box.value = value), { once: true });
+        }, own);
+        await page.evaluate(`${page.site.editor}.focus()`);
+        await page.keyboard.sendCharacter("x");
+        await sleep(650);
+        await expectNoUI(page, "the everyday app's page-inserted guess triggered Clotr");
+      });
+    } finally {
+      await resetState(ctx, {});
+      await store.set(ctx, { siteKinds: originalKinds });
+    }
+  });
+
+  await check(
+    "V51",
+    "A reply match stays off the chat page and appears in the toolbar, popup and Activity",
+    async () => {
+      await resetState(ctx, {});
+      const own = `555-555-${String(9000 + Math.floor(Math.random() * 1000))}`;
+      TYPED_VALUES.add(own);
+      const fp = await ctx.worker.evaluate(async (value) => {
+        const salt = await ensureSalt();
+        return globalThis.Clotr.fingerprintStrong(salt, "phone_number", value);
+      }, own);
+      await store.set(ctx, {
+        mentions: [],
+        vault: [{ kind: "value", type: "phone_number", fp, scheme: 2, mode: "protect", added: Date.now() }],
+      });
+      await sleep(300);
+      try {
+        await withSite(ctx, "history", async (page) => {
+          await typeText(page, "Hello, can you help me?");
+          await pressEnter(page);
+          await page.evaluate((value) => {
+            const guess = document.createElement("div");
+            guess.style.display = "none";
+            guess.textContent = value;
+            document.body.append(guess);
+          }, own);
+          const seen = await waitFor(async () => {
+            const { mentions = [] } = await store.get(ctx, "mentions");
+            return mentions.some((event) => event.action === "mentioned" && event.type === "phone_number")
+              ? true
+              : null;
+          }, 7000);
+          expect(seen, "the reply match wasn't kept in local history");
+          await expectNoUI(page, "the reply match appeared in the chat page");
+          const badge = await activeBadge(ctx);
+          expect(badge.text === "1", `toolbar badge: ${JSON.stringify(badge)}`);
+          const popup = await openPopup(ctx);
+          try {
+            const summary = await popup.$eval("#reply-mentions-text", (node) => node.textContent);
+            expect(/AI reply.*mentioned your details|1.*AI reply/i.test(summary), `popup: ${summary}`);
+            await popup.click("#tab-activity");
+            const activity = await popup.$eval("#events-body", (node) => node.innerText);
+            expect(/Phone Number/.test(activity) && /reply/i.test(activity), `Activity: ${activity}`);
+          } finally {
+            await popup.close();
+          }
+        });
+      } finally {
+        await resetState(ctx, {});
+        await store.set(ctx, { mentions: [] });
+      }
+    },
+  );
+
+  await check(
+    "V53",
+    "Typed, pasted, rewritten, autocorrected, composed and undone vault details still warn in chat editors",
+    async () => {
+      await resetState(ctx, {});
+      const own = `555-555-${String(9000 + Math.floor(Math.random() * 1000))}`;
+      TYPED_VALUES.add(own);
+      const fp = await ctx.worker.evaluate(async (value) => {
+        const salt = await ensureSalt();
+        return globalThis.Clotr.fingerprintStrong(salt, "phone_number", value);
+      }, own);
+      await store.set(ctx, {
+        vault: [{ kind: "value", type: "phone_number", fp, scheme: 2, mode: "protect", added: Date.now() }],
+      });
+
+      const copyAndPaste = async (page, text) => {
+        await page.evaluate((value) => {
+          const button = document.createElement("button");
+          button.id = "copy-for-provenance-test";
+          button.textContent = "Copy test text";
+          button.addEventListener("click", async () => {
+            try {
+              await navigator.clipboard.writeText(value);
+              window.__testClipboardReady = true;
+            } catch (error) {
+              window.__testClipboardError = error.message;
+            }
+          });
+          document.body.append(button);
+        }, text);
+        await page.click("#copy-for-provenance-test");
+        await waitFor(() => page.evaluate(() => window.__testClipboardReady || window.__testClipboardError), 3000);
+        const error = await page.evaluate(() => window.__testClipboardError);
+        expect(!error, `clipboard write failed: ${error}`);
+        await page.evaluate(`${page.site.editor}.focus()`);
+        await page.keyboard.down("Control");
+        await page.keyboard.press("v");
+        await page.keyboard.up("Control");
+        await page.evaluate(() => document.getElementById("copy-for-provenance-test")?.remove());
+      };
+
+      const cases = [
+        ["typed", "chatgpt", async (page) => typeText(page, `call ${own}`)],
+        [
+          "autocorrected",
+          "chatgpt",
+          async (page) => {
+            await page.evaluate((value) => {
+              const box = document.querySelector("#prompt-textarea");
+              box.addEventListener("input", () => {
+                if (box.value === value) box.value = value.replace(/-/g, " ");
+              });
+            }, own);
+            await typeText(page, own);
+          },
+        ],
+        ["ProseMirror", "claude", async (page) => typeText(page, `call ${own}`)],
+        ["Lexical-style", "perplexity", async (page) => typeText(page, `call ${own}`)],
+        ["pasted", "chatgpt", async (page) => copyAndPaste(page, `call ${own}`)],
+        ["newline-rewritten paste", "cancelling", async (page) => copyAndPaste(page, `call\r\n${own}\r\n`)],
+        [
+          "IME composition",
+          "chatgpt",
+          async (page) => {
+            await page.evaluate(() => document.querySelector("#prompt-textarea").focus());
+            const cdp = await page.createCDPSession();
+            const text = `call ${own}`;
+            await cdp.send("Input.imeSetComposition", { text, selectionStart: text.length, selectionEnd: text.length });
+            await cdp.send("Input.insertText", { text });
+          },
+        ],
+        [
+          "undo after delete",
+          "chatgpt",
+          async (page) => {
+            await typeText(page, own);
+            await page.keyboard.down("Control");
+            await page.keyboard.press("a");
+            await page.keyboard.up("Control");
+            await page.keyboard.press("Backspace");
+            await page.keyboard.down("Control");
+            await page.keyboard.press("z");
+            await page.keyboard.up("Control");
+          },
+        ],
+      ];
+      try {
+        for (const [label, site, enter] of cases) {
+          await withSite(ctx, site, async (page) => {
+            await enter(page);
+            const notice = await waitForNotice(page, 6000);
+            expect(notice && /Phone Number/.test(notice.text), `${label}: ${notice?.text || "no notice"}`);
+          });
+        }
+      } finally {
+        await resetState(ctx, {});
+      }
+    },
+  );
+
+  await check(
+    "V54",
+    "Bandage leaves page-inserted vault guesses alone, whether alone or beside typed text",
+    async () => {
+      await resetState(ctx, {});
+      const own = `555-555-${String(9000 + Math.floor(Math.random() * 1000))}`;
+      TYPED_VALUES.add(own);
+      const fp = await ctx.worker.evaluate(async (value) => {
+        const salt = await ensureSalt();
+        return globalThis.Clotr.fingerprintStrong(salt, "phone_number", value);
+      }, own);
+      await store.set(ctx, {
+        bandage: { "chatgpt.com": true },
+        vault: [{ kind: "value", type: "phone_number", fp, scheme: 2, mode: "protect", added: Date.now() }],
+      });
+      try {
+        await withSite(ctx, "chatgpt", async (page) => {
+          await page.evaluate((value) => {
+            const box = document.querySelector("textarea");
+            box.focus();
+            box.value = value;
+          }, own);
+          await pressEnter(page);
+          await expectNoUI(page, "a page-inserted saved detail by itself triggered Bandage");
+          const sent = await sentMessages(page);
+          expect(sent.length === 1 && sent[0] === own, `Bandage changed the page's guess: ${JSON.stringify(sent)}`);
+        });
+        await withSite(ctx, "chatgpt", async (page) => {
+          await page.evaluate((value) => {
+            const box = document.querySelector("textarea");
+            box.addEventListener("input", () => (box.value = `${value} ${box.value}`), { once: true });
+          }, own);
+          await page.evaluate(`${page.site.editor}.focus()`);
+          await page.keyboard.sendCharacter("x");
+          await sleep(650);
+          await expectNoUI(page, "a page-inserted saved detail beside typed text triggered Bandage");
+          expect(!(await editorText(page)).includes("[Phone"), `Bandage label: ${await editorText(page)}`);
+        });
+      } finally {
+        await resetState(ctx, {});
       }
     },
   );

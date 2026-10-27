@@ -68,9 +68,9 @@ module.exports = async function (env) {
   };
   // Sizes the page so the warning stays readable once it's scaled down into a store picture, at 2× so it stays sharp.
   const VIEW = { width: 1000, height: 680, deviceScaleFactor: 2 };
-  const prepare = async (page) => {
+  const prepare = async (page, theme = "light") => {
     await page.setViewport(VIEW);
-    await page.emulateMediaFeatures([{ name: "prefers-color-scheme", value: "light" }]);
+    await page.emulateMediaFeatures([{ name: "prefers-color-scheme", value: theme }]);
   };
   const snap = async (page, name) => {
     await sleep(300);
@@ -142,37 +142,34 @@ module.exports = async function (env) {
     "SS1",
     "Store pictures: AI chat, email, group chat, Bandage, report, ask first, welcome (docs/store/)",
     async () => {
-      // Picture 1: a photo attached to an everyday question, carrying the place it was taken.
+      // Picture 1: the product's main moment, a text warning in the message box.
       await withSite(ctx, "demo", async (page) => {
         await prepare(page);
         await resetState(ctx, {});
         await page.evaluate(() => window.__setLog([["ai", "Hi! What can I help you with today?"]]));
-        await typeText(page, "What colour should I paint my kitchen?");
-        await attach(page, "kitchen.jpg", fx.jpegWithGps(fx.PLACES.liberty));
-        // Clotr holds the photo while it takes the place out, so wait for that note and for the page's own
-        // thumbnail of the copy it got, not the first note that shows.
-        expect(
-          await waitFor(async () => {
-            const notice = await readNotice(page);
-            return notice && /took the place out/.test(JSON.stringify(notice)) ? notice : null;
-          }, 8000),
-          "no note that the place was taken out",
-        );
-        await page.waitForFunction(
-          () => {
-            const img = document.getElementById("chip-img");
-            return img && img.complete && img.naturalWidth > 0;
-          },
-          { timeout: 8000 },
-        );
+        await typeText(page, "Could you help me check this form? My Social Security number is 219-09-9999.");
+        expect(await waitForNotice(page), "no text warning");
+        await page.setViewport({ width: 850, height: 470, deviceScaleFactor: 2 });
         const shot = await snap(page, "ai-chat.png");
         await frame(
           "1-ai-chat.png",
-          "Photos carry more than you see",
-          "A phone saves the place a photo was taken inside the file. Attach one to an AI chat, and Clotr takes the place out before the site gets it.",
+          "Before you send",
+          "Clotr names the detail. Clot this leak covers it; Leave it alone closes the warning and leaves the message in the box.",
           shot,
           740,
         );
+        await page.emulateMediaFeatures([{ name: "prefers-color-scheme", value: "dark" }]);
+        await page.setViewport({ width: 850, height: 470, deviceScaleFactor: 2 });
+        const darkShot = await snap(page, "ai-chat-dark.png");
+        fs.copyFileSync(
+          path.join(shots, "ai-chat.png"),
+          path.join(ROOT, "website-test", "assets", "hero", "warning-light.png"),
+        );
+        fs.copyFileSync(
+          path.join(shots, "ai-chat-dark.png"),
+          path.join(ROOT, "website-test", "assets", "hero", "warning-dark.png"),
+        );
+        expect(darkShot.length > 0, "the dark screenshot is empty");
       });
 
       // Picture 8: a tax question with a Social Security number, hidden with one click.
@@ -188,7 +185,7 @@ module.exports = async function (env) {
         await typeText(page, "Is this right? My Social Security number is 219-09-9999 and I made $41,200 last year.");
         expect(await waitForNotice(page), "no notice");
         await snapNotice(page, "warning-card.png");
-        await clickDialogButton(page, "Cover it", readNotice);
+        await clickDialogButton(page, "Clot this leak", readNotice);
         await frame(
           "8-hidden.png",
           "Hidden with one click",

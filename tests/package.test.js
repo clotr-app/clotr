@@ -11,6 +11,7 @@ const crypto = require("crypto");
 const { build, crc32, appStoreVersion } = require("../tools/package.js");
 
 const EXT = path.join(__dirname, "..", "extension");
+const DEMO_AWS_KEY = ["AKIA", "4HPQ7XZ2", "R6TWLJ3N"].join("");
 
 // Reads a stored-only zip back into [name, bytes] pairs, checking each entry's CRC along the way.
 function unzip(buf) {
@@ -66,6 +67,17 @@ test("release zip is byte-identical when built twice, and its checksum is record
   const sums = fs.readFileSync(path.join(path.dirname(a.out), "SHA256SUMS.txt"), "utf8");
   assert.strictEqual(sums, `${a.sha256}  ${path.basename(a.out)}\n`);
   assert.strictEqual(crypto.createHash("sha256").update(fs.readFileSync(a.out)).digest("hex"), a.sha256);
+});
+
+test("Chrome, Firefox, Safari, and the engine bundle do not ship the whole demo AWS key", () => {
+  for (const options of [{}, { firefox: true }, { safari: true }]) {
+    const { out } = build({ ...options, outDir: tmp() });
+    for (const [name, data] of unzip(fs.readFileSync(out))) {
+      assert.ok(!data.includes(Buffer.from(DEMO_AWS_KEY)), `${path.basename(out)}: ${name} contains the whole key`);
+    }
+  }
+  const engine = require("../tools/engine-bundle.js").build().text;
+  assert.ok(!engine.includes(DEMO_AWS_KEY), "the generated engine bundle contains the whole key");
 });
 
 test("a file that vanishes while the zip is built is skipped, not a crash (another test's planted file, removed mid-walk)", () => {

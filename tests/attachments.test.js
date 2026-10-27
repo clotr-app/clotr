@@ -6,12 +6,12 @@ const test = require("node:test");
 const assert = require("node:assert/strict");
 const zlib = require("zlib");
 const { crc32 } = require("../tools/package.js");
+const { bestOfAsyncPair, grewMoreThan } = require("./timing.js");
 
 require("../extension/patterns.js");
 require("../extension/detector.js");
 require("../extension/attachments.js");
 const { readAttachment } = globalThis.Clotr;
-const { retrySlowAsync, timedAsync } = require("./timing.js");
 
 // Builds a minimal zip file from a list of [name, text, deflate?] entries.
 function zip(entries) {
@@ -94,21 +94,28 @@ test("ownBytes: bytes from another realm are copied into this one; this realm's 
   assert.deepEqual([...new Uint8Array(buffer)], [7, 8, 9]);
 });
 
-test("zip bomb: a part that inflates far past the cap stops at 2 MB", async () => {
+test("zip bomb: output stays capped, and below-cap reads grow with their size", async () => {
+  const makePart = (length) =>
+    new File([zip([["word/document.xml", `<w:t>${"A".repeat(length)}</w:t>`, true]])], "bomb.docx");
+  const small = makePart(256 * 1024);
+  const big = makePart(1024 * 1024);
+  const smallText = await readAttachment(small);
+  const bigText = await readAttachment(big);
+  assert.ok(smallText.length >= 256 * 1024 && smallText.length <= 256 * 1024 + 1);
+  assert.ok(bigText.length >= 1024 * 1024 && bigText.length <= 1024 * 1024 + 1);
+  const [smallTime, bigTime] = await bestOfAsyncPair(
+    () => readAttachment(small),
+    () => readAttachment(big),
+    4,
+  );
+  assert.ok(!grewMoreThan(smallTime, bigTime, 16), "reading 4× as much decompressed text grew too much");
+
   const bomb = new File(
     [zip([["word/document.xml", `<w:t>${"A".repeat(30 * 1024 * 1024)}</w:t>`, true]])],
     "bomb.docx",
   );
   const text = await readAttachment(bomb);
   assert.ok(text.length <= 2 * 1024 * 1024 + 1, `read ${text.length} characters`);
-  // Five seconds on a quiet computer, more on a busy one, scaled by how much slower this computer is right
-  // now than the reference timing in tests/timing.js.
-  await retrySlowAsync(async () => {
-    const t = await timedAsync(() => readAttachment(bomb));
-    return (await t.overAsync(5000))
-      ? `took ${Math.round(t.wall)} ms (${Math.round(t.allowed)} allowed on this computer now)`
-      : undefined;
-  });
 });
 
 // An SVG file is text underneath. The words it displays get read like any text file, but the numbers in its

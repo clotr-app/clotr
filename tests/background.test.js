@@ -47,7 +47,17 @@ function area() {
 function loadBackground(browser, { chromeManifest = false } = {}) {
   const safari = browser.startsWith("safari");
   const manifest = safari && !chromeManifest ? safariManifest(source()) : source();
-  const calls = { alarms: [], alarmAt: {}, cleared: [], badge: [], colors: [], errors: [], sent: [], reloads: 0 };
+  const calls = {
+    alarms: [],
+    alarmAt: {},
+    cleared: [],
+    badge: [],
+    colors: [],
+    titles: [],
+    errors: [],
+    sent: [],
+    reloads: 0,
+  };
   const local = area();
   const session = browser === "safari-no-session" ? undefined : area();
   const chrome = {
@@ -63,7 +73,7 @@ function loadBackground(browser, { chromeManifest = false } = {}) {
     },
     storage: { local, onChanged: event(), ...(session ? { session } : {}) },
     action: {
-      setTitle: async () => {},
+      setTitle: async (title) => void calls.titles.push(title),
       setIcon: async () => {},
       setBadgeText: async ({ tabId, text }) => void calls.badge.push({ tabId, text }),
       setBadgeBackgroundColor: ({ color }) => {
@@ -259,6 +269,22 @@ test("Chrome stays as it was: session storage holds the tabs, string colours, th
   assert.ok(bg.session.data.protectedTabs?.[7], "the popup reads protected tabs from session storage");
   assert.deepEqual(bg.calls.colors.at(-1), "#d03b3b", "a risky send turns the badge red, as before");
   assert.deepEqual(bg.calls.errors, []);
+});
+
+test("A reply mention counts on the protected tab badge and its tooltip", async () => {
+  const bg = loadBackground("chrome");
+  await bg.install();
+  await bg.send({ type: "clotr:tabState", paused: false }, { tab });
+  await bg.send(
+    {
+      type: "clotr:events",
+      events: [{ ...todaysEvent(), action: "mentioned", severity: "low", type: "phone_number", name: "Phone Number" }],
+    },
+    { tab },
+  );
+  assert.deepEqual(bg.calls.badge.at(-1), { tabId: 7, text: "1" });
+  assert.equal(bg.calls.colors.at(-1), "#d03b3b");
+  assert.match(bg.calls.titles.at(-1).title, /1 AI reply mentioned your details/);
 });
 
 // Safari versions before 18 don't tell the handler which tab a keyboard shortcut was pressed in.

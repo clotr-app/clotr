@@ -1,4 +1,20 @@
 {
+  "1.6": [
+    "The practice key is assembled when its pages open, so examples still work without shipping a whole copy of a key.",
+    "The Try page checks the first 100,000 characters of a pasted message and explains what to do when it is longer.",
+    "Saved details still warn after paste rewrites, autocorrect and undo; guesses added by a chat page stay quiet.",
+    "When an AI reply mentions a detail from your vault, Clotr shows the count in its toolbar and popup. Activity keeps only the kind and chat, and the page never sees a reply notice.",
+    "Clotr recognizes long credentials wrapped across indented lines in YAML files.",
+    "Long runs of everyday words no longer make Clotr hash thousands of overlapping recovery-phrase windows. Number-word scans skip ordinary prose and private-key checks skip parsers whose markers are absent.",
+    "Large messages are scanned in smaller overlapping pieces and a result is marked if the scan stops before it finishes.",
+    "On first use, the welcome page opens a fake example and checks it as soon as you choose to try it.",
+    "The welcome page explains that an AI service still receives a message you choose to send, and that Clotr has no server.",
+    "The warning choices use the same names in Windows and in the browser. 'Leave it alone' closes the warning; 'Leave it and send' sends a held message.",
+    "The welcome page names built-in AI chats as the default and explains how to pause Clotr on one. Its other choice checks chat boxes on other sites, not checkout or sign-in forms.",
+    "On Clotr's own welcome page, the toolbar popup now says where you are instead of saying there is no web page in the tab.",
+    "On an ordinary website the popup says Clotr watches AI chats and is idle there. A plain button can still turn it on for that site.",
+    "Settings shows your Clotr version and a 'what's new' button that reopens these release notes, even after you have marked them as read."
+  ],
   "1.2": [
     "A new look and a new icon.",
     "Warns you if a photo you attach still has its location saved inside, or is named like an ID.",
@@ -26,7 +42,7 @@
     "A weekly summary at the top of the popup: this week against last, and the one thing to do now.",
     "Attached PDFs and Word, Excel and PowerPoint files are checked too; several files at once get one warning.",
     "Helping someone? Larger warnings, a stricter setting for personal details, and a PIN so settings aren't changed by accident.",
-    "If an AI's reply mentions your own details that you didn't type on that page, Clotr points it out: it may have them from an earlier chat or its memory.",
+    "If an AI reply mentions your own details, Clotr shows a count on its toolbar badge and in the popup. Activity keeps the kind and chat name; the page sees no notice, and Clotr never keeps the reply or detail.",
     "Clotr says when it can't help: the popup shows whether it sees the chat box, and a red ! appears if a page refused its edit.",
     "Catches more: many more service keys, crypto seed phrases, IBANs, UK and Canadian IDs, medical record numbers, home and card codes (\"the gate code is…\", a card's CVV, sign-in codes texted to you, remote-access codes a fake support call asks for), logins shared as \"email / password\", answers to security questions, and numbers or cards read out in words (\"double five\", Spanish pairs like \"treinta y cuatro\").",
     "Everyday words everywhere (Hide it / Leave it in, More choices to decide for good), and updates no longer need a page reload.",
@@ -44,8 +60,74 @@
   "0.6": [
     "Street addresses, dates of birth, bank/ID numbers, international phones, and more disguises (fifty six, O for zero)."
   ],
+  "1.3": [
+    "\"Is this a scam?\", the command check, Tourniquet and Practice are switched on for everyone now.",
+    "The warning now names the one detail it found, and its choices read \"Cover it\" and \"Send as is.\"",
+    "UK, Canadian and Australian addresses, postcodes, bank details and ID numbers are all caught now, and so are backup codes and more kinds of API keys.",
+    "Settings can switch Clotr on for search engines like Google and Bing, and for support chats, the same way it already does for chat apps.",
+    "\"Everywhere I type\" reaches a chat box on any site you choose, off until you turn it on.",
+    "A link that carries a tracking code gets its own warning, with a button to remove just that part.",
+    "A message now needs something you actually did first, so a page's own script can't fake a send to test what Clotr would warn about.",
+    "A team's policy can hold a file for anything it finds inside, not only what's set to Ask before sending."
+  ],
+  "1.4": [
+    "A letter stuck to a phone or ID number, or a long run of words in front of a recovery phrase, no longer slips past the check.",
+    "Settings has a link to Clotr for Windows.",
+    "The popup's logo now matches Clotr's icon, with the same bandage over the o.",
+    "A random decimal is no longer read as a card number, and a drive path is no longer read as a Spanish ID.",
+    "A list of ordinary words, like a diary card, is no longer read as a wallet's recovery phrase: a real one has to pass its own checksum.",
+    "A movie or show's file name, like Dune.Part.Two.2024.2160p, is no longer read as an ID or phone number.",
+    "Pasting a long list, like a few hundred contacts, no longer holds up the chat tab.",
+    "The same goes for pasting hundreds of numbers or emails of a kind you saved to your vault.",
+    "When you attach a photo that has the place it was taken saved inside it, Clotr takes the place out before the site gets it, with a button to put it back.",
+    "The popup says plainly when it can't find a site's chat box, and a chat box that changed shape in a redesign is still found.",
+    "\"Is this a scam?\" no longer marks a plain congrats about your own news as a prize, and catches a made-up closing window.",
+    "More ways specially made text could freeze the chat tab are fixed.",
+    "\"Is this a scam?\" now marks a request to buy a gift card for a set amount, while a gift card as a present still isn't marked.",
+    "What you save to your vault, or what ends up in your history, now takes real time to guess back out.",
+    "The welcome page says why Clotr exists and where it checks.",
+    "Clotr reacts only to what you actually type, pick and send, not to a page's own script pretending to be you.",
+    "More of what people paste is caught, like an API key told in a sentence or a password told as \"my password's …\".",
+    "The toolbar icon, popup and warnings show the same C with the bandage that Clotr for Windows and Android use."
+  ],
+  "1.5": [
+    "Cover it now covers the whole private key when its last line is missing or damaged, or when its first line also shows up earlier in your message.",
+    "Cover it now covers a secret inside a longer one, like a web address that carries a key and its secret, or a database password that holds a /.",
+    "Cover it now covers all of a password with punctuation and a key that wraps onto a second line, plus whatever you added just before clicking it.",
+    "A wallet key written as PRIVATE_KEY=0x… or told in a sentence, Telegram and SendGrid tokens in more shapes, and every internal IP address in a message are caught and covered.",
+    "Replying to an email no longer warns about the addresses in the message you're replying to, and what you add is still checked wherever you type it.",
+    "Cover it in an email changes only what it covers and keeps the rest of your formatting.",
+    "A long message you typed no longer gets the large-paste warning, and in a slow chat the warning no longer vanishes for a second before coming back.",
+    "Large pastes stay responsive, and one very long value or a list of thousands of numbers no longer stops Clotr from checking the rest.",
+    "The popup's buttons stay readable when the theme changes.",
+    "Passwords are caught in many more languages and places, like the password column of a pasted spreadsheet, a shell command or a config file.",
+    "More private keys are caught, like one wrapped onto several lines, one in base64 in Kubernetes files, one with spaces in its dashes, a PGP key block, a JWK in JSON, or a WireGuard key.",
+    "An AWS secret access key is caught beside its access key ID and inside a JSON string, and a long labeled token, like an AWS session token, is caught and covered whole.",
+    "Keys from many more services, like Groq, OpenRouter, Supabase, Sentry, Shopify, Databricks, Tailscale and NuGet, are caught and named by their service.",
+    "GitLab, Perplexity, Slack, DigitalOcean, Hugging Face, Heroku, 1Password, Cloudflare, Twilio and GitHub keys are each named by their service, and Slack's xoxe. tokens are caught too.",
+    "Clotr also warns about a secret after a line break inside JSON, a bearer token set in code, an npm token, a Stripe webhook secret and a card number with dots.",
+    "Phone numbers from France, Germany, Belgium, the Netherlands, Spain and Italy are caught without the country code too, and a time in a pasted log isn't read as one.",
+    "A card number in six groups is caught, and so are more ID numbers with a check digit, like Spanish and Mexican ones written in groups or said aloud.",
+    "Everywhere I type leaves sign-in, address and payment boxes alone from the first keystroke."
+  ],
   "translations": {
     "es": {
+      "1.6": [
+        "La clave de práctica se arma al abrir sus páginas, así los ejemplos funcionan sin incluir una copia completa de la clave.",
+        "La página Try revisa los primeros 100.000 caracteres de un mensaje pegado y explica qué hacer si es más largo.",
+        "Los datos guardados siguen activando avisos después de reescrituras al pegar, autocorrecciones y deshacer; las suposiciones añadidas por la página del chat no generan avisos.",
+        "Si una respuesta de IA menciona un dato de tu caja fuerte, Clotr muestra el recuento en el icono y en la ventana emergente. Actividad conserva solo el tipo y el chat; la página nunca ve un aviso sobre la respuesta.",
+        "Clotr reconoce credenciales largas repartidas en líneas indentadas de archivos YAML.",
+        "Las secuencias largas de palabras comunes ya no hacen que Clotr calcule miles de ventanas solapadas para buscar frases de recuperación. Las búsquedas de números escritos con palabras omiten la prosa corriente, y las comprobaciones de claves privadas omiten analizadores cuando faltan sus marcadores.",
+        "Los mensajes largos se revisan en partes más pequeñas que se solapan, y el resultado se marca si la revisión se detiene antes de terminar.",
+        "La primera vez, la página de bienvenida abre un ejemplo falso y lo revisa en cuanto eliges probarlo.",
+        "La página de bienvenida explica que el servicio de IA sigue recibiendo el mensaje que eliges enviar y que Clotr no tiene servidor.",
+        "Las opciones del aviso usan los mismos nombres en Windows y en el navegador. «Dejarlo así» cierra el aviso; «Dejarlo así y enviar» envía el mensaje retenido.",
+        "La página de bienvenida presenta los chats de IA integrados como opción predeterminada y explica cómo pausar Clotr en uno. La otra opción revisa cuadros de chat en otros sitios, no formularios de pago ni de inicio de sesión.",
+        "Cuando abres la propia página de bienvenida de Clotr, la ventana emergente de la barra ahora indica dónde estás, en vez de decir que no hay ninguna página web en la pestaña.",
+        "En un sitio web normal, la ventana emergente dice que Clotr vigila los chats de IA y está inactivo allí. Un botón sencillo todavía puede activarlo para ese sitio.",
+        "Configuración muestra tu versión de Clotr y un botón «novedades» que vuelve a abrir estas notas, aunque ya las hayas marcado como leídas."
+      ],
       "1.2": [
         "Un aspecto nuevo y un icono nuevo.",
         "Te avisa si una foto que adjuntas todavía guarda el lugar donde se tomó, o se llama como un documento de identidad.",
@@ -73,7 +155,7 @@
         "Un resumen semanal arriba del panel: esta semana frente a la anterior, y lo único que conviene hacer ahora.",
         "También revisa los PDF y los archivos de Word, Excel y PowerPoint que adjuntas; varios archivos a la vez reciben un solo aviso.",
         "¿Lo configuras para otra persona? Avisos más grandes, un ajuste más estricto para los datos personales y un PIN para que los ajustes no se cambien por error.",
-        "Si la respuesta de una IA menciona tus propios datos que no escribiste en esa página, Clotr te lo señala: puede tenerlos de un chat anterior o de su memoria.",
+        "Si una respuesta de IA menciona tus datos, Clotr muestra un recuento en el icono y la ventana emergente. Actividad guarda el tipo y el chat; la página no ve ningún aviso, y Clotr nunca guarda la respuesta ni el dato.",
         "Clotr te dice cuándo no puede ayudar: el panel muestra si ve el cuadro de chat, y aparece un ! rojo si una página rechazó su cambio.",
         "Detecta más: muchas más claves de servicios, frases semilla de criptomonedas, IBAN, documentos del Reino Unido y Canadá, números de historia clínica, códigos de casa y de tarjeta (incluido el CVV), códigos de verificación que te llegan por SMS, códigos de acceso remoto, inicios de sesión compartidos como «correo / contraseña», respuestas a preguntas de seguridad y números o tarjetas dichos en palabras («treinta y cuatro»).",
         "Palabras sencillas en todo (Ocultarlo / Dejarlo, Más opciones para decidir de una vez), y las actualizaciones ya no necesitan recargar la página.",
@@ -130,55 +212,5 @@
         "«En todas partes donde escribo» deja en paz las casillas de inicio de sesión, dirección y pago desde la primera tecla."
       ]
     }
-  },
-  "1.3": [
-    "\"Is this a scam?\", the command check, Tourniquet and Practice are switched on for everyone now.",
-    "The warning now names the one detail it found, and its choices read \"Cover it\" and \"Send as is.\"",
-    "UK, Canadian and Australian addresses, postcodes, bank details and ID numbers are all caught now, and so are backup codes and more kinds of API keys.",
-    "Settings can switch Clotr on for search engines like Google and Bing, and for support chats, the same way it already does for chat apps.",
-    "\"Everywhere I type\" reaches a chat box on any site you choose, off until you turn it on.",
-    "A link that carries a tracking code gets its own warning, with a button to remove just that part.",
-    "A message now needs something you actually did first, so a page's own script can't fake a send to test what Clotr would warn about.",
-    "A team's policy can hold a file for anything it finds inside, not only what's set to Ask before sending."
-  ],
-  "1.4": [
-    "A letter stuck to a phone or ID number, or a long run of words in front of a recovery phrase, no longer slips past the check.",
-    "Settings has a link to Clotr for Windows.",
-    "The popup's logo now matches Clotr's icon, with the same bandage over the o.",
-    "A random decimal is no longer read as a card number, and a drive path is no longer read as a Spanish ID.",
-    "A list of ordinary words, like a diary card, is no longer read as a wallet's recovery phrase: a real one has to pass its own checksum.",
-    "A movie or show's file name, like Dune.Part.Two.2024.2160p, is no longer read as an ID or phone number.",
-    "Pasting a long list, like a few hundred contacts, no longer holds up the chat tab.",
-    "The same goes for pasting hundreds of numbers or emails of a kind you saved to your vault.",
-    "When you attach a photo that has the place it was taken saved inside it, Clotr takes the place out before the site gets it, with a button to put it back.",
-    "The popup says plainly when it can't find a site's chat box, and a chat box that changed shape in a redesign is still found.",
-    "\"Is this a scam?\" no longer marks a plain congrats about your own news as a prize, and catches a made-up closing window.",
-    "More ways specially made text could freeze the chat tab are fixed.",
-    "\"Is this a scam?\" now marks a request to buy a gift card for a set amount, while a gift card as a present still isn't marked.",
-    "What you save to your vault, or what ends up in your history, now takes real time to guess back out.",
-    "The welcome page says why Clotr exists and where it checks.",
-    "Clotr reacts only to what you actually type, pick and send, not to a page's own script pretending to be you.",
-    "More of what people paste is caught, like an API key told in a sentence or a password told as \"my password's …\".",
-    "The toolbar icon, popup and warnings show the same C with the bandage that Clotr for Windows and Android use."
-  ],
-  "1.5": [
-    "Cover it now covers the whole private key when its last line is missing or damaged, or when its first line also shows up earlier in your message.",
-    "Cover it now covers a secret inside a longer one, like a web address that carries a key and its secret, or a database password that holds a /.",
-    "Cover it now covers all of a password with punctuation and a key that wraps onto a second line, plus whatever you added just before clicking it.",
-    "A wallet key written as PRIVATE_KEY=0x… or told in a sentence, Telegram and SendGrid tokens in more shapes, and every internal IP address in a message are caught and covered.",
-    "Replying to an email no longer warns about the addresses in the message you're replying to, and what you add is still checked wherever you type it.",
-    "Cover it in an email changes only what it covers and keeps the rest of your formatting.",
-    "A long message you typed no longer gets the large-paste warning, and in a slow chat the warning no longer vanishes for a second before coming back.",
-    "Large pastes stay responsive, and one very long value or a list of thousands of numbers no longer stops Clotr from checking the rest.",
-    "The popup's buttons stay readable when the theme changes.",
-    "Passwords are caught in many more languages and places, like the password column of a pasted spreadsheet, a shell command or a config file.",
-    "More private keys are caught, like one wrapped onto several lines, one in base64 in Kubernetes files, one with spaces in its dashes, a PGP key block, a JWK in JSON, or a WireGuard key.",
-    "An AWS secret access key is caught beside its access key ID and inside a JSON string, and a long labeled token, like an AWS session token, is caught and covered whole.",
-    "Keys from many more services, like Groq, OpenRouter, Supabase, Sentry, Shopify, Databricks, Tailscale and NuGet, are caught and named by their service.",
-    "GitLab, Perplexity, Slack, DigitalOcean, Hugging Face, Heroku, 1Password, Cloudflare, Twilio and GitHub keys are each named by their service, and Slack's xoxe. tokens are caught too.",
-    "Clotr also warns about a secret after a line break inside JSON, a bearer token set in code, an npm token, a Stripe webhook secret and a card number with dots.",
-    "Phone numbers from France, Germany, Belgium, the Netherlands, Spain and Italy are caught without the country code too, and a time in a pasted log isn't read as one.",
-    "A card number in six groups is caught, and so are more ID numbers with a check digit, like Spanish and Mexican ones written in groups or said aloud.",
-    "Everywhere I type leaves sign-in, address and payment boxes alone from the first keystroke."
-  ]
+  }
 }

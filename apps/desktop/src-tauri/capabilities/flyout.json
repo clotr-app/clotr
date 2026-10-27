@@ -1,0 +1,16 @@
+{
+  "identifier": "flyout",
+  "description": "The tray flyout's own narrow commands: its own status and app count, and its four buttons. No settings, no history, no vault.",
+  "windows": ["flyout"],
+  "permissions": [
+    "core:event:allow-listen",
+    "core:event:allow-unlisten",
+    "allow-flyout-hello",
+    "allow-close-flyout",
+    "allow-flyout-fit",
+    "allow-flyout-open",
+    "allow-flyout-scan",
+    "allow-flyout-pause",
+    "allow-flyout-quit"
+  ]
+}

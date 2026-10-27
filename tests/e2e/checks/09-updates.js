@@ -279,7 +279,7 @@ module.exports = async function (env) {
           (await other.worker.evaluate(() => checkForLocalUpdate())) === false && (await reloads()) === 0,
           "reloaded while the dialog was open",
         );
-        await clickDialogButton(page, "Leave it in");
+        await clickDialogButton(page, "Leave it alone");
         expect(
           (await other.worker.evaluate(() => checkForLocalUpdate())) === true && (await reloads()) === 1,
           "didn't reload after the dialog was answered",

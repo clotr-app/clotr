@@ -24,6 +24,26 @@
       <p id="allow-status" class="allow-status" role="status"></p>
     </div>
 
+    <p class="lead" data-i18n="vault_clotrChecksWhatYouType">Clotr checks what you type in AI chats, and in email or chat apps YOU switch on.</p>
+    <ul class="facts">
+      <li><span id="ai-site-count-fact"></span> <span data-i18n="vault_onlyOnAiChats">AI chats are on from the start.</span> <span data-i18n="vault_fact1">For any email or chat app you add, your browser asks you first.</span></li>
+      <li><span data-i18n="vault_nothingLeavesThisComputer">There are no Clotr servers,</span> <span data-i18n="vault_fact2">what Clotr reads here stays here like Vegas. What you choose to send still goes to the service, because you chose to.</span></li>
+      <li><span data-i18n="vault_itNeverSavesWhatYou">It never saves what you type,</span> <span data-i18n="vault_fact3">only a short note of what it found, like “Phone number · chatgpt.com · hidden,” which you can see from its toolbar button.</span></li>
+      <li><span data-i18n="vault_itReadsReplies">Once you add your details, Clotr checks the AI's replies for 90 seconds after you send,</span> <span data-i18n="vault_fact6">and shows a count on its toolbar badge and in the popup; Activity keeps the kind of detail and chat, never the text. You can turn it off in Settings.</span></li>
+    </ul>
+
+    <h2 data-i18n="vault_tryIt">Try it</h2>
+    <div class="field" id="try-field">
+      <div class="try-key">
+        <label for="try"><span data-i18n="vault_tryLabel">Paste this made-up key, or type a phone number:</span>
+          <code data-demo-aws-key></code></label>
+        <button class="btn" type="button" id="try-copy" data-i18n="vault_copyKey">Copy</button>
+      </div>
+      <textarea id="try" rows="2" autocomplete="off" spellcheck="false"></textarea>
+      <div id="try-result" class="try-result" role="status" aria-live="polite"></div>
+      <p class="hint try-hint"><span class="on-computer" data-i18n="vault_thisPracticeBoxStaysOn">This box is just for practice, and nothing you type here goes anywhere. On a real AI chat, the warning shows up in the top-right corner.</span><span class="on-phone" data-i18n="vault_practicePhone">This box is just for practice, and nothing you type here goes anywhere. On a real AI chat, the warning shows up at the top of the screen and stays in view while you scroll.</span></p>
+    </div>
+
     <div class="author-hero">
       <svg class="hero-map" viewBox="18 0 560 176" preserveAspectRatio="xMinYMid slice" aria-hidden="true" focusable="false">
         <circle class="hm-pulse" cx="58" cy="92" r="30"/>
@@ -55,22 +75,17 @@
       </svg>
       <div class="author-note">
         <p class="author-hello" data-i18n="vault_noteHello">Hi, I'm Alex.</p>
-        <p data-i18n="vault_noteBody">I made Clotr after I noticed how much I was telling AI chats without a second thought. I immediately wanted a Tony Stark style "suit of armor around the world", but with a computer. It reads what you type into an AI chat, right here on your computer, and speaks up before something private goes out. It's free, it doesn't track you, and it never sends anything anywhere.</p>
-        <p class="author-why" data-i18n="vault_noteWhy">My main goal is privacy from big tech, for everyone. Building it is how I'm learning software engineering as a whole, and how I turn what I'm learning at university into something people can actually use.</p>
-        <p class="author-why" data-i18n="vault_noteNoAi">Clotr has absolutely NO AI, it defeats the point.</p>
-        <p class="author-why" data-i18n="vault_noteCoding">I do, however, employ agentic coding.</p>
-        <p class="author-why" data-i18n="vault_noteReport">The more you use Clotr, the more you report bugs, the better it gets. For free.</p>
+        <p data-i18n="vault_noteBody">I made Clotr to solve my own needs, because I kept copying or pasting or typing private information and I needed a guardrail. I'm tired of receiving data breach or PII leak letters in the mail from companies I don't even know. I wanted a Tony Stark style "suit of armor around the world", but for my computer and phone.</p>
+        <p data-i18n="vault_noteReads">Clotr checks what you type into an AI chat on your device. If you choose to send a message, the AI service gets it as usual. Clotr has no server. It's free, and that's the entire point.</p>
+        <p class="author-why" data-i18n="vault_noteWhy">My main goal is privacy from big tech and AI, for everyone. Building it is how I'm learning software engineering as a whole, and how I turn what I'm learning at university into something people can actually use.</p>
+        <p class="author-why" data-i18n="vault_noteNoAi">There's no AI inside Clotr. I do use AI coding tools to help me build it, and every change has to pass Clotr's human (and AI) created tests before it ships. I have the benefit of student credits and packages that I don't want to stockpile like Smaug, I want to use the gold (the tools) to turn the dragon into a statue.</p>
+        <p class="author-why" data-i18n="vault_noteReport">Every bug you report makes Clotr better, for everyone, for free. I read these. I consider it fan mail.</p>
       </div>
     </div>
-    <p class="lead" data-i18n="vault_clotrChecksWhatYouType">Clotr checks what you type in AI chats, and in email or chat apps you switch on.</p>
-    <ul class="facts">
-      <li><span data-i18n="vault_onlyOnAiChats">Your browser asks you first</span> <span data-i18n="vault_fact1">for every email or chat app you add, so Clotr only ever covers the sites you've chosen.</span></li>
-      <li><span data-i18n="vault_nothingLeavesThisComputer">There are no Clotr servers,</span> <span data-i18n="vault_fact2">so nothing you type ever leaves this computer.</span></li>
-      <li><span data-i18n="vault_itNeverSavesWhatYou">It never saves what you type,</span> <span data-i18n="vault_fact3">only a short note of what it found, like “Phone number · chatgpt.com · hidden,” which you can see from its toolbar button.</span></li>
-      <li><span data-i18n="vault_itOnlyWarns">By default it only warns,</span> <span data-i18n="vault_fact4">with a note in the corner, and the message stays yours to send.</span></li>
-      <li><span data-i18n="vault_itReadsReplies">Once you add your details below, it also reads the AI's replies,</span> <span data-i18n="vault_fact6">so it can tell you if one brings up something you didn't type, and you can turn that off in Settings.</span></li>
-      <li><span data-i18n="vault_onlyThisBrowser">It only works in this browser,</span> <span data-i18n="vault_fact5">so be just as careful with AI apps on your phone or built into other programs.</span></li>
-    </ul>
+
+    <p id="lb-offer" class="tq-offer" hidden data-feature="lookback">
+      <a href="lookback.html" target="_blank" data-i18n="vt_lookBackOffer">Already used ChatGPT, Claude or Gemini? Look back shows what you've already told them.</a>
+    </p>
 
     <h2 class="pin-title"><span class="on-computer" data-i18n="vault_pinClotr">Pin Clotr</span><span class="on-phone" data-i18n="vault_findClotrPhone">Find Clotr</span></h2>
     <p id="pin-step" class="pin-step" role="status"><span class="on-computer"><span data-i18n="vault_pinIntro">Browsers tuck new extensions away. To see Clotr's count and open its dashboard, click the</span>
@@ -78,11 +93,12 @@
 
     <section id="where-offer" aria-labelledby="where-title" hidden>
       <h2 id="where-title" data-i18n="vt_whereTitle">Where should Clotr check?</h2>
-      <p class="lead" data-i18n="vt_whereLead">Clotr already checks your AI chats. It can also reach a chat box on any other website, never a checkout or sign-in form.</p>
+      <p class="lead" data-i18n="vt_whereLead">Everywhere I type also checks chat boxes on other websites, but never checkout or sign-in forms.</p>
       <p class="ev-actions">
-        <button class="btn" type="button" id="where-ai-only" data-i18n="vt_aiChatsOnly">AI chats only</button>
-        <button class="btn primary" type="button" id="where-everywhere" data-i18n="vt_aiChatsAndEverywhere">AI chats and everywhere I type</button>
+        <button class="btn primary" type="button" id="where-ai-only"><span data-i18n="vt_aiChatsThe">The</span> <span id="ai-site-count-choice"></span> <span data-i18n="vt_aiChatsOnly">popular AI chats</span></button>
+        <button class="btn" type="button" id="where-everywhere" data-i18n="vt_aiChatsAndEverywhere">AI chats and everywhere I type</button>
       </p>
+      <p class="ev-hint" data-i18n="vt_wherePause">To pause Clotr on a site, open its toolbar popup there.</p>
       <p class="ev-status" id="where-status" role="status"></p>
 
       <details id="where-pick-sites">
@@ -110,19 +126,6 @@
     </section>
     <p id="tq-offer" class="tq-offer" hidden data-feature="tourniquet"><span data-i18n="vt_tqOfferStart">Setting Clotr up for someone else?</span>
       <a href="helper.html#who" target="_blank" data-i18n-skip>Tourniquet</a> <span data-i18n="vt_tqOfferEnd">gives a child or a grown-up stronger settings in one step.</span></p>
-
-    <h2 data-i18n="vault_tryIt">Try it</h2>
-    <div class="field">
-      <label for="try"><span data-i18n="vault_tryLabel">Paste this made-up key, or type a phone number:</span>
-        <code>AKIA4HPQ7XZ2R6TWLJ3N</code></label>
-      <textarea id="try" rows="2" autocomplete="off" spellcheck="false"></textarea>
-      <div id="try-result" class="try-result" role="status" aria-live="polite"></div>
-      <p class="hint try-hint"><span class="on-computer" data-i18n="vault_thisPracticeBoxStaysOn">This box is just for practice, and nothing you type here goes anywhere. On a real AI chat, the warning shows up in the top-right corner.</span><span class="on-phone" data-i18n="vault_practicePhone">This box is just for practice, and nothing you type here goes anywhere. On a real AI chat, the warning shows up at the top of the screen and stays in view while you scroll.</span></p>
-    </div>
-
-    <p id="lb-offer" class="tq-offer" hidden data-feature="lookback">
-      <a href="lookback.html" target="_blank" data-i18n="vt_lookBackOffer">Already used ChatGPT, Claude or Gemini? Look back shows what you've already told them.</a>
-    </p>
 
     <h2 data-i18n="vault_optionalTellClotrWhatTo">Tell Clotr what to look out for</h2>
     <p class="lead"><span data-i18n="vault_addLater">Add your own details below and Clotr will spot them however they're written. No rush, though. You can come back any time from Clotr's toolbar button → Settings →</span>
@@ -196,6 +199,7 @@
   </footer>
 
   <script src="page-i18n.js"></script>
+  <script src="demo-key.js"></script>
   <script src="patterns.js"></script>
   <script src="report.js"></script>
   <script src="detector.js"></script>
@@ -204,6 +208,7 @@
   <script src="sites.js"></script>
   <script src="everyday-offer.js"></script>
   <script src="quick-exit.js" data-feature="checkup"></script>
+  <script src="rate.js"></script>
   <script src="vault.js"></script>
 </body>
 </html>

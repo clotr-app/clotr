@@ -1,0 +1,10 @@
+/* The card's window is see-through: only the warning shows, with its own shadow, over the AI app. */
+/* The warning's own look, text on orange included (its espresso shade), comes from dist/ui-styles.js, a byte-for-byte
+   copy of the browser's extension/ui-styles.js (apps/desktop/tools/prepare-ui.js): this file has no colour of its
+   own to change. card.js's own note says the same (the one place a shared design kit for the suite would plug in). */
+html,
+body {
+  margin: 0;
+  background: transparent;
+  overflow: hidden;
+}

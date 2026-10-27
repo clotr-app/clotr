@@ -47,22 +47,54 @@ internal object GuardSetup {
         ?.takeIf { it.isAbsolute && Files.isRegularFile(it) }
 
     /** Guard in npm's global folder, where `npm install -g` or `npm link` puts it. Runs npm, so never on the UI thread. */
-    fun globalCli(): Path? = npmGlobalRoot()?.resolve(GLOBAL_SCRIPT)?.takeIf(Files::isRegularFile)
+    fun globalCli(excludedRoot: Path? = null): Path? = npmGlobalRoot(excludedRoot)?.resolve(GLOBAL_SCRIPT)?.takeIf(Files::isRegularFile)
 
-    fun npmGlobalRoot(): Path? {
-        val npm = executable("npm") ?: return null
+    fun npmGlobalRoot(excludedRoot: Path? = null): Path? {
+        val npm = executable("npm", excludedRoot = excludedRoot) ?: return null
         // From the home folder, so no project's own npm settings take part.
-        val result = exec(listOf(npm.toString(), "root", "-g"), Path.of(System.getProperty("user.home")), NPM_TIMEOUT_SECONDS)
+        val command = npmCommand(npm, executable("node", excludedRoot = excludedRoot)) ?: return null
+        val result = exec(command, Path.of(System.getProperty("user.home")), NPM_TIMEOUT_SECONDS)
         if (result.exitCode != 0) return null
         val line = result.output.lineSequence().map(String::trim).lastOrNull(String::isNotEmpty) ?: return null
         return runCatching { Path.of(line) }.getOrNull()?.takeIf { it.isAbsolute && Files.isDirectory(it) }
     }
 
+    /** A Windows npm.cmd file is a batch script, so start npm's JS entry point with Node instead. */
+    internal fun npmCommand(npm: Path, node: Path?, windows: Boolean = isWindows): List<String>? {
+        if (windows && npm.fileName.toString().equals("npm.cmd", ignoreCase = true)) {
+            val script = npm.parent.resolve("node_modules/npm/bin/npm-cli.js")
+            if (node == null || !Files.isRegularFile(script)) return null
+            return listOf(node.toString(), script.toString(), "root", "-g")
+        }
+        return listOf(npm.toString(), "root", "-g")
+    }
+
+    internal fun commandArgs(verb: String, tool: String, options: List<String> = emptyList(), dryRun: Boolean = false): List<String> =
+        buildList {
+            add(verb)
+            add(tool)
+            if (tool == "git") {
+                add("--project")
+                if (dryRun) add("--dry-run")
+                return@buildList
+            }
+            if (tool == "windsurf") add("--windsurf-jetbrains")
+            addAll(options)
+            if (dryRun) add("--dry-run")
+        }
+
     /**
      * An executable from a PATH folder, looked up here rather than by the OS, so a relative PATH entry or the
      * working folder can't supply one. Only checks files; runs nothing.
      */
-    fun executable(name: String, path: String? = EnvironmentUtil.getValue("PATH")): Path? {
+    fun executable(
+        name: String,
+        path: String? = EnvironmentUtil.getValue("PATH"),
+        excludedRoot: Path? = null,
+    ): Path? {
+        val realExcludedRoot = excludedRoot?.let { root ->
+            runCatching { root.toRealPath() }.getOrElse { root.toAbsolutePath().normalize() }
+        }
         // npm is a .cmd script on Windows. Node itself is always node.exe there, and a .cmd wrapper is never used
         // for it, since cmd.exe would reparse the script path it's given.
         val names = when {
@@ -73,16 +105,26 @@ internal object GuardSetup {
         for (entry in path.orEmpty().split(File.pathSeparatorChar)) {
             val folder = runCatching { Path.of(entry.trim().removeSurrounding("\"")) }.getOrNull() ?: continue
             if (!folder.isAbsolute) continue
-            for (candidate in names.map(folder::resolve)) {
-                if (Files.isRegularFile(candidate) && (isWindows || Files.isExecutable(candidate))) return candidate
+            val realFolder = runCatching { folder.toRealPath() }.getOrNull() ?: continue
+            if (realExcludedRoot != null && realFolder.startsWith(realExcludedRoot)) continue
+            for (candidate in names.map(realFolder::resolve)) {
+                val realCandidate = runCatching { candidate.toRealPath() }.getOrNull() ?: continue
+                if (realExcludedRoot != null && realCandidate.startsWith(realExcludedRoot)) continue
+                if (Files.isRegularFile(realCandidate) && (isWindows || Files.isExecutable(realCandidate))) return realCandidate
             }
         }
         return null
     }
 
-    fun run(cli: Path, args: List<String>, cwd: Path, home: Path? = null): GuardResult {
-        val node = executable("node") ?: return GuardResult(-1, ClotrBundle.message("guard.nodeMissing"))
-        return exec(listOf(node.toString(), cli.toString()) + args, cwd, GUARD_TIMEOUT_SECONDS, home)
+    fun run(
+        cli: Path,
+        args: List<String>,
+        cwd: Path,
+        home: Path? = null,
+        node: Path? = executable("node", excludedRoot = cwd),
+    ): GuardResult {
+        val nodeExecutable = node ?: return GuardResult(-1, ClotrBundle.message("guard.nodeMissing"))
+        return exec(listOf(nodeExecutable.toString(), cli.toString()) + args, cwd, GUARD_TIMEOUT_SECONDS, home)
     }
 
     /** Every process Clotr starts comes through here, with an argument list and a time limit, off the UI thread. */
@@ -158,10 +200,10 @@ internal class GuardSetupDialog(private val project: Project?, private val remov
     }
 
     private fun refresh() {
-        val node = GuardSetup.executable("node")
+        val node = GuardSetup.executable("node", excludedRoot = cwd)
         where.text = when {
-            cli == null -> html(ClotrBundle.message("guard.cliMissing"))
             node == null -> html(ClotrBundle.message("guard.nodeMissing"))
+            cli == null -> html(ClotrBundle.message("guard.cliMissing"))
             else -> html(ClotrBundle.message("guard.cliFound", cli.toString()))
         }
         isOKActionEnabled = cli != null && node != null
@@ -198,7 +240,7 @@ internal class GuardSetupDialog(private val project: Project?, private val remov
         val preview = withProgress(project, ClotrBundle.message("guard.previewing")) {
             chosen.joinToString("\n\n") { tool ->
                 if (GuardSetup.clineUnsupported(tool)) return@joinToString "$tool: ${ClotrBundle.message("guard.clineLimit")}"
-                val args = if (tool == "git") listOf(verb, tool, "--project", "--dry-run") else listOf(verb, tool) + options + "--dry-run"
+                val args = GuardSetup.commandArgs(verb, tool, options, dryRun = true)
                 val result = GuardSetup.run(cli, args, cwd)
                 val folder = if (remove || tool == "git" || result.exitCode != 0 || GuardSetup.settingsFolderFound(result.output)) ""
                 else "\n${ClotrBundle.message("guard.notInstalled")}"
@@ -211,7 +253,7 @@ internal class GuardSetupDialog(private val project: Project?, private val remov
         if (answer != 0) return
         val failure = withProgress(project, ClotrBundle.message("guard.applying")) {
             chosen.filterNot(GuardSetup::clineUnsupported).firstNotNullOfOrNull { tool ->
-                val args = if (tool == "git") listOf(verb, tool, "--project") else listOf(verb, tool) + options
+                val args = GuardSetup.commandArgs(verb, tool, options)
                 GuardSetup.run(cli, args, cwd).takeIf { it.exitCode != 0 }?.output
             }
         }
@@ -246,10 +288,18 @@ internal fun showGuardSetup(project: Project?) {
         return
     }
     val actions = arrayOf(ClotrBundle.message("guard.setupChoice"), ClotrBundle.message("guard.removeChoice"))
-    val choice = Messages.showChooseDialog(project, ClotrBundle.message("guard.chooseAction"), title, Messages.getQuestionIcon(), actions, actions[0])
+    val choice = Messages.showDialog(
+        project,
+        ClotrBundle.message("guard.chooseAction"),
+        title,
+        actions,
+        0,
+        Messages.getQuestionIcon(),
+    )
     if (choice < 0) return
+    val workspace = project?.basePath?.let(Paths::get)
     val cli = GuardSetup.findCli(ClotrLocalState.getInstance().guardCliPath) {
-        withProgress(project, ClotrBundle.message("guard.finding")) { GuardSetup.globalCli() }
+        withProgress(project, ClotrBundle.message("guard.finding")) { GuardSetup.globalCli(workspace) }
     }
     GuardSetupDialog(project, choice == 1, cli).show()
 }

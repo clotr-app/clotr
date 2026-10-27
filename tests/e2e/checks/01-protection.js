@@ -45,7 +45,7 @@ module.exports = async function (env) {
       expect(dialog.text.includes("AWS Access Key"), `dialog doesn't name the key type: ${dialog.text}`);
       expect(!dialog.text.includes(KEY), "dialog shows the full key");
       await page.screenshot({ path: path.join(OUT, "dialog.png") });
-      await clickDialogButton(page, "Hide it");
+      await clickDialogButton(page, "Clot this leak");
       const text = await editorText(page);
       expect(text.includes("[REDACTED AWS ACCESS KEY]") && !text.includes(KEY), `editor text: "${text}"`);
       expect(!(await readDialog(page)), "dialog still open");
@@ -55,9 +55,26 @@ module.exports = async function (env) {
     }),
   );
 
+  // "Clot this leak" is the brand's verb, so each choice also says plainly what it does, as its tooltip.
+  await check("CW1", "The dialog's choices read Clot this leak and Leave it alone, each with a plain tooltip", () =>
+    withSite(ctx, "chatgpt", async (page) => {
+      await resetState(ctx);
+      await typeText(page, `my key is ${KEY}`);
+      const dialog = await waitForDialog(page);
+      expect(dialog, "no dialog appeared");
+      const cover = dialog.buttons.find((b) => b.text === "Clot this leak");
+      const leave = dialog.buttons.find((b) => b.text === "Leave it alone");
+      expect(cover && leave, `choices: ${dialog.buttons.map((b) => b.text).join(" | ")}`);
+      expect(cover.title === "Covers the detail before it's sent", `cover's tooltip: ${cover.title}`);
+      expect(leave.title === "Closes this warning and leaves your message as it is", `leave's tooltip: ${leave.title}`);
+      expect(dialog.text.includes("Enter: Clot this leak"), `keys line: ${dialog.text}`);
+      await clickDialogButton(page, "Leave it alone");
+    }),
+  );
+
   await check(
     "K1",
-    "Keys typed by habit never choose: Space never, Enter not right away; after a moment Enter = Hide it",
+    "Keys typed by habit never choose: Space never, Enter not right away; after a moment Enter = Clot this leak",
     () =>
       // A space shouldn't make the choice for the person. Only after a short delay does the dialog start
       // listening for keys, where Enter moves forward and Esc or Backspace goes back.
@@ -90,7 +107,7 @@ module.exports = async function (env) {
 
   await check(
     "K2",
-    "Esc goes back to the message (nothing chosen); the dialog returns on send; Tab to Leave it in + Enter picks it",
+    "Esc goes back to the message (nothing chosen); the dialog returns on send; Tab to Leave it alone + Enter picks it",
     () =>
       withSite(ctx, "chatgpt", async (page) => {
         await resetState(ctx);
@@ -115,7 +132,7 @@ module.exports = async function (env) {
         await pressEnter(page);
         expect(await waitForDialog(page), "no dialog on the second send");
         await sleep(700);
-        await page.keyboard.press("Tab"); // → Leave it in and send
+        await page.keyboard.press("Tab"); // → Leave it and send
         await page.keyboard.press("Enter");
         await sleep(300);
         expect(!(await readDialog(page)), "Tab + Enter didn't choose");
@@ -134,11 +151,11 @@ module.exports = async function (env) {
       await resetState(ctx);
       await typeText(page, `key ${KEY}`);
       expect(await waitForDialog(page), "no dialog appeared");
-      await clickDialogButton(page, "Leave it in");
+      await clickDialogButton(page, "Leave it alone");
       expect((await editorText(page)).includes(KEY), "text was changed");
       // This dialog came from typing, not from a send, so leaving it in shouldn't send anything on its own.
       await sleep(300);
-      expect((await sentMessages(page)).length === 0, "Leave it in sent a message nobody had sent");
+      expect((await sentMessages(page)).length === 0, "Leave it alone sent a message nobody had sent");
       await pressEnter(page);
       await sleep(300);
       const sent = await sentMessages(page);
@@ -153,12 +170,12 @@ module.exports = async function (env) {
 
   // One click on a form's send button actually fires two send attempts: the click itself, then the form's own
   // submit. The first attempt must not forget what you just allowed before the second one gets checked.
-  await check("A3b", "Leave it in, then the send button of a form: it sends, and the dialog doesn't come back", () =>
+  await check("A3b", "Leave it alone, then the send button of a form: it sends, and the dialog doesn't come back", () =>
     withSite(ctx, "chatgpt", async (page) => {
       await resetState(ctx);
       await typeText(page, `key ${KEY}`);
       expect(await waitForDialog(page), "no dialog appeared");
-      await clickDialogButton(page, "Leave it in");
+      await clickDialogButton(page, "Leave it alone");
       await clickSend(page);
       await sleep(300);
       const sent = await sentMessages(page);
@@ -190,7 +207,7 @@ module.exports = async function (env) {
   );
 
   // When the dialog has already stopped a send, like after a settings reset before the page even opens (UB1),
-  // "Leave it in and send" sends the message exactly once, unchanged, however it was originally sent: the site's
+  // "Leave it and send" sends the message exactly once, unchanged, however it was originally sent: the site's
   // own send button, or Enter.
   const leaveAndSend = (site, send, value) => async (page) => {
     await typeText(page, `key ${value}`);
@@ -199,7 +216,7 @@ module.exports = async function (env) {
     expect((await sentMessages(page)).length === 0, `${site}: sent before the choice`);
     if (site === "chatgpt") await page.screenshot({ path: path.join(OUT, "dialog-held-send.png") });
     await sleep(700);
-    await clickDialogButton(page, "Leave it in and send");
+    await clickDialogButton(page, "Leave it and send");
     const sent =
       (await waitFor(async () => ((await sentMessages(page)).length ? sentMessages(page) : null), 2000)) || [];
     expect(sent.length === 1 && sent[0].includes(value), `${site}: sent ${JSON.stringify(sent)}`);
@@ -209,13 +226,13 @@ module.exports = async function (env) {
     const events = await store.events(ctx);
     expect(events.length === 1 && events[0].action === "allowed", `${site}: events ${JSON.stringify(events)}`);
   };
-  await check("A4c", "Enter was held: Leave it in and send sends it with the site's send button", () =>
+  await check("A4c", "Enter was held: Leave it and send sends it with the site's send button", () =>
     resetState(ctx).then(() => withSite(ctx, "chatgpt", leaveAndSend("chatgpt", pressEnter, KEY2))),
   );
-  await check("A4d", "An unlabeled send button was held: Leave it in and send clicks that button", () =>
+  await check("A4d", "An unlabeled send button was held: Leave it and send clicks that button", () =>
     resetState(ctx).then(() => withSite(ctx, "iconsend", leaveAndSend("iconsend", clickSend, KEY))),
   );
-  await check("A4e", "Enter was held and no send button is recognizable: Leave it in and send presses Enter", () =>
+  await check("A4e", "Enter was held and no send button is recognizable: Leave it and send presses Enter", () =>
     resetState(ctx).then(() => withSite(ctx, "iconsend", leaveAndSend("iconsend", pressEnter, KEY2))),
   );
 
@@ -225,7 +242,7 @@ module.exports = async function (env) {
       await typeText(page, KEY);
       expect(await waitForDialog(page), "no dialog");
       await clickDialogButton(page, "More choices");
-      await clickDialogButton(page, "Leave it in, and stop warning me about: AWS Access Key");
+      await clickDialogButton(page, "Leave it alone, and stop warning me about: AWS Access Key");
       expect(!(await readDialog(page)), "dialog still open");
       // The chat page's click alone changes nothing on every site: Clotr's own page asks first, and says what.
       await settle(300);

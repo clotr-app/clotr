@@ -247,7 +247,7 @@
     ec_facts: (...s) =>
       msg(
         "ec_facts",
-        "Reads the list only: names, and which sites each one can read.\nNothing leaves this computer: Clotr has no servers and never goes online.\nCan read, not does: Clotr says what each one is allowed to read, not what it does with it.",
+        "Reads the list only: names, and which sites each one can read.\nClotr has no server to receive that list.\nCan read, not does: Clotr says what each one is allowed to read, not what it does with it.",
         ...s,
       ),
     ec_listDate: (...s) =>
@@ -270,7 +270,11 @@
     ec_dev: (...s) => msg("ec_dev", "Loaded by hand, in developer mode.", ...s),
     ec_admin: (...s) => msg("ec_admin", "Added by your organization.", ...s),
     ec_isClotr: (...s) =>
-      msg("ec_isClotr", "This is Clotr. It reads AI chats to warn you, and sends nothing anywhere.", ...s),
+      msg(
+        "ec_isClotr",
+        "This is Clotr. It checks messages on your device. If you send one, the AI service receives it as usual. Clotr has no server.",
+        ...s,
+      ),
     ec_normal: (...s) =>
       msg(
         "ec_normal",

@@ -13,7 +13,9 @@ These are checked automatically (`npm test`); a change that breaks one won't be 
 - AI chat sites by default, and nowhere else unless the person adds a site themselves or turns on "Everywhere I type", which starts off. New AI sites go in `extension/ai-sites.json`.
 - Everything runs on the device, with no network requests of any kind from the extension.
 - Never store what someone typed. Only the kind of thing found, the site, the time, what they chose and a scrambled code.
-- Never break the chat. Clotr informs and offers edits; if it fails, the message still goes through.
+- The browser extension informs and offers edits, and lets a message through if it has an internal error. Guard lets an
+  action through with a visible note when Clotr hits an internal error while checking readable input. Guard stops input
+  it can't read, including malformed hook input and text over the size limit.
 
 ## Good first contributions
 
@@ -26,7 +28,7 @@ These are checked automatically (`npm test`); a change that breaks one won't be 
 Here's the short version of getting set up:
 
 ```
-npm install
+npm ci
 npm test            # detection tests and the rule checks above
 npm run format      # tidies JavaScript and CSS (Prettier); npm run lint checks it
 npm run test:e2e    # a real browser (Brave, Chrome or Edge) with Clotr loaded, against local test pages
@@ -34,6 +36,10 @@ npm run package     # the release zip (reproducible) and its SHA-256
 ```
 
 - The extension lives in `extension/`. Load it unpacked from `chrome://extensions` with Developer mode on.
+- The VS Code extension lives in `apps/vscode`. Run `node apps/vscode/build.js` to put its engine bundle, Guard files
+  and the license inside its folder, then `npm run vscode:try` and paste the command it prints into a terminal that
+  has VS Code's `code` command, which opens it in an Extension Development Host. To make a `.vsix`, run
+  `npx --yes @vscode/vsce package --no-dependencies` from `apps/vscode`.
 - [docs/architecture.md](docs/architecture.md) shows how the parts fit together, what's stored, and which checks guard it.
 - Content scripts are plain classic scripts that share code through `globalThis.Clotr`, so no `import` or `export` there.
 - Every bug fix comes with a test that failed before the fix. No exceptions, that's how old bugs stay gone.

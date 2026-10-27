@@ -1,0 +1,12 @@
+Clotr test fixture: made-up logins, never real.
+
+site: example.com
+user: jamie.rivera@example.com
+pass: Sunflower!2024
+
+site: example.org
+user: sam.lee@example.org
+pass: Sunflower!2024
+
+backup phone: (555) 555-0142
+aws key: AKIA4HPQ7XZ2R6TWLJ3N

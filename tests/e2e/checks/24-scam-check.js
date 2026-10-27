@@ -302,7 +302,12 @@ module.exports = async function (env) {
     let es;
     let step = "launching the Spanish browser";
     try {
-      es = await launch(EXT, ["--lang=es-ES", "--accept-lang=es-ES"], { LANGUAGE: "es", LANG: "es_ES.UTF-8" });
+      es = await launch(
+        EXT,
+        ["--lang=es-ES", "--accept-lang=es-ES"],
+        { LANGUAGE: "es", LANG: "es_ES.UTF-8" },
+        { protocolTimeout: 90000 },
+      );
       const page = await openExtPage(es, "check.html");
       step = "reading the initial page";
       const empty = await page.evaluate(() => ({

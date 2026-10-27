@@ -1,0 +1,162 @@
+/* Clotr's suite look: the components. Flat: no gradients, shadows, glass, glows, pill tags or arrows. */
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+body {
+  margin: 0;
+  background: var(--page);
+  color: var(--ink);
+  font: var(--text) / var(--leading) var(--font);
+  font-variation-settings: var(--linear);
+}
+h1,
+h2,
+h3 {
+  font-family: var(--font-casual);
+  font-variation-settings: var(--casual);
+  font-weight: 700;
+  line-height: var(--leading-tight);
+  margin: 0;
+}
+p {
+  margin: 0;
+}
+a {
+  color: var(--link);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+img {
+  max-width: 100%;
+  display: block;
+}
+
+.skip {
+  position: absolute;
+  left: -999px;
+  top: 0;
+  padding: var(--s-2) var(--s-3);
+  background: var(--main);
+  color: var(--btn-text);
+  text-decoration: none;
+}
+.skip:focus {
+  left: var(--s-2);
+  top: var(--s-2);
+  z-index: 10;
+}
+
+a:focus-visible,
+button:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 2px;
+}
+/* The field's steel is the same colour in both themes, so its focus ring stays plum rather than following --focus,
+   which turns light in dark mode and would all but disappear on steel. */
+.field a:focus-visible,
+.field button:focus-visible {
+  outline-color: var(--field-ink);
+}
+
+.wrap {
+  max-width: 1120px;
+  margin: 0 auto;
+  padding: 0 var(--s-5);
+}
+
+.btn {
+  display: inline-block;
+  font-family: var(--font);
+  font-variation-settings: var(--linear);
+  font-weight: 700;
+  font-size: var(--text);
+  padding: 12px 20px;
+  border-radius: var(--r-control);
+  text-decoration: none;
+  background: var(--btn);
+  color: var(--btn-text);
+  border: none;
+  cursor: pointer;
+}
+.btn.ghost {
+  background: none;
+  color: var(--ink);
+  border: 1.5px solid var(--frame);
+  padding: 10.5px 18.5px;
+}
+.btn.on-field {
+  background: var(--main);
+  color: var(--btn-text);
+}
+.btn.small {
+  font-size: var(--text-sm);
+  padding: 8px 14px;
+}
+.btn.text {
+  background: none;
+  color: var(--link);
+  padding: 0;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+.card {
+  border: 1px solid var(--rule);
+  border-radius: var(--r-card);
+  padding: var(--s-5);
+  background: var(--surface);
+}
+
+.fine {
+  font-size: var(--text-sm);
+  color: var(--soft);
+}
+
+.shot {
+  margin: 0;
+}
+.shot figcaption {
+  margin-top: var(--s-2);
+  font-size: var(--text-sm);
+  color: var(--soft);
+}
+
+.list {
+  list-style: none;
+  margin: var(--s-4) 0 0;
+  padding: 0;
+  border-top: 1px solid var(--rule);
+}
+.list li {
+  display: flex;
+  align-items: baseline;
+  gap: var(--s-3);
+  padding: var(--s-3) 0;
+  border-bottom: 1px solid var(--rule);
+}
+.list li .end {
+  margin-left: auto;
+}
+.list li small {
+  display: block;
+  color: var(--soft);
+  font-size: var(--text-sm);
+}
+.price {
+  font-weight: 700;
+}
+
+.steps {
+  margin: var(--s-4) 0 0;
+  padding-left: 1.2em;
+}
+.steps li {
+  padding: var(--s-1) 0;
+}
+
+.measure {
+  max-width: var(--measure);
+}

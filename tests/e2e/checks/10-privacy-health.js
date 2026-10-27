@@ -49,7 +49,7 @@ module.exports = async function (env) {
 
   await check(
     "UN1",
-    "A key with a hidden zero-width space and a phone with no-break spaces are caught; Hide it leaves nothing behind",
+    "A key with a hidden zero-width space and a phone with no-break spaces are caught; Clot this leak leaves nothing behind",
     () =>
       withSite(ctx, "chatgpt", async (page) => {
         await resetState(ctx, {});
@@ -57,11 +57,11 @@ module.exports = async function (env) {
         await typeText(page, `key ${key} or call 555\u00a0555\u00a00123`);
         const n = await waitForNotice(page);
         expect(n?.text.includes("AWS Access Key") && n.text.includes("Phone Number"), `notice: ${n?.text}`);
-        await clickDialogButton(page, "Cover it", readNotice);
+        await clickDialogButton(page, "Clot this leak", readNotice);
         const text = await editorText(page);
         expect(
           !text.includes("AKIA4HPQ") && !text.includes("0123") && !/\u200b/.test(text),
-          `after Hide it: ${JSON.stringify(text)}`,
+          `after Clot this leak: ${JSON.stringify(text)}`,
         );
       }),
   );
@@ -653,16 +653,16 @@ module.exports = async function (env) {
             }
             expect((await sentMessages(page)).length === 0, `${way} sent a key that waits for an answer`);
             expect(await waitForDialog(page), `${way}: no dialog`);
-            // The choice belongs to the person: tapping "Leave it in and send" sends it, once.
+            // The choice belongs to the person: tapping "Leave it and send" sends it, once.
             await sleep(700);
-            await tapLabels(page, readDialog, ["Leave it in and send"]);
+            await tapLabels(page, readDialog, ["Leave it and send"]);
             const sent = await waitFor(
               async () => ((await sentMessages(page)).length ? sentMessages(page) : null),
               2000,
             );
             expect(
               sent?.length === 1 && sent[0].includes(KEY),
-              `${way}, then Leave it in: sent ${JSON.stringify(sent)}`,
+              `${way}, then Leave it alone: sent ${JSON.stringify(sent)}`,
             );
           },
           phone(360),

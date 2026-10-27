@@ -106,6 +106,69 @@ class GuardSetupTest : BasePlatformTestCase() {
         assertEquals(fake, GuardSetup.executable("node", listOf(relative, "\"$folder\"").joinToString(File.pathSeparator)))
     }
 
+    fun testExecutableLookupSkipsTheOpenedProject() {
+        val projectRoot = Files.createTempDirectory("clotr-project-path")
+        val projectBin = Files.createDirectories(projectRoot.resolve("node_modules/.bin"))
+        val externalBin = Files.createTempDirectory("clotr-external-path")
+        val name = if (GuardSetup.isWindows) "node.exe" else "node"
+        val planted = Files.writeString(projectBin.resolve(name), "project node")
+        val external = Files.writeString(externalBin.resolve(name), "external node")
+        planted.toFile().setExecutable(true)
+        external.toFile().setExecutable(true)
+        try {
+            val path = listOf(projectBin, externalBin).joinToString(File.pathSeparator)
+            assertEquals(external.toRealPath(), GuardSetup.executable("node", path, projectRoot))
+            assertNull(GuardSetup.executable("node", projectBin.toString(), projectRoot))
+        } finally {
+            projectRoot.toFile().deleteRecursively()
+            externalBin.toFile().deleteRecursively()
+        }
+    }
+
+    fun testWindowsNpmCmdRunsThroughNodeWithAnArgumentList() {
+        val folder = Files.createTempDirectory("clotr-npm-windows")
+        val npm = Files.writeString(folder.resolve("npm.cmd"), "@echo off\r\n")
+        val node = Files.writeString(folder.resolve("node.exe"), "node")
+        val cli = folder.resolve("node_modules/npm/bin/npm-cli.js")
+        Files.createDirectories(cli.parent)
+        Files.writeString(cli, "// npm cli")
+        try {
+            assertEquals(
+                listOf(node.toString(), cli.toString(), "root", "-g"),
+                GuardSetup.npmCommand(npm, node, true),
+            )
+        } finally {
+            folder.toFile().deleteRecursively()
+        }
+    }
+
+    fun testWindsurfSetupAndRemovalTargetTheJetBrainsHooksFile() {
+        assertEquals(
+            listOf("setup", "windsurf", "--windsurf-jetbrains", "--min-severity", "high", "--dry-run"),
+            GuardSetup.commandArgs("setup", "windsurf", listOf("--min-severity", "high"), true),
+        )
+        assertEquals(
+            listOf("remove", "windsurf", "--windsurf-jetbrains"),
+            GuardSetup.commandArgs("remove", "windsurf"),
+        )
+        assertEquals(
+            listOf("setup", "claude", "--dry-run"),
+            GuardSetup.commandArgs("setup", "claude", dryRun = true),
+        )
+    }
+
+    fun testMissingNodeReturnsAnInstallHintWithoutRunningGuard() {
+        val marker = Files.createTempDirectory("clotr-no-node").resolve("ran")
+        val script = marker.parent.resolve("clotr-guard.js")
+        plant(script, marker)
+
+        val result = GuardSetup.run(script, listOf("setup", "codex"), marker.parent, node = null)
+
+        assertEquals(-1, result.exitCode)
+        assertEquals(ClotrBundle.message("guard.nodeMissing"), result.output)
+        assertFalse("Guard ran without Node.js", Files.exists(marker))
+    }
+
     fun testNpmGlobalRootIsAnAbsoluteFolderWhenNpmIsThere() {
         if (GuardSetup.executable("npm") == null) return
         val root = withProgress(project, "test") { GuardSetup.npmGlobalRoot() }
@@ -136,6 +199,34 @@ class GuardSetupTest : BasePlatformTestCase() {
             }
         } finally {
             removeTree(cwd)
+        }
+    }
+
+    fun testEarlierClaudeReadMatcherStillCountsAsAnExistingSetup() {
+        val cwd = Files.createTempDirectory("clotr-guard-old-matcher")
+        val home = Files.createTempDirectory("clotr-guard-old-matcher-home")
+        try {
+            val settings = Files.createDirectories(home.resolve(".claude")).resolve("settings.json")
+            val command = "\"node\" \"${repoCli.toAbsolutePath()}\" read claude --min-severity medium"
+            val escapedCommand = command.replace("\\", "\\\\").replace("\"", "\\\"")
+            Files.writeString(
+                settings,
+                """{"hooks":{"PreToolUse":[{"matcher":"Read","hooks":[{"type":"command","command":"$escapedCommand","timeout":15}]}]}}""",
+            )
+
+            val preview = withProgress(project, "test") {
+                GuardSetup.run(repoCli, listOf("setup", "claude", "--dry-run"), cwd, home)
+            }
+
+            assertEquals(preview.output, 0, preview.exitCode)
+            assertTrue(preview.output.contains("$settings"))
+            assertTrue(
+                "the earlier matcher remains a configured install",
+                GuardSetup.settingsFolderFound(preview.output),
+            )
+        } finally {
+            removeTree(cwd)
+            removeTree(home)
         }
     }
 

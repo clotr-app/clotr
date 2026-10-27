@@ -1,0 +1,58 @@
+# cargo deny check (npm test in apps/desktop): what Clotr for Windows is built from.
+# - Only the crates built for Windows count (Cargo.lock also names crates other systems would use, such as the
+#   phone-only network crates Tauri uses on Android and iOS; none of them is built here, and the bans below fail the
+#   check if one ever is).
+# - Every licence fits AGPL-3.0-or-later (permissive licences, and MPL-2.0, whose files stay MPL).
+# - Crates come from crates.io only.
+# - No network crate, ever (the repo's rule check reads this list too: tests/rules.test.js).
+
+[graph]
+targets = ["x86_64-pc-windows-msvc", "aarch64-pc-windows-msvc"]
+
+[licenses]
+allow = [
+  "MIT",
+  "Apache-2.0",
+  "0BSD",
+  "BSD-3-Clause",
+  "MPL-2.0",
+  "Unicode-3.0",
+  "Zlib",
+  "CC0-1.0",
+  "MIT-0",
+  "Unlicense",
+]
+confidence-threshold = 0.9
+# Clotr for Windows itself.
+exceptions = [{ crate = "clotr-desktop", allow = ["AGPL-3.0-or-later"] }]
+
+[bans]
+multiple-versions = "allow"
+wildcards = "deny"
+allow-wildcard-paths = true
+deny = [
+  { crate = "reqwest", reason = "network: 100% local" },
+  { crate = "hyper", reason = "network: 100% local" },
+  { crate = "hyper-util", reason = "network: 100% local" },
+  { crate = "h2", reason = "network: 100% local" },
+  { crate = "ureq", reason = "network: 100% local" },
+  { crate = "curl", reason = "network: 100% local" },
+  { crate = "isahc", reason = "network: 100% local" },
+  { crate = "surf", reason = "network: 100% local" },
+  { crate = "attohttpc", reason = "network: 100% local" },
+  { crate = "rustls", reason = "network: 100% local" },
+  { crate = "native-tls", reason = "network: 100% local" },
+  { crate = "tokio-tungstenite", reason = "network: 100% local" },
+  { crate = "tauri-plugin-http", reason = "network: 100% local" },
+  { crate = "tauri-plugin-updater", reason = "updates come from the store" },
+  { crate = "tauri-plugin-websocket", reason = "network: 100% local" },
+  { crate = "tauri-plugin-upload", reason = "network: 100% local" },
+]
+
+[sources]
+unknown-registry = "deny"
+unknown-git = "deny"
+allow-registry = ["https://github.com/rust-lang/crates.io-index"]
+
+[advisories]
+# Advisories need the internet (the RustSec database); run cargo deny check advisories by hand before a release.

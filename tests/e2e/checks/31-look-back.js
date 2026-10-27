@@ -11,6 +11,7 @@ const { EXPORTS, zip, zipOf } = require("../../fixtures/exports/make-exports.js"
 module.exports = async function (env) {
   const {
     EXT,
+    KEY,
     Skip,
     check: runCheck,
     ctx,
@@ -426,12 +427,7 @@ module.exports = async function (env) {
       await waitSettled(page);
       const page2 = page; // keep the same tab for the Claude read below
       const bodyText1 = await page2.evaluate(() => document.body.innerText);
-      const rawChatgpt = [
-        "AKIA4HPQ7XZ2R6TWLJ3N",
-        "Sunflower!2024",
-        "219-09-9999",
-        "1600 Elm Street, Springfield, IL 62704",
-      ];
+      const rawChatgpt = [KEY, "Sunflower!2024", "219-09-9999", "1600 Elm Street, Springfield, IL 62704"];
       for (const v of rawChatgpt) expect(!bodyText1.includes(v), `a raw value reached the page: ${v}`);
 
       await page2.click("#forget");
@@ -675,12 +671,7 @@ module.exports = async function (env) {
         let letter = await page.evaluate(() => document.getElementById("letter-box").value);
         expect(/Article 17/.test(letter), `EU letter should name GDPR's Article 17: ${letter.slice(0, 200)}`);
 
-        const rawChatgpt = [
-          "AKIA4HPQ7XZ2R6TWLJ3N",
-          "Sunflower!2024",
-          "219-09-9999",
-          "1600 Elm Street, Springfield, IL 62704",
-        ];
+        const rawChatgpt = [KEY, "Sunflower!2024", "219-09-9999", "1600 Elm Street, Springfield, IL 62704"];
         for (const v of rawChatgpt) expect(!letter.includes(v), `a raw value reached the letter: ${v}`);
 
         await page.click('input[name="letter-place"][value="california"]');

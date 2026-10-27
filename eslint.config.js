@@ -121,4 +121,23 @@ module.exports = [
     files: ["tests/e2e/*.js", "tests/e2e/checks/*.js", "tools/site-check.js", "tools/draft-leak-monitor.js"],
     languageOptions: { globals: { ...globals.browser, ...globals.webextensions, ...insideExtension } },
   },
+  {
+    ignores: ["apps/desktop/src-tauri/target/", "apps/desktop/src-tauri/gen/"],
+  },
+  {
+    // Clotr for Windows' pages run as classic scripts in its web view, sharing code through globalThis the way the
+    // extension does; the worker globals are for its scan worker.
+    files: ["apps/desktop/ui/**/*.js"],
+    languageOptions: { sourceType: "script", globals: { ...globals.browser, ...globals.worker } },
+  },
+  {
+    // Clotr for Windows' build scripts run in Node.
+    files: ["apps/desktop/tools/**/*.js"],
+    languageOptions: { sourceType: "commonjs", globals: { ...globals.node } },
+  },
+  {
+    // An argument or caught error whose name starts with "_" is left unused on purpose.
+    files: ["apps/desktop/**/*.js"],
+    rules: { "no-unused-vars": ["error", { argsIgnorePattern: "^_", caughtErrorsIgnorePattern: "^_" }] },
+  },
 ];

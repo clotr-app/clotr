@@ -289,7 +289,7 @@
 
     $("about-clotr").textContent = msg(
       "ec_isClotr",
-      "Clotr itself reads AI chat pages to check what you type; it keeps nothing and sends nothing.",
+      "Clotr checks AI chat pages on your device and keeps a short local history. If you send a message, the AI service receives it as usual. Clotr has no server.",
     );
 
     const limits = parts(
@@ -332,7 +332,7 @@
   $("facts").replaceChildren(
     ...parts(
       "ec_facts",
-      "Reads the list only: names, and which sites each one can read. / Nothing leaves this computer: Clotr has no servers and never goes online. / Can read, not does: Clotr says what each one is allowed to read, not what it does with it.",
+      "Reads the list only: names, and which sites each one can read. / Clotr has no server to receive that list. / Can read, not does: Clotr says what each one is allowed to read, not what it does with it.",
     ).map((s) => el("li", { textContent: s })),
   );
   $("list-date").textContent = msg(

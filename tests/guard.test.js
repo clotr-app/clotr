@@ -9,8 +9,9 @@ const path = require("node:path");
 const crypto = require("node:crypto");
 const vm = require("node:vm");
 const { execFileSync, spawnSync } = require("node:child_process");
-const { retrySlow } = require("./timing.js");
+const { bestOfPair, grewMoreThan } = require("./timing.js");
 const { build } = require("../tools/engine-bundle.js");
+const { makeSecrets } = require("./fixtures/secrets.js");
 const ENGINE_PATH = path.join(__dirname, "../apps/guard/dist/clotr-engine.js");
 const BUNDLE = build().text;
 if (fs.existsSync(ENGINE_PATH)) {
@@ -37,6 +38,7 @@ const {
   inspectTool,
   updateSettings,
   updateClineHooks,
+  clineHookSource,
   toolSettingsPath,
   checkStaged,
   setupGit,
@@ -45,7 +47,10 @@ const {
   isNpxCachePath,
   formatCommitIssue,
   managedHooks,
-  TOOL_NAMES,
+  IMPLEMENTED_TOOL_NAMES,
+  nodeCommand,
+  hookCommand,
+  parseHookCommand,
 } = require("../apps/guard/bin/clotr-guard.js");
 
 const AWS_KEY = "AKIA4HPQ7XZ2R6TWLJ3N";
@@ -69,7 +74,7 @@ function packGuard(tempRoot) {
   const packageRoot = path.resolve(__dirname, "../apps/guard");
   const result = npmRun(["pack", "--pack-destination", tempRoot], packageRoot, tempRoot);
   assert.equal(result.status, 0, `${result.stdout}\n${result.stderr}`);
-  const tarball = path.join(tempRoot, "clotr-guard-0.1.0.tgz");
+  const tarball = path.join(tempRoot, "clotr-guard-0.1.1.tgz");
   assert.equal(fs.existsSync(tarball), true, `${result.stdout}\n${result.stderr}`);
   return tarball;
 }
@@ -95,6 +100,12 @@ function initGit(cwd) {
   git(cwd, ["config", "user.email", "guard-test@example.invalid"]);
 }
 
+function commandText(hook) {
+  if (Array.isArray(hook?.args)) return [hook.command, ...hook.args].join(" ");
+  const source = hook?.command || hook?.commandWindows || hook?.powershell || "";
+  return parseHookCommand(source)?.join(" ") || source;
+}
+
 test("guard engine bundle is current and check returns only masked findings", () => {
   assert.equal(fs.readFileSync(ENGINE_PATH, "utf8"), BUNDLE);
   assert.deepEqual(check("Write a small sorting function."), { findings: [], decision: "allow" });
@@ -110,6 +121,68 @@ test("guard engine bundle is current and check returns only masked findings", ()
   const serialized = JSON.stringify(result);
   assert.equal(serialized.includes(AWS_KEY), false);
   assert.equal(serialized.includes(CARD_NUMBER), false);
+});
+
+test("Guard's engine agrees with a small public fixture and registry-token cases for the current extension version", () => {
+  const source = fs.readFileSync(ENGINE_PATH, "utf8");
+  const version = /^\/\/ Clotr engine (\d+(?:\.\d+){2,3}):/m.exec(source)?.[1];
+  assert.equal(
+    version,
+    JSON.parse(fs.readFileSync(path.join(__dirname, "../extension/manifest.json"), "utf8")).version,
+  );
+
+  const serviceTokens = makeSecrets()
+    .find((sample) => sample.kind === "service_token")
+    .shapes.filter((shape) => /^(openvsx|rubygems|jetbrainsMarketplace)/.test(shape.name))
+    .map((shape) => ({ id: shape.name, text: shape.text }));
+  assert.ok(serviceTokens.some((item) => item.id === "openvsxBare"));
+  assert.ok(serviceTokens.some((item) => item.id === "rubygemsBare"));
+  assert.ok(serviceTokens.some((item) => item.id === "jetbrainsMarketplaceBare"));
+  const cases = [
+    { id: "clean-prompt", text: "Write a small sorting function." },
+    {
+      id: "rsa-ciphertext",
+      text: "1972 824 1992 3031 2549 1730 2211 1992 615 2041 3086 1992 1211 3031 1188 1730 1387 1992 2100",
+    },
+    ...serviceTokens,
+  ];
+  const guardContext = vm.createContext({});
+  vm.runInContext(source, guardContext, { filename: "clotr-engine.js" });
+  const extensionContext = vm.createContext({});
+  for (const file of ["patterns.js", "detector.js"]) {
+    const script = fs.readFileSync(path.join(__dirname, "../extension", file), "utf8");
+    vm.runInContext(script, extensionContext, { filename: file });
+  }
+
+  const findings = (context, text) => {
+    const rows = [];
+    for (const detection of context.Clotr.detect(text)) {
+      for (const value of detection.matches) {
+        const reason = detection.reasonOf ? detection.reasonOf.get(value) : undefined;
+        let start = value ? text.indexOf(value) : -1;
+        if (start < 0) rows.push({ kind: detection.id, severity: detection.severity, value, reason });
+        for (; start >= 0; start = text.indexOf(value, start + 1)) {
+          rows.push({
+            kind: detection.id,
+            severity: detection.severity,
+            start,
+            end: start + value.length,
+            value,
+            reason,
+          });
+        }
+      }
+      if (detection.asks) rows.push({ kind: detection.id, asks: detection.asks });
+    }
+    return rows;
+  };
+  for (const item of cases) {
+    assert.equal(
+      JSON.stringify(findings(guardContext, item.text)),
+      JSON.stringify(findings(extensionContext, item.text)),
+      `${item.id} differs from the extension engine`,
+    );
+  }
 });
 
 test("check command prints masked findings only and uses the requested exit codes", () => {
@@ -156,26 +229,15 @@ test("installed Guard copies handle spaced paths and share one removable hook", 
     });
     assert.equal(setup.status, 0, setup.stderr);
     const smokeSettings = JSON.parse(fs.readFileSync(path.join(home, ".claude", "settings.json"), "utf8"));
-    const command = smokeSettings.hooks.UserPromptSubmit[0].hooks[0].command;
-    assert.ok(command.includes(home));
-    const batch = path.join(root, "run-hook.cmd");
-    if (process.platform === "win32") {
-      fs.writeFileSync(batch, `@echo off\r\n${command}\r\nexit /b %ERRORLEVEL%\r\n`);
-    }
-    const shell =
-      process.platform === "win32"
-        ? spawnSync(process.env.ComSpec || "cmd.exe", ["/d", "/c", batch], {
-            input: JSON.stringify({ prompt: PROMPT }),
-            encoding: "utf8",
-            env: { ...env, CLOTR_GUARD_DATA_DIR: path.join(root, "data") },
-          })
-        : spawnSync("sh", ["-c", command], {
-            input: JSON.stringify({ prompt: PROMPT }),
-            encoding: "utf8",
-            env: { ...env, CLOTR_GUARD_DATA_DIR: path.join(root, "data") },
-          });
-    assert.equal(shell.status, 2, `${shell.stdout}\n${shell.stderr}`);
-    assert.match(shell.stderr, /within 2 minutes/);
+    const hook = smokeSettings.hooks.UserPromptSubmit[0].hooks[0];
+    assert.ok(commandText(hook).includes(home));
+    const shell = spawnSync(hook.command, hook.args, {
+      input: JSON.stringify({ prompt: PROMPT }),
+      encoding: "utf8",
+      env: { ...env, CLOTR_GUARD_DATA_DIR: path.join(root, "data") },
+    });
+    assert.equal(shell.status, 0, `${shell.stdout}\n${shell.stderr}`);
+    assert.match(JSON.parse(shell.stdout).reason, /within 2 minutes/);
     assert.equal(`${shell.stdout}${shell.stderr}`.includes(AWS_KEY), false);
 
     const sharedEnv = { ...process.env, USERPROFILE: sharedHome, HOME: sharedHome };
@@ -194,8 +256,9 @@ test("installed Guard copies handle spaced paths and share one removable hook", 
       const settings = JSON.parse(fs.readFileSync(file, "utf8"));
       const handlers = settings.hooks.UserPromptSubmit.flatMap((group) => group.hooks || []);
       assert.equal(
-        handlers.filter((hook) => hook.command?.includes("clotr-guard.js") && hook.command.includes("hook claude"))
-          .length,
+        handlers.filter(
+          (item) => commandText(item).includes("clotr-guard.js") && commandText(item).includes("hook claude"),
+        ).length,
         1,
       );
       const removed = spawnSync(process.execPath, [removeCopy, "remove", "claude"], {
@@ -238,7 +301,7 @@ test("settings setup and removal round-trip known file shapes", () => {
   }
 });
 
-test("random and oversized hook input use the fail-open message", () => {
+test("random and oversized hook input stop for review without echoing the payload", () => {
   const script = path.join(__dirname, "../apps/guard/bin/clotr-guard.js");
   const random = spawnSync(process.execPath, [script, "hook", "claude"], {
     input: crypto.randomBytes(4 * 1024),
@@ -246,28 +309,65 @@ test("random and oversized hook input use the fail-open message", () => {
     maxBuffer: 4096,
   });
   assert.equal(random.status, 0, random.stderr);
-  assert.match(`${random.stdout}${random.stderr}`, /couldn't check this prompt/);
+  assert.equal(JSON.parse(random.stdout).decision, "block");
+  assert.match(`${random.stdout}${random.stderr}`, /couldn't check this prompt.*stopped/i);
 
   const prompt = JSON.stringify({ prompt: "x".repeat(10 * 1024 * 1024) });
-  retrySlow(() => {
-    const started = process.hrtime.bigint();
-    const large = spawnSync(process.execPath, [script, "hook", "claude"], {
-      input: prompt,
-      encoding: "utf8",
-      maxBuffer: 4096,
-    });
-    const elapsed = Number(process.hrtime.bigint() - started) / 1e6;
-    assert.equal(large.status, 0, large.stderr);
-    assert.match(`${large.stdout}${large.stderr}`, /couldn't check this prompt/);
-    assert.ok(Buffer.byteLength(large.stdout) < 4096);
-    assert.ok(Buffer.byteLength(large.stderr) < 4096);
-    return elapsed < 5000 ? undefined : `the 10 MB prompt took ${elapsed.toFixed(1)} ms`;
+  const large = spawnSync(process.execPath, [script, "hook", "claude"], {
+    input: prompt,
+    encoding: "utf8",
+    maxBuffer: 4096,
   });
+  assert.equal(large.status, 0, large.stderr);
+  assert.equal(JSON.parse(large.stdout).decision, "block");
+  assert.match(`${large.stdout}${large.stderr}`, /1 MiB/i);
+  assert.doesNotMatch(`${large.stdout}${large.stderr}`, /x{100}/);
+  assert.ok(Buffer.byteLength(large.stdout) < 4096);
+  assert.ok(Buffer.byteLength(large.stderr) < 4096);
+});
+
+test("hook input with a byte order mark or CRLF is still checked", () => {
+  // Windows PowerShell pipes text with a UTF-8 byte order mark and a CRLF, or as UTF-16 with its own mark.
+  const script = path.join(__dirname, "../apps/guard/bin/clotr-guard.js");
+  const encodings = {
+    "UTF-8 with BOM and CRLF": (text) => Buffer.concat([Buffer.from([0xef, 0xbb, 0xbf]), Buffer.from(`${text}\r\n`)]),
+    "UTF-16LE with BOM": (text) => Buffer.concat([Buffer.from([0xff, 0xfe]), Buffer.from(`${text}\r\n`, "utf16le")]),
+    "UTF-16BE with BOM": (text) =>
+      Buffer.concat([Buffer.from([0xfe, 0xff]), Buffer.from(`${text}\r\n`, "utf16le").swap16()]),
+  };
+  for (const [name, encode] of Object.entries(encodings)) {
+    // A fresh state folder each time, so the second send of the same prompt isn't let through.
+    const state = tempDir();
+    const env = { ...process.env, HOME: state, USERPROFILE: state, LOCALAPPDATA: state, XDG_STATE_HOME: state };
+    try {
+      const blocked = spawnSync(process.execPath, [script, "hook", "claude"], {
+        input: encode(JSON.stringify({ prompt: PROMPT, hook_event_name: "UserPromptSubmit" })),
+        encoding: "utf8",
+        env,
+      });
+      assert.equal(blocked.status, 0, `${name}: ${blocked.stdout}${blocked.stderr}`);
+      assert.match(JSON.parse(blocked.stdout).reason, /AWS Access Key/, name);
+      assert.doesNotMatch(JSON.parse(blocked.stdout).reason, /AKIA|3N/, name);
+
+      const clean = spawnSync(process.execPath, [script, "hook", "claude"], {
+        input: encode(JSON.stringify({ prompt: "A clean prompt", hook_event_name: "UserPromptSubmit" })),
+        encoding: "utf8",
+        env,
+      });
+      assert.equal(clean.status, 0, `${name}: ${clean.stdout}${clean.stderr}`);
+      assert.doesNotMatch(`${clean.stdout}${clean.stderr}`, /couldn't check/, name);
+    } finally {
+      fs.rmSync(state, { recursive: true, force: true });
+    }
+  }
 });
 
 test("each tool's stdin hook has its documented block and clean output", () => {
   const expected = {
-    claude: (output) => output.code === 2 && output.stderr.includes("within 2 minutes"),
+    claude: (output) => {
+      const response = JSON.parse(output.stdout);
+      return output.code === 0 && response.decision === "block" && response.reason.includes("within 2 minutes");
+    },
     cursor: (output) => JSON.parse(output.stdout).continue === false,
     gemini: (output) => JSON.parse(output.stdout).decision === "deny",
     codex: (output) => JSON.parse(output.stdout).decision === "block",
@@ -284,7 +384,7 @@ test("each tool's stdin hook has its documented block and clean output", () => {
         encoding: "utf8",
         env: { ...process.env, CLOTR_GUARD_DATA_DIR: path.join(dir, `stdin-${tool}`) },
       });
-      assert.equal(sample.status, tool === "claude" ? 2 : 0, tool);
+      assert.equal(sample.status, 0, tool);
       assert.equal(expected[tool]({ code: sample.status, stdout: sample.stdout, stderr: sample.stderr }), true, tool);
       const clean = hookOutput(
         tool,
@@ -299,16 +399,94 @@ test("each tool's stdin hook has its documented block and clean output", () => {
   }
 });
 
-test("the same prompt can pass during two minutes, then expires, with no prompt in its state file", () => {
+test("the same findings can pass after a small edit, but a new secret blocks and resets the two-minute window", () => {
   const dir = tempDir();
   const stateFile = path.join(dir, "prompt-repeat.json");
   try {
-    assert.equal(inspectPrompt("claude", PROMPT, { dataDir: dir, now: 10_000 }).action, "block");
+    const blocked = inspectPrompt("claude", PROMPT, { dataDir: dir, now: 10_000 });
+    assert.equal(blocked.action, "block");
     const saved = fs.readFileSync(stateFile, "utf8");
     assert.equal(saved.includes(PROMPT), false);
-    assert.deepEqual(Object.keys(JSON.parse(saved)).sort(), ["at", "hash", "salt"]);
-    assert.equal(inspectPrompt("claude", PROMPT, { dataDir: dir, now: 129_999 }).action, "allow");
-    assert.equal(inspectPrompt("claude", PROMPT, { dataDir: dir, now: 130_000 }).action, "block");
+    assert.equal(saved.includes(AWS_KEY), false);
+    assert.equal(saved.includes(CARD_NUMBER), false);
+    const state = JSON.parse(saved);
+    assert.deepEqual(Object.keys(state).sort(), ["at", "fingerprints", "salt"]);
+    assert.equal(state.fingerprints.length, blocked.findings.length);
+    assert.ok(state.fingerprints.every((fingerprint) => /^[0-9a-f]{64}$/.test(fingerprint)));
+
+    assert.equal(inspectPrompt("claude", PROMPT, { dataDir: dir, now: 10_001 }).action, "allow");
+    const edited = `${PROMPT}\n\nPlease explain what happened.`;
+    assert.equal(inspectPrompt("claude", edited, { dataDir: dir, now: 10_002 }).action, "allow");
+
+    const addedSecret = `${edited}\npassword: NewSecret7x`;
+    assert.equal(inspectPrompt("claude", addedSecret, { dataDir: dir, now: 10_003 }).action, "block");
+    const updatedState = JSON.parse(fs.readFileSync(stateFile, "utf8"));
+    assert.equal(updatedState.fingerprints.length, state.fingerprints.length + 1);
+    assert.equal(fs.readFileSync(stateFile, "utf8").includes("NewSecret7x"), false);
+    assert.equal(
+      inspectPrompt("claude", `${addedSecret}\nPlease summarize the failure.`, { dataDir: dir, now: 10_004 }).action,
+      "allow",
+    );
+    assert.equal(inspectPrompt("claude", addedSecret, { dataDir: dir, now: 130_002 }).action, "allow");
+    assert.equal(inspectPrompt("claude", addedSecret, { dataDir: dir, now: 130_003 }).action, "block");
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("repeat state is private, atomic, and cannot authorize through a symlink", () => {
+  const root = tempDir();
+  const dataDir = path.join(root, "state");
+  const outside = path.join(root, "outside.json");
+  const stateFile = path.join(dataDir, "prompt-repeat.json");
+  const sentinel = "leave this file unchanged\n";
+  try {
+    if (process.platform === "win32") {
+      fs.mkdirSync(outside);
+      fs.writeFileSync(path.join(outside, "sentinel"), sentinel);
+      fs.symlinkSync(outside, dataDir, "junction");
+      assert.equal(inspectPrompt("claude", PROMPT, { dataDir, now: 10_000 }).action, "block");
+      assert.equal(fs.readFileSync(path.join(outside, "sentinel"), "utf8"), sentinel);
+      assert.equal(fs.existsSync(path.join(outside, "prompt-repeat.json")), false);
+      fs.rmSync(dataDir, { recursive: true, force: true });
+    } else {
+      fs.mkdirSync(dataDir);
+      fs.writeFileSync(outside, sentinel);
+      fs.symlinkSync(outside, stateFile);
+      assert.equal(inspectPrompt("claude", PROMPT, { dataDir, now: 10_000 }).action, "block");
+      assert.equal(fs.lstatSync(stateFile).isSymbolicLink(), true);
+      assert.equal(fs.readFileSync(outside, "utf8"), sentinel);
+      fs.rmSync(dataDir, { recursive: true, force: true });
+    }
+
+    assert.equal(inspectPrompt("claude", PROMPT, { dataDir, now: 10_001 }).action, "block");
+    if (process.platform !== "win32") {
+      assert.equal(fs.statSync(dataDir).mode & 0o777, 0o700);
+      assert.equal(fs.statSync(stateFile).mode & 0o777, 0o600);
+    }
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("Claude's block reason names the findings without showing their values", () => {
+  const dir = tempDir();
+  const prompt = Array.from({ length: 7 }, (_, index) => `password: TestSecret${index}42`).join("\n");
+  try {
+    const outcome = inspectPrompt("claude", prompt, { dataDir: dir, now: 10_000 });
+    const output = hookOutput("claude", outcome);
+    assert.equal(output.code, 0);
+    const response = JSON.parse(output.stdout);
+    assert.equal(response.decision, "block");
+    assert.deepEqual(response.hookSpecificOutput, {
+      hookEventName: "UserPromptSubmit",
+      suppressOriginalPrompt: true,
+    });
+    const lines = response.reason.split("\n");
+    assert.match(lines[0], /Password or Secret/);
+    assert.match(lines[0], /this prompt/);
+    assert.equal(lines.length, 1);
+    assert.doesNotMatch(response.reason, /TestSecret/);
   } finally {
     fs.rmSync(dir, { recursive: true, force: true });
   }
@@ -535,6 +713,84 @@ test("Cursor, Gemini and Codex read hooks use documented tool inputs", () => {
   }
 });
 
+test("Gemini CLI and Cline read hooks resolve workspace-relative paths", () => {
+  const dir = tempDir();
+  const project = path.join(dir, "project");
+  const script = path.join(__dirname, "../apps/guard/bin/clotr-guard.js");
+  fs.mkdirSync(project);
+  fs.writeFileSync(path.join(project, "notes.txt"), "A clean project note.");
+  fs.writeFileSync(path.join(project, "credentials.txt"), `Use this key ${AWS_KEY}`);
+  const events = {
+    gemini: (file) => ({
+      cwd: project,
+      session_id: "session-1",
+      hook_event_name: "BeforeTool",
+      tool_name: "read_file",
+      tool_input: { absolute_path: file },
+    }),
+    cline: (file) => ({
+      workspaceRoots: [project],
+      hookName: "PreToolUse",
+      sessionId: "session-1",
+      preToolUse: { toolName: "read_file", parameters: { path: file } },
+    }),
+  };
+  try {
+    for (const tool of Object.keys(events)) {
+      const run = (file) =>
+        spawnSync(process.execPath, [script, "read", tool], {
+          cwd: dir,
+          input: JSON.stringify(events[tool](file)),
+          encoding: "utf8",
+          env: { ...process.env, CLOTR_GUARD_DATA_DIR: path.join(dir, `${tool}-state`) },
+        });
+      const clean = run("notes.txt");
+      assert.equal(clean.status, 0, clean.stderr);
+      const cleanOutput = JSON.parse(clean.stdout);
+      assert.notEqual(cleanOutput.decision, "deny", `${tool} clean relative read`);
+      assert.notEqual(cleanOutput.cancel, true, `${tool} clean relative read`);
+
+      const secret = run("credentials.txt");
+      assert.equal(secret.status, 0, secret.stderr);
+      const secretOutput = JSON.parse(secret.stdout);
+      if (tool === "gemini") assert.equal(secretOutput.decision, "deny");
+      else assert.equal(secretOutput.cancel, true);
+      assert.doesNotMatch(secret.stdout, new RegExp(AWS_KEY));
+    }
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("newer Gemini hook payloads with extra fields remain checked", () => {
+  const script = path.join(__dirname, "../apps/guard/bin/clotr-guard.js");
+  const dir = tempDir();
+  const run = (prompt) =>
+    spawnSync(process.execPath, [script, "hook", "gemini"], {
+      input: JSON.stringify({
+        prompt,
+        cwd: process.cwd(),
+        session_id: "session-1",
+        hook_event_name: "BeforeAgent",
+        transcript_path: path.join(os.tmpdir(), "transcript.jsonl"),
+        extension_payload: { version: 2, optional: true },
+      }),
+      encoding: "utf8",
+      env: { ...process.env, CLOTR_GUARD_DATA_DIR: path.join(dir, "state") },
+    });
+  try {
+    const clean = run("A safe prompt");
+    assert.equal(clean.status, 0, clean.stderr);
+    assert.notEqual(JSON.parse(clean.stdout).decision, "deny");
+    const secret = run(`Use this key ${AWS_KEY}`);
+    assert.equal(secret.status, 0, secret.stderr);
+    assert.equal(JSON.parse(secret.stdout).decision, "deny");
+    assert.doesNotMatch(secret.stdout, new RegExp(AWS_KEY));
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 test("Windsurf and Cline hooks stop prompts and file reads using their documented payloads", () => {
   const dir = tempDir();
   const file = path.join(dir, "ordinary.txt");
@@ -593,9 +849,11 @@ test("Windsurf and Cline hooks stop prompts and file reads using their documente
   }
 });
 
-test("Windsurf settings and Cline hook files can be set up and removed", () => {
+test("Windsurf settings can be set up and removed", () => {
   const dir = tempDir();
+  const cwd = path.join(dir, "project");
   const original = { hooks: { pre_user_prompt: [{ command: "keep this" }] }, theme: "dark" };
+  fs.mkdirSync(cwd, { recursive: true });
   try {
     const windsurf = toolSettingsPath("windsurf", { home: dir });
     fs.mkdirSync(path.dirname(windsurf), { recursive: true });
@@ -609,47 +867,419 @@ test("Windsurf settings and Cline hook files can be set up and removed", () => {
     updateSettings("windsurf", { home: dir, remove: true });
     assert.deepEqual(JSON.parse(fs.readFileSync(windsurf, "utf8")).hooks, original.hooks);
 
-    const clineDir = path.join(dir, "Documents", "Cline", "Hooks");
-    const cline = updateClineHooks({ home: dir, platform: "linux" });
-    assert.equal(cline.changed, true);
-    assert.ok(fs.existsSync(path.join(clineDir, "UserPromptSubmit")));
-    assert.ok(fs.existsSync(path.join(clineDir, "PreToolUse")));
-    assert.match(fs.readFileSync(path.join(clineDir, "PreToolUse"), "utf8"), /read.*cline/);
-    updateClineHooks({ home: dir, platform: "linux", remove: true });
-    assert.equal(fs.existsSync(path.join(clineDir, "UserPromptSubmit")), false);
-    assert.equal(fs.existsSync(path.join(clineDir, "PreToolUse")), false);
-    assert.throws(() => updateClineHooks({ home: dir, platform: "win32" }), /unsupported-on-windows/);
+    const currentProject = path.join(cwd, ".devin", "hooks.json");
+    assert.equal(toolSettingsPath("windsurf", { project: true, cwd, home: dir }), currentProject);
+    const project = updateSettings("windsurf", { project: true, cwd, home: dir });
+    assert.ok(project.settings.hooks.pre_user_prompt.some((hook) => commandText(hook).includes("clotr-guard.js")));
+    assert.ok(fs.existsSync(currentProject));
+    updateSettings("windsurf", { project: true, cwd, home: dir, remove: true });
+    assert.deepEqual(JSON.parse(fs.readFileSync(currentProject, "utf8")), {});
+
+    const legacyProject = path.join(cwd, ".windsurf", "hooks.json");
+    fs.mkdirSync(path.dirname(legacyProject), { recursive: true });
+    fs.writeFileSync(legacyProject, JSON.stringify(original));
+    assert.equal(toolSettingsPath("windsurf", { project: true, cwd, home: dir }), legacyProject);
+    updateSettings("windsurf", { project: true, cwd, home: dir });
+    assert.ok(JSON.parse(fs.readFileSync(legacyProject, "utf8")).hooks.pre_read_code);
   } finally {
     fs.rmSync(dir, { recursive: true, force: true });
   }
 });
 
-test("Cline hook setup is unavailable in this release and leaves its settings alone", async () => {
+test("Cline setup writes the documented hook files, previews without writing, and removes them", () => {
   const home = tempDir();
-  const oldProfile = process.env.USERPROFILE;
-  const oldHome = process.env.HOME;
+  const cwd = path.join(home, "project");
+  const global = path.join(home, "Documents", "Cline", "Hooks");
+  const project = path.join(cwd, ".clinerules", "hooks");
+  const script = path.resolve(__dirname, "../apps/guard/bin/clotr-guard.js");
+  fs.mkdirSync(cwd, { recursive: true });
+  try {
+    assert.ok(IMPLEMENTED_TOOL_NAMES.includes("cline"));
+    const dry = updateClineHooks({ home, cwd, platform: "linux", dryRun: true });
+    assert.equal(dry.changed, true);
+    assert.equal(dry.file, global);
+    assert.equal(fs.existsSync(global), false);
+
+    const first = updateClineHooks({ home, cwd, platform: "linux" });
+    assert.equal(first.changed, true);
+    assert.equal(first.event, "UserPromptSubmit, PreToolUse");
+    for (const [directory, promptArgs, readArgs] of [
+      [
+        global,
+        [script, "hook", "cline", "--min-severity", "medium"],
+        [script, "read", "cline", "--min-severity", "medium"],
+      ],
+      [
+        project,
+        [script, "hook", "cline", "--min-severity", "medium"],
+        [script, "read", "cline", "--min-severity", "medium"],
+      ],
+    ]) {
+      if (directory === project) {
+        const added = updateClineHooks({ home, cwd, platform: "linux", project: true });
+        assert.equal(added.changed, true);
+      }
+      for (const [name, args] of [
+        ["UserPromptSubmit", promptArgs],
+        ["PreToolUse", readArgs],
+      ]) {
+        const file = path.join(directory, name);
+        assert.equal(path.extname(file), "", "Cline hook names have no extension");
+        const source = fs.readFileSync(file, "utf8");
+        assert.ok(source.startsWith("#!/bin/sh\n"));
+        assert.ok(source.includes(JSON.stringify(args)));
+        if (name === "UserPromptSubmit") assert.match(source, /1 MiB/i);
+        if (process.platform !== "win32") assert.equal(fs.statSync(file).mode & 0o777, 0o755);
+      }
+    }
+    const prompt = path.join(global, "UserPromptSubmit");
+    const written = fs.readFileSync(prompt, "utf8");
+    assert.equal(updateClineHooks({ home, cwd, platform: "linux" }).changed, false);
+    assert.equal(fs.readFileSync(prompt, "utf8"), written);
+    if (process.platform !== "win32") {
+      const clineCall = spawnSync(prompt, [], {
+        input: JSON.stringify({ userPromptSubmit: { prompt: PROMPT } }),
+        encoding: "utf8",
+        env: { ...process.env, CLOTR_GUARD_DATA_DIR: path.join(home, "state") },
+      });
+      assert.equal(clineCall.status, 0, clineCall.stderr);
+      assert.equal(JSON.parse(clineCall.stdout).cancel, true);
+      assert.doesNotMatch(clineCall.stdout, new RegExp(AWS_KEY));
+
+      const oversizedPrompt = spawnSync(prompt, [], {
+        input: JSON.stringify({ userPromptSubmit: { prompt: "x".repeat(1024 * 1024) } }),
+        encoding: "utf8",
+        env: { ...process.env, CLOTR_GUARD_DATA_DIR: path.join(home, "large-state") },
+      });
+      assert.equal(oversizedPrompt.status, 0, oversizedPrompt.stderr);
+      assert.equal(JSON.parse(oversizedPrompt.stdout).cancel, true);
+      assert.match(oversizedPrompt.stdout, /1 MiB/i);
+    }
+    const removeDry = updateClineHooks({ home, cwd, platform: "linux", remove: true, dryRun: true });
+    assert.equal(removeDry.changed, true);
+    assert.equal(fs.existsSync(prompt), true);
+    assert.equal(updateClineHooks({ home, cwd, platform: "linux", remove: true }).changed, true);
+    assert.equal(fs.existsSync(prompt), false);
+    assert.equal(fs.existsSync(path.join(global, "PreToolUse")), false);
+    assert.equal(fs.existsSync(path.join(project, "UserPromptSubmit")), true);
+    updateClineHooks({ home, cwd, platform: "linux", project: true, remove: true });
+    assert.equal(fs.existsSync(path.join(project, "UserPromptSubmit")), false);
+    assert.equal(updateClineHooks({ home, cwd, platform: "linux", remove: true }).changed, false);
+    assert.throws(() => updateClineHooks({ home, cwd, platform: "win32" }), /unsupported-on-windows/);
+  } finally {
+    fs.rmSync(home, { recursive: true, force: true });
+  }
+});
+
+test("Cline setup upgrades its previous exact v1 hook without chaining a duplicate", () => {
+  const home = tempDir();
+  const script = path.resolve(__dirname, "../apps/guard/bin/clotr-guard.js");
+  const node = nodeCommand();
+  try {
+    updateClineHooks({ home, platform: "linux" });
+    const hook = path.join(home, "Documents", "Cline", "Hooks", "UserPromptSubmit");
+    const backup = `${hook}.clotr-guard.bak`;
+    const previous = clineHookSource(
+      {
+        name: "UserPromptSubmit",
+        backup,
+        script,
+        node,
+        minimum: "medium",
+        includePersonalDetails: false,
+        chain: false,
+      },
+      false,
+    );
+    assert.doesNotMatch(previous, /1 MiB/i);
+    fs.writeFileSync(hook, previous, { mode: 0o755 });
+
+    const upgraded = updateClineHooks({ home, platform: "linux" });
+    assert.equal(upgraded.changed, true);
+    assert.match(fs.readFileSync(hook, "utf8"), /1 MiB/i);
+    assert.equal(fs.existsSync(backup), false);
+  } finally {
+    fs.rmSync(home, { recursive: true, force: true });
+  }
+});
+
+test(
+  "Cline's installed hook never selects Node from the workspace PATH",
+  { skip: process.platform === "win32" },
+  () => {
+    const home = tempDir();
+    const cwd = path.join(home, "project");
+    const fakeBin = path.join(home, "fake bin");
+    const marker = path.join(home, "fake-node-ran");
+    fs.mkdirSync(cwd, { recursive: true });
+    fs.mkdirSync(fakeBin, { recursive: true });
+    const fakeNode = path.join(fakeBin, "node");
+    fs.writeFileSync(fakeNode, `#!/bin/sh\nprintf yes > '${marker}'\nexec '${process.execPath}' "$@"\n`, {
+      mode: 0o755,
+    });
+    const hookFile = path.join(home, "Documents", "Cline", "Hooks", "UserPromptSubmit");
+    try {
+      updateClineHooks({ home, cwd, platform: "linux" });
+      const run = spawnSync(hookFile, [], {
+        cwd,
+        input: JSON.stringify({ userPromptSubmit: { prompt: PROMPT } }),
+        encoding: "utf8",
+        env: {
+          ...process.env,
+          PATH: `${fakeBin}${path.delimiter}${process.env.PATH}`,
+          CLOTR_GUARD_DATA_DIR: path.join(home, "state"),
+        },
+      });
+      assert.equal(run.status, 0, run.stderr);
+      assert.equal(fs.existsSync(marker), false, "the project PATH supplied a replacement Node");
+      assert.equal(JSON.parse(run.stdout).cancel, true);
+    } finally {
+      fs.rmSync(home, { recursive: true, force: true });
+    }
+  },
+);
+
+test("Cline hook scripts invoke the pinned Node directly instead of env searching PATH", () => {
+  const home = tempDir();
+  try {
+    const result = updateClineHooks({ home, platform: "linux" });
+    const source = fs.readFileSync(path.join(result.file, "UserPromptSubmit"), "utf8");
+    assert.match(source, /^#!\/bin\/sh\n/);
+    assert.doesNotMatch(source, /^#!\/usr\/bin\/env node\n/);
+    assert.ok(source.includes(process.execPath));
+  } finally {
+    fs.rmSync(home, { recursive: true, force: true });
+  }
+});
+
+test("Cline setup recognizes and removes an exact hook from the previous Guard wrapper format", () => {
+  const home = tempDir();
+  const directory = path.join(home, "Documents", "Cline", "Hooks");
+  const script = path.resolve(__dirname, "../apps/guard/bin/clotr-guard.js");
+  fs.mkdirSync(directory, { recursive: true });
+  const file = path.join(directory, "UserPromptSubmit");
+  const args = [script, "hook", "cline", "--min-severity", "medium"];
+  const legacy = `#!/usr/bin/env node\nconst {spawnSync}=require("node:child_process");const input=require("node:fs").readFileSync(0,"utf8");const out=spawnSync(${JSON.stringify(process.execPath)},${JSON.stringify(args)},{input,encoding:"utf8"});if(out.stdout)process.stdout.write(out.stdout);if(out.stderr)process.stderr.write(out.stderr);process.exit(out.status||0);\n`;
+  fs.writeFileSync(file, legacy, { mode: 0o755 });
+  try {
+    assert.equal(updateClineHooks({ home, platform: "linux", minimum: "high" }).changed, true);
+    assert.match(fs.readFileSync(file, "utf8"), /^#!\/bin\/sh\n/);
+    assert.equal(updateClineHooks({ home, platform: "linux", remove: true }).changed, true);
+    assert.equal(fs.existsSync(file), false);
+  } finally {
+    fs.rmSync(home, { recursive: true, force: true });
+  }
+});
+
+test("Cline hook setup reports the Windows limit and removal stays available", async () => {
+  const home = tempDir();
   const errors = [];
   const error = console.error;
-  process.env.USERPROFILE = home;
-  process.env.HOME = home;
-  console.error = (...parts) => errors.push(parts.join(" "));
   try {
-    assert.equal(TOOL_NAMES.includes("cline"), false);
-    assert.equal(await main(["setup", "cline"], { cwd: home }), 2);
-    assert.deepEqual(errors, ["Cline is not available in this release."]);
+    assert.throws(() => updateClineHooks({ home, platform: "win32" }), /unsupported-on-windows/);
+    console.error = (...parts) => errors.push(parts.join(" "));
+    assert.equal(await main(["setup", "cline"], { cwd: home, home, platform: "win32" }), 2);
+    assert.deepEqual(errors, ["Cline hooks are supported on macOS and Linux only."]);
     assert.deepEqual(fs.readdirSync(home), []);
-    const help = spawnSync(process.execPath, [path.join(__dirname, "../apps/guard/bin/clotr-guard.js"), "--help"], {
-      encoding: "utf8",
-    });
-    assert.equal(help.status, 0);
-    assert.doesNotMatch(help.stdout, /\bcline\b/i);
+    console.error = error;
+    const result = updateClineHooks({ home, platform: "linux" });
+    assert.equal(result.changed, true);
+    const prompt = path.join(result.file, "UserPromptSubmit");
+    assert.equal(updateClineHooks({ home, platform: "win32", remove: true }).changed, true);
+    assert.equal(fs.existsSync(prompt), false);
   } finally {
     console.error = error;
-    if (oldProfile === undefined) delete process.env.USERPROFILE;
-    else process.env.USERPROFILE = oldProfile;
-    if (oldHome === undefined) delete process.env.HOME;
-    else process.env.HOME = oldHome;
     fs.rmSync(home, { recursive: true, force: true });
+  }
+});
+
+test("assistant hook files use the current documented event and command shapes", () => {
+  const claude = mergeHook({}, "claude").hooks;
+  assert.ok(commandText(claude.UserPromptSubmit[0].hooks[0]).includes("hook claude"));
+  assert.ok(commandText(claude.PreToolUse[0].hooks[0]).includes("read claude"));
+
+  const cursor = mergeHook({}, "cursor");
+  assert.equal(cursor.version, 1);
+  assert.ok(commandText(cursor.hooks.beforeSubmitPrompt[0]).includes("hook cursor"));
+  assert.ok(commandText(cursor.hooks.beforeReadFile[0]).includes("read cursor"));
+
+  const gemini = mergeHook({}, "gemini").hooks;
+  assert.ok(commandText(gemini.BeforeAgent[0].hooks[0]).includes("hook gemini"));
+  assert.ok(commandText(gemini.BeforeTool[0].hooks[0]).includes("read gemini"));
+
+  const codex = mergeHook({}, "codex").hooks;
+  assert.ok(commandText(codex.UserPromptSubmit[0].hooks[0]).includes("hook codex"));
+  assert.equal(codex.PreToolUse, undefined);
+
+  const windsurf = mergeHook({}, "windsurf").hooks;
+  assert.equal(windsurf.pre_user_prompt[0].show_output, true);
+  assert.ok(commandText(windsurf.pre_user_prompt[0]).includes("hook windsurf"));
+  assert.ok(commandText(windsurf.pre_read_code[0]).includes("read windsurf"));
+
+  const dir = tempDir();
+  try {
+    const cline = updateClineHooks({ home: dir, platform: "linux" });
+    assert.deepEqual(
+      cline.hooks.map(({ event }) => event),
+      ["UserPromptSubmit", "PreToolUse"],
+    );
+    for (const name of ["UserPromptSubmit", "PreToolUse"]) {
+      assert.ok(fs.readFileSync(path.join(cline.file, name), "utf8").startsWith("#!/bin/sh\n"));
+    }
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("Windows assistant settings use the documented user paths", (t) => {
+  if (process.platform !== "win32") {
+    t.skip("Windows path behavior runs on Windows");
+    return;
+  }
+  const home = "C:\\Users\\fixture";
+  for (const [tool, expected] of [
+    ["claude", path.win32.join(home, ".claude", "settings.json")],
+    ["cursor", path.win32.join(home, ".cursor", "hooks.json")],
+    ["gemini", path.win32.join(home, ".gemini", "settings.json")],
+    ["codex", path.win32.join(home, ".codex", "hooks.json")],
+    ["windsurf", path.win32.join(home, ".codeium", "windsurf", "hooks.json")],
+    ["cline", path.win32.join(home, "Documents", "Cline", "Hooks")],
+  ]) {
+    assert.equal(toolSettingsPath(tool, { home }), expected, tool);
+  }
+});
+
+test("Windsurf JetBrains setup and removal use its separate user hooks file", async () => {
+  const root = tempDir();
+  const home = path.join(root, "home");
+  const jetBrainsFile = path.join(home, ".codeium", "hooks.json");
+  const desktopFile = path.join(home, ".codeium", "windsurf", "hooks.json");
+  const log = console.log;
+  const error = console.error;
+  console.log = () => {};
+  console.error = () => {};
+  try {
+    assert.equal(toolSettingsPath("windsurf", { home, windsurfJetBrains: true }), jetBrainsFile);
+    assert.equal(await main(["setup", "windsurf", "--windsurf-jetbrains"], { home, cwd: root }), 0);
+    assert.ok(fs.existsSync(jetBrainsFile));
+    assert.equal(fs.existsSync(desktopFile), false);
+    assert.equal(await main(["remove", "windsurf", "--windsurf-jetbrains"], { home, cwd: root }), 0);
+    assert.deepEqual(JSON.parse(fs.readFileSync(jetBrainsFile, "utf8")), {});
+    assert.equal(fs.existsSync(desktopFile), false);
+  } finally {
+    console.log = log;
+    console.error = error;
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("Cline leaves older backups and hooks it does not own untouched", () => {
+  const home = tempDir();
+  try {
+    const directory = path.join(home, "Documents", "Cline", "Hooks");
+    fs.mkdirSync(directory, { recursive: true });
+    const prompt = path.join(directory, "UserPromptSubmit");
+    const backup = `${prompt}.clotr-guard.bak`;
+    fs.writeFileSync(prompt, "#!/usr/bin/env node\nconsole.log('{}');\n", { mode: 0o755 });
+    fs.writeFileSync(backup, "older backup\n");
+    assert.throws(() => updateClineHooks({ home, platform: "linux" }), /cline-hook-backup-exists/);
+    assert.equal(updateClineHooks({ home, platform: "linux", remove: true }).changed, false);
+    assert.equal(fs.readFileSync(prompt, "utf8"), "#!/usr/bin/env node\nconsole.log('{}');\n");
+    assert.equal(fs.readFileSync(backup, "utf8"), "older backup\n");
+  } finally {
+    fs.rmSync(home, { recursive: true, force: true });
+  }
+});
+
+test("each assistant setup can preview without writing", () => {
+  const dir = tempDir();
+  const cwd = path.join(dir, "project");
+  const home = path.join(dir, "home");
+  fs.mkdirSync(cwd, { recursive: true });
+  try {
+    for (const tool of IMPLEMENTED_TOOL_NAMES) {
+      const result = updateSettings(tool, { cwd, home, project: true, dryRun: true, platform: "linux" });
+      assert.equal(result.changed, true, tool);
+      if (tool === "cline") {
+        assert.equal(result.hooks.length, 2);
+        assert.deepEqual(
+          result.hooks.map(({ event }) => event),
+          ["UserPromptSubmit", "PreToolUse"],
+        );
+        assert.equal(fs.existsSync(result.file), false);
+      } else {
+        assert.equal(fs.existsSync(result.file), false, tool);
+        assert.ok(result.settings.hooks, tool);
+      }
+    }
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("the setup and remove commands are dry-run safe and idempotent for every assistant", async () => {
+  const root = tempDir();
+  const cwd = path.join(root, "project");
+  const home = path.join(root, "home");
+  fs.mkdirSync(cwd, { recursive: true });
+  const log = console.log;
+  const error = console.error;
+  const output = [];
+  console.log = (...parts) => output.push(parts.join(" "));
+  console.error = (...parts) => output.push(parts.join(" "));
+  const run = async (args) => {
+    output.length = 0;
+    const code = await main(args, { cwd, home, platform: "linux" });
+    return { code, output: [...output] };
+  };
+  try {
+    for (const tool of IMPLEMENTED_TOOL_NAMES) {
+      const file = toolSettingsPath(tool, { project: true, cwd, home });
+      const dry = await run(["setup", tool, "--project", "--dry-run"]);
+      assert.equal(dry.code, 0, tool);
+      assert.ok(
+        dry.output.some((line) => line.includes("dry run")),
+        tool,
+      );
+      const previewOutput = dry.output.find((line) => line.startsWith("{"));
+      assert.ok(previewOutput, `${tool}: the dry run shows the exact hook content`);
+      const preview = JSON.parse(previewOutput);
+      assert.ok(preview.file, `${tool}: the dry run names the file it will write`);
+      if (tool === "cline") {
+        assert.deepEqual(
+          preview.hooks.map(({ event }) => event),
+          ["UserPromptSubmit", "PreToolUse"],
+        );
+      } else {
+        assert.deepEqual(preview.file, file, tool);
+        assert.ok(Object.keys(preview.hooks).length > 0, `${tool}: the dry run shows Guard's hook entries`);
+      }
+      assert.equal(fs.existsSync(file), false, tool);
+
+      const first = await run(["setup", tool, "--project"]);
+      assert.equal(first.code, 0, `${tool}: ${first.output}`);
+      assert.equal(managedHooks(tool, { project: true, cwd, home }).length > 0, true, tool);
+      const repeated = await run(["setup", tool, "--project"]);
+      assert.equal(repeated.code, 0, tool);
+      assert.ok(
+        repeated.output.some((line) => line.includes("no change")),
+        tool,
+      );
+
+      const removed = await run(["remove", tool, "--project"]);
+      assert.equal(removed.code, 0, `${tool}: ${removed.output}`);
+      assert.deepEqual(managedHooks(tool, { project: true, cwd, home }), [], tool);
+      const removedAgain = await run(["remove", tool, "--project"]);
+      assert.equal(removedAgain.code, 0, tool);
+      assert.ok(
+        removedAgain.output.some((line) => line.includes("no change")),
+        tool,
+      );
+    }
+  } finally {
+    console.log = log;
+    console.error = error;
+    fs.rmSync(root, { recursive: true, force: true });
   }
 });
 
@@ -770,7 +1400,7 @@ test("a staged diff over the Git buffer limit does not skip the other staged fil
     const result = spawnSync(process.execPath, [script, "commit-check"], { cwd: dir, encoding: "utf8" });
     assert.equal(result.status, 1, result.stderr);
     assert.match(result.stderr, /"large\.js".*first 256 KiB.*rest.*wasn't checked/i);
-    assert.match(result.stderr, /"large\.js".*add its path to \.clotrignore/);
+    assert.match(result.stderr, /"large\.js".*split the change or keep large generated files out of the repository/i);
     assert.match(result.stderr, /"credential\.js":1.*AKIA/);
   } finally {
     fs.rmSync(dir, { recursive: true, force: true });
@@ -811,7 +1441,7 @@ test("Git setup chains an existing pre-commit hook and restores it on removal", 
   }
 });
 
-test("a Git pre-commit hook lets a commit through when Node is missing from PATH", () => {
+test("a Git pre-commit hook uses its pinned Node even when PATH has no Node", () => {
   const dir = tempDir();
   try {
     initGit(dir);
@@ -840,12 +1470,9 @@ test("a Git pre-commit hook lets a commit through when Node is missing from PATH
       encoding: "utf8",
       env: { ...process.env, PATH: gitDirs.join(path.delimiter) },
     });
-    assert.equal(result.status, 0, result.stderr);
-    assert.equal(
-      result.stderr.includes("Clotr Guard couldn't run because node isn't on PATH, so this commit wasn't checked."),
-      true,
-      result.stderr,
-    );
+    assert.equal(result.status, 1, result.stderr);
+    assert.match(result.stderr, /aws_access_key/);
+    assert.doesNotMatch(result.stderr, /node isn't on PATH/);
   } finally {
     fs.rmSync(dir, { recursive: true, force: true });
   }
@@ -933,10 +1560,10 @@ test("prompt and tool hooks leave personal details out unless the same option is
   assert.equal(inspectTool("claude", event, { dataDir: tempDir() }).action, "allow");
   assert.equal(inspectTool("claude", event, { dataDir: tempDir(), includePersonalDetails: true }).action, "block");
 
-  const command = mergeHook({}, "claude").hooks.UserPromptSubmit[0].hooks[0].command;
-  assert.equal(command.includes("--personal-details"), false);
-  const optedIn = mergeHook({}, "claude", false, "medium", true).hooks.UserPromptSubmit[0].hooks[0].command;
-  assert.ok(optedIn.endsWith("--personal-details"));
+  const command = mergeHook({}, "claude").hooks.UserPromptSubmit[0].hooks[0];
+  assert.equal(command.args.includes("--personal-details"), false);
+  const optedIn = mergeHook({}, "claude", false, "medium", true).hooks.UserPromptSubmit[0].hooks[0];
+  assert.equal(optedIn.args.at(-1), "--personal-details");
 });
 
 test("prompt hooks include personal details only when the setup option is present", () => {
@@ -958,9 +1585,11 @@ test("prompt hooks include personal details only when the setup option is presen
       encoding: "utf8",
       env: { ...process.env, CLOTR_GUARD_DATA_DIR: path.join(dir, "opted-in") },
     });
-    assert.equal(optedIn.status, 2);
-    assert.match(optedIn.stderr, /within 2 minutes/);
-    assert.doesNotMatch(optedIn.stderr, /123 Main Street, Springfield, IL 62704/);
+    assert.equal(optedIn.status, 0);
+    const response = JSON.parse(optedIn.stdout);
+    assert.equal(response.decision, "block");
+    assert.match(response.reason, /within 2 minutes/);
+    assert.doesNotMatch(response.reason, /123 Main Street, Springfield, IL 62704/);
   } finally {
     fs.rmSync(dir, { recursive: true, force: true });
   }
@@ -992,7 +1621,32 @@ test("setup recognizes an npx cache path and gives the stable install command", 
 
 test("hooks use the node command when Node is on PATH", () => {
   const command = mergeHook({}, "claude").hooks.UserPromptSubmit[0].hooks[0].command;
-  assert.ok(command.startsWith('"node" '), command);
+  assert.equal(command, path.resolve(process.execPath));
+  assert.equal(path.isAbsolute(command), true);
+});
+
+test("generated shell hooks quote executable and script paths across PowerShell and POSIX shells", () => {
+  const cases = [
+    {
+      platform: "win32",
+      node: "C:\\Program Files\\Node & $100%\\node.exe",
+      script: "C:\\Program Files\\Clotr's $App\\clotr-guard.js",
+    },
+    {
+      platform: "linux",
+      node: "/opt/Node & $100%/node",
+      script: "/opt/Clotr's $App/clotr-guard.js",
+    },
+  ];
+  for (const item of cases) {
+    const hook = hookCommand("cursor", "prompt", "medium", false, item);
+    assert.deepEqual(
+      parseHookCommand(hook.command),
+      [item.node, path.resolve(item.script), "hook", "cursor", "--min-severity", "medium"],
+      item.platform,
+    );
+    assert.equal(parseHookCommand(`${hook.command}; echo unsafe`), null, item.platform);
+  }
 });
 
 test("reads decode UTF-16 and single-byte text, while binary files and folders pass silently", () => {
@@ -1080,8 +1734,9 @@ test("an internal address never stops anything and is reported only when persona
     const output = hookOutput(tool, reported);
     assert.equal(output.code, 0, tool);
     const shown = `${output.stdout || ""}\n${output.stderr || ""}`;
-    assert.match(shown, /Internal IP Address \(192\.…20\)/, tool);
+    assert.match(shown, /Internal IP Address/, tool);
     assert.equal(shown.includes("192.168.1.20"), false, tool);
+    assert.doesNotMatch(shown, /192\.168|1\.20/, tool);
     assert.doesNotMatch(shown, /"continue":false|"decision":"(?:block|deny)"|"cancel":true/, tool);
   }
   const hostname = inspectPrompt("claude", "Connect to db01.corp.internal on port 5432", {
@@ -1097,6 +1752,10 @@ test("an internal address never stops anything and is reported only when persona
   });
   assert.equal(both.action, "block");
   assert.deepEqual(both.findings.map((finding) => finding.kind).sort(), ["aws_access_key", "internal_ip"]);
+  const bothOutput = hookOutput("claude", both).stdout;
+  assert.match(bothOutput, /AWS Access Key/);
+  assert.match(bothOutput, /Internal IP Address/);
+  assert.doesNotMatch(bothOutput, /192\.168|1\.20|AKIA|3N/);
 
   const dir = tempDir();
   try {
@@ -1124,13 +1783,65 @@ test("an internal address never stops anything and is reported only when persona
 
 test("setup can add the personal-details option to read hooks", () => {
   const result = updateSettings("claude", { home: tempDir(), dryRun: true, includePersonalDetails: true });
-  const commands = result.settings.hooks.PreToolUse.flatMap((group) => group.hooks.map((hook) => hook.command));
+  const commands = result.settings.hooks.PreToolUse.flatMap((group) => group.hooks.map(commandText));
   assert.ok(
     commands
       .filter((command) => command.includes(" read claude "))
       .every((command) => command.endsWith("--personal-details")),
   );
 });
+
+// The full corpus and parity helper stay in private source checkouts; the public export
+// keeps the small synthetic fixture above and does not ship the oracle corpus.
+const ENGINE_PARITY_PATH = path.join(__dirname, "../tools/engine-parity.js");
+if (fs.existsSync(ENGINE_PARITY_PATH)) {
+  const { corpora, withAnswers, differences, pageScripts } = require(ENGINE_PARITY_PATH);
+  test("Guard's engine agrees with the shared fixture corpus and registry-token cases for the current extension version", () => {
+    const source = fs.readFileSync(ENGINE_PATH, "utf8");
+    const version = /^\/\/ Clotr engine (\d+(?:\.\d+){2,3}):/m.exec(source)?.[1];
+    assert.equal(
+      version,
+      JSON.parse(fs.readFileSync(path.join(__dirname, "../extension/manifest.json"), "utf8")).version,
+    );
+
+    const serviceTokens = makeSecrets()
+      .find((sample) => sample.kind === "service_token")
+      .shapes.filter((shape) => /^(openvsx|rubygems|jetbrainsMarketplace)/.test(shape.name))
+      .map((shape) => ({ id: shape.name, text: shape.text }));
+    const sets = [
+      ...corpora({ size: 400 }),
+      {
+        id: "engine-fixes",
+        files: [],
+        check: "detect",
+        items: [
+          {
+            id: "840e39e7 RSA ciphertext",
+            text: "1972 824 1992 3031 2549 1730 2211 1992 615 2041 3086 1992 1211 3031 1188 1730 1387 1992 2100",
+          },
+          ...serviceTokens,
+        ],
+      },
+    ];
+    const context = vm.createContext({});
+    vm.runInContext(source, context, { filename: "clotr-engine.js" });
+    for (const script of pageScripts().slice(1)) vm.runInContext(script, context);
+    const guardFindings = vm.runInContext("globalThis.__clotrFind", context);
+
+    for (const set of withAnswers(sets)) {
+      const got = set.items.map((item) => JSON.stringify(guardFindings(set.check, item)));
+      assert.deepEqual(
+        differences(
+          set.items.map((item) => `${set.id} ${item.id}`),
+          set.expected,
+          got,
+        ),
+        [],
+        `${set.id} differs from the extension engine`,
+      );
+    }
+  });
+}
 
 test("Codex setup installs its prompt hook without a read matcher", () => {
   const home = tempDir();
@@ -1152,13 +1863,41 @@ test("Claude Bash stops plain secret-file reads and environment dumps, while ord
   assert.equal(env.secretFile, true);
   const output = readHookOutput("claude", env);
   assert.equal(JSON.parse(output.stdout).hookSpecificOutput.permissionDecision, "deny");
-  assert.match(output.stdout, /don't try another way to read it/);
+  assert.match(output.stdout, /shell command.*secret file.*\.env/i);
+  assert.match(output.stdout, /variable names or the example file/i);
   assert.equal(inspectShell("claude", { tool_name: "Bash", tool_input: { command: "cat README.md" } }).action, "allow");
   assert.equal(
     inspectShell("claude", { tool_name: "Bash", tool_input: { command: "Get-Content .env.example" } }).action,
     "allow",
   );
-  assert.equal(inspectShell("claude", { tool_name: "Bash", tool_input: { command: "printenv" } }).secretFile, true);
+  const environment = inspectShell("claude", { tool_name: "Bash", tool_input: { command: "printenv" } });
+  assert.equal(environment.secretFile, true);
+  assert.match(JSON.stringify(readHookOutput("claude", environment)), /shell command.*environment/i);
+});
+
+test("Claude PowerShell hooks check secret-file readers and allow ordinary reads", () => {
+  const dir = tempDir();
+  const script = path.join(__dirname, "../apps/guard/bin/clotr-guard.js");
+  fs.writeFileSync(path.join(dir, ".env"), `TOKEN=${AWS_KEY}`);
+  try {
+    const run = (command) =>
+      spawnSync(process.execPath, [script, "shell", "claude"], {
+        input: JSON.stringify({ tool_name: "PowerShell", tool_input: { command, cwd: dir } }),
+        encoding: "utf8",
+      });
+    const ordinary = run("Get-Content README.md");
+    assert.equal(ordinary.status, 0, ordinary.stderr);
+    assert.notEqual(JSON.parse(ordinary.stdout).hookSpecificOutput?.permissionDecision, "deny");
+
+    const secret = run("Get-Content .env");
+    assert.equal(secret.status, 0, secret.stderr);
+    const output = JSON.parse(secret.stdout);
+    assert.equal(output.hookSpecificOutput.permissionDecision, "deny");
+    assert.match(output.hookSpecificOutput.permissionDecisionReason, /secret file.*\.env/i);
+    assert.doesNotMatch(secret.stdout, new RegExp(AWS_KEY));
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
 });
 
 test("Bash blocks common secret-file readers and environment listings with the shared file rules", () => {
@@ -1275,28 +2014,43 @@ test("Cursor shell hook checks credentials and secret-file printing without scan
   fs.rmSync(dir, { recursive: true, force: true });
 });
 
-test("failed prompt checks show the fail-open message through each tool's hook output", () => {
+test("malformed hook input is stopped for review through each tool's hook output", () => {
   const script = path.join(__dirname, "../apps/guard/bin/clotr-guard.js");
-  for (const tool of ["claude", "cursor", "gemini"]) {
+  for (const tool of IMPLEMENTED_TOOL_NAMES) {
     const result = spawnSync(process.execPath, [script, "hook", tool], { input: "{", encoding: "utf8" });
-    assert.equal(result.status, 0, tool);
+    assert.equal(result.status, tool === "windsurf" ? 2 : 0, tool);
+    if (tool === "windsurf") {
+      assert.match(result.stderr, /couldn't check this prompt.*stopped/i);
+      continue;
+    }
     const payload = JSON.parse(result.stdout);
-    const message = tool === "cursor" ? payload.user_message : payload.systemMessage;
-    assert.equal(message, "Clotr couldn't check this prompt, so it went through.", tool);
+    if (tool === "cursor") assert.equal(payload.continue, false, tool);
+    else if (tool === "cline") assert.equal(payload.cancel, true, tool);
+    else assert.ok(payload.decision === "block" || payload.decision === "deny", tool);
+    assert.doesNotMatch(result.stdout, new RegExp(AWS_KEY), tool);
     assert.equal(result.stderr, "", tool);
   }
+  const oversized = spawnSync(process.execPath, [script, "hook", "claude"], {
+    input: `${AWS_KEY}${"x".repeat(1024 * 1024)}`,
+    encoding: "utf8",
+  });
+  assert.equal(oversized.status, 0);
+  assert.equal(JSON.parse(oversized.stdout).decision, "block");
+  assert.doesNotMatch(oversized.stdout, new RegExp(AWS_KEY));
 });
 
 test("setup registers Claude MCP and Cursor shell and MCP boundary hooks", () => {
   const home = tempDir();
   const claude = updateSettings("claude", { home, dryRun: true }).settings;
   const preTool = claude.hooks.PreToolUse;
-  assert.ok(preTool.some((group) => group.matcher === "^mcp__" && group.hooks[0].command.includes(" tool claude ")));
+  assert.ok(
+    preTool.some((group) => group.matcher === "^mcp__" && commandText(group.hooks[0]).includes(" tool claude ")),
+  );
   const cursor = updateSettings("cursor", { home, dryRun: true }).settings;
   for (const event of ["beforeShellExecution", "beforeMCPExecution"]) {
     assert.ok(
       cursor.hooks[event].some((hook) =>
-        hook.command.includes(` ${event === "beforeShellExecution" ? "shell" : "tool"} cursor `),
+        commandText(hook).includes(` ${event === "beforeShellExecution" ? "shell" : "tool"} cursor `),
       ),
     );
   }
@@ -1350,7 +2104,9 @@ test("settings setup and removal preserve other keys and are idempotent", () => 
           first.settings.hooks.PreToolUse || first.settings.hooks.beforeReadFile || first.settings.hooks.BeforeTool,
         );
       }
-      if (tool === "claude") assert.ok(first.settings.hooks.PreToolUse.some((group) => group.matcher === "Bash"));
+      if (tool === "claude") {
+        assert.ok(first.settings.hooks.PreToolUse.some((group) => group.matcher === "^(?:Bash|PowerShell)$"));
+      }
       const written = fs.readFileSync(target, "utf8");
       assert.equal(updateSettings(tool, { project, cwd, home }).changed, false, tool);
       assert.equal(fs.readFileSync(target, "utf8"), written, tool);
@@ -1364,6 +2120,121 @@ test("settings setup and removal preserve other keys and are idempotent", () => 
     fs.rmSync(dir, { recursive: true, force: true });
   }
 });
+
+test("settings setup and removal preserve commands that only contain Guard-like text", () => {
+  const home = tempDir();
+  const file = toolSettingsPath("claude", { project: false, home });
+  const custom = {
+    type: "command",
+    command: `echo before; node /opt/clotr-guard.js hook claude --min-severity medium; echo after`,
+  };
+  fs.mkdirSync(path.dirname(file), { recursive: true });
+  fs.writeFileSync(file, JSON.stringify({ hooks: { UserPromptSubmit: [{ hooks: [custom] }] } }));
+  try {
+    updateSettings("claude", { home });
+    let settings = JSON.parse(fs.readFileSync(file, "utf8"));
+    assert.ok(
+      settings.hooks.UserPromptSubmit.some((group) =>
+        group.hooks.some((hook) => JSON.stringify(hook) === JSON.stringify(custom)),
+      ),
+    );
+    updateSettings("claude", { home, remove: true });
+    settings = JSON.parse(fs.readFileSync(file, "utf8"));
+    assert.deepEqual(settings.hooks.UserPromptSubmit, [{ hooks: [custom] }]);
+  } finally {
+    fs.rmSync(home, { recursive: true, force: true });
+  }
+});
+
+test("settings setup refuses malformed hook sections without changing them", () => {
+  const home = tempDir();
+  const file = toolSettingsPath("claude", { home });
+  const original = JSON.stringify({ hooks: { UserPromptSubmit: { keep: "this" } } });
+  fs.mkdirSync(path.dirname(file), { recursive: true });
+  fs.writeFileSync(file, original);
+  try {
+    assert.throws(() => updateSettings("claude", { home }), /invalid-settings/);
+    assert.equal(fs.readFileSync(file, "utf8"), original);
+  } finally {
+    fs.rmSync(home, { recursive: true, force: true });
+  }
+});
+
+test(
+  "settings setup refuses symlinks and oversized existing files without following or truncating them",
+  { skip: process.platform === "win32" },
+  () => {
+    const home = tempDir();
+    const outside = path.join(home, "outside.json");
+    const linked = toolSettingsPath("claude", { home });
+    const oversized = toolSettingsPath("cursor", { home });
+    fs.mkdirSync(path.dirname(linked), { recursive: true });
+    fs.mkdirSync(path.dirname(oversized), { recursive: true });
+    fs.writeFileSync(outside, '{"theme":"leave alone"}\n');
+    fs.symlinkSync(outside, linked, "file");
+    const tooLarge = " ".repeat(1024 * 1024 + 1);
+    fs.writeFileSync(oversized, tooLarge);
+    try {
+      assert.throws(() => updateSettings("claude", { home }), /settings-symbolic-link/);
+      assert.throws(() => updateSettings("cursor", { home }), /unsafe-settings-file/);
+      assert.equal(fs.readFileSync(outside, "utf8"), '{"theme":"leave alone"}\n');
+      assert.equal(fs.readFileSync(oversized, "utf8"), tooLarge);
+    } finally {
+      fs.rmSync(home, { recursive: true, force: true });
+    }
+  },
+);
+
+test("settings setup refuses a junction in the resolved settings path", () => {
+  const home = tempDir();
+  const outside = path.join(home, "outside");
+  const linkedDirectory = path.join(home, ".claude");
+  fs.mkdirSync(outside);
+  fs.writeFileSync(path.join(outside, "settings.json"), '{"theme":"keep"}\n');
+  fs.symlinkSync(outside, linkedDirectory, process.platform === "win32" ? "junction" : "dir");
+  try {
+    assert.throws(() => updateSettings("claude", { home }), /settings-symbolic-link/);
+    assert.equal(fs.readFileSync(path.join(outside, "settings.json"), "utf8"), '{"theme":"keep"}\n');
+  } finally {
+    fs.rmSync(home, { recursive: true, force: true });
+  }
+});
+
+test("remove keeps a same-named backup when no Guard hook is installed", () => {
+  const home = tempDir();
+  const file = toolSettingsPath("claude", { home });
+  const backup = `${file}.clotr-guard.bak`;
+  const original = "user-owned backup contents\n";
+  fs.mkdirSync(path.dirname(file), { recursive: true });
+  fs.writeFileSync(file, JSON.stringify({ theme: "dark" }));
+  fs.writeFileSync(backup, original);
+  try {
+    const result = updateSettings("claude", { home, remove: true });
+    assert.equal(result.changed, false);
+    assert.equal(fs.readFileSync(backup, "utf8"), original);
+  } finally {
+    fs.rmSync(home, { recursive: true, force: true });
+  }
+});
+
+test(
+  "settings setup and removal preserve an existing file's permissions",
+  { skip: process.platform === "win32" },
+  () => {
+    const home = tempDir();
+    const file = toolSettingsPath("cursor", { home });
+    fs.mkdirSync(path.dirname(file), { recursive: true });
+    fs.writeFileSync(file, JSON.stringify({ theme: "dark" }), { mode: 0o640 });
+    try {
+      updateSettings("cursor", { home });
+      assert.equal(fs.statSync(file).mode & 0o777, 0o640);
+      updateSettings("cursor", { home, remove: true });
+      assert.equal(fs.statSync(file).mode & 0o777, 0o640);
+    } finally {
+      fs.rmSync(home, { recursive: true, force: true });
+    }
+  },
+);
 
 test("settings writes keep the original file intact if the atomic rename fails", () => {
   const home = tempDir();
@@ -1457,27 +2328,34 @@ test("dry-run previews settings without writing and internal errors fail open", 
   }
 });
 
-test("staged checks run the engine once per file, so a large added file commits in seconds", () => {
-  const dir = tempDir();
+test("staged check growth follows the size of one added file", () => {
+  const smallDir = tempDir();
+  const bigDir = tempDir();
   try {
-    initGit(dir);
-    const lines = Array.from({ length: 2000 }, (_, i) => `const value${i} = "setting number ${i} for the module";`);
-    lines[1499] = `const key = "${AWS_KEY}";`;
-    fs.writeFileSync(path.join(dir, "big.js"), `${lines.join("\n")}\n`);
-    git(dir, ["add", "big.js"]);
-    let issues;
-    retrySlow(() => {
-      const started = process.hrtime.bigint();
-      issues = checkStaged({ cwd: dir }).issues;
-      const seconds = Number(process.hrtime.bigint() - started) / 1e9;
-      return seconds < 5 ? undefined : `the staged check took ${seconds.toFixed(1)} s`;
-    });
+    for (const [dir, count] of [
+      [smallDir, 500],
+      [bigDir, 2000],
+    ]) {
+      initGit(dir);
+      const lines = Array.from({ length: count }, (_, i) => `const value${i} = "setting number ${i} for the module";`);
+      lines[Math.floor(count * 0.75)] = `const key = "${AWS_KEY}";`;
+      fs.writeFileSync(path.join(dir, "big.js"), `${lines.join("\n")}\n`);
+      git(dir, ["add", "big.js"]);
+    }
+    const [small, big] = bestOfPair(
+      () => checkStaged({ cwd: smallDir }),
+      () => checkStaged({ cwd: bigDir }),
+      4,
+    );
+    const issues = checkStaged({ cwd: bigDir }).issues;
+    assert.ok(!grewMoreThan(small, big, 16), "staged checks grew too fast for 4× the file");
     assert.deepEqual(
       issues.map((issue) => [issue.file, issue.line, issue.kind]),
-      [["big.js", 1500, "aws_access_key"]],
+      [["big.js", 1501, "aws_access_key"]],
     );
   } finally {
-    fs.rmSync(dir, { recursive: true, force: true });
+    fs.rmSync(smallDir, { recursive: true, force: true });
+    fs.rmSync(bigDir, { recursive: true, force: true });
   }
 });
 
@@ -1493,6 +2371,27 @@ test("Git setup knows its own hook: a second setup changes nothing and removal t
     assert.equal(fs.existsSync(`${hook}.clotr-guard.bak`), false);
     assert.equal(setupGit({ cwd: dir, remove: true }).changed, true);
     assert.equal(fs.existsSync(hook), false);
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("Git removal leaves an unowned backup alone, and setup refuses a symlinked hooks directory", () => {
+  const dir = tempDir();
+  const outside = path.join(dir, "outside");
+  try {
+    initGit(dir);
+    const hooks = path.join(dir, ".git", "hooks");
+    const backup = path.join(hooks, "pre-commit.clotr-guard.bak");
+    fs.writeFileSync(backup, "user-owned backup\n");
+    assert.equal(setupGit({ cwd: dir, remove: true }).changed, false);
+    assert.equal(fs.readFileSync(backup, "utf8"), "user-owned backup\n");
+
+    fs.mkdirSync(outside);
+    fs.rmSync(hooks, { recursive: true, force: true });
+    fs.symlinkSync(outside, hooks, process.platform === "win32" ? "junction" : "dir");
+    assert.throws(() => setupGit({ cwd: dir }), /settings-symbolic-link/);
+    assert.equal(fs.existsSync(path.join(outside, "pre-commit")), false);
   } finally {
     fs.rmSync(dir, { recursive: true, force: true });
   }
@@ -1568,7 +2467,7 @@ test("Guard lists the script each of its hooks runs, with the options it was set
   }
 });
 
-test("Cline setup rewrites its own hook when the Guard path or options change, keeping a chained hook", () => {
+test("Cline setup refuses a modified hook instead of replacing an unverified wrapper", () => {
   const home = tempDir();
   try {
     const directory = path.join(home, "Documents", "Cline", "Hooks");
@@ -1578,16 +2477,12 @@ test("Cline setup rewrites its own hook when the Guard path or options change, k
     updateClineHooks({ home, platform: "linux" });
     const script = path.resolve(__dirname, "../apps/guard/bin/clotr-guard.js");
     const gone = path.join(home, "old", "clotr-guard.js");
-    fs.writeFileSync(prompt, fs.readFileSync(prompt, "utf8").replaceAll(JSON.stringify(script), JSON.stringify(gone)));
-    const repaired = updateClineHooks({ home, platform: "linux", minimum: "high" });
-    assert.equal(repaired.changed, true);
-    const source = fs.readFileSync(prompt, "utf8");
-    assert.ok(source.includes(JSON.stringify(script)));
-    assert.equal(source.includes(JSON.stringify(gone)), false);
-    assert.match(source, /"--min-severity","high"/);
-    assert.ok(source.includes(JSON.stringify(`${prompt}.clotr-guard.bak`)));
+    const changed = fs.readFileSync(prompt, "utf8").replaceAll(JSON.stringify(script), JSON.stringify(gone));
+    fs.writeFileSync(prompt, changed);
+    assert.throws(() => updateClineHooks({ home, platform: "linux", minimum: "high" }), /cline-hook-backup-exists/);
+    assert.equal(fs.readFileSync(prompt, "utf8"), changed);
+    assert.ok(changed.includes(JSON.stringify(`${prompt}.clotr-guard.bak`)));
     assert.equal(fs.readFileSync(`${prompt}.clotr-guard.bak`, "utf8"), "#!/bin/sh\necho '{}'\n");
-    assert.equal(updateClineHooks({ home, platform: "linux", minimum: "high" }).changed, false);
   } finally {
     fs.rmSync(home, { recursive: true, force: true });
   }
@@ -1611,6 +2506,27 @@ test("Git setup refuses to replace a hook while an older Clotr backup sits besid
   }
 });
 
+test("Git setup leaves a same-content backup alone instead of claiming it", () => {
+  const dir = tempDir();
+  try {
+    initGit(dir);
+    const hooks = path.join(dir, ".git", "hooks");
+    fs.mkdirSync(hooks, { recursive: true });
+    const hook = path.join(hooks, "pre-commit");
+    const backup = `${hook}.clotr-guard.bak`;
+    const original = "#!/bin/sh\necho user hook\n";
+    fs.writeFileSync(hook, original, { mode: 0o755 });
+    fs.writeFileSync(backup, original, { mode: 0o755 });
+
+    assert.equal(setupGit({ cwd: dir, remove: true }).changed, false);
+    assert.throws(() => setupGit({ cwd: dir }), /hook-backup-exists/);
+    assert.equal(fs.readFileSync(hook, "utf8"), original);
+    assert.equal(fs.readFileSync(backup, "utf8"), original);
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 test("hooks written with another Node path are still Clotr's, so removal and setup stay idempotent", () => {
   const settings = mergeHook({}, "claude");
   const original = process.execPath;
@@ -1623,14 +2539,30 @@ test("hooks written with another Node path are still Clotr's, so removal and set
   }
 });
 
-test("setup run inside an Electron host writes a Node command, not the host's own binary", () => {
-  process.versions.electron = "38.0.0";
+test("Electron setup chooses an absolute Node outside the workspace from PATH", () => {
+  const home = tempDir();
+  const workspace = path.join(home, "repo");
+  const bin = path.join(home, "Node tools & $100%'");
+  const fakeNode = path.join(bin, process.platform === "win32" ? "node.exe" : "node");
+  fs.mkdirSync(workspace, { recursive: true });
+  fs.mkdirSync(bin, { recursive: true });
+  fs.writeFileSync(fakeNode, "fixture");
+  if (process.platform !== "win32") fs.chmodSync(fakeNode, 0o755);
+  const env = { PATH: `${path.join(workspace, "node_modules", ".bin")}${path.delimiter}${bin}` };
   try {
-    const command = mergeHook({}, "claude").hooks.UserPromptSubmit[0].hooks[0].command;
-    assert.ok(command.startsWith('"node" '), command);
-    assert.ok(!command.includes(process.execPath), command);
+    const node = nodeCommand({ env, platform: process.platform, electron: "38.0.0", cwd: workspace });
+    assert.equal(node, fs.realpathSync(fakeNode));
+    const hook = hookCommand("claude", "prompt", "medium", false, {
+      env,
+      platform: process.platform,
+      electron: "38.0.0",
+      cwd: workspace,
+      script: path.join(home, "Clotr's Guard & checks", "clotr-guard.js"),
+    });
+    assert.equal(hook.command, node);
+    assert.equal(hook.args[0], path.join(home, "Clotr's Guard & checks", "clotr-guard.js"));
   } finally {
-    delete process.versions.electron;
+    fs.rmSync(home, { recursive: true, force: true });
   }
 });
 
@@ -1650,7 +2582,7 @@ test("the Guard package reads nothing from outside its own folder, so a packed c
   }
   assert.deepEqual(outside, []);
   const pkg = JSON.parse(fs.readFileSync(path.join(root, "package.json"), "utf8"));
-  assert.equal(pkg.version, "0.1.0");
+  assert.equal(pkg.version, "0.1.1");
   assert.equal(pkg.bin["clotr-mcp"], "bin/clotr-mcp.js");
   assert.ok(pkg.files?.includes("dist"), "the engine bundle must ship in the package");
 });
@@ -1662,14 +2594,18 @@ test("Guard prints its package version beside the engine version from the bundle
   const engineVersion = header[1].split(".").slice(0, 3).join(".");
   const version = spawnSync(process.execPath, [script, "--version"], { encoding: "utf8" });
   assert.equal(version.status, 0, version.stderr);
-  assert.equal(version.stdout.trim(), `clotr-guard 0.1.0, engine ${engineVersion}`);
+  assert.equal(version.stdout.trim(), `clotr-guard 0.1.1, engine ${engineVersion}`);
 });
 
 test("the Guard npm package declares its public pages and includes the license", () => {
   const root = path.join(__dirname, "../apps/guard");
   const pkg = JSON.parse(fs.readFileSync(path.join(root, "package.json"), "utf8"));
-  assert.deepEqual(pkg.repository, { type: "git", url: "https://github.com/clotr-app/clotr" });
-  assert.equal(pkg.homepage, "https://github.com/clotr-app/clotr");
+  assert.deepEqual(pkg.repository, {
+    type: "git",
+    url: "https://github.com/clotr-app/clotr",
+    directory: "apps/guard",
+  });
+  assert.equal(pkg.homepage, "https://github.com/clotr-app/clotr/tree/main/apps/guard#readme");
   assert.deepEqual(pkg.bugs, { url: "https://github.com/clotr-app/clotr/issues" });
   const command = process.platform === "win32" ? "cmd.exe" : "npm";
   const args =
@@ -1679,8 +2615,21 @@ test("the Guard npm package declares its public pages and includes the license",
   const json = /(?:^|\r?\n)(\[[\s\S]*\])\s*$/.exec(packed.stdout);
   assert.ok(json, packed.stdout);
   const details = JSON.parse(json[1]);
-  assert.ok(details[0].files.some((file) => file.path === "LICENSE"));
-  assert.ok(details[0].files.some((file) => file.path === "skills/clotr/SKILL.md"));
+  assert.deepEqual(
+    details[0].files.map((file) => file.path).sort(),
+    [
+      "LICENSE",
+      "README.md",
+      "bin/clotr-guard.js",
+      "bin/clotr-mcp.js",
+      "dist/clotr-engine.js",
+      "lib/clotrignore.js",
+      "lib/engine.js",
+      "lib/secret-files.js",
+      "package.json",
+      "skills/clotr/SKILL.md",
+    ].sort(),
+  );
 });
 
 // The skill is what an assistant reads about Guard, so each fact in it is checked against the code it describes.
@@ -1711,6 +2660,7 @@ test("the assistant skill ships in the Guard package and says what the code does
   assert.match(skill, /"Clotr couldn't check this"/);
   assert.match(guardSource, /Work from the variable names or the example file/);
   assert.match(skill, /work from the variable names or an example file/);
+  assert.match(skill, /names the kind of thing it found and where it was found, without showing any part of the value/);
   assert.match(skill, /--no-verify/);
   assert.doesNotMatch(skill, /AKIA[0-9A-Z]{16}/, "the skill carries no key, not even a made-up one");
 
@@ -1725,10 +2675,11 @@ test("the assistant skill ships in the Guard package and says what the code does
 });
 
 // A status is only worth reading if the tests behind it are real, so every row has to link a test file that exists.
-test("each developer tool's README marks every feature stable or preview and links tests that exist", () => {
+// The VS Code page is an Open VSX store listing and its feature claims are checked in tests/vscode.test.js.
+test("Guard and JetBrains READMEs mark each feature stable or preview and link tests that exist", () => {
   const repo = path.join(__dirname, "..");
   const base = "https://github.com/clotr-app/clotr/blob/main/";
-  for (const app of ["guard", "vscode", "jetbrains"]) {
+  for (const app of ["guard", "jetbrains"]) {
     const readme = fs.readFileSync(path.join(repo, "apps", app, "README.md"), "utf8");
     const section = /^## Stable and preview\n([\s\S]*?)(?=^## |(?![\s\S]))/m.exec(readme)?.[1];
     assert.ok(section, `${app}'s README has a Stable and preview section`);
@@ -2029,16 +2980,23 @@ test("the JavaScript and Kotlin .clotrignore parsers use the same vectors", () =
 });
 
 // A .clotrignore comes with the repository, so a rule full of stars once made a commit or an editor hang on one path.
-test("a .clotrignore rule full of stars matches a long path quickly", () => {
-  const script = [
-    `const { parseClotrIgnore, pathIgnored } = require(${JSON.stringify(require.resolve("../apps/guard/lib/clotrignore.js"))});`,
-    `const config = parseClotrIgnore("*a*a*a*a*a*a*a*a*a*a*b\\n**/*a*a*a*a*a*a*a*a*a*a*b/x\\n");`,
-    `const long = "x" + "a".repeat(60);`,
-    `console.log([pathIgnored(config, long), pathIgnored(config, long + "b"), pathIgnored(config, "d/" + long + "/x/y")].join());`,
-  ].join("\n");
-  const result = spawnSync(process.execPath, ["-e", script], { encoding: "utf8", timeout: 10_000 });
-  assert.equal(result.signal, null, "the match took longer than ten seconds");
-  assert.equal(result.stdout.trim(), "false,true,false");
+test("a .clotrignore rule full of stars grows with the path", () => {
+  const config = parseClotrIgnore("*a*a*a*a*a*a*a*a*a*a*b\n**/*a*a*a*a*a*a*a*a*a*a*b/x\n");
+  const pathOf = (n) => "x" + "a".repeat(n);
+  const [small, big] = bestOfPair(
+    () => pathIgnored(config, pathOf(15)),
+    () => pathIgnored(config, pathOf(60)),
+    4,
+  );
+  assert.ok(!grewMoreThan(small, big, 16), "wildcard matching grew too fast for 4× the path");
+  assert.deepEqual(
+    [
+      pathIgnored(config, pathOf(60)),
+      pathIgnored(config, pathOf(60) + "b"),
+      pathIgnored(config, `d/${pathOf(60)}/x/y`),
+    ],
+    [false, true, false],
+  );
 });
 
 // Each rule was matched against every folder prefix of a path again from its start, so a deep path cost its depth
@@ -2046,13 +3004,14 @@ test("a .clotrignore rule full of stars matches a long path quickly", () => {
 test("a .clotrignore of long rules matches a deep path in one walk per rule", () => {
   const config = parseClotrIgnore(Array.from({ length: 62 }, (_, i) => `${"**/".repeat(340)}x${i}`).join("\n"));
   const deep = `${Array.from({ length: 60 }, (_, i) => `pkg${String(i).padStart(4, "0")}`).join("/")}/index.js`;
-  retrySlow(() => {
-    const started = process.hrtime.bigint();
-    const ignored = pathIgnored(config, deep);
-    const elapsed = Number(process.hrtime.bigint() - started) / 1e6;
-    assert.equal(ignored, false);
-    return elapsed < 1000 ? undefined : `a ${deep.length}-character path took ${elapsed.toFixed(1)} ms`;
-  });
+  const shorter = `${Array.from({ length: 15 }, (_, i) => `pkg${String(i).padStart(4, "0")}`).join("/")}/index.js`;
+  const [small, big] = bestOfPair(
+    () => pathIgnored(config, shorter),
+    () => pathIgnored(config, deep),
+    4,
+  );
+  assert.equal(pathIgnored(config, deep), false);
+  assert.ok(!grewMoreThan(small, big, 16), "long rules grew too fast for 4× the path depth");
   assert.equal(pathIgnored(config, `${deep.split("/").slice(0, 10).join("/")}/x7/index.js`), true);
 });
 
@@ -2105,7 +3064,7 @@ test("a broad .clotrignore stays inside the repository", () => {
   }
 });
 
-test("Guard hooks and staged checks use .clotrignore without quieting secret files", () => {
+test("Guard does not let project path patterns silence reads or staged files", () => {
   const root = tempDir();
   const salt = "00112233445566778899aabbccddeeff00112233445566778899aabbccddeeff";
   try {
@@ -2117,12 +3076,14 @@ test("Guard hooks and staged checks use .clotrignore without quieting secret fil
     const ignoredPrompt = inspectPrompt("claude", `Use ${AWS_KEY}`, { cwd: root, dataDir: path.join(root, "state") });
     assert.equal(ignoredPrompt.action, "allow");
 
+    const otherKey = "AKIAZ7Q3M9WX2KD5HB8R";
     const fixturePath = path.join(root, "fixtures", "ordinary.js");
     fs.mkdirSync(path.dirname(fixturePath));
-    fs.writeFileSync(fixturePath, `key=${AWS_KEY}`);
+    fs.writeFileSync(fixturePath, `key=${otherKey}`);
     const fixtureRead = inspectRead("claude", { tool_name: "Read", tool_input: { file_path: fixturePath } });
-    assert.equal(fixtureRead.action, "allow");
-    assert.equal(fixtureRead.skipped, true);
+    assert.equal(fixtureRead.action, "block");
+    assert.equal(fixtureRead.skipped, undefined);
+    assert.equal(fixtureRead.findings[0].masked, "AKIA…8R");
 
     fs.writeFileSync(path.join(root, ".env"), `KEY=${AWS_KEY}`);
     const secretRead = inspectRead(
@@ -2138,11 +3099,41 @@ test("Guard hooks and staged checks use .clotrignore without quieting secret fil
     git(root, ["add", ".clotrignore", "fixtures/ordinary.js", ".env"]);
     const staged = checkStaged({ cwd: root });
     assert.deepEqual(
-      staged.issues.map(({ file, kind }) => ({ file, kind })),
-      [{ file: ".env", kind: "secret_file" }],
+      staged.issues.map(({ file, kind }) => ({ file, kind })).sort((a, b) => a.file.localeCompare(b.file)),
+      [
+        { file: ".env", kind: "secret_file" },
+        { file: "fixtures/ordinary.js", kind: "aws_access_key" },
+      ],
     );
   } finally {
     fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("Guard documents exact fingerprints and local repeat state without promising path skips", () => {
+  const readme = fs.readFileSync(path.join(__dirname, "../apps/guard/README.md"), "utf8");
+  assert.match(readme, /Only exact value fingerprints in `\.clotrignore` suppress Guard findings/);
+  assert.match(readme, /Path patterns are ignored and cannot turn\s+checks off for a file/);
+  assert.match(readme, /local plain state readable by the same computer account/);
+  assert.doesNotMatch(readme, /A path line is the way to quiet those|add its path to `\.clotrignore`/i);
+
+  const publicContributing = ["../public/CONTRIBUTING.md", "../CONTRIBUTING.md"]
+    .map((file) => path.join(__dirname, file))
+    .find((file) => fs.existsSync(file));
+  assert.ok(publicContributing, "the public CONTRIBUTING.md is missing");
+  const contributing = fs.readFileSync(publicContributing, "utf8");
+  for (const [file, text] of [
+    ["apps/guard/README.md", readme],
+    ["public/CONTRIBUTING.md", contributing],
+  ]) {
+    assert.match(text, /Clotr hits an internal error while checking readable input/i, file);
+    assert.match(text, /lets\s+(?:the|an)\s+action through with a visible note/i, file);
+    assert.match(text, /stops input\s+it can't read.*malformed hook input.*size limit/is, file);
+    assert.doesNotMatch(
+      text,
+      /if it fails, the message still goes through|a check error lets the action through/i,
+      file,
+    );
   }
 });
 
@@ -2189,7 +3180,7 @@ test("Guard reports one short command hint for a raw value line", () => {
       encoding: "utf8",
       env: { ...process.env, CLOTR_GUARD_DATA_DIR: path.join(root, "state") },
     });
-    assert.equal(result.status, 2, `${result.stdout}${result.stderr}`);
+    assert.equal(result.status, 0, `${result.stdout}${result.stderr}`);
     assert.equal((result.stderr.match(/Use clotr-guard ignore-value\./g) || []).length, 1);
     assert.doesNotMatch(`${result.stdout}${result.stderr}`, new RegExp(AWS_KEY));
   } finally {

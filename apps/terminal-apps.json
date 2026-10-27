@@ -1,0 +1,50 @@
+{
+  "about": "The terminals the Windows command check watches, in the same shape as ai-apps.json: matched by file name plus who made it (packageFamily or publisher), never a file name alone. This list is only used together with the clipboard's own owner (surfaces.rs): a terminal only shows the card when what's on the clipboard was last copied in a browser.",
+  "runBoxOwnerExe": "explorer.exe",
+  "apps": [
+    {
+      "id": "cmd",
+      "name": "Command Prompt",
+      "windows": [
+        {
+          "exe": "cmd.exe",
+          "publisher": "Microsoft Windows",
+          "seen": "checked by its code-signing certificate (2026-10-07)"
+        }
+      ]
+    },
+    {
+      "id": "powershell",
+      "name": "Windows PowerShell",
+      "windows": [
+        {
+          "exe": "powershell.exe",
+          "publisher": "Microsoft Windows",
+          "seen": "checked by its code-signing certificate (2026-10-07)"
+        }
+      ]
+    },
+    {
+      "id": "pwsh",
+      "name": "PowerShell",
+      "windows": [
+        {
+          "exe": "pwsh.exe",
+          "publisher": "Microsoft Corporation",
+          "seen": "not checked on a PC yet"
+        }
+      ]
+    },
+    {
+      "id": "windows-terminal",
+      "name": "Windows Terminal",
+      "windows": [
+        {
+          "exe": "WindowsTerminal.exe",
+          "packageFamily": "Microsoft.WindowsTerminal_8wekyb3d8bbwe",
+          "seen": "the Store app's package family, checked 2026-10-07"
+        }
+      ]
+    }
+  ]
+}

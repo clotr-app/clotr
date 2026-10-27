@@ -12,6 +12,7 @@
 
   const C = (globalThis.Clotr = globalThis.Clotr || {});
   const MAX_AROUND = 4000;
+  const MAX_COPIED = 8192;
 
   // Lowercases the text and normalizes curly quotes, unusual spaces, and a line continued with a trailing
   // backslash or backtick, so they all read the same way.
@@ -94,8 +95,8 @@
     for (const line of text.split(/\r?\n/)) {
       if (download && hidden) break;
       const s = lineShapes(line);
-      download ||= s.download;
-      hidden ||= s.hidden;
+      if (!download) download = s.download;
+      if (!hidden) hidden = s.hidden;
     }
     const hiddenWindow = HIDDEN_WINDOW.test(text) && (POWERSHELL.test(text) || /\bstart-process\b/.test(text));
     return { download, hidden, hiddenWindow };
@@ -106,7 +107,7 @@
   const SIGNALS = [
     // The Run keys and the Run box (English and Spanish).
     /\bwin(?:dows)?(?:\s*(?:logo\s+)?key)?\s*(?:\+|plus)\s*["']?r\b/,
-    /\u229e\s*(?:win(?:dows)?\s*)?\+?\s*r\b/,
+    /\u229e\s{0,12}(?:win(?:dows)?\s{0,12})?\+?\s{0,12}r\b/,
     /\brun\s+(?:box|dialog|window)\b/,
     /\b(?:abre|abrir|abra|cuadro(?:\s+de\s+di[aá]logo)?|ventana)\s+(?:de\s+)?["'«]?ejecutar\b/,
     // A fake check that you're a person.
@@ -125,11 +126,13 @@
   const hasTrickSignal = (text) => SIGNALS.some((re) => re.test(text));
 
   function commandTrick(copied, around) {
-    if (typeof copied !== "string" || !copied.trim()) return null;
-    const shapes = commandShapes(copied);
+    if (typeof copied !== "string") return null;
+    const copiedText = copied.slice(0, MAX_COPIED);
+    if (!copiedText.trim()) return null;
+    const shapes = commandShapes(copiedText);
     if (shapes.hidden) return { shape: "hidden" };
     if (!shapes.download && !shapes.hiddenWindow) return null;
-    const words = `${plain(copied)}\n${plain(typeof around === "string" ? around.slice(0, MAX_AROUND) : "")}`;
+    const words = `${plain(copiedText)}\n${plain(typeof around === "string" ? around.slice(0, MAX_AROUND) : "")}`;
     if (shapes.hiddenWindow && (shapes.download || hasTrickSignal(words))) return { shape: "hidden" };
     if (shapes.download && hasTrickSignal(words)) return { shape: "download" };
     return null;

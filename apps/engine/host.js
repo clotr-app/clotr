@@ -23,6 +23,7 @@
 
   let s = { salt: null, vault: [], responses: {}, siteMode: null, cache: new Map() };
   let apps = { appModes: {}, pausedApps: {} };
+  const MAX_HISTORY_FINGERPRINTS_PER_CHECK = 8;
 
   const appId = (app) =>
     String(app ?? "")
@@ -64,7 +65,7 @@
   }
 
   // What's in the text and what each detail does in this app: { findings, words, holds }. `findings`: one per
-  // detail, with a fast fp for matching and a stronger one for history;
+  // detail, with a fast fp for matching and a strong history fp for up to eight findings per check;
   // `words`: the warning's sentence for the details to show ({ lead, items, tail }, or null when there are none);
   // `holds`: a detail is set to Ask before sending. `everyday`: an email or chat app the person switched on;
   // `source`: "typed", or "copied" for what's on the clipboard.
@@ -73,7 +74,7 @@
     if (typeof text !== "string" || !text || apps.pausedApps[id]) return { findings: [], words: null, holds: false };
     const here = { ...s, siteMode: apps.appModes[id] || null };
     const all = found(text);
-    const findings = all.map(({ id: fid, r, m }) => ({
+    const findings = all.map(({ id: fid, r, m }, index) => ({
       id: fid,
       type: r.id,
       name: r.name,
@@ -82,14 +83,14 @@
       response: C.respFor(r, m, here),
       preview: C.mask(m),
       fp: s.salt ? C.fingerprint(s.salt, r.id, m) : "",
-      historyFp: s.salt ? C.fingerprintStrong(s.salt, r.id, m) : "",
+      historyFp: s.salt && index < MAX_HISTORY_FINGERPRINTS_PER_CHECK ? C.fingerprintStrong(s.salt, r.id, m) : "",
       scheme: 2,
     }));
     // The words name the details to show (not the ones only counted), kind by kind as they were found.
     const results = [];
     all.forEach(({ r, m }, i) => {
       if (findings[i].response === "log") return;
-      const last = results.at(-1);
+      const last = results[results.length - 1];
       if (last?.kind === r) last.matches.push(m);
       else results.push({ kind: r, name: r.name, matches: [m] });
     });
@@ -145,7 +146,7 @@
   function call(request) {
     try {
       const { method, args = [] } = typeof request === "string" ? JSON.parse(request) : request || {};
-      if (typeof method !== "string" || !Object.hasOwn(API, method) || !Array.isArray(args)) {
+      if (typeof method !== "string" || !Object.prototype.hasOwnProperty.call(API, method) || !Array.isArray(args)) {
         return JSON.stringify({ error: "unknown-method" });
       }
       return JSON.stringify({ result: API[method](...args) ?? null });

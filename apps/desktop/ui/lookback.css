@@ -1,0 +1,369 @@
+/* Clotr for Windows — Look back: the Scan screen's third pick (tool
+   tabs, the dropzone, reading progress, the live feed) and its results and deletion-letter panel, which render
+   inside the Results screen (results.js's own cards share the kit's .card/.btn/.tag; this file only holds what
+   those don't already cover). Built on the shared suite tokens, the same ones scan.css reads. */
+
+.lb-card {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-3);
+  padding: var(--s-5) var(--s-6) var(--s-6);
+}
+.lb-card h2 {
+  margin: 0;
+  font-size: var(--text-lg);
+}
+.lb-card h3 {
+  margin: var(--s-2) 0 0;
+  font-size: var(--text);
+}
+.btn-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--s-3);
+  margin: 0;
+}
+
+/* ---------- Step 1: which tool ---------- */
+.lb-tabs {
+  display: flex;
+  gap: 6px;
+}
+.lb-tab {
+  flex: 1;
+  padding: 8px 10px;
+  border: none;
+  border-radius: var(--r-control);
+  background: var(--surface);
+  color: var(--ink);
+  font-size: var(--text-sm);
+  font-weight: 700;
+  cursor: pointer;
+  box-shadow: inset 0 0 0 1px var(--faint);
+}
+.lb-tab[aria-selected="true"] {
+  background: var(--signal-wash);
+  color: var(--ink);
+  box-shadow: inset 0 0 0 1px var(--signal);
+}
+.lb-tool-steps {
+  margin: 0;
+  padding-left: 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-size: var(--text-sm);
+  color: var(--ink);
+}
+
+/* ---------- Step 2: picking the export ---------- */
+.lb-drop {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 28px 16px;
+  border: 2px dashed var(--faint);
+  border-radius: var(--r-card);
+  color: var(--ink-2);
+  font-size: var(--text);
+  text-align: center;
+  cursor: pointer;
+}
+.lb-drop.is-over {
+  border-color: var(--signal);
+  background: var(--signal-wash);
+  color: var(--signal);
+}
+
+/* ---------- Reading: bar, stats, steps, feed ---------- */
+.lb-progress {
+  height: 10px;
+  border-radius: var(--r-pill);
+  background: var(--surface);
+  box-shadow: inset 0 0 0 1px var(--faint);
+  overflow: hidden;
+}
+.lb-progress-fill {
+  height: 100%;
+  width: 0%;
+  border-radius: var(--r-pill);
+  background: var(--progress);
+  transition: width 0.25s var(--ease);
+}
+.lb-progress-text {
+  display: flex;
+  justify-content: space-between;
+  margin: 0;
+  font-size: var(--text-xs);
+  color: var(--ink-2);
+}
+.lb-steps {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: var(--text-sm);
+  color: var(--muted);
+}
+.lb-steps li {
+  padding-left: 22px;
+  position: relative;
+}
+.lb-steps li::before {
+  content: "○";
+  position: absolute;
+  left: 0;
+}
+.lb-steps li.is-active {
+  color: var(--ink);
+  font-weight: 600;
+}
+.lb-steps li.is-active::before {
+  content: "◐";
+  color: var(--signal);
+}
+.lb-steps li.is-done {
+  color: var(--ink-2);
+}
+.lb-steps li.is-done::before {
+  content: "●";
+  color: var(--good);
+}
+.lb-feed {
+  display: flex;
+  flex-direction: column-reverse;
+  gap: 4px;
+  max-height: 160px;
+  overflow-y: auto;
+  font-size: var(--text-xs);
+  color: var(--ink-2);
+}
+.lb-feed-row {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  flex-wrap: wrap;
+  animation: lb-feed-in 0.2s var(--ease);
+}
+@keyframes lb-feed-in {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* ---------- Results: shared rows, instruction tags, chat cards ---------- */
+.lb-shared-rows {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin-top: 6px;
+}
+.lb-shared-row {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 8px 4px;
+  font-size: var(--text);
+  border-bottom: 1px solid var(--faint);
+}
+.lb-shared-row:last-child {
+  border-bottom: none;
+}
+.lb-shared-row .lb-kind-name {
+  color: var(--ink);
+  font-weight: 700;
+  min-width: 140px;
+}
+.lb-shared-row .lb-kind-count {
+  color: var(--ink-2);
+}
+.lb-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.lb-cards {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-3);
+  margin-top: var(--s-2);
+}
+.lb-card-item {
+  border: 1px solid color-mix(in srgb, var(--signal) 10%, var(--faint));
+  border-radius: var(--r-card);
+  background-color: var(--surface);
+  background-image: var(--gloss), linear-gradient(180deg, var(--surface), var(--surface-2));
+  box-shadow: var(--edge), var(--lift);
+  overflow: hidden;
+}
+.lb-card-item > summary {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 12px 14px;
+  cursor: pointer;
+  list-style: none;
+}
+.lb-card-item > summary::-webkit-details-marker {
+  display: none;
+}
+.lb-card-head {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.lb-card-title {
+  font-size: var(--text-sm);
+  color: var(--ink);
+  font-weight: 700;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  overflow: hidden;
+  overflow-wrap: anywhere;
+}
+.lb-card-date {
+  font-size: var(--text-xs);
+  color: var(--muted);
+}
+.lb-card-teaser {
+  margin: 0;
+  font-size: var(--text-xs);
+  color: var(--ink-2);
+}
+.lb-card-body {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-3);
+  padding: 0 14px 14px;
+}
+.lb-finds {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.lb-find-row {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  flex-wrap: wrap;
+  font-size: var(--text-xs);
+}
+.lb-find-masked {
+  font-family: var(--mono);
+  color: var(--ink);
+}
+.lb-find-where {
+  color: var(--muted);
+}
+.lb-advice {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: var(--text-xs);
+  color: var(--ink-2);
+}
+.lb-advice li::before {
+  content: "• ";
+}
+
+/* ---------- The deletion letter's panel ---------- */
+.lb-which,
+.lb-places {
+  margin: 0;
+  padding: 0;
+  border: none;
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-2);
+}
+.lb-which legend,
+.lb-places legend {
+  padding: 0;
+  font-size: var(--text-sm);
+  font-weight: 700;
+  color: var(--ink);
+}
+.lb-chat-picks {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  max-height: 220px;
+  overflow-y: auto;
+}
+.lb-chat-pick {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  font-size: var(--text-xs);
+  color: var(--ink-2);
+}
+.lb-place-options {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 16px;
+}
+.lb-place-options label {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: var(--text-sm);
+  color: var(--ink-2);
+}
+.lb-letter-label {
+  display: block;
+  font-size: var(--text-sm);
+  font-weight: 700;
+  color: var(--ink);
+}
+.lb-letter-box {
+  display: block;
+  width: 100%;
+  min-height: 14em;
+  resize: vertical;
+  font: inherit;
+  font-size: var(--text-xs);
+  line-height: 1.5;
+  padding: 10px 12px;
+  border: none;
+  border-radius: var(--r-control);
+  color: var(--ink);
+  background: var(--surface);
+  box-shadow: inset 0 0 0 1px var(--line);
+}
+.lb-letter-box:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 1px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .lb-progress-fill {
+    transition: none;
+  }
+  .lb-feed-row {
+    animation: none;
+  }
+}
+:root[data-motion="still"] .lb-progress-fill {
+  transition: none;
+}
+:root[data-motion="still"] .lb-feed-row {
+  animation: none;
+}
