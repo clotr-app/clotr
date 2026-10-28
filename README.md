@@ -47,14 +47,14 @@ Email and chat sites like Gmail and Discord stay off until you tick them. Bandag
 
 ## Clotr for Windows
 
-Clotr for Windows sits by the clock. While the ChatGPT, Claude or Copilot desktop app is in front, it warns you when what you copy holds a password, a key, a card number or an ID number, and you can hide it before you paste. It also checks the files already on your PC, from a Quick scan of Downloads, Desktop, Documents and Pictures to every drive, and starts its results with the worst thing and what to do about it. For AI chats in your browser, use the extension. Clotr for Windows is free, but its source isn't public yet. Start with Windows is off until you turn it on in Settings. When you send a message from one of those AI apps, it goes to that service as usual.
+Clotr for Windows sits by the clock. While the ChatGPT, Claude or Copilot desktop app is in front, it warns you when what you copy holds a password, a key, a card number or an ID number, and you can hide it before you paste. It also checks the files already on your PC, from a Quick scan of Downloads, Desktop, Documents and Pictures to every drive, and starts its results with the worst thing and what to do about it. For AI chats in your browser, use the extension. Clotr for Windows is free and open source too. Start with Windows is off until you turn it on in Settings. When you send a message from one of those AI apps, it goes to that service as usual.
 
 Its source is in `apps/desktop`. Building it takes Windows 10 or 11, Node.js and Rust 1.90 or newer, then `npm ci` and `npm run build` in that folder, and `npm test` there runs its Rust tests.
 
 ## For developers
 
 - The [VS Code extension](https://marketplace.visualstudio.com/items?itemName=clotr-app.clotr) is also on [Open VSX](https://open-vsx.org/extension/clotr-app/clotr) and flags credentials in open files; install with `code --install-extension clotr-app.clotr` or `codium --install-extension clotr-app.clotr` in VSCodium.
-- The [JetBrains plugin source and README](https://github.com/clotr-app/clotr/tree/main/apps/jetbrains#readme) is at version 0.1.1. Its Marketplace page isn't live yet; the README explains its current preview status and how to try it from a clone.
+- The [JetBrains plugin](https://plugins.jetbrains.com/plugin/35407-clotr) is on the JetBrains Marketplace at version 0.1.1. Its [README](https://github.com/clotr-app/clotr/tree/main/apps/jetbrains#readme) explains how to try it from a clone.
 - [Clotr Guard on npm](https://www.npmjs.com/package/clotr-guard) is a CLI with prompt hooks for Claude Code, Cursor, Gemini CLI, Codex CLI and Windsurf (and Cline on macOS and Linux), file-read hooks in Claude Code, Cursor, Gemini CLI and Windsurf, a Git pre-commit check and the `clotr-mcp` server. MCP only checks when your assistant calls it; it doesn't watch prompts on its own. Install with `npm install -g clotr-guard`, then run `clotr-guard setup claude` or `clotr-guard setup git`.
 - The [`clotr-engine` package on npm](https://www.npmjs.com/package/clotr-engine) is Clotr's detection engine for scripts and tools; install with `npm install clotr-engine`.
 
