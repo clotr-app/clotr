@@ -16,6 +16,22 @@ const { spawn, spawnSync } = require("child_process");
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
+function withTimeout(promise, timeoutMs, label) {
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(() => reject(new Error(`${label} timed out after ${timeoutMs} ms`)), timeoutMs);
+    Promise.resolve(promise).then(
+      (value) => {
+        clearTimeout(timer);
+        resolve(value);
+      },
+      (err) => {
+        clearTimeout(timer);
+        reject(err);
+      },
+    );
+  });
+}
+
 const freePort = () =>
   new Promise((resolve, reject) => {
     const server = net.createServer().listen(0, "127.0.0.1", () => {
@@ -75,9 +91,8 @@ function channel(sock) {
     for (const w of waiting.values()) w.reject(new Error(`${w.name}: Firefox closed the connection`));
     waiting.clear();
   });
-  // Gives each step up to a minute, since a computer busy with other builds can really be that slow, and each
-  // check already has its own waits on top of this.
-  const send = (name, params = {}, timeoutMs = 60000) =>
+  // Each command has a 30-second limit, and the smoke test also times out a whole check sooner.
+  const send = (name, params = {}, timeoutMs = 30000) =>
     new Promise((resolve, reject) => {
       const id = ++next;
       const timer = setTimeout(() => {
@@ -126,7 +141,7 @@ async function launchFirefox({ firefox, extension, prefs = {} }) {
   const proc = spawn(
     firefox,
     ["--headless", "--marionette", "--remote-allow-system-access", "--no-remote", "--profile", profile, "about:blank"],
-    { stdio: "ignore" },
+    { stdio: "ignore", env: { ...process.env, MOZ_REMOTE_ALLOW_SYSTEM_ACCESS: "1" } },
   );
   let sock;
   let send;
@@ -159,14 +174,14 @@ async function launchFirefox({ firefox, extension, prefs = {} }) {
     }
   };
   try {
-    sock = await connect(port, 60000);
+    sock = await connect(port, 30000);
     const ch = channel(sock);
     send = ch.send;
-    await ch.helloSeen;
+    await withTimeout(ch.helloSeen, 15000, "Firefox's Marionette hello");
     // Accepts self-signed certificates, the standard WebDriver way, so a throwaway local https fixture works
     // without trusting Firefox's own certificate store for a test that never leaves this computer.
     const { capabilities } = await send("WebDriver:NewSession", { capabilities: {} });
-    await send("WebDriver:SetTimeouts", { script: 60000 });
+    await send("WebDriver:SetTimeouts", { script: 30000 });
     await send("Addon:Install", { path: extension, temporary: true });
     return { ...driver(send), close, version: `firefox/${capabilities.browserVersion}` };
   } catch (err) {
@@ -237,17 +252,6 @@ function driver(send) {
       await send("Marionette:SetContext", { value: "chrome" });
       try {
         return (await send("WebDriver:ExecuteScript", { script, args: [] })).value;
-      } finally {
-        await send("Marionette:SetContext", { value: "content" });
-      }
-    },
-    // Like `inBrowser`, but `body` is an async function's body, the same as `exec`. This is for privileged work
-    // that has to wait on something, such as trusting a local https fixture's certificate before sending a tab
-    // to it.
-    async inBrowserAsync(body, ...args) {
-      await send("Marionette:SetContext", { value: "chrome" });
-      try {
-        return await exec(body, ...args);
       } finally {
         await send("Marionette:SetContext", { value: "content" });
       }
