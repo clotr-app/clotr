@@ -4,8 +4,11 @@ const test = require("node:test");
 const assert = require("node:assert/strict");
 const waitFor = require("./e2e/wait.js");
 
-test("e2e wait reports when its condition call itself stalls", async () => {
+test("e2e wait reports when its condition call itself stalls", async (t) => {
   const stalled = Symbol("still waiting");
+  const saved = waitFor.finalCallMs;
+  waitFor.finalCallMs = 20;
+  t.after(() => (waitFor.finalCallMs = saved));
   const result = await Promise.race([
     waitFor(
       () => new Promise(() => {}),

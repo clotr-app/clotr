@@ -93,7 +93,10 @@ async function main() {
       ctx.problems.push(`${id}: couldn't list browser pages for cleanup within 5 seconds`);
       return;
     }
-    const extras = pages.filter((page) => !known.has(page) && !page.isClosed());
+    // The extension's own pages stay: the install opens its welcome tab whenever it gets to it, and V0 looks for it.
+    const extras = pages.filter(
+      (page) => !known.has(page) && !page.isClosed() && !page.url().startsWith("chrome-extension://"),
+    );
     const outcomes = await Promise.allSettled(
       extras.map((page) => waitFor(() => page.close({ runBeforeUnload: false }).then(() => true), 5000)),
     );

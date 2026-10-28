@@ -17,7 +17,9 @@ async function bounded(fn, timeout, label) {
 async function waitFor(fn, timeout, interval = 100, patience = () => 1) {
   const budget = Math.max(0, timeout * patience());
   const end = Date.now() + budget;
-  const finalCallWindow = Math.min(500, budget);
+  // A call still running at the deadline gets a fixed few seconds to answer (a slow hover or evaluate on a busy CI
+  // runner); only a call that is truly stuck past that throws. 500 ms was too short on CI.
+  const finalCallWindow = waitFor.finalCallMs;
   for (;;) {
     const remaining = end - Date.now();
     if (remaining <= 0) return null;
@@ -31,6 +33,7 @@ async function waitFor(fn, timeout, interval = 100, patience = () => 1) {
   }
 }
 
+waitFor.finalCallMs = 5000;
 waitFor.bounded = bounded;
 
 module.exports = waitFor;
