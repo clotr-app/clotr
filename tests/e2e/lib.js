@@ -525,6 +525,14 @@ async function launchOnce(ext, extraArgs, extraEnv, protocolTimeout = 30000) {
       10000,
     );
     if (!ready) throw new Error("the extension's service worker never became ready");
+    // A fresh profile is a fresh install, and the install opens the welcome tab as the active tab whenever the
+    // worker gets to it. Headless Chrome hides every other tab then, and a hidden page never finishes a click or an
+    // element screenshot, so a tab that turns up after a check brought its own page forward stalls that check
+    // until the protocol times out. Waiting for it here means it's already open before any check starts.
+    await waitFor(
+      () => browser.targets().some((t) => t.type() === "page" && t.url().includes("/vault.html?welcome=1")),
+      10000,
+    );
     // The checks fake a team's policy by swapping managed storage's get. The background keeps the policy it read
     // until the browser says the admin changed it, so a swap here forgets that copy, the way a real change does.
     await worker.evaluate(() => {
