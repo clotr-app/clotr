@@ -22,13 +22,16 @@ const net = require("net");
 const https = require("https");
 const path = require("path");
 const zlib = require("zlib");
-const { execFileSync } = require("child_process");
+const { execFileSync, spawnSync } = require("child_process");
 const puppeteer = require("puppeteer-core");
 const fx = require("../../tools/make-picture-fixtures.js");
 const { launchFirefox } = require("./marionette.js");
 
 const ROOT = path.resolve(__dirname, "..", "..");
 const OUT = path.join(__dirname, "output");
+const CHECK_TIMEOUT_MS = 45_000;
+const CLOSE_TIMEOUT_MS = 10_000;
+const FIREFOX_ENV = { ...process.env, MOZ_REMOTE_ALLOW_SYSTEM_ACCESS: "1" };
 const arg = (name) => {
   const i = process.argv.indexOf(name);
   return i > 0 ? process.argv[i + 1] : null;
@@ -68,6 +71,57 @@ function findFirefox() {
 const FIREFOX = findFirefox();
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const KEY = ["AKIA", "4HPQ7XZ2", "R6TWLJ3N"].join("");
+
+function withTimeout(promise, timeoutMs, label) {
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(() => {
+      const err = new Error(`${label} timed out after ${timeoutMs} ms`);
+      err.code = "ETIMEDOUT";
+      reject(err);
+    }, timeoutMs);
+    Promise.resolve(promise).then(
+      (value) => {
+        clearTimeout(timer);
+        resolve(value);
+      },
+      (err) => {
+        clearTimeout(timer);
+        reject(err);
+      },
+    );
+  });
+}
+
+function killFirefoxTree(child) {
+  if (!child?.pid) return;
+  if (process.platform === "win32") {
+    spawnSync("taskkill.exe", ["/PID", String(child.pid), "/T", "/F"], {
+      stdio: "ignore",
+      windowsHide: true,
+    });
+  } else {
+    try {
+      child.kill("SIGKILL");
+    } catch {
+      /* already gone */
+    }
+  }
+}
+
+async function closeFirefox(browser, timeoutMs = CLOSE_TIMEOUT_MS) {
+  if (!browser) return null;
+  try {
+    await withTimeout(
+      Promise.resolve().then(() => browser.close()),
+      timeoutMs,
+      "Firefox close",
+    );
+    return null;
+  } catch (err) {
+    killFirefoxTree(browser.process());
+    return err;
+  }
+}
 
 // A .docx file is just a zip with a word/document.xml entry inside, so this builds one by hand, deflated the way
 // Word itself stores it.
@@ -147,26 +201,39 @@ async function main() {
         : "unzip";
     execFileSync(tar, process.platform === "win32" ? ["-xf", zip, "-C", ext] : ["-q", zip, "-d", ext]);
     fs.mkdirSync(OUT, { recursive: true });
-    browser = await puppeteer.launch({ browser: "firefox", executablePath: firefox, headless: true });
+    browser = await puppeteer.launch({
+      browser: "firefox",
+      executablePath: firefox,
+      headless: true,
+      timeout: 30_000,
+      env: FIREFOX_ENV,
+    });
   } catch (err) {
-    // Nothing below gets a chance to remove these if setup itself fails partway through.
-    fs.rmSync(ext, { recursive: true, force: true });
-    fs.rmSync(files, { recursive: true, force: true });
+    // Nothing below gets a chance to close Firefox or remove these if setup fails partway through.
+    try {
+      await closeFirefox(browser);
+    } finally {
+      fs.rmSync(ext, { recursive: true, force: true });
+      fs.rmSync(files, { recursive: true, force: true });
+    }
     throw err;
   }
   const results = [];
+  let checksAborted = false;
   const check = async (id, name, fn) => {
-    if (!wanted(id)) return;
+    if (!wanted(id) || checksAborted) return;
     try {
-      await fn();
+      await withTimeout(Promise.resolve().then(fn), CHECK_TIMEOUT_MS, id);
       results.push(`  ${id} ${name} … PASS`);
     } catch (err) {
       results.push(`  ${id} ${name} … FAIL\n       → ${err.message}`);
+      if (err.code === "ETIMEDOUT") checksAborted = true;
     }
   };
   try {
-    console.log(`Clotr Firefox smoke test\n  browser: ${await browser.version()}\n  build:   ${path.basename(zip)}\n`);
-    await browser.installExtension(ext);
+    const browserVersion = await withTimeout(browser.version(), 15_000, "Firefox version");
+    console.log(`Clotr Firefox smoke test\n  browser: ${browserVersion}\n  build:   ${path.basename(zip)}\n`);
+    await withTimeout(browser.installExtension(ext), 30_000, "Firefox extension install");
     // Clotr logs what it found in each attached file, naming kinds of data only, never a value or a file name.
     // This collects that log, since Firefox automation can't read the closed warning directly.
     const findings = [];
@@ -356,11 +423,18 @@ async function main() {
       if (host) throw new Error("Clotr UI on a non-AI page");
     });
   } finally {
-    await browser.close();
-    fs.rmSync(files, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 });
+    try {
+      const closeError = await closeFirefox(browser);
+      if (closeError) {
+        checksAborted = true;
+        results.push(`  Firefox cleanup … FAIL\n       → ${closeError.message}`);
+      }
+    } finally {
+      fs.rmSync(files, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 });
+    }
   }
   try {
-    await ownPageChecks(check, firefox, ext);
+    if (!checksAborted) await ownPageChecks(check, firefox, ext);
   } catch (err) {
     results.push(`  FF9-FF18 Clotr's own pages … FAIL\n       → couldn't run: ${err.message}`);
   } finally {
@@ -458,11 +532,13 @@ const AI_CHAT_HTML = `<!doctype html><html><head><title>AI practice chat</title>
     <button aria-label="Send">Send</button>
   </body></html>`;
 // Trusts a fixture's self-signed certificate, but only for this Marionette session. Raw Marionette has no
-// WebDriver capability for that, only geckodriver's layer on top does, so this does it the way Firefox's own
-// test suites do: from chrome-privileged script.
+// WebDriver capability for that, so this does it from a chrome-privileged script. Firefox 159 does not allow async
+// WebDriver scripts in chrome context, so the script starts an async request and Marionette polls its result.
 async function trustFixtureCert(ff, url) {
-  const trusted = await ff.inBrowserAsync(`
-  return await new Promise((resolve) => {
+  const key = `__clotrCertTrust${Date.now()}`;
+  await ff.inBrowser(`
+    const win = Services.wm.getMostRecentWindow("navigator:browser");
+    win[${JSON.stringify(key)}] = null;
     const req = new XMLHttpRequest();
     req.open("GET", ${JSON.stringify(url)}, true);
     req.onerror = () => {
@@ -473,16 +549,31 @@ async function trustFixtureCert(ff, url) {
           Ci.nsICertOverrideService.ERROR_UNTRUSTED |
           Ci.nsICertOverrideService.ERROR_MISMATCH |
           Ci.nsICertOverrideService.ERROR_TIME;
-        overrides.rememberValidityOverride(${JSON.stringify(new URL(url).hostname)}, ${new URL(url).port}, {}, secInfo.serverCert, bits, true);
-        resolve(true);
+        overrides.rememberValidityOverride(
+          ${JSON.stringify(new URL(url).hostname)},
+          ${new URL(url).port},
+          {},
+          secInfo.serverCert,
+          bits,
+          true,
+        );
+        win[${JSON.stringify(key)}] = true;
       } catch (e) {
-        resolve(String((e && e.message) || e));
+        win[${JSON.stringify(key)}] = String((e && e.message) || e);
       }
     };
-    req.onload = () => resolve(true);
+    req.onload = () => { win[${JSON.stringify(key)}] = true; };
     req.send(null);
-  });`);
-  if (trusted !== true) throw new Error(`couldn't trust the fixture's certificate: ${trusted}`);
+    return true;`);
+  let trusted = null;
+  for (const until = Date.now() + 10000; Date.now() < until; await sleep(150)) {
+    trusted = await ff.inBrowser(
+      `return Services.wm.getMostRecentWindow("navigator:browser")[${JSON.stringify(key)}];`,
+    );
+    if (trusted !== null) break;
+  }
+  await ff.inBrowser(`delete Services.wm.getMostRecentWindow("navigator:browser")[${JSON.stringify(key)}];`);
+  if (trusted !== true) throw new Error(`couldn't trust the fixture's certificate: ${trusted || "request timed out"}`);
 }
 
 async function clickShadowButtonByLabel(ff, hostSelector, label) {
@@ -1112,13 +1203,23 @@ async function ownPageChecks(check, firefox, ext) {
       }
     };
     // Grants these the way an earlier session would have, with no question, from the browser's side.
-    const grantedEarlier = (origins) =>
-      ff.inBrowserAsync(`
+    const grantedEarlier = async (origins) => {
+      await ff.inBrowser(`
         const { ExtensionParent } = ChromeUtils.importESModule("resource://gre/modules/ExtensionParent.sys.mjs");
         const { ExtensionPermissions } = ChromeUtils.importESModule("resource://gre/modules/ExtensionPermissions.sys.mjs");
         const ext = ExtensionParent.GlobalManager.getExtension(${JSON.stringify(addon)});
-        await ExtensionPermissions.add(ext.id, { permissions: [], origins: ${JSON.stringify(origins)}, data_collection: [] }, ext);
+        ExtensionPermissions.add(
+          ext.id,
+          { permissions: [], origins: ${JSON.stringify(origins)}, data_collection: [] },
+          ext,
+        ).catch((e) => Services.console.logStringMessage(String(e)));
         return true;`);
+      const granted = await ff.waitFor(
+        `return await chrome.permissions.contains({ origins: ${JSON.stringify(origins)} }) || null;`,
+        5000,
+      );
+      if (!granted) throw new Error(`Firefox didn't grant the earlier permission for ${JSON.stringify(origins)}`);
+    };
     const appSwitch = (list, name) => `#${list} button[aria-label="Clotr on ${name}"]`;
     const reads = (sel) => ff.exec(`return document.querySelector(${JSON.stringify(sel)})?.textContent ?? null;`);
     async function openPopupSettings() {
@@ -1536,11 +1637,16 @@ async function ownPageChecks(check, firefox, ext) {
 }
 
 // Other test tools find Firefox the same way.
-module.exports = { findFirefox };
+module.exports = { closeFirefox, findFirefox, withTimeout };
 
 if (require.main === module) {
-  main().catch((err) => {
-    console.error(err);
-    process.exitCode = 1;
-  });
+  main()
+    .catch((err) => {
+      console.error(err);
+      process.exitCode = 1;
+    })
+    .finally(() => {
+      const code = process.exitCode || 0;
+      process.stdout.write("", () => process.exit(code));
+    });
 }
