@@ -1,0 +1,56 @@
+# Lists Clotr Guard in the MCP registry (registry.modelcontextprotocol.io) as io.github.clotr-app/clotr-guard, from
+# apps/guard/server.json. The registry only takes a name under the clotr-app organization from a run that proves it
+# belongs to clotr-app, and this run's GitHub ID token does that, so no token is stored anywhere. It runs only when
+# someone starts it from the Actions tab, on main or one of Guard's tags, never on a push, a pull request or a
+# schedule. The version it lists must already be on npm (the registry checks the package's mcpName there).
+name: List Clotr Guard in the MCP registry
+
+on:
+  workflow_dispatch:
+
+# Read-only by default, as every workflow here is. Only the publish job gets an ID token.
+permissions:
+  contents: read
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      id-token: write # the registry's sign-in: it reads the clotr-app organization from this token
+    steps:
+      - name: Only from main or one of Guard's tags
+        run: |
+          case "$GITHUB_REF" in
+            refs/heads/main|refs/tags/guard-v*) ;;
+            *) echo "Start this from main or one of Guard's tags (guard-v...), not $GITHUB_REF"; exit 1 ;;
+          esac
+      # Pinned to the same commit as the other workflows, so a moved tag can't change what runs.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: The listed version is Guard's, and on npm
+        run: |
+          listed="$(node -p "require('./apps/guard/server.json').version")"
+          guard="$(node -p "require('./apps/guard/package.json').version")"
+          test "$listed" = "$guard" || { echo "server.json says $listed but Guard is $guard"; exit 1; }
+          test "$(npm view "clotr-guard@$listed" version)" = "$listed" || { echo "clotr-guard $listed isn't on npm yet"; exit 1; }
+          case "$GITHUB_REF" in
+            refs/tags/guard-v*) test "guard-v$listed" = "$GITHUB_REF_NAME" || { echo "tag $GITHUB_REF_NAME but server.json says $listed"; exit 1; } ;;
+          esac
+      # One fixed release of the registry's publisher, checked against the checksum its release lists, so a changed
+      # download stops the run instead of running.
+      - name: Get mcp-publisher 1.8.6
+        env:
+          SHA256: 1fbe93fc0783c2394d8012c8d6e50a59e98cb2cc2d216264cc69f405d0e21340
+        run: |
+          curl -fsSL -o mcp-publisher.tar.gz https://github.com/modelcontextprotocol/registry/releases/download/v1.8.6/mcp-publisher_linux_amd64.tar.gz
+          echo "$SHA256  mcp-publisher.tar.gz" | sha256sum -c -
+          tar -xzf mcp-publisher.tar.gz mcp-publisher
+      - name: Validate and publish
+        working-directory: apps/guard
+        run: |
+          ../../mcp-publisher validate
+          ../../mcp-publisher login github-oidc
+          ../../mcp-publisher publish
