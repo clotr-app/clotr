@@ -19,6 +19,7 @@ module.exports = async function (env) {
     expect,
     openExtPage,
     path,
+    patience,
     pressEnter,
     readNotice,
     readUI,
@@ -546,14 +547,21 @@ module.exports = async function (env) {
       label,
     );
   // Points at a label and reads the bubble, returning null if none opens, then moves away until it closes.
+  // Each try hovers and then waits up to half a second for the bubble, so a try is a wait of its own, not a quick
+  // read: it runs in a plain loop with a deadline, since waitFor gives a call that is still running at its deadline
+  // only a few fixed seconds, and a try on a busy computer can legitimately take longer than that.
   async function peekAt(page, selector, label, timeout = 3000) {
-    const peek = await waitFor(async () => {
+    const end = Date.now() + timeout * patience();
+    let peek = null;
+    do {
       await page.mouse.move(0, 0);
       const point = await pointIn(page, selector, label);
-      if (!point) return null;
-      await page.mouse.move(point.x, point.y);
-      return waitFor(() => readUI(page, "CLOTR-PEEK"), 500);
-    }, timeout);
+      if (point) {
+        await page.mouse.move(point.x, point.y);
+        peek = await waitFor(() => readUI(page, "CLOTR-PEEK"), 500);
+      }
+      if (!peek && Date.now() < end) await sleep(100);
+    } while (!peek && Date.now() < end);
     await page.mouse.move(0, 0);
     await waitFor(async () => ((await readUI(page, "CLOTR-PEEK")) ? null : true), 2000);
     return peek;
