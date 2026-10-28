@@ -28,5 +28,6 @@ test("Firefox close timeout kills the browser process", async (t) => {
 
   assert.match(err.message, /Firefox close timed out after 10 ms/);
   await withTimeout(exited, 1500, "the test browser process");
-  assert.notEqual(child.exitCode, null);
+  // Windows gives a killed process an exit code; Linux and macOS give it a signal instead.
+  assert.ok(child.exitCode !== null || child.signalCode !== null, "the test browser process was not killed");
 });
