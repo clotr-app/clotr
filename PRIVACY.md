@@ -1,6 +1,6 @@
 # Privacy policy
 
-Last updated 2026-10-25, for Clotr 1.5.0.9 and Clotr for Windows 1.0.2.
+Last updated 2026-10-27, for Clotr 1.6.0 and Clotr for Windows 1.6.0.
 
 Clotr checks what you type into AI chats on your computer and warns you before a private detail goes out. Clotr does
 not store the text you type or the files it checks. If you choose to send a message, the AI service gets it as usual;
