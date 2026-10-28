@@ -17,6 +17,8 @@ const fs = require("fs");
 const os = require("os");
 const path = require("path");
 const puppeteer = require("puppeteer-core");
+const waitForCondition = require("./wait.js");
+const bounded = waitForCondition.bounded;
 
 const ROOT = path.resolve(__dirname, "..", "..");
 const PAGES = path.join(__dirname, "pages");
@@ -438,15 +440,7 @@ function patience() {
 const settle = (ms) => sleep(ms * patience());
 
 // Waits until fn() returns something truthy, for up to `timeout` ms on a quiet computer (longer on a busy one).
-async function waitFor(fn, timeout, interval = 100) {
-  const end = Date.now() + timeout * patience();
-  for (;;) {
-    const v = await fn();
-    if (v) return v;
-    if (Date.now() > end) return null;
-    await sleep(interval);
-  }
-}
+const waitFor = (fn, timeout, interval = 100) => waitForCondition(fn, timeout, interval, patience);
 
 function expect(cond, message) {
   if (!cond) throw new Error(message);
@@ -1021,7 +1015,9 @@ async function openPopup(ctx) {
   popup.on("pageerror", (err) => ctx.problems.push(`popup error: ${err.message}`));
   await popup.setViewport({ width: 380, height: 700 });
   await popup.goto(`chrome-extension://${new URL(ctx.swTarget.url()).host}/popup.html`);
-  await popup.waitForSelector("#hero-value");
+  await popup.bringToFront();
+  const ready = await waitFor(() => popup.$("#hero-value"), 10000);
+  if (!ready) throw new Error("popup did not show #hero-value within 10000 ms");
   await settle(400);
   return popup;
 }
@@ -1032,6 +1028,7 @@ async function openExtPage(ctx, file) {
   page.on("pageerror", (err) => ctx.problems.push(`${file} error: ${err.message}`));
   await page.setViewport({ width: 700, height: 900 });
   await page.goto(`chrome-extension://${new URL(ctx.swTarget.url()).host}/${file}`);
+  await page.bringToFront();
   await settle(400);
   return page;
 }
@@ -1338,6 +1335,7 @@ module.exports = {
   tapNode,
   typeText,
   waitFor,
+  bounded,
   waitForDialog,
   waitForNotice,
   withSite,

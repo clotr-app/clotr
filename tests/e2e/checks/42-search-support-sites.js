@@ -114,15 +114,17 @@ module.exports = async function (env) {
       m.host_permissions = [...m.host_permissions, ...extraHosts];
       fs.writeFileSync(path.join(copy, "manifest.json"), JSON.stringify(m, null, 2));
       other = await launch(copy);
-      await waitFor(
+      const sitesReady = await waitFor(
         () =>
-          other.worker.evaluate(async () => {
-            const [s] = await chrome.scripting.getRegisteredContentScripts({ ids: ["clotr-user-sites"] });
-            if (!s) await syncUserSites();
-            return Boolean(s);
-          }),
+          other.worker
+            .evaluate(async () => {
+              const [script] = await chrome.scripting.getRegisteredContentScripts({ ids: ["clotr-user-sites"] });
+              return Boolean(script);
+            })
+            .catch(() => false),
         5000,
       );
+      expect(sitesReady, "user-site content script was not registered within 5000 ms");
       await resetState(other);
       await store.set(other, { bandage: {} });
       return await fn(other);
@@ -223,7 +225,8 @@ module.exports = async function (env) {
     async () => {
       const grantedHosts = SUPPORT_WIDGETS.map((w) => w.host);
       await withGranted(grantedHosts, async (other) => {
-        await slowBackgroundReads(other, 15000, "responses");
+        // Keep settings unavailable through the warning and fail-open path, even on a loaded runner.
+        await slowBackgroundReads(other, 30000, "responses");
         try {
           await withSite(other, "supportIntercom", async (page) => {
             await sleep(3500);
@@ -262,12 +265,13 @@ module.exports = async function (env) {
             });
             await frame.focus("#msg");
             await page.keyboard.sendCharacter(CARD);
-            const attachment = waitFor(
-              () => frame.evaluate(() => window.__noticeLifecycle.includes("added")),
-              DIALOG_WAIT,
-            );
+            const attachment = waitFor(() => frame.evaluate(() => window.__noticeLifecycle.includes("added")), 10000);
             await page.keyboard.press("Enter");
-            const attached = await attachment;
+            const [attached, failedOpen] = await Promise.all([
+              attachment,
+              waitFor(() => page.logs.some((l) => l.includes("settings didn't come in time; the message goes")), 8000),
+            ]);
+            expect(failedOpen, "Intercom: the delayed settings never reached the fail-open deadline");
             if (!attached) {
               const state = await frame.evaluate(() => ({
                 changes: window.__noticeLifecycle.slice(),
@@ -294,9 +298,12 @@ module.exports = async function (env) {
             await page.keyboard.press("Enter");
             const sent = await waitFor(
               () => frame.evaluate(() => window.__sent.slice()).then((s) => (s.length ? s : null)),
-              2000,
+              5000,
             );
-            expect(sent?.length === 1 && sent[0].includes("4111"), `Intercom: widget sent: ${JSON.stringify(sent)}`);
+            expect(
+              sent?.length === 1 && sent[0].includes("4111"),
+              `Intercom: the fail-open send did not reach the widget: ${JSON.stringify(sent)} ${page.logs.join(" | ")}`,
+            );
           });
         } finally {
           await restoreBackgroundReads(other);

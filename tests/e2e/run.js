@@ -33,7 +33,21 @@ const lib = require("./lib.js");
 const { sections } = require("./sections.js");
 const { sectionsForShard } = require("./shards.js");
 
-const { EXT, OUT, ONLY, BROWSER, HEADED, COVERAGE_FILE, coverage, argValue, launch, check, expect, writeReport } = lib;
+const {
+  EXT,
+  OUT,
+  ONLY,
+  BROWSER,
+  HEADED,
+  COVERAGE_FILE,
+  coverage,
+  argValue,
+  launch,
+  check,
+  expect,
+  waitFor,
+  writeReport,
+} = lib;
 // A held-back feature's section only runs once its flag is actually on in the build under test, read from
 // manifest.json in whichever folder --ext points at. npm run test:e2e:all-on builds that folder with every flag
 // on, so it runs every section; any other run picks up whatever the manifest already ships.
@@ -65,7 +79,47 @@ async function main() {
   console.log(`  engine:  ${ctx.version}${HEADED ? " (headed)" : " (headless)"}\n`);
 
   // Every section gets the same env object: the helpers, the browser, and anything earlier sections added to it.
-  const env = { ...lib, ctx };
+  // A check can open an extra tab (for example, a dropped local file) without its own page handle knowing about it.
+  // Close any new tab before the next check so one stray target can't slow unrelated checks later in the shard.
+  const cleanupPages = async (id, browser, known) => {
+    let pages;
+    try {
+      pages = await waitFor(() => browser.pages(), 5000);
+    } catch (err) {
+      ctx.problems.push(`${id}: couldn't list browser pages for cleanup: ${err.message}`);
+      return;
+    }
+    if (!pages) {
+      ctx.problems.push(`${id}: couldn't list browser pages for cleanup within 5 seconds`);
+      return;
+    }
+    const extras = pages.filter((page) => !known.has(page) && !page.isClosed());
+    const outcomes = await Promise.allSettled(
+      extras.map((page) => waitFor(() => page.close({ runBeforeUnload: false }).then(() => true), 5000)),
+    );
+    for (let i = 0; i < outcomes.length; i++) {
+      if (outcomes[i].status === "rejected" || !outcomes[i].value) {
+        ctx.problems.push(`${id}: couldn't close leftover tab ${extras[i].url()}`);
+      }
+    }
+  };
+  const checkWithCleanup = async (id, title, fn) => {
+    const browsers = [ctx.browser, ctx.spanishBrowser?.browser].filter(Boolean);
+    const known = new Map();
+    for (const browser of browsers) {
+      const pages = await waitFor(() => browser.pages(), 5000);
+      if (!pages) throw new Error(`${id}: couldn't list browser pages before the check`);
+      known.set(browser, new Set(pages));
+    }
+    try {
+      await check(id, title, fn);
+    } finally {
+      for (const browser of [ctx.browser, ctx.spanishBrowser?.browser].filter(Boolean)) {
+        await cleanupPages(id, browser, known.get(browser) || new Set());
+      }
+    }
+  };
+  const env = { ...lib, ctx, check: checkWithCleanup };
   try {
     for (const name of RUN_SECTIONS) await require(`./checks/${name}.js`)(env);
 

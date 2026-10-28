@@ -42,18 +42,19 @@ module.exports = async function (env) {
         fs.writeFileSync(backgroundFile, background.replace(disabled, enabled));
       }
       other = await launch(copy);
-      await waitFor(
+      const sitesReady = await waitFor(
         () =>
-          other.worker.evaluate(async () => {
-            const [s] = await chrome.scripting.getRegisteredContentScripts({ ids: ["clotr-user-sites"] });
-            if (!s) await syncUserSites();
-            return Boolean(s);
-          }),
+          other.worker
+            .evaluate(async () => {
+              const [script] = await chrome.scripting.getRegisteredContentScripts({ ids: ["clotr-user-sites"] });
+              return Boolean(script);
+            })
+            .catch(() => false),
         5000,
       );
+      expect(sitesReady, "user-site content script was not registered within 5000 ms");
       await resetState(other);
       await store.set(other, { siteKinds: { "mail.google.com": "everyday" } });
-      await other.worker.evaluate(() => syncUserSites());
       await waitFor(
         () =>
           other.worker.evaluate(async () => {

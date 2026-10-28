@@ -82,15 +82,17 @@ module.exports = async function (env) {
       m.host_permissions = [...m.host_permissions, "https://*/*"];
       fs.writeFileSync(path.join(copy, "manifest.json"), JSON.stringify(m, null, 2));
       other = await launch(copy);
-      await waitFor(
+      const everywhereReady = await waitFor(
         () =>
-          other.worker.evaluate(async () => {
-            const [s] = await chrome.scripting.getRegisteredContentScripts({ ids: ["clotr-everywhere"] });
-            if (!s) await syncEverywhere();
-            return Boolean(s);
-          }),
+          other.worker
+            .evaluate(async () => {
+              const [script] = await chrome.scripting.getRegisteredContentScripts({ ids: ["clotr-everywhere"] });
+              return Boolean(script);
+            })
+            .catch(() => false),
         5000,
       );
+      expect(everywhereReady, "Everywhere I type script was not registered within 5000 ms");
       await resetState(other);
       await store.set(other, { bandage: {} }); // nothing has answered Bandage yet, which is what makes an AI chat offer it
       return await fn(other);

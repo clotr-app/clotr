@@ -109,15 +109,17 @@ module.exports = async function (env) {
       m.host_permissions = [...m.host_permissions, "https://outlook.live.com/*", "https://app.slack.com/*"];
       fs.writeFileSync(path.join(copy, "manifest.json"), JSON.stringify(m, null, 2));
       other = await launch(copy);
-      await waitFor(
+      const sitesReady = await waitFor(
         () =>
-          other.worker.evaluate(async () => {
-            const [s] = await chrome.scripting.getRegisteredContentScripts({ ids: ["clotr-user-sites"] });
-            if (!s) await syncUserSites();
-            return Boolean(s);
-          }),
+          other.worker
+            .evaluate(async () => {
+              const [script] = await chrome.scripting.getRegisteredContentScripts({ ids: ["clotr-user-sites"] });
+              return Boolean(script);
+            })
+            .catch(() => false),
         5000,
       );
+      expect(sitesReady, "user-site content script was not registered within 5000 ms");
       await resetState(other, {});
       return await fn(other);
     } finally {

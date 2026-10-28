@@ -180,13 +180,20 @@ module.exports = async function (env) {
       const { salt } = await store.get(ctx, "salt");
       const page = await openExtPage(ctx, "dashboard.html");
       try {
-        await sleep(400);
         await page.click("#export");
-        const exported = await page.evaluate(async () => {
-          const a = document.getElementById("export-link");
-          return a ? (await fetch(a.href)).text() : "";
-        });
-        const data = JSON.parse(exported || "{}");
+        const exported = await waitFor(
+          () =>
+            page.evaluate(async () => {
+              const a = document.getElementById("export-link");
+              const message = document.getElementById("data-msg")?.textContent || "";
+              if (!a?.href.startsWith("blob:") || !message.startsWith("Exported")) return null;
+              const text = await (await fetch(a.href)).text();
+              return text || null;
+            }),
+          10000,
+        );
+        expect(exported, "dashboard export did not finish within 10000 ms");
+        const data = JSON.parse(exported);
         expect(data.events?.length === 9 && !exported.includes(salt), `export: ${exported.slice(0, 120)}`);
         await page.click("#delete-history");
         await sleep(200);
