@@ -769,6 +769,64 @@ module.exports = async function (env) {
       }),
   );
 
+  // Two setting changes close together each make an open tab ask for its settings again, and the answers can come
+  // back in either order. The tab has to keep the newer one: an older answer that arrives last must not undo it.
+  // This holds the first answer, read while Bandage was still off, until the second one (Bandage on) has arrived.
+  await check(
+    "BN45",
+    "Two quick setting changes: the older settings answer arriving last never turns Bandage back off",
+    () =>
+      withSite(ctx, "history", async (page) => {
+        await resetState(ctx, {});
+        await ctx.worker.evaluate(() => {
+          const gate = { calls: 0, held: false, sent: false };
+          gate.wait = new Promise((resolve) => {
+            gate.release = resolve;
+          });
+          globalThis.__bn45Gate = gate;
+          globalThis.__bn45Real = settingsFor;
+          globalThis.settingsFor = async (url) => {
+            const first = url.includes("gemini.google.com") && gate.calls++ === 0;
+            const settings = await globalThis.__bn45Real(url);
+            if (first) {
+              gate.held = true;
+              await gate.wait;
+              gate.sent = true;
+            }
+            return settings;
+          };
+        });
+        try {
+          // A change unrelated to this site: the tab asks again, and that answer (Bandage still off) is held.
+          await store.set(ctx, { siteModes: { "example.com": "log" } });
+          const held = await waitFor(() => ctx.worker.evaluate(() => globalThis.__bn45Gate.held), 3000);
+          expect(held, "the tab didn't ask for its settings after the first change");
+          // Bandage on: this answer goes straight through, and the tab covers what's typed.
+          await store.set(ctx, { bandage: { "gemini.google.com": true } });
+          await typeText(page, `call me at ${PHONE}`);
+          expect(await covered(page, "call me at [Phone 1]"), `with Bandage on: "${await editorText(page)}"`);
+          // The older answer arrives last.
+          await ctx.worker.evaluate(() => globalThis.__bn45Gate.release());
+          const sent = await waitFor(() => ctx.worker.evaluate(() => globalThis.__bn45Gate.sent), 3000);
+          expect(sent, "the held settings answer wasn't sent after release");
+          await clearEditor(page);
+          await typeText(page, `my work line is ${PHONE2}`);
+          expect(
+            await covered(page, "my work line is [Phone 2]"),
+            `after the older answer arrived: "${await editorText(page)}"`,
+          );
+        } finally {
+          await ctx.worker.evaluate(() => {
+            globalThis.__bn45Gate?.release();
+            delete globalThis.__bn45Gate;
+            if (globalThis.__bn45Real) globalThis.settingsFor = globalThis.__bn45Real;
+            delete globalThis.__bn45Real;
+          });
+          await resetState(ctx, {});
+        }
+      }),
+  );
+
   // ---------- Underlines under the page's own pop-ups ----------
   // A site's sign-up pop-up, a menu, or its own sticky header and input box can sit on top of a label in an
   // answer. Clotr's dotted underline used to draw over them anyway, as Perplexity showed. Now a hotspot
