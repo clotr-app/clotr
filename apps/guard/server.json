@@ -2,7 +2,7 @@
   "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
   "name": "io.github.clotr-app/clotr-guard",
   "title": "Clotr Guard",
-  "description": "Checks text for credentials and personal details on your device, before it goes anywhere.",
+  "description": "Checks text for credentials and personal details on your device; makes no network calls.",
   "repository": {
     "url": "https://github.com/clotr-app/clotr",
     "source": "github",
