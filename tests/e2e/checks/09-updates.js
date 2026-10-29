@@ -195,6 +195,31 @@ module.exports = async function (env) {
     }
   });
 
+  // Chrome disables an unpacked extension that reloads itself unless Developer mode is on. launch() turns it on in
+  // the new profile's Preferences file, which Linux Chrome honors, but Chrome on Windows guards that setting against
+  // outside edits and starts with it off, so the copy came back disabled there. On Windows this flips the switch on
+  // chrome://extensions instead, unless it's already on; anywhere else the Preferences file is enough.
+  async function developerModeOn(c) {
+    if (process.platform !== "win32") return;
+    const page = await c.browser.newPage();
+    try {
+      await page.goto("chrome://extensions");
+      const on = await page
+        .evaluate(async () => {
+          const { developerPrivate } = chrome;
+          if ((await developerPrivate.getProfileConfiguration()).inDeveloperMode) return true;
+          await developerPrivate.updateProfileConfiguration({ inDeveloperMode: true });
+          return (await developerPrivate.getProfileConfiguration()).inDeveloperMode;
+        })
+        .catch((err) => {
+          throw new Error(`couldn't turn on Developer mode on chrome://extensions: ${err.message}`);
+        });
+      expect(on === true, "Developer mode still reads off after turning it on at chrome://extensions");
+    } finally {
+      await page.close();
+    }
+  }
+
   // A copy of the extension in its own browser, with its version bumped on disk.
   // `before` edits the copy's manifest before it's installed (to start from an older shape).
   async function withChangedCopy(fn, before = null) {
@@ -209,6 +234,7 @@ module.exports = async function (env) {
         fs.writeFileSync(path.join(copy, "manifest.json"), JSON.stringify(m, null, 2));
       }
       other = await launch(copy);
+      await developerModeOn(other);
       other.restoreManifest = () => fs.writeFileSync(path.join(copy, "manifest.json"), current);
       const bump = () => {
         const file = path.join(copy, "manifest.json");
