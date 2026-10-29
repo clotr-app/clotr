@@ -13,7 +13,9 @@ assistant is allowed to send still goes to that assistant's AI service as usual.
 ## Runs locally
 
 Guard, including its `clotr-mcp` server, runs on your machine as a child process of your AI client and talks to it
-over stdio (standard input and output). It opens no network connection, and it stores nothing it scans. MCP calls the
+over stdio (standard input and output). It opens no network connection and never stores the text it scans. So you
+can resend a paused prompt, the prompt hooks keep a salted fingerprint of what they found for two minutes, never the
+text itself. MCP calls the
 side that offers tools a "server" because that's the name of its role in the protocol, not because it's a remote
 machine.
 
