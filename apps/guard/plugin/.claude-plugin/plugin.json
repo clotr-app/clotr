@@ -1,6 +1,6 @@
 {
   "name": "clotr-guard",
-  "description": "Checks each prompt for credentials before Claude Code sends it, on your device.",
+  "description": "Checks each prompt for credentials before Claude Code sends it, on your device, with no network calls.",
   "version": "0.1.1",
   "author": {
     "name": "clotr-app",
