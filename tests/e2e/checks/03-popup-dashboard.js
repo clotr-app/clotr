@@ -321,12 +321,14 @@ module.exports = async function (env) {
     "Settings: Show the welcome page opens it again, with the author's note and the practice box",
     async () => {
       const popup = await openPopup(ctx);
-      const before = (await ctx.browser.pages()).length;
+      // The install opened a welcome tab of its own, which the first-install check looks for later, so only a tab
+      // that wasn't open before the click counts (and gets closed) here.
+      const before = new Set(await ctx.browser.pages());
       await popup.evaluate(() => document.getElementById("open-welcome").click());
-      const opened = await waitFor(async () => {
-        const pages = await ctx.browser.pages();
-        return pages.length > before ? pages.find((p) => p.url().endsWith("vault.html?welcome=1")) : null;
-      }, 3000);
+      const opened = await waitFor(
+        async () => (await ctx.browser.pages()).find((p) => !before.has(p) && p.url().endsWith("vault.html?welcome=1")),
+        3000,
+      );
       expect(opened, "the welcome page didn't open");
       const shown = await waitFor(
         () =>

@@ -6,7 +6,7 @@
 
 module.exports = async function (env) {
   const { OUT, check, ctx, editorText, expect, fs, openExtPage, path, resetState, settle } = env;
-  const { clickDialogButton, clickNode, readNotice, sleep, typeText, waitForNotice, withSite } = env;
+  const { bounded, clickDialogButton, clickNode, readNotice, sleep, typeText, waitForNotice, withSite } = env;
 
   const AD_LINK = "check this out: https://example.com/deal?utm_source=ad&gclid=abc123xyz&ref=friend";
   const CLEANED = "check this out: https://example.com/deal?ref=friend";
@@ -60,8 +60,17 @@ module.exports = async function (env) {
         target = await found;
       }
       expect(target, "How ads follow you didn't open the explainer page");
-      const tab = await target.page();
-      const explanation = await tab.evaluate(() => ({ title: document.title, text: document.body.innerText }));
+      const tab = await bounded(() => target.page(), 5000, "CL3 tracking page target.page");
+      await bounded(
+        () => tab.waitForFunction(() => document.readyState === "complete", { timeout: 10000 }),
+        10000,
+        "CL3 tracking page load",
+      );
+      const explanation = await bounded(
+        () => tab.evaluate(() => ({ title: document.title, text: document.body.innerText })),
+        10000,
+        "CL3 tracking page evaluate",
+      );
       expect(explanation.title === "How ads follow you", `explainer title: "${explanation.title}"`);
       expect(/tracking code/i.test(explanation.text), "explainer doesn't explain the link tracking code");
       expect(/somewhere Clotr can't reach/i.test(explanation.text), "explainer doesn't describe what Clotr can't see");

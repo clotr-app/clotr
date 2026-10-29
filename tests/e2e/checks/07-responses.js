@@ -225,7 +225,10 @@ module.exports = async function (env) {
               const result = sendMessage(payload, ...args);
               if (payload?.type !== "clotr:getSettings") return result;
               return Promise.resolve(result).then((settings) => {
-                if (settings && !settings.error) globalThis.__clotrSettingsReads += 1;
+                if (settings && !settings.error) {
+                  globalThis.__clotrSettingsReads += 1;
+                  globalThis.__clotrResponses = settings.responses || {};
+                }
                 return settings;
               });
             };
@@ -263,6 +266,12 @@ module.exports = async function (env) {
         await expectNoUI(page, "this number is fine to share now");
         await clearEditor(page);
         await store.set(ctx, { responses: { aws_access_key: "block" } });
+        // Typed before the tab has fetched the new setting, the key would get the default notice instead of the
+        // dialog, and on a busy computer store.set's own pause isn't always long enough for that fetch.
+        expect(
+          await waitFor(() => evalInClotr(page, `globalThis.__clotrResponses?.aws_access_key === "block"`), 5000),
+          `the tab never got the new setting: ${JSON.stringify(await evalInClotr(page, "globalThis.__clotrResponses"))}`,
+        );
         await typeText(page, `key ${KEY2}`);
         expect(await waitForDialog(page), "no dialog");
         await clickDialogButton(page, "More choices");

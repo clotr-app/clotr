@@ -4,6 +4,12 @@ Clotr MCP is a local server an AI tool can call to check or clean text. It runs 
 not an automatic send guard. The text is already in that tool, so Clotr MCP cannot keep it from the tool's own AI service.
 It returns kinds and masked forms, and makes no network requests or saved copy of the text.
 
+## Runs locally
+
+Clotr MCP runs on your machine as a child process of your AI client, started over stdio (standard input and output).
+It opens no network connection, and it stores nothing it scans. "Server" is MCP's name for a role, the side that
+offers tools, not a remote machine.
+
 The `clotr-mcp` command ships with Clotr Guard and uses Guard's engine and secret-file rules. It implements MCP
 2026-07-28 and accepts the older `initialize` handshake for existing clients.
 

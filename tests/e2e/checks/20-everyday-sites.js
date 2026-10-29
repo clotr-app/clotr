@@ -4,7 +4,22 @@
 "use strict";
 
 module.exports = async function (env) {
-  const { EXT, KEY, check, clotrActive, ctx, expect, expectNoUI, fs, launch, openExtPage, openPopup, os, path } = env;
+  const {
+    EXT,
+    KEY,
+    bounded,
+    check,
+    clotrActive,
+    ctx,
+    expect,
+    expectNoUI,
+    fs,
+    launch,
+    openExtPage,
+    openPopup,
+    os,
+    path,
+  } = env;
   const { clickDialogButton, evalInClotr, readDialog, readNotice } = env;
   const { editorText, resetState, shotAt, sleep, store, typeText, waitFor, withSite } = env;
   const PHONE = "555-555-0123";
@@ -76,15 +91,17 @@ module.exports = async function (env) {
         fs.writeFileSync(backgroundFile, background.replace(disabled, enabled));
       }
       other = await launch(copy);
-      await waitFor(
+      const sitesReady = await waitFor(
         () =>
-          other.worker.evaluate(async () => {
-            const [s] = await chrome.scripting.getRegisteredContentScripts({ ids: ["clotr-user-sites"] });
-            if (!s) await syncUserSites();
-            return Boolean(s);
-          }),
+          other.worker
+            .evaluate(async () => {
+              const [script] = await chrome.scripting.getRegisteredContentScripts({ ids: ["clotr-user-sites"] });
+              return Boolean(script);
+            })
+            .catch(() => false),
         5000,
       );
+      expect(sitesReady, "user-site content script was not registered within 5000 ms");
       await resetState(other);
       await store.set(other, { bandage: {} }); // nothing has answered Bandage yet, which is what makes an AI chat offer it
       return await fn(other);
@@ -150,7 +167,6 @@ module.exports = async function (env) {
           await store.set(other, {
             siteKinds: Object.fromEntries(providers.map((p) => [p.host, "everyday"])),
           });
-          await other.worker.evaluate(() => syncUserSites());
           await waitFor(
             () =>
               other.worker.evaluate(async () => {
@@ -536,52 +552,63 @@ module.exports = async function (env) {
       };
     }, answer);
     await page.goto(`chrome-extension://${new URL(c.swTarget.url()).host}/vault.html?welcome=1`);
+    await page.bringToFront();
     // The card mounts only once chrome.permissions.getAll() answers, a round trip through the browser that a
     // loaded machine can stretch well past a fixed pause; a fixed pause alone once left the card still unmounted.
     await waitFor(() => page.evaluate(() => Boolean(document.getElementById("everyday-offer"))), 10000);
     await sleep(500);
     // The email/chat and search/support cards now live inside "Pick sites one by one instead", closed by
     // default, so a real click on anything in them needs the fold open first.
-    await page.evaluate(() => {
-      const d = document.getElementById("where-pick-sites");
-      if (d) d.open = true;
-    });
+    await bounded(
+      () =>
+        page.evaluate(() => {
+          const d = document.getElementById("where-pick-sites");
+          if (d) d.open = true;
+        }),
+      10000,
+      "EV4 welcome-page fold page.evaluate",
+    );
     return page;
   }
   const readOffer = (page) =>
-    page.evaluate(() => {
-      const card = document.getElementById("everyday-offer");
-      const groups = [...(card?.querySelectorAll("fieldset") || [])].map((f) => ({
-        legend: f.querySelector("legend")?.textContent.trim(),
-        // An On app can still be unticked, so I read "on" (the browser's grant) from the On tag, not from `disabled`.
-        apps: [...f.querySelectorAll("label")].map((l) => {
-          const box = l.querySelector("input[type=checkbox]");
-          const tag = l.querySelector(".ev-tag");
+    bounded(
+      () =>
+        page.evaluate(() => {
+          const card = document.getElementById("everyday-offer");
+          const groups = [...(card?.querySelectorAll("fieldset") || [])].map((f) => ({
+            legend: f.querySelector("legend")?.textContent.trim(),
+            // An On app can still be unticked, so I read "on" (the browser's grant) from the On tag, not from `disabled`.
+            apps: [...f.querySelectorAll("label")].map((l) => {
+              const box = l.querySelector("input[type=checkbox]");
+              const tag = l.querySelector(".ev-tag");
+              return {
+                name: box?.value,
+                ticked: box?.checked,
+                on: Boolean(tag && !tag.hidden),
+                text: l.textContent.trim(),
+              };
+            }),
+          }));
+          const go = document.getElementById("ev-go");
+          const hint = document.getElementById("ev-hint");
           return {
-            name: box?.value,
-            ticked: box?.checked,
-            on: Boolean(tag && !tag.hidden),
-            text: l.textContent.trim(),
+            shown: Boolean(card && !card.hidden && card.getClientRects().length),
+            afterPin: Boolean(card && document.getElementById("pin-step").compareDocumentPosition(card) & 4),
+            afterTry: Boolean(card && document.getElementById("try").compareDocumentPosition(card) & 4),
+            groups,
+            button: go?.textContent.trim(),
+            buttonOff: go?.getAttribute("aria-disabled") === "true",
+            buttonHidden: Boolean(go?.hidden),
+            hintHidden: Boolean(hint?.hidden),
+            status: document.getElementById("ev-status")?.textContent.trim(),
+            focused: document.activeElement?.value || document.activeElement?.id || "",
+            asks: window.__asks,
+            removes: window.__removes,
           };
         }),
-      }));
-      const go = document.getElementById("ev-go");
-      const hint = document.getElementById("ev-hint");
-      return {
-        shown: Boolean(card && !card.hidden && card.getClientRects().length),
-        afterPin: Boolean(card && document.getElementById("pin-step").compareDocumentPosition(card) & 4),
-        afterTry: Boolean(card && document.getElementById("try").compareDocumentPosition(card) & 4),
-        groups,
-        button: go?.textContent.trim(),
-        buttonOff: go?.getAttribute("aria-disabled") === "true",
-        buttonHidden: Boolean(go?.hidden),
-        hintHidden: Boolean(hint?.hidden),
-        status: document.getElementById("ev-status")?.textContent.trim(),
-        focused: document.activeElement?.value || document.activeElement?.id || "",
-        asks: window.__asks,
-        removes: window.__removes,
-      };
-    });
+      10000,
+      "welcome-card page.evaluate",
+    );
   // The card mounts itself asynchronously (it waits on chrome.permissions.getAll() before its first paint), so a
   // click right after the page loads can land before the boxes exist. A loaded machine made this miss once: the
   // click silently found nothing, so nothing got ticked and the button kept its untouched wording.
@@ -590,11 +617,16 @@ module.exports = async function (env) {
       () => page.evaluate(() => document.querySelectorAll("#everyday-offer input[type=checkbox]").length > 0),
       5000,
     );
-    await page.evaluate((list) => {
-      for (const box of document.querySelectorAll("#everyday-offer input[type=checkbox]")) {
-        if (list.includes(box.value) && !box.checked) box.click();
-      }
-    }, names);
+    await bounded(
+      () =>
+        page.evaluate((list) => {
+          for (const box of document.querySelectorAll("#everyday-offer input[type=checkbox]")) {
+            if (list.includes(box.value) && !box.checked) box.click();
+          }
+        }, names),
+      10000,
+      "welcome-card checkbox page.evaluate",
+    );
   };
   const offerShots = async (page, name) => {
     for (const width of [700, 380]) {
@@ -918,29 +950,41 @@ module.exports = async function (env) {
   // Someone who already had Clotr sees this same offer once in the popup after an update, with the word
   // `everydayOffer` set to "popup". It shows before "what's new", since the top slot holds one card at a time.
   const readTop = (popup) =>
-    popup.evaluate(() => {
-      const offer = document.getElementById("everyday-offer");
-      const news = document.getElementById("whats-new");
-      return {
-        offer: !offer.hidden,
-        news: !news.hidden,
-        newsOpen: document.getElementById("whats-new-more").open,
-        title: offer.querySelector("h2")?.textContent.trim(),
-        boxes: [...offer.querySelectorAll("input[type=checkbox]")].map((b) => (b.checked ? `${b.value}✓` : b.value)),
-        asks: window.__asks || [],
-      };
-    });
+    bounded(
+      () =>
+        popup.evaluate(() => {
+          const offer = document.getElementById("everyday-offer");
+          const news = document.getElementById("whats-new");
+          return {
+            offer: !offer.hidden,
+            news: !news.hidden,
+            newsOpen: document.getElementById("whats-new-more").open,
+            title: offer.querySelector("h2")?.textContent.trim(),
+            boxes: [...offer.querySelectorAll("input[type=checkbox]")].map((b) =>
+              b.checked ? `${b.value}✓` : b.value,
+            ),
+            asks: window.__asks || [],
+          };
+        }),
+      10000,
+      "EV8 popup-card page.evaluate",
+    );
   const recordAsks = (popup, answer) =>
-    popup.evaluate((yes) => {
-      window.__asks = [];
-      let inClick = false;
-      addEventListener("click", () => (inClick = true), true);
-      addEventListener("click", () => (inClick = false));
-      chrome.permissions.request = (p) => {
-        window.__asks.push({ origins: p.origins, inClick });
-        return yes === null ? new Promise(() => {}) : Promise.resolve(yes); // null: the prompt is still open
-      };
-    }, answer);
+    bounded(
+      () =>
+        popup.evaluate((yes) => {
+          window.__asks = [];
+          let inClick = false;
+          addEventListener("click", () => (inClick = true), true);
+          addEventListener("click", () => (inClick = false));
+          chrome.permissions.request = (p) => {
+            window.__asks.push({ origins: p.origins, inClick });
+            return yes === null ? new Promise(() => {}) : Promise.resolve(yes); // null: the prompt is still open
+          };
+        }, answer),
+      10000,
+      "EV8 permission-stub page.evaluate",
+    );
   const offerOf = async (c) => (await store.get(c, "everydayOffer")).everydayOffer;
 
   const clickEverydayButton = (page, name) =>

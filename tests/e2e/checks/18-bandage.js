@@ -19,6 +19,7 @@ module.exports = async function (env) {
     expect,
     openExtPage,
     path,
+    patience,
     pressEnter,
     readNotice,
     readUI,
@@ -546,14 +547,21 @@ module.exports = async function (env) {
       label,
     );
   // Points at a label and reads the bubble, returning null if none opens, then moves away until it closes.
+  // Each try hovers and then waits up to half a second for the bubble, so a try is a wait of its own, not a quick
+  // read: it runs in a plain loop with a deadline, since waitFor gives a call that is still running at its deadline
+  // only a few fixed seconds, and a try on a busy computer can legitimately take longer than that.
   async function peekAt(page, selector, label, timeout = 3000) {
-    const peek = await waitFor(async () => {
+    const end = Date.now() + timeout * patience();
+    let peek = null;
+    do {
       await page.mouse.move(0, 0);
       const point = await pointIn(page, selector, label);
-      if (!point) return null;
-      await page.mouse.move(point.x, point.y);
-      return waitFor(() => readUI(page, "CLOTR-PEEK"), 500);
-    }, timeout);
+      if (point) {
+        await page.mouse.move(point.x, point.y);
+        peek = await waitFor(() => readUI(page, "CLOTR-PEEK"), 500);
+      }
+      if (!peek && Date.now() < end) await sleep(100);
+    } while (!peek && Date.now() < end);
     await page.mouse.move(0, 0);
     await waitFor(async () => ((await readUI(page, "CLOTR-PEEK")) ? null : true), 2000);
     return peek;
@@ -758,6 +766,70 @@ module.exports = async function (env) {
           });
         }
         await resetState(ctx, {});
+      }),
+  );
+
+  // Two setting changes close together each make an open tab ask for its settings again, and the answers can come
+  // back in either order. The tab has to keep the newer one: an older answer that arrives last must not undo it.
+  // This holds the first answer, read while Bandage was still off, until the second one (Bandage on) has arrived.
+  await check(
+    "BN45",
+    "Two quick setting changes: the older settings answer arriving last never turns Bandage back off",
+    () =>
+      withSite(ctx, "history", async (page) => {
+        await resetState(ctx, {});
+        await ctx.worker.evaluate(() => {
+          const gate = { calls: 0, held: false, sent: false };
+          gate.wait = new Promise((resolve) => {
+            gate.release = resolve;
+          });
+          globalThis.__bn45Gate = gate;
+          globalThis.__bn45Real = settingsFor;
+          globalThis.settingsFor = async (url) => {
+            let host = "";
+            try {
+              host = new URL(url).hostname;
+            } catch {
+              // Not a web address: never the gemini tab this check holds.
+            }
+            const first = host === "gemini.google.com" && gate.calls++ === 0;
+            const settings = await globalThis.__bn45Real(url);
+            if (first) {
+              gate.held = true;
+              await gate.wait;
+              gate.sent = true;
+            }
+            return settings;
+          };
+        });
+        try {
+          // A change unrelated to this site: the tab asks again, and that answer (Bandage still off) is held.
+          await store.set(ctx, { siteModes: { "example.com": "log" } });
+          const held = await waitFor(() => ctx.worker.evaluate(() => globalThis.__bn45Gate.held), 3000);
+          expect(held, "the tab didn't ask for its settings after the first change");
+          // Bandage on: this answer goes straight through, and the tab covers what's typed.
+          await store.set(ctx, { bandage: { "gemini.google.com": true } });
+          await typeText(page, `call me at ${PHONE}`);
+          expect(await covered(page, "call me at [Phone 1]"), `with Bandage on: "${await editorText(page)}"`);
+          // The older answer arrives last.
+          await ctx.worker.evaluate(() => globalThis.__bn45Gate.release());
+          const sent = await waitFor(() => ctx.worker.evaluate(() => globalThis.__bn45Gate.sent), 3000);
+          expect(sent, "the held settings answer wasn't sent after release");
+          await clearEditor(page);
+          await typeText(page, `my work line is ${PHONE2}`);
+          expect(
+            await covered(page, "my work line is [Phone 2]"),
+            `after the older answer arrived: "${await editorText(page)}"`,
+          );
+        } finally {
+          await ctx.worker.evaluate(() => {
+            globalThis.__bn45Gate?.release();
+            delete globalThis.__bn45Gate;
+            if (globalThis.__bn45Real) globalThis.settingsFor = globalThis.__bn45Real;
+            delete globalThis.__bn45Real;
+          });
+          await resetState(ctx, {});
+        }
       }),
   );
 

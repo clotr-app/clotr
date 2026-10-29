@@ -17,6 +17,8 @@ const fs = require("fs");
 const os = require("os");
 const path = require("path");
 const puppeteer = require("puppeteer-core");
+const waitForCondition = require("./wait.js");
+const bounded = waitForCondition.bounded;
 
 const ROOT = path.resolve(__dirname, "..", "..");
 const PAGES = path.join(__dirname, "pages");
@@ -438,15 +440,7 @@ function patience() {
 const settle = (ms) => sleep(ms * patience());
 
 // Waits until fn() returns something truthy, for up to `timeout` ms on a quiet computer (longer on a busy one).
-async function waitFor(fn, timeout, interval = 100) {
-  const end = Date.now() + timeout * patience();
-  for (;;) {
-    const v = await fn();
-    if (v) return v;
-    if (Date.now() > end) return null;
-    await sleep(interval);
-  }
-}
+const waitFor = (fn, timeout, interval = 100) => waitForCondition(fn, timeout, interval, patience);
 
 function expect(cond, message) {
   if (!cond) throw new Error(message);
@@ -531,6 +525,14 @@ async function launchOnce(ext, extraArgs, extraEnv, protocolTimeout = 30000) {
       10000,
     );
     if (!ready) throw new Error("the extension's service worker never became ready");
+    // A fresh profile is a fresh install, and the install opens the welcome tab as the active tab whenever the
+    // worker gets to it. Headless Chrome hides every other tab then, and a hidden page never finishes a click or an
+    // element screenshot, so a tab that turns up after a check brought its own page forward stalls that check
+    // until the protocol times out. Waiting for it here means it's already open before any check starts.
+    await waitFor(
+      () => browser.targets().some((t) => t.type() === "page" && t.url().includes("/vault.html?welcome=1")),
+      10000,
+    );
     // The checks fake a team's policy by swapping managed storage's get. The background keeps the policy it read
     // until the browser says the admin changed it, so a swap here forgets that copy, the way a real change does.
     await worker.evaluate(() => {
@@ -1021,7 +1023,9 @@ async function openPopup(ctx) {
   popup.on("pageerror", (err) => ctx.problems.push(`popup error: ${err.message}`));
   await popup.setViewport({ width: 380, height: 700 });
   await popup.goto(`chrome-extension://${new URL(ctx.swTarget.url()).host}/popup.html`);
-  await popup.waitForSelector("#hero-value");
+  await popup.bringToFront();
+  const ready = await waitFor(() => popup.$("#hero-value"), 10000);
+  if (!ready) throw new Error("popup did not show #hero-value within 10000 ms");
   await settle(400);
   return popup;
 }
@@ -1032,6 +1036,7 @@ async function openExtPage(ctx, file) {
   page.on("pageerror", (err) => ctx.problems.push(`${file} error: ${err.message}`));
   await page.setViewport({ width: 700, height: 900 });
   await page.goto(`chrome-extension://${new URL(ctx.swTarget.url()).host}/${file}`);
+  await page.bringToFront();
   await settle(400);
   return page;
 }
@@ -1338,6 +1343,7 @@ module.exports = {
   tapNode,
   typeText,
   waitFor,
+  bounded,
   waitForDialog,
   waitForNotice,
   withSite,
