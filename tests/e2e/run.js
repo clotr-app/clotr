@@ -128,9 +128,10 @@ async function main() {
     try {
       await check(id, title, fn);
     } finally {
+      // A browser this check launched has no list from before it, so its own first tab would look like a leftover,
+      // and closing a browser's last tab can shut it. Its tabs are left alone until the next check has a list.
       for (const browser of [ctx.browser, ctx.spanishBrowser?.browser].filter(Boolean)) {
-        const before = known.has(browser) ? known.get(browser) : new Set();
-        if (before) await cleanupPages(id, browser, before);
+        if (known.get(browser)) await cleanupPages(id, browser, known.get(browser));
       }
     }
   };
