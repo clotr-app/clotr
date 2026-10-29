@@ -10,6 +10,13 @@ Clotr Guard supports Claude Code, Cursor, Gemini CLI, Codex CLI, Windsurf Cascad
 Its checks run on your computer. Clotr Guard makes no network calls or sends text to a Clotr server. A prompt that the
 assistant is allowed to send still goes to that assistant's AI service as usual. Guard needs Node.js 20 or newer.
 
+## Runs locally
+
+Guard, including its `clotr-mcp` server, runs on your machine as a child process of your AI client and talks to it
+over stdio (standard input and output). It opens no network connection, and it stores nothing it scans. MCP calls the
+side that offers tools a "server" because that's the name of its role in the protocol, not because it's a remote
+machine.
+
 ## Stable and preview
 
 Stable features have tests that run on every change and keep working the way this page describes. Preview features
