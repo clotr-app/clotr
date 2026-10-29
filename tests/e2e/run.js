@@ -81,44 +81,56 @@ async function main() {
   // Every section gets the same env object: the helpers, the browser, and anything earlier sections added to it.
   // A check can open an extra tab (for example, a dropped local file) without its own page handle knowing about it.
   // Close any new tab before the next check so one stray target can't slow unrelated checks later in the shard.
+  // Tabs are listed and closed through the browser's own session, never browser.pages(): that attaches puppeteer to
+  // every tab it hasn't seen yet, the install's welcome tab included, and on a busy computer that alone took longer
+  // than the wait allows before the first check had even started.
+  const sessions = new Map();
+  const listTabs = async (browser) => {
+    if (!sessions.has(browser)) sessions.set(browser, await browser.target().createCDPSession());
+    const { targetInfos } = await sessions.get(browser).send("Target.getTargets");
+    return targetInfos.filter((t) => t.type === "page");
+  };
   const cleanupPages = async (id, browser, known) => {
-    let pages;
+    let tabs;
     try {
-      pages = await waitFor(() => browser.pages(), 5000);
+      tabs = (await waitFor(() => listTabs(browser), 5000)) || [];
     } catch (err) {
-      ctx.problems.push(`${id}: couldn't list browser pages for cleanup: ${err.message}`);
+      ctx.problems.push(`${id}: couldn't list browser tabs for cleanup: ${err.message}`);
       return;
     }
-    if (!pages) {
-      ctx.problems.push(`${id}: couldn't list browser pages for cleanup within 5 seconds`);
-      return;
-    }
-    // The extension's own pages stay: the install opens its welcome tab whenever it gets to it, and V0 looks for it.
-    const extras = pages.filter(
-      (page) => !known.has(page) && !page.isClosed() && !page.url().startsWith("chrome-extension://"),
-    );
+    // The extension's own pages stay: the install opens its welcome tab whenever it gets to it, and a check looks
+    // for it.
+    const extras = tabs.filter((t) => !known.has(t.targetId) && !t.url.startsWith("chrome-extension://"));
     const outcomes = await Promise.allSettled(
-      extras.map((page) => waitFor(() => page.close({ runBeforeUnload: false }).then(() => true), 5000)),
+      extras.map((t) =>
+        waitFor(() => sessions.get(browser).send("Target.closeTarget", { targetId: t.targetId }), 5000),
+      ),
     );
     for (let i = 0; i < outcomes.length; i++) {
       if (outcomes[i].status === "rejected" || !outcomes[i].value) {
-        ctx.problems.push(`${id}: couldn't close leftover tab ${extras[i].url()}`);
+        ctx.problems.push(`${id}: couldn't close leftover tab ${extras[i].url}`);
       }
     }
   };
   const checkWithCleanup = async (id, title, fn) => {
-    const browsers = [ctx.browser, ctx.spanishBrowser?.browser].filter(Boolean);
     const known = new Map();
-    for (const browser of browsers) {
-      const pages = await waitFor(() => browser.pages(), 5000);
-      if (!pages) throw new Error(`${id}: couldn't list browser pages before the check`);
-      known.set(browser, new Set(pages));
+    for (const browser of [ctx.browser, ctx.spanishBrowser?.browser].filter(Boolean)) {
+      try {
+        const tabs = await waitFor(() => listTabs(browser), 5000);
+        if (!tabs) throw new Error("no answer within 5 seconds");
+        known.set(browser, new Set(tabs.map((t) => t.targetId)));
+      } catch (err) {
+        // Without the list, nothing open now can be told apart from a leftover, so this check closes nothing.
+        ctx.problems.push(`${id}: couldn't list browser tabs before the check: ${err.message}`);
+        known.set(browser, null);
+      }
     }
     try {
       await check(id, title, fn);
     } finally {
       for (const browser of [ctx.browser, ctx.spanishBrowser?.browser].filter(Boolean)) {
-        await cleanupPages(id, browser, known.get(browser) || new Set());
+        const before = known.has(browser) ? known.get(browser) : new Set();
+        if (before) await cleanupPages(id, browser, before);
       }
     }
   };
