@@ -514,10 +514,18 @@
   // the tab is shown again.
   let settingsLoaded = false;
   let prepFailed = false; // asking the background for settings or the salt failed before they came: nothing waits
+  // Two changes close together mean two requests in flight, and their answers can arrive in either order. Each
+  // request is numbered, and an answer older than one already applied is dropped, so a stale answer arriving
+  // last can't undo a newer setting (Bandage switched back off right after it was turned on, for one).
+  let settingsAsked = 0;
+  let settingsApplied = 0;
   function loadSettings() {
+    const asked = ++settingsAsked;
     return message({ type: "clotr:getSettings" })
       .then((r) => {
         if (!r || r.error) throw new Error(r?.error || "no settings");
+        if (asked < settingsApplied) return;
+        settingsApplied = asked;
         const wasPaused = isPaused();
         guided = r.guided || {};
         largeText = r.largeText === true;
