@@ -786,7 +786,13 @@ module.exports = async function (env) {
           globalThis.__bn45Gate = gate;
           globalThis.__bn45Real = settingsFor;
           globalThis.settingsFor = async (url) => {
-            const first = url.includes("gemini.google.com") && gate.calls++ === 0;
+            let host = "";
+            try {
+              host = new URL(url).hostname;
+            } catch {
+              // Not a web address: never the gemini tab this check holds.
+            }
+            const first = host === "gemini.google.com" && gate.calls++ === 0;
             const settings = await globalThis.__bn45Real(url);
             if (first) {
               gate.held = true;
