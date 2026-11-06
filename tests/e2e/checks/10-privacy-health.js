@@ -107,6 +107,25 @@ module.exports = async function (env) {
       }),
   );
 
+  await check("FS3b", "An ignored send the person keeps typing after is still not taken as sent", () =>
+    withSite(ctx, "chatgpt", async (page) => {
+      await resetState(ctx, {});
+      await page.evaluate(() => {
+        window.__ignoreNextSend = true;
+      });
+      await typeText(page, "call me at 555-555-0123");
+      await pressEnter(page);
+      await sleep(400);
+      await typeText(page, " thanks");
+      await sleep(2000);
+      expect((await sentMessages(page)).length === 0, "the page was supposed to ignore this Enter");
+      const n = await readNotice(page);
+      expect(!n?.text.includes("Just sent"), `notice: ${n?.text}`);
+      const sentEvents = (await store.events(ctx)).filter((e) => e.action === "allowed");
+      expect(!sentEvents.length, `recorded as sent: ${JSON.stringify(sentEvents)}`);
+    }),
+  );
+
   await check(
     "EG1",
     "A site with its own early Enter handler can't send before Clotr: Ask before sending holds the key",

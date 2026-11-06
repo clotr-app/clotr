@@ -1,6 +1,6 @@
 {
   "name": "clotr-engine",
-  "version": "1.6.0",
+  "version": "1.6.1",
   "description": "Clotr's detection engine for credentials and personal details, as a package for scripts, hooks and tools.",
   "keywords": [
     "pii",

@@ -619,11 +619,20 @@
   }
 
   async function start() {
+    // Listening for checks first, then saying hello: card_hello is when Clotr starts sending checks straight here,
+    // and Tauri drops an event whose listener isn't registered yet. A check that comes before hello's answer waits
+    // for it, so it's read with the settings hello brings.
+    let said;
+    const helloSaid = new Promise((resolve) => (said = resolve));
+    const afterHello = (fn) => async (ask) => {
+      await helloSaid;
+      return fn(ask);
+    };
+    await Promise.all([on("clip", afterHello(clip)), on("typed", afterHello(checkTyped))]);
     const hello = await call("card_hello");
     systemLocale = hello.systemLocale || hello.locale;
     useSettings(hello.settings);
-    on("clip", clip);
-    on("typed", checkTyped);
+    said();
     on("settings", useSettings);
     on("hide", () => close());
     on("reach", () => (note ? note.querySelector(".actions button")?.focus() : ui.focusNotice()));

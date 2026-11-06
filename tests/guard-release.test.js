@@ -141,9 +141,9 @@ test("a clean check says Nothing found. in a terminal and stays silent when pipe
   assert.equal(run(["check"], "A clean prompt").stdout, "");
 });
 
-test("Guard 0.1.1 and the engine carry keywords, Guard's own folder and homepage, and the MCP registry name", () => {
+test("Guard 0.1.2 and the engine carry keywords, Guard's own folder and homepage, and the MCP registry name", () => {
   const guard = guardPackage();
-  assert.equal(guard.version, "0.1.1");
+  assert.equal(guard.version, "0.1.2");
   assert.deepEqual(guard.keywords, [
     "secrets",
     "credentials",

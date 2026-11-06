@@ -13,6 +13,7 @@ import com.intellij.psi.PsiElement
 import com.intellij.openapi.components.service
 import com.intellij.codeInspection.ProblemHighlightType
 import com.intellij.openapi.vfs.VirtualFile
+import com.intellij.openapi.fileEditor.FileEditorManager
 
 class ClotrInspection : LocalInspectionTool() {
     override fun buildVisitor(holder: ProblemsHolder, isOnTheFly: Boolean): PsiElementVisitor = object : PsiElementVisitor() {
@@ -22,54 +23,66 @@ class ClotrInspection : LocalInspectionTool() {
             val prefs = ClotrPreferences.getInstance()
             val service = project.service<ClotrProjectService>()
             val path = virtual.path
+            // Only open editors count in the status bar: a batch run (Inspect Code, the check before a commit) also
+            // visits files nobody opened, and only closing a file would ever clear its count.
+            val counted = isOnTheFly && FileEditorManager.getInstance(project).isFileOpen(virtual)
+            val status = service.takeIf { counted }
             if (!prefs.enabled) {
-                service.updateCount(path, 0)
+                status?.updateCount(path, 0)
                 return
             }
             val text = file.text
             if (SecretFiles.isSecretFile(path, text)) {
-                service.updateCount(path, 0)
+                status?.updateCount(path, 0)
                 service.checkSecretFile(virtual)
                 return
             }
             val ignore = service.clotrIgnoreFor(path)
             if (service.isDisabled(path) || skipped(virtual, project.basePath, prefs.skipPatterns)) {
-                service.updateCount(path, 0)
+                status?.updateCount(path, 0)
                 return
             }
             if (text.indexOf('\u0000') >= 0) {
-                reportUnchecked(holder, file, path, service, "inspection.binary")
+                reportUnchecked(holder, file, path, status, "inspection.binary")
                 return
             }
             if (text.toByteArray(Charsets.UTF_8).size > 1024 * 1024) {
-                reportUnchecked(holder, file, path, service, "inspection.tooLarge")
+                reportUnchecked(holder, file, path, status, "inspection.tooLarge")
                 return
             }
             try {
-                val engine = service.engine
-                val findings = engine.check(text).filter {
+                val scan = service.engine.scan(text)
+                val findings = scan.findings.filter {
                     allowed(it.severity, prefs.minimumSeverity) && !service.isIgnored(it.fp) &&
-                        (prefs.personalDetailsInFiles || !isPersonalDetail(it.type))
+                        (prefs.personalDetailsInFiles || it.group != "personal")
                 }
-                val ranges = engine.detectRanges(text)
+                val ranges = scan.ranges
                     .filterNot { range -> ClotrIgnore.valueFingerprint(ignore.config.salt, range.value) in ignore.config.fingerprints }
-                    .groupBy { it.fp }.mapValues { it.value.toMutableList() }
-                val count = findings.mapNotNull { finding ->
-                    val range = ranges[finding.fp]?.removeFirstOrNull() ?: return@mapNotNull null
-                    if (range.end > text.length || range.start < 0) return@mapNotNull null
-                    holder.registerProblem(
-                        file,
-                        ClotrBundle.message("inspection.message", finding.name),
-                        highlightType(finding.severity),
-                        TextRange(range.start, range.end),
-                        IgnoreFindingFix(finding.fp),
-                        DisableFileFix(path),
-                    )
-                    1
-                }.sum()
-                service.updateCount(path, count)
+                    .groupBy { it.fp }
+                // The engine lists a value once however often it's in the file, so each copy gets its own warning,
+                // and the count is of warnings shown.
+                val count = findings.distinctBy { it.fp }.sumOf { finding ->
+                    ranges[finding.fp].orEmpty().count { range ->
+                        if (range.end > text.length || range.start < 0) return@count false
+                        holder.registerProblem(
+                            file,
+                            ClotrBundle.message("inspection.message", finding.name),
+                            highlightType(finding.severity),
+                            TextRange(range.start, range.end),
+                            IgnoreFindingFix(finding.fp),
+                            DisableFileFix(path),
+                        )
+                        true
+                    }
+                }
+                // The engine ran out of time before the end, so what it didn't reach was never checked: say so, and
+                // keep the file out of the all-clear.
+                if (scan.truncated) {
+                    holder.registerProblem(file, ClotrBundle.message("inspection.partial"), ProblemHighlightType.WEAK_WARNING, TextRange(0, 0))
+                }
+                status?.updateCount(path, count, partial = scan.truncated)
             } catch (_error: Exception) {
-                reportUnchecked(holder, file, path, service, "inspection.checkFailed")
+                reportUnchecked(holder, file, path, status, "inspection.checkFailed")
             }
         }
     }
@@ -85,11 +98,6 @@ class ClotrInspection : LocalInspectionTool() {
             "medium" -> ProblemHighlightType.WARNING
             "low" -> ProblemHighlightType.WEAK_WARNING
             else -> ProblemHighlightType.WEAK_WARNING
-        }
-
-        fun isPersonalDetail(kind: String): Boolean {
-            return Regex("email|phone|person|name|address|ssn|social|passport|license.?plate|national.?id|account.?id|student.?id|birth|dob|vin|ip.?address", RegexOption.IGNORE_CASE)
-                .containsMatchIn(kind)
         }
 
         fun skipped(file: VirtualFile, basePath: String?, patterns: List<String>): Boolean {
@@ -116,8 +124,8 @@ class ClotrInspection : LocalInspectionTool() {
     }
 }
 
-private fun reportUnchecked(holder: ProblemsHolder, file: PsiFile, path: String, service: ClotrProjectService, message: String) {
-    service.markUnchecked(path)
+private fun reportUnchecked(holder: ProblemsHolder, file: PsiFile, path: String, status: ClotrProjectService?, message: String) {
+    status?.markUnchecked(path)
     holder.registerProblem(file, ClotrBundle.message(message), ProblemHighlightType.WEAK_WARNING, TextRange(0, 0))
 }
 

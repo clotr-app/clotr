@@ -35,6 +35,7 @@ module.exports = async function (env) {
     attachMrn,
     stubReader,
     readStarted,
+    attachText,
   } = env;
   await check("FO1", "If detection itself breaks, Enter and the send button still send", () =>
     withSite(ctx, "chatgpt", async (page) => {
@@ -266,4 +267,28 @@ module.exports = async function (env) {
         }),
       ),
   );
+
+  // A file Clotr reads but couldn't this time, locked, damaged or past its size limit, is never passed off as one
+  // with nothing in it: the same note says it wasn't checked.
+  await check("FO7", "A locked, damaged or too-large file gets the note that it wasn't checked", async () => {
+    const ole2 = Buffer.concat([Buffer.from([0xd0, 0xcf, 0x11, 0xe0, 0xa1, 0xb1, 0x1a, 0xe1]), Buffer.alloc(512)]);
+    const files = [
+      ["locked-budget.xlsx", ole2],
+      ["broken-notes.docx", Buffer.from("not a zip at all")],
+      ["huge-log.txt", "just a line of plain text\n".repeat(90000)],
+    ];
+    for (const [name, body] of files) {
+      await withSite(ctx, "chatgpt", async (page) => {
+        await resetState(ctx);
+        const dir = holdDir(`fo7-${name}`);
+        try {
+          await attachText(page, dir, name, body);
+          const notice = await waitForNotice(page, 4000);
+          expect(/couldn't check/.test(notice?.text || "") && notice.text.includes(name), `${name}: ${notice?.text}`);
+        } finally {
+          dropDir(dir);
+        }
+      });
+    }
+  });
 };

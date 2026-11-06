@@ -42,17 +42,31 @@ test("e2e bounded call reports a stalled direct page call", async () => {
   assert.equal(result.error.message, "EV4 welcome-card page.evaluate timed out after 20 ms");
 });
 
+// The second call starts long before the deadline, so a timer that fires late on a busy runner can't skip it, and it
+// answers 80 ms after the deadline, so it is still running when the time is up.
 test("e2e wait gives its final page call a bounded chance to finish", async () => {
   let calls = 0;
+  let answered = false;
+  const deadline = Date.now() + 1000;
   const result = await waitFor(
     () => {
       calls++;
-      return calls === 1 ? false : new Promise((resolve) => setTimeout(() => resolve(false), 80));
+      if (calls === 1) return false;
+      return new Promise((resolve) =>
+        setTimeout(
+          () => {
+            answered = true;
+            resolve(false);
+          },
+          deadline + 80 - Date.now(),
+        ),
+      );
     },
-    150,
-    100,
+    1000,
+    10,
   );
 
   assert.equal(result, null);
   assert.equal(calls, 2);
+  assert.ok(answered, "waitFor returned before its last call answered");
 });

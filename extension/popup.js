@@ -31,8 +31,14 @@ const Sites = globalThis.ClotrSites;
 const weight = Sites.weight;
 const sum = (list) => list.reduce((n, e) => n + weight(e), 0);
 const PATTERN_NAMES = Object.fromEntries(PATTERNS.map((p) => [p.id, p.name]));
-// "A credit card number", "An email address": the article a kind's name takes, lowercased to sit mid-sentence.
-const aKind = (name) => `${/^[AEIOU]/i.test(name) ? "An" : "A"} ${name.charAt(0).toLowerCase()}${name.slice(1)}`;
+// "A credit card number", "An email address": the English article a kind's name takes, lowercased to sit
+// mid-sentence. A name that starts with letters said one by one ("US", "ID") keeps them, with the article they sound
+// like. English only: other languages get the bare name as well ($2), and word their own lines around it.
+const aKind = (name) => {
+  const initials = /^[A-Z]{2,}\b/.test(name);
+  const an = initials ? /^[AEFHILMNORSX]/.test(name) : /^[AEIOU]/i.test(name);
+  return `${an ? "An" : "A"} ${initials ? name : `${name.charAt(0).toLowerCase()}${name.slice(1)}`}`;
+};
 const BUILT_IN = Sites.builtInMatches();
 
 const SERIES = [
@@ -650,8 +656,8 @@ function renderCaught() {
           el("span", { className: "mark", "aria-hidden": "true", textContent: isCovered ? "–" : "✕" }),
           el("span", {
             textContent: isCovered
-              ? msg("pp_itemCovered", "$1 was covered.", aKind(name))
-              : msg("pp_itemSent", "$1 went through as it was.", aKind(name)),
+              ? msg("pp_itemCovered", "$1 was covered.", aKind(name), name)
+              : msg("pp_itemSent", "$1 went through as it was.", aKind(name), name),
           }),
         ]);
       }),
@@ -943,7 +949,7 @@ function renderChart(days, events) {
     if (i % labelEvery === 0 || isLast) {
       if (!(rangeDays > 7 && !isLast && buckets.length - 1 - i < labelEvery / 2)) {
         const tx = svg("text", { class: "tick", x: x0 + band / 2, y: H - 4, "text-anchor": "middle" });
-        tx.textContent = isLast ? "Today" : fmtDay.format(b.date);
+        tx.textContent = isLast ? msg("pp_today", "Today") : fmtDay.format(b.date);
         chart.append(tx);
       }
     }
@@ -1122,7 +1128,9 @@ async function removeUserSite(pattern) {
   } else {
     delete siteScopes[perm];
     await chrome.storage.local.set({ siteScopes });
-    await chrome.permissions.remove({ origins: [perm] });
+    // On a host with a built-in section (huggingface.co) the whole-host grant is the manifest's, and the browser
+    // refuses to remove it. Dropping the section above is what stops Clotr running there, so that's fine.
+    await chrome.permissions.remove({ origins: [perm] }).catch(() => {});
   }
   state.userSites = await Sites.userSitePatterns();
   await detectSite();
@@ -1330,6 +1338,10 @@ $("unlock-pin").addEventListener("keydown", (e) => {
   if (e.key === "Enter") tryUnlock();
 });
 
+// A site's switch, for screen readers and voice control: the words on it first ("Turn on", "On"), so saying
+// what you see reaches it (WCAG 2.5.3, label in name), then which site it's for.
+const switchName = (btn, s) => `${btn.textContent}, ${msg("pp_everydayFor", "Clotr on $1", s.name)}`;
+
 // Settings' "Also on search engines" and "Also on support chats on websites": the same one-switch-per-site
 // shape as renderEverydaySites, for the search and support lists, which only ever hold one kind each so the
 // section heading says what they are instead of a per-row label.
@@ -1342,7 +1354,7 @@ function renderMoreSites(listId, statusId, sites, granted) {
       disabled: isLocked(),
     });
     btn.setAttribute("aria-pressed", String(on));
-    btn.setAttribute("aria-label", msg("pp_everydayFor", "Clotr on $1", s.name));
+    btn.setAttribute("aria-label", switchName(btn, s));
     btn.addEventListener("click", () => setMoreSite(s, !on, statusId));
     const why = through ? [el("span", { className: "why", textContent: throughEverywhere() })] : [];
     return el("li", {}, [el("span", { className: "grow" }, [el("b", { textContent: s.name }), ...why]), btn]);
@@ -1426,7 +1438,7 @@ function renderEverydaySites(granted) {
       disabled: isLocked(),
     });
     btn.setAttribute("aria-pressed", String(on));
-    btn.setAttribute("aria-label", msg("pp_everydayFor", "Clotr on $1", s.name));
+    btn.setAttribute("aria-label", switchName(btn, s));
     btn.addEventListener("click", () => setEverydaySite(s, !on));
     return el("li", {}, [
       el("span", { className: "grow" }, [

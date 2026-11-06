@@ -62,6 +62,27 @@
     const at = text.lastIndexOf(part);
     return at < 0 ? text : text.slice(0, at) + text.slice(at + part.length);
   }
+  // An edit at `at` in the box text `before`: removed is what it took out there, inserted what the person
+  // supplied. Where the supplied text matches the box up to the edit, or from the edit to the end, the change
+  // goes in at that same place, so a fix in the middle of a detail keeps the detail whole. Anywhere else it
+  // falls back to removing the last copy and adding the new text at the end.
+  function editSourceText(current, before, at, removed, inserted) {
+    const text = String(current || "");
+    const box = String(before || "");
+    const part = String(removed || "");
+    const add = String(inserted || "");
+    const most = Math.min(text.length, box.length);
+    let same = 0;
+    while (same < most && text[same] === box[same]) same++;
+    let sameEnd = 0;
+    while (sameEnd < most - same && text[text.length - 1 - sameEnd] === box[box.length - 1 - sameEnd]) sameEnd++;
+    let pos = -1;
+    if (at + part.length <= same) pos = at;
+    else if (at >= box.length - sameEnd) pos = text.length - (box.length - at);
+    if (pos < 0) return add ? appendSourceText(removeSourceText(text, part), add) : removeSourceText(text, part);
+    const next = text.slice(0, pos) + add + text.slice(pos + part.length);
+    return next.length > MAX_SOURCE_CHARS ? next.slice(-MAX_SOURCE_CHARS) : next;
+  }
 
   // ---------- "Everywhere I type": is this really a chat-style composer? ----------
   // Only matters on a page covered by the broad switch, with no dedicated setup of its own: there, Clotr has
@@ -246,16 +267,20 @@
     return { text, positions: mapped };
   }
 
+  // Where `value` stands in `text`. A pair's third item marks a saved word, which counts only where it stands as a
+  // word (detector.js wordStarts), never inside a longer one; anything else counts wherever it appears.
+  const startsOf = (text, value, whole) => globalThis.Clotr.wordStarts(text, String(value), Boolean(whole));
+
   function replacementSpans(text, pairs) {
     const spans = [];
     const missing = [];
     const seen = new Set();
-    for (const [value, replacement] of pairs) {
+    for (const [value, replacement, whole] of pairs) {
       const match = String(value);
       if (!match || seen.has(match)) continue;
       seen.add(match);
       let found = false;
-      for (let start = text.indexOf(match); start >= 0; start = text.indexOf(match, start + match.length)) {
+      for (const start of startsOf(text, match, whole)) {
         found = true;
         const end = start + match.length;
         if (!spans.some((span) => start < span.end && end > span.start)) {
@@ -411,8 +436,8 @@
     const uncovered = [];
     for (const scope of states) {
       const text = scopedTextMap(scope).text;
-      for (const [value] of scope.pairs || []) {
-        if (value && text.includes(String(value)) && !uncovered.includes(value)) uncovered.push(value);
+      for (const [value, , whole] of scope.pairs || []) {
+        if (value && startsOf(text, value, whole).length && !uncovered.includes(value)) uncovered.push(value);
       }
     }
     return { changed: getText(editor) !== before, uncovered };
@@ -425,6 +450,7 @@
     sourceInputText,
     appendSourceText,
     removeSourceText,
+    editSourceText,
     MAX_SOURCE_CHARS,
     replaceText,
     replaceMatchesInPlace,

@@ -286,9 +286,24 @@
       .join("|")}|[Ool]`,
     "iy",
   );
+  // The plain ASCII characters UNIT_RE can start on (a digit, a number word's first letter in either case, O or l),
+  // so the reader skips any other without running it. Any other character still goes through UNIT_RE.
+  const UNIT_START = new Uint8Array(128);
+  for (const first of ["0123456789Ool", ...Object.keys(ALL_WORDS).map((w) => w[0])].join("")) {
+    for (const ch of [first, first.toLowerCase(), first.toUpperCase()]) {
+      if (ch.charCodeAt(0) < 128) UNIT_START[ch.charCodeAt(0)] = 1;
+    }
+  }
   // What may sit between digits of one number: spaces, dashes, dots, commas, parentheses, slashes, plus.
   const SEPARATOR_RE = /^[ \t \-–.,()/+_*]{1,3}$/;
-  const isLetter = (ch) => ch !== undefined && /\p{L}/u.test(ch);
+  // It runs for nearly every character of a text, so a plain ASCII character is answered without a regex.
+  const LETTER_RE = /\p{L}/u;
+  const isLetter = (ch) => {
+    if (ch === undefined) return false;
+    const code = ch.charCodeAt(0);
+    if (code < 128) return ((code | 32) >= 97 && (code | 32) <= 122) || (ch.length > 1 && LETTER_RE.test(ch));
+    return LETTER_RE.test(ch);
+  };
   // …or the separator said as a word: "two one nine dash oh nine".
   const SPOKEN_SEPARATOR_RE = /^\s+(?:dash|hyphen|gui[oó]n)\s+$/i;
   const isGap = (g) => g === "" || SEPARATOR_RE.test(g) || SPOKEN_SEPARATOR_RE.test(g);
@@ -359,26 +374,50 @@
   // A whole word that is a slip of a digit word (SLIP_WORDS), read as a sound-alike. A slip of two different
   // digits ("fine": "five" or "nine") is neither.
   const WORD_AT = /\p{L}+/uy;
-  function readSlip(text, start, cache) {
+  const isPlainLower = (w) => {
+    for (let i = 0; i < w.length; i++) {
+      const code = w.charCodeAt(i);
+      if (code < 97 || code > 122) return false;
+    }
+    return true;
+  };
+  // What each word reads as depends on the word alone, so it's worked out once and kept across texts (and the three
+  // readings of each), up to a bound.
+  const SLIP_MEMO = new Map();
+  const SLIP_MEMO_MAX = 20000;
+  function readSlip(text, start) {
+    // A word of a-z letters alone, shorter than 4 or longer than 7, is a slip of nothing: no need to read it out.
+    let end = start;
+    for (; end < text.length; end++) {
+      const code = text.charCodeAt(end) | 32;
+      if (code < 97 || code > 122) break;
+    }
+    const after = end < text.length ? text.charCodeAt(end) : 0;
+    if (after < 128 && (end - start < 4 || end - start > 7)) return null;
     WORD_AT.lastIndex = start;
     const s = WORD_AT.exec(text)[0];
+    // Nor is any other word that short or long, and it's never kept: a run of Chinese letters is one long word.
+    if (s.length < 4 || s.length > 7) return null;
     const w = s.toLowerCase();
-    const end = start + s.length;
-    if (cache?.has(w)) {
-      const cached = cache.get(w);
-      return cached ? { start, end, ...cached, kind: "weak", isWord: true, slip: true } : null;
+    let cached = SLIP_MEMO.get(w);
+    if (cached === undefined) {
+      cached = slipOf(s, w);
+      if (SLIP_MEMO.size >= SLIP_MEMO_MAX) SLIP_MEMO.clear();
+      SLIP_MEMO.set(w, cached);
     }
-    const remember = (digits, lang) => {
-      const cached = digits ? { digits, lang } : null;
-      cache?.set(w, cached);
-      return cached ? { start, end, ...cached, kind: "weak", isWord: true, slip: true } : null;
-    };
-    if (s.length < 4 || s.length > 7 || Object.prototype.hasOwnProperty.call(ALL_WORDS, w)) return remember(null);
-    const words = Object.keys(SLIP_WORDS).filter((word) => oneSlip(w, word));
+    return cached ? { start, end: start + s.length, ...cached, kind: "weak", isWord: true, slip: true } : null;
+  }
+  // { digits, lang } for a word that's a slip of one digit, or null.
+  function slipOf(s, w) {
+    if (s.length < 4 || s.length > 7 || Object.prototype.hasOwnProperty.call(ALL_WORDS, w)) return null;
+    // SLIP_CANDIDATES holds every a-z word one slip from a digit word, so a plain a-z word missing from it is a
+    // slip of none, found without comparing it with each digit word.
+    if (!SLIP_CANDIDATES.has(w) && isPlainLower(w)) return null;
+    const words = SLIP_WORD_KEYS.filter((word) => oneSlip(w, word));
     const digits = new Set(words.map((word) => SLIP_WORDS[word]));
-    if (digits.size !== 1) return remember(null);
+    if (digits.size !== 1) return null;
     const es = words.filter((word) => SPANISH.has(word)).length;
-    return remember([...digits][0], es === words.length ? "es" : es === 0 ? "en" : undefined);
+    return { digits: [...digits][0], lang: es === words.length ? "es" : es === 0 ? "en" : undefined };
   }
 
   // Splits text into runs of digits. A run is a list of groups, where a group is digits written together
@@ -399,12 +438,36 @@
   // treat every sound-alike and slip as a real digit. The exception is "to" and "for", since "three to four
   // digits" is describing a range, not giving a number.
   function readNumberRuns(text, labelled = false) {
+    const placed = placedUnits(text);
+    if (!placed.length) return [];
+    return runsFromUnits(text, placed, labelled);
+  }
+
+  // The digits and number words of a text, read once: numberRuns and a labelled reading of the same text (as
+  // spokenDniNie's) share them, so the last text's are kept. Nothing downstream changes a unit.
+  let lastUnitsText = null;
+  let lastUnits = null;
+  function placedUnits(text) {
+    if (text === lastUnitsText) return lastUnits;
+    const placed = readUnits(text);
+    lastUnitsText = text;
+    lastUnits = placed;
+    return placed;
+  }
+
+  function readUnits(text) {
     if (!UNIT_HINT_RE.test(text) && !hasSlipCandidate(text)) return [];
     const units = [];
-    const slipCache = new Map();
     for (let i = 0; i < text.length;) {
       UNIT_RE.lastIndex = i;
-      const slip = isLetter(text[i]) && !isLetter(text[i - 1]) ? readSlip(text, i, slipCache) : null;
+      const slip = isLetter(text[i]) && !isLetter(text[i - 1]) ? readSlip(text, i) : null;
+      if (!slip) {
+        const code = text.charCodeAt(i);
+        if (code < 128 && !UNIT_START[code]) {
+          i++;
+          continue;
+        }
+      }
       const m = !slip && UNIT_RE.exec(text);
       const u = slip || (m && readUnit(m[0], i));
       if (!u) {
@@ -522,8 +585,12 @@
       }
       return out;
     };
-    const placed = withPlaces(withPlaces(merged, 2), 3).filter((u) => u.kind !== "mult");
+    return withPlaces(withPlaces(merged, 2), 3).filter((u) => u.kind !== "mult");
+  }
 
+  // The runs those units make: a labelled reading keeps every sound-alike and slip, an unlabelled one only those
+  // that belong to a number.
+  function runsFromUnits(text, placed, labelled) {
     // A numbered list's item number ("1. …", "2) …" at the start of a line) isn't part of the detail after it.
     const atLineStart = (at) => {
       // only spaces or tabs back to a line break (looks back no further, so it stays linear)
@@ -745,11 +812,12 @@
 
   const lastItem = (items) => items[items.length - 1];
   const spanText = (text, groups) => text.slice(groups[0][0].start, lastItem(groups[groups.length - 1]).end);
-  const digitsOf = (groups) =>
-    groups
-      .flat()
-      .map((u) => u.digits)
-      .join("");
+  // Asked of every number run by several rules, so it's a plain loop rather than flat, map and join.
+  const digitsOf = (groups) => {
+    let d = "";
+    for (const group of groups) for (const u of group) if (u.digits != null) d += u.digits;
+    return d;
+  };
   const hasWord = (groups) => groups.flat().some((u) => u.isWord);
   const sizesOf = (groups) => groups.map((g) => g.reduce((n, u) => n + u.digits.length, 0)).join(",");
 
@@ -838,18 +906,18 @@
   // straight onto a letter right at its own edge ("2160p", "x265") reads the same way even with no dot there
   // at all, unless it's a phone extension ("555-555-0136x12"). The look each way is bounded (FILENAME_WINDOW),
   // so a huge paste still scans in linear time.
-  const FILENAME_CHAR = /[A-Za-z0-9.]/;
+  // [A-Za-z0-9.], read by character code: it's asked of up to 80 characters on each side of a number.
+  const isFileNameCode = (code) =>
+    (code >= 48 && code <= 57) || ((code | 32) >= 97 && (code | 32) <= 122) || code === 46;
   const FILENAME_WINDOW = 80;
   const sideToken = (text, pos, step) => {
-    let out = "";
-    for (
-      let i = pos, n = 0;
-      i >= 0 && i < text.length && n < FILENAME_WINDOW && FILENAME_CHAR.test(text[i]);
-      i += step, n++
-    ) {
-      out = step < 0 ? text[i] + out : out + text[i];
+    let i = pos;
+    let n = 0;
+    while (i >= 0 && i < text.length && n < FILENAME_WINDOW && isFileNameCode(text.charCodeAt(i))) {
+      i += step;
+      n++;
     }
-    return out;
+    return step < 0 ? text.slice(i + 1, pos + 1) : text.slice(pos, i);
   };
   function inFileName(text, run) {
     const first = run.units[0].start;
@@ -1030,6 +1098,23 @@
     /(?<![\w-])["']?(?:@timestamp|ts|timestamp|time|created_at|createdAt|eventTime|timeCreated)["']?\s*:\s*["']?(\d{10}(?:\d{3})?)["']?/gi,
     /\b(?:took|lasted|duration|elapsed)(?:\s+(?:for|of))?\s+(\d+(?:\.\d+)?)\s*(?:ms|milliseconds?)\b/gi,
   ];
+  // Numbers a machine prints that have a phone's digit count: git's "21:24:38 2026 +0000" date, a browser or
+  // package version after its name ("Chrome/131.0.6778.205"), a kernel log's "[12345.678901]" clock, a count of
+  // nanoseconds or bytes, the integer limits 2147483647 and 4294967295, a date and time like "25/02/2026 11:52",
+  // a web server log's status and size after the request ('HTTP/1.1" 200 2537'), the two short hashes on a git
+  // "Merge:" line, and a bracketed list of plain numbers.
+  const MACHINE_NUMBER_PATTERNS = [
+    /\b\d{1,2}[/.-]\d{1,2}[/.-]\d{4}\s+\d{1,2}:\d{2}\b/g,
+    /\bHTTP\/\d(?:\.\d)?"\s+(\d{3}\s+\d{1,12})\b/g,
+    /^[ \t]*Merge:[ \t]+([0-9a-f]{7,40}(?:[ \t]+[0-9a-f]{7,40})+)$/gm,
+    /\b\d{1,2}:\d{2}:\d{2}\s+\d{4}\s+[+-]\d{4}\b/g,
+    /(?<![\w-])[A-Za-z][\w-]{0,40}\/(\d+(?:\.\d+){2,})(?![\d.])/g,
+    /^\[\s*(\d{1,7}\.\d{6})\]/gm,
+    /(?<![\d.])(\d{7,}(?:\.\d+)?)\s*(?:ns|µs|us|ms|nanoseconds?|microseconds?|milliseconds?|bytes|cycles|ticks)\b/g,
+    /(?<![\d.-])(?:2147483647|2147483648|4294967295|4294967296)(?![\d.-])/g,
+  ];
+  const NUMBER_LIST = /\[\s*\d+(?:\s*,\s*\d+)+\s*,?\s*\]/g;
+  const LIST_OF_PHONES = /(?:phone|mobile|cell|tel|contact|number|whatsapp|sms|call)[^[\n]{0,30}$/i;
   const UUID_SHAPE = /(?<![a-z0-9])[0-9a-f]{8}-(?:[0-9a-f]{4}-){3}[0-9a-f]{12}(?![a-z0-9])/gi;
   function logTimestampRanges(text) {
     const ranges = [];
@@ -1043,6 +1128,18 @@
         if (/^\d{10}$/.test(value) && (value < "1000000000" || value > "2100000000")) continue;
         if (/^\d{13}$/.test(value) && (value < "1000000000000" || value > "2100000000000")) continue;
         ranges.push([start, start + value.length]);
+      }
+    }
+    for (const pattern of MACHINE_NUMBER_PATTERNS) {
+      for (const match of text.matchAll(pattern)) {
+        const start = match.index + (match[1] ? match[0].indexOf(match[1]) : 0);
+        ranges.push([start, start + (match[1] || match[0]).length]);
+      }
+    }
+    // A list of numbers in code is data, unless a phone word names it.
+    for (const match of text.matchAll(NUMBER_LIST)) {
+      if (!LIST_OF_PHONES.test(text.slice(Math.max(0, match.index - 40), match.index))) {
+        ranges.push([match.index, match.index + match[0].length]);
       }
     }
     return ranges;
@@ -1072,10 +1169,19 @@
       if (/^[2-9]\d{9}$/.test(m[2]) && !inVinCode(text, start)) addPhone(start, m.index + m[0].length);
     }
     for (const run of numberRuns(text)) {
+      // Every phone below has at least 7 digits (a local number), so a shorter run, like most numbers in a
+      // message, skips the label and name checks.
+      let size = 0;
+      for (const u of run.units) size += u.digits.length;
+      if (size < 7) continue;
       if (labelledAsOther(text, run) || tollFree(digitsOf(run.groups)) || counting(text, run)) continue;
       if (ndcCode(text, run) || inVinCode(text, run.units[0].start) || windowsSid(text, run) || inFileName(text, run)) {
         continue;
       }
+      // A local number glued to letters at its end is part of a name, like "fixture-0125/337909e6.png".
+      const gluedEnd =
+        isLetter(text[lastItem(lastItem(run.groups)).end]) && lastItem(lastItem(run.groups)).kind === "digit";
+      if (gluedEnd && /[/_]/.test(spanText(text, run.groups))) continue;
       if (localPhone(text, run)) {
         addPhone(run.groups[0][0].start, lastItem(lastItem(run.groups)).end);
         continue;
@@ -1094,7 +1200,12 @@
       const intl = internationalPhone(text, run);
       if (intl) {
         const start = text.indexOf(intl, Math.max(0, run.units[0].start - 6));
-        if (start >= 0 && !overlapsUuid(start, start + intl.length)) found.push(intl);
+        // Without a "+", a "00" number inside a word or a path ("fixture-0044/264107a3.png") is part of a name.
+        const inName =
+          /^00/.test(intl) &&
+          (/[\p{L}\d][-_]$|\/$/u.test(text.slice(Math.max(0, start - 2), start)) ||
+            /^(?:[\p{L}]|\.\w)/u.test(text.slice(start + intl.length, start + intl.length + 2)));
+        if (start >= 0 && !inName) addPhone(start, start + intl.length);
         continue;
       }
       const g = run.groups;
@@ -1206,7 +1317,10 @@
     for (const m of text.includes(".") ? text.matchAll(CARD_DOTS_RE) : []) {
       if (luhn(m[0]) && cardNetwork(m[0].replace(/\D/g, ""))) found.push(m[0]);
     }
-    return found;
+    // A labelled South African ID passes Luhn too, and one born in the 1940s to 60s starts like a card.
+    if (!found.length) return found;
+    const ids = worldNationalIds(text);
+    return ids.length ? found.filter((f) => !ids.some((v) => v.includes(f))) : found;
   }
   const CARD_DOTS_RE = /(?<![\d.])\d{4}\.\d{4}\.\d{4}\.\d{4}(?![\d.])/g;
   // A card number typed over two or more lines in its groups of four, only with a card word near it, since a short
@@ -1270,6 +1384,12 @@
     return found;
   }
 
+  // A stock, part or model number can have an SSN's 3-2-4 shape; its label right before says what it is.
+  const PRODUCT_CODE_BEFORE =
+    /(?<![\p{L}])(?:sku|part|item|model|serial|product|catalog(?:ue)?|stock|upc|ean|lot|batch|p\/n|mpn|asin)(?![\p{L}])(?:\s*(?:number|no\.?|num|#|code|id))?\s*(?:[:=#]|is)?\s*$/iu;
+  const productCodeBefore = (text, run) =>
+    PRODUCT_CODE_BEFORE.test(text.slice(Math.max(0, run.units[0].start - 30), run.units[0].start));
+
   function findSSNs(text) {
     const found = ssnColumn(text);
     for (const run of numberRuns(text)) {
@@ -1282,6 +1402,7 @@
       if (europeanNationalPhone(text, run)) continue;
       if (counting(text, run)) continue;
       if (inFileName(text, run)) continue; // a release or file name, like "Dune.Part.Two.2024.2160p"
+      if (productCodeBefore(text, run) && !ssnLabelBefore(text, run)) continue; // "SKU 460-12-3447"
       // Digits need the 3-2-4 shape unless an SSN label says what they are, or the message itself does.
       // Spelled-out numbers can be written any way.
       if (
@@ -1333,10 +1454,16 @@
     "gi",
   );
 
+  // A git remote over SSH, like git@github.com:acme/app.git or ssh://git@gitlab.com/acme/app, is a server's login, not
+  // someone's address. "git@acme-mail.com wrote:" is still an email.
+  const gitRemote = (text, m) =>
+    /^(?:git|hg)@/i.test(m[0]) &&
+    (/^:[\w.~-]+\/[\w.-]+/.test(text.slice(m.index + m[0].length, m.index + m[0].length + 200)) ||
+      /ssh:\/\/$/i.test(text.slice(Math.max(0, m.index - 6), m.index)));
   function findEmails(text) {
     // .invalid is reserved for addresses deliberately made unable to resolve.
     return [
-      ...(text.match(EMAIL_RE) || []),
+      ...[...text.matchAll(EMAIL_RE)].filter((m) => !gitRemote(text, m)).map((m) => m[0]),
       ...(text.match(EMAIL_BRACKETED) || []),
       ...(text.match(EMAIL_WORDED) || []),
       ...[...text.matchAll(EMAIL_NO_TLD)].map((m) => m[1]),
@@ -1929,8 +2056,27 @@
     ];
     // A sort code, BSB or transit number's own account digits would also match the plain "account …" label on
     // their own; dropping anything already inside a combined match keeps Hide it from leaving the code behind.
-    return [...combined, ...plain.filter((v) => !combined.some((c) => c.includes(v)))];
+    const cloud = plain.some((v) => /^\d{12}$/.test(v)) ? awsAccountIds(text) : new Set();
+    return [...combined, ...plain.filter((v) => !combined.some((c) => c.includes(v)) && !cloud.has(v))];
   };
+  // An AWS account ID is 12 digits too, and "account 482019375564" beside an ARN, the word AWS or a region like
+  // us-east-1 is that, not a bank account. A bank, checking, savings or routing word nearby still wins.
+  const AWS_MARKER =
+    /\barn:aws|(?<![\p{L}])AWS(?![\p{L}])|\b(?:us|eu|ap|sa|ca|me|af|il|mx)-(?:north|south|east|west|central|northeast|southeast|northwest|southwest)-\d\b/iu;
+  const BANK_WORD = /\b(?:bank|banking|checking|savings|routing|iban|swift|deposit|wire|ach)\b/i;
+  function awsAccountIds(text) {
+    const ids = new Set();
+    for (const m of text.matchAll(/(?<!\d)\d{12}(?!\d)/g)) {
+      const near = text.slice(Math.max(0, m.index - 80), m.index + 92);
+      if (AWS_MARKER.test(near) && !BANK_WORD.test(near)) ids.add(m[0]);
+    }
+    // One mention in a bank's words keeps the number reported wherever else it appears.
+    for (const m of text.matchAll(/(?<!\d)\d{12}(?!\d)/g)) {
+      const near = text.slice(Math.max(0, m.index - 80), m.index + 92);
+      if (BANK_WORD.test(near) || !AWS_MARKER.test(near)) ids.delete(m[0]);
+    }
+    return ids;
+  }
   // A UK driving licence's 16-character number, unlabelled: 5 letters (the surname, padded with 9s if
   // shorter), 6 digits encoding the date of birth (month +50 for a woman, so it reads 1-12 or 51-62), 2
   // letters (initials, 9 if there's no middle one), a digit and 2 more letters. This is a structure check,
@@ -2358,7 +2504,423 @@
   const ITIN_RE = /\b9\d{2}[- ](?:5\d|6[0-5]|7\d|8[0-8]|9[0-2]|9[4-9])[- ]\d{4}\b/g;
   const US_ID_LABELLED =
     /\b(?:ITIN|EIN|TIN|tax\s*(?:payer\s*)?id(?:entification)?(?:\s+number)?|employer\s+identification\s+number|a-?number|alien\s+(?:registration\s+)?number|uscis\s*(?:number|#)|green\s+card(?:\s+(?:number|receipt))?|va\s+(?:file|claim)\s+number)\s*(?:(?:#|no\.?|number)\s*)?(?:(?:is|:|=)\s*)?((?:[A-Z]{1,3}[\s-]?)?\d(?:[\d-]{6,12})\d)(?![\d-])/gi;
+
+  // ---------- National IDs from other countries ----------
+  // Each has a public check (digits, a letter or a key), so a random number of the same shape passes 1 time in
+  // 10 to 97 at most, and most also carry a birth date that has to be real. The ones that are only digits, a
+  // shape order numbers, phones and timestamps share, count only after their label. The ones with a layout of
+  // their own count anywhere: Brazil's dotted CPF and CNPJ, France's spaced NIR, Italy's codice fiscale,
+  // Singapore's NRIC, Korea's dashed RRN and China's 18-digit resident ID.
+  const ID_WORD = (words) => String.raw`(?<![\p{L}\d])(?:${words})(?![\p{L}])`;
+  // A label, up to 20 characters that aren't digits ("CPF:", "my BSN is", "numer PESEL", "Nr."), then the value.
+  const ID_END = String.raw`(?![\p{L}\d]|[.,/-]\d)`;
+  // The value can also start the next line, under a label of its own ("CPF:" then the number).
+  const labelledId = (labelSource, value, flags = "giu") =>
+    new RegExp(String.raw`(?:${labelSource})[^\n\d]{0,20}?(?:\n[ \t]*)?(?<![\p{L}\d])(${value})${ID_END}`, flags);
+  const bareId = (value, flags = "gu") => new RegExp(String.raw`(?<![\p{L}\d]|\d[.,/-])(?:${value})${ID_END}`, flags);
+  const idDigits = (v) => v.replace(/[^\dA-Za-z]/g, "").toUpperCase();
+  const realDate = (y, m, d) => m >= 1 && m <= 12 && d >= 1 && d <= new Date(Date.UTC(y, m, 0)).getUTCDate();
+  const NOW_YEAR = new Date().getUTCFullYear();
+  // A birth year a bare number can carry: someone at least 10 and under 100. Order and booking references
+  // dated this decade fit the same shapes, and read as a young child (or, in the other century, someone
+  // over 100). After the ID's own label, any real birth date counts.
+  const adultBirthYear = (y) => y <= NOW_YEAR - 10 && y > NOW_YEAR - 100;
+  const weighted = (d, weights) => weights.reduce((s, w, i) => s + w * Number(d[i]), 0);
+  // Ireland's PPS number has seven digits and a mod-23 check letter. A second letter can follow it. English
+  // labels and the Irish name, Uimhir Phearsanta Seirbhíse Poiblí, all point to the same national ID.
+  const PPS_CHECK = "WABCDEFGHIJKLMNOPQRSTUV";
+  function ppsValid(value) {
+    const v = idDigits(value);
+    const m = /^(\d{7})([A-W])([A-IW]?)$/.exec(v);
+    if (!m) return false;
+    const extra = m[3] && m[3] !== "W" ? (m[3].charCodeAt(0) - 64) * 9 : 0;
+    return PPS_CHECK[(weighted(m[1], [8, 7, 6, 5, 4, 3, 2]) + extra) % 23] === m[2];
+  }
+  const PPS_VALUE = String.raw`\d(?:[ \t-]?\d){6}[ \t-]?[A-W][A-IW]?`;
+  const PPS_LABELLED = labelledId(
+    ID_WORD(
+      String.raw`PPSN|PPS\s*(?:number|no\.?|#)|personal\s+public\s+service(?:\s+number)?|UPSP|PSP|uimhir\s+(?:phearsanta\s+)?seirbh[ií]se\s+poibl[ií]`,
+    ),
+    PPS_VALUE,
+  );
+  const PPS_BARE = bareId(PPS_VALUE);
+
+  // Inland Revenue checks eight or nine digits with two mod-11 weight sets. Keep this label-only: a valid
+  // checksum still passes often enough for order numbers, phone numbers and other bare digit strings to collide.
+  const IRD_LABELLED = labelledId(
+    ID_WORD(String.raw`(?:New\s+Zealand\s+)?(?:IRD|Inland\s+Revenue(?:\s+Department)?)`),
+    String.raw`\d{2,3}(?:[ \t-]?\d{3}){2}`,
+  );
+  const IRD_PRIMARY = [3, 2, 7, 6, 5, 4, 3, 2];
+  const IRD_SECONDARY = [7, 4, 3, 2, 5, 2, 7, 6];
+  function irdValid(value) {
+    const d = idDigits(value);
+    const n = Number(d);
+    if (!/^\d{8,9}$/.test(d) || n < 10000000 || n > 200000000) return false;
+    const base = d.slice(0, -1).padStart(8, "0");
+    const checkFor = (weights) => {
+      const remainder = weighted(base, weights) % 11;
+      return remainder === 0 ? 0 : 11 - remainder;
+    };
+    let check = checkFor(IRD_PRIMARY);
+    if (check === 10) check = checkFor(IRD_SECONDARY);
+    return check < 10 && check === Number(d[d.length - 1]);
+  }
+
+  // New Zealand NHI checks use letters A–Z without I or O. The old seven-character form ends in a mod-11
+  // digit; the expanded form ends in a mod-23 letter.
+  const NHI_LETTERS = "ABCDEFGHJKLMNPQRSTUVWXYZ";
+  const NHI_SHAPE = String.raw`(?:[A-HJ-NP-Z]{3}\d{3}\d|[A-HJ-NP-Z]{3}\d{2}[A-HJ-NP-Z]{2})`;
+  const NHI_LABELLED = labelledId(ID_WORD(String.raw`NHI|National\s+Health\s+Index`), NHI_SHAPE);
+  const NHI_BARE = bareId(NHI_SHAPE);
+  function nhiValid(value) {
+    const d = idDigits(value);
+    const old = /^([A-HJ-NP-Z]{3})(\d{3})(\d)$/.exec(d);
+    if (old) {
+      const body = old[1] + old[2];
+      const sum = [...body].reduce(
+        (total, ch, i) => total + (/[A-Z]/.test(ch) ? NHI_LETTERS.indexOf(ch) + 1 : Number(ch)) * (7 - i),
+        0,
+      );
+      const remainder = sum % 11;
+      const check = 11 - remainder;
+      return remainder !== 0 && check <= 9 && check === Number(old[3]);
+    }
+    const newer = /^([A-HJ-NP-Z]{3})(\d{2})([A-HJ-NP-Z])([A-HJ-NP-Z])$/.exec(d);
+    if (!newer) return false;
+    const body = newer[1] + newer[2] + newer[3];
+    const sum = [...body].reduce(
+      (total, ch, i) => total + (/[A-Z]/.test(ch) ? NHI_LETTERS.indexOf(ch) + 1 : Number(ch)) * (7 - i),
+      0,
+    );
+    return NHI_LETTERS[23 - (sum % 23) - 1] === newer[4];
+  }
+
+  // Brazil: CPF (people) and CNPJ (companies), two mod-11 check digits each.
+  function mod11Br(d, weights) {
+    const r = weighted(d, weights) % 11;
+    return r < 2 ? 0 : 11 - r;
+  }
+  function cpfValid(v) {
+    const d = idDigits(v);
+    if (!/^\d{11}$/.test(d) || /^(\d)\1+$/.test(d)) return false;
+    return (
+      mod11Br(d, [10, 9, 8, 7, 6, 5, 4, 3, 2]) === Number(d[9]) &&
+      mod11Br(d, [11, 10, 9, 8, 7, 6, 5, 4, 3, 2]) === Number(d[10])
+    );
+  }
+  function cnpjValid(v) {
+    const d = idDigits(v);
+    if (!/^\d{14}$/.test(d) || /^(\d)\1+$/.test(d)) return false;
+    return (
+      mod11Br(d, [5, 4, 3, 2, 9, 8, 7, 6, 5, 4, 3, 2]) === Number(d[12]) &&
+      mod11Br(d, [6, 5, 4, 3, 2, 9, 8, 7, 6, 5, 4, 3, 2]) === Number(d[13])
+    );
+  }
+  const CPF_LABEL = ID_WORD(String.raw`C\.?P\.?F\.?`);
+  const CNPJ_LABEL = ID_WORD(String.raw`C\.?N\.?P\.?J\.?`);
+  const CPF_VALUE = String.raw`\d{3}[. ]?\d{3}[. ]?\d{3}[-. ]?\d{2}`;
+  const CNPJ_VALUE = String.raw`\d{2}\.?\d{3}\.?\d{3}/?\d{4}-?\d{2}`;
+  const CPF_LABELLED = labelledId(CPF_LABEL, CPF_VALUE);
+  const CNPJ_LABELLED = labelledId(CNPJ_LABEL, CNPJ_VALUE);
+  const CPF_DOTTED = bareId(String.raw`\d{3}\.\d{3}\.\d{3}-\d{2}`);
+  const CNPJ_DOTTED = bareId(String.raw`\d{2}\.\d{3}\.\d{3}/\d{4}-\d{2}`);
+  // India's PAN: its fourth letter says who holds it (P a person, C a company, …). No public check, so only
+  // after its label.
+  const PAN_VALUE = String.raw`[A-Z]{3}[ABCFGHLJPT][A-Z]\d{4}[A-Z]`;
+  const PAN_LABELLED = labelledId(ID_WORD(String.raw`PAN|permanent\s+account\s+number`), PAN_VALUE);
+  const panValid = (v) => new RegExp(`^${PAN_VALUE}$`, "i").test(v);
+  // France's NIR (social security number): sex, birth year and month, department (2A/2B for Corsica), town,
+  // order, then a key of 97 minus the first 13 digits mod 97.
+  const NIR_VALUE = String.raw`[1-478]\s?\d{2}\s?\d{2}\s?(?:\d{2}|2[AB])\s?\d{3}\s?\d{3}\s?\d{2}`;
+  const NIR_LABELLED = labelledId(
+    ID_WORD(String.raw`NIR|INSEE|s[ée]curit[ée]\s+sociale|s[ée]cu|carte\s+vitale`),
+    NIR_VALUE,
+  );
+  const NIR_SPACED = bareId(String.raw`[12] \d{2} \d{2} (?:\d{2}|2[AB]) \d{3} \d{3} \d{2}`, "giu");
+  function nirValid(v) {
+    const s = idDigits(v);
+    if (!/^[1-478]\d{2}(?:0[1-9]|1[0-2]|[2-9]\d)(?:\d{2}|2[AB])\d{8}$/.test(s)) return false;
+    let rest = 0;
+    for (const ch of s.slice(0, 13).replace("2A", "19").replace("2B", "18")) rest = (rest * 10 + Number(ch)) % 97;
+    return 97 - rest === Number(s.slice(13));
+  }
+  // The Netherlands' BSN: the "11-test" (9×d1 + 8×d2 + … + 2×d8 − d9 is a multiple of 11).
+  const BSN_VALUE = String.raw`\d{9}|\d{4}\.\d{2}\.\d{3}|\d{3}[ .]\d{3}[ .]\d{3}`;
+  const BSN_LABELLED = labelledId(ID_WORD(String.raw`BSN|burgerservicenummer|sofi-?nummer`), BSN_VALUE);
+  function bsnValid(v) {
+    const d = idDigits(v);
+    return /^\d{9}$/.test(d) && d !== "000000000" && weighted(d, [9, 8, 7, 6, 5, 4, 3, 2, -1]) % 11 === 0;
+  }
+  // Poland's PESEL: birth date (the century added to the month), serial, weighted check digit.
+  const PESEL_VALUE = String.raw`\d{11}|\d{3} \d{3} \d{3} \d{2}`;
+  const PESEL_LABELLED = labelledId(ID_WORD("PESEL"), PESEL_VALUE);
+  const PESEL_CENTURY = { 0: 1900, 1: 2000, 2: 2100, 3: 2200, 4: 1800 };
+  function peselValid(v) {
+    const d = idDigits(v);
+    if (!/^\d{11}$/.test(d)) return false;
+    const mm = Number(d.slice(2, 4));
+    const century = PESEL_CENTURY[Math.floor(mm / 20)];
+    if (!realDate(century + Number(d.slice(0, 2)), mm % 20, Number(d.slice(4, 6)))) return false;
+    return (10 - (weighted(d, [1, 3, 7, 9, 1, 3, 7, 9, 1, 3]) % 10)) % 10 === Number(d[10]);
+  }
+  // Italy's codice fiscale: 6 letters of name, birth year, month letter, day (+40 for women), town code, check
+  // letter. Digits can be swapped for letters (L for 0 … V for 9) when two people would share one.
+  const CF_VALUE = String.raw`[A-Z]{6}[\dLMNP-V]{2}[ABCDEHLMPRST][\dLMNP-V]{2}[A-Z][\dLMNP-V]{3}[A-Z]`;
+  const CF_BARE = bareId(CF_VALUE);
+  const CF_LABELLED = labelledId(ID_WORD(String.raw`codice\s+fiscale|C\.F\.`), CF_VALUE);
+  const CF_ODD = [1, 0, 5, 7, 9, 13, 15, 17, 19, 21, 2, 4, 18, 20, 11, 3, 6, 8, 12, 14, 16, 10, 22, 25, 24, 23];
+  function cfValid(v) {
+    const s = v.toUpperCase();
+    const day = Number(s.slice(9, 11).replace(/[LMNP-V]/g, (c) => "LMNPQRSTUV".indexOf(c)));
+    if (!((day >= 1 && day <= 31) || (day >= 41 && day <= 71))) return false;
+    let sum = 0;
+    for (let i = 0; i < 15; i++) {
+      const n = /\d/.test(s[i]) ? Number(s[i]) : s.charCodeAt(i) - 65;
+      sum += i % 2 === 0 ? CF_ODD[n] : n;
+    }
+    return String.fromCharCode(65 + (sum % 26)) === s[15];
+  }
+  // Singapore's NRIC and FIN: S or T (citizens), F or G (foreigners), 7 digits, a check letter. A T number
+  // starts with its holder's birth year (2000 on), so it can't be ahead of this year.
+  const NRIC_BARE = bareId(String.raw`[STFG]\d{7}[A-Z]`);
+  function nricValid(v) {
+    if (v[0] === "T" && 2000 + Number(v.slice(1, 3)) > NOW_YEAR) return false;
+    const sum = weighted(v.slice(1, 8), [2, 7, 6, 5, 4, 3, 2]) + (/[TG]/.test(v[0]) ? 4 : 0);
+    return ("ST".includes(v[0]) ? "JZIHGFEDCBA" : "XWUTRQPNMLK")[sum % 11] === v[8];
+  }
+  // South Africa's ID: birth date, serial, citizenship (0, 1 or 2), a digit, Luhn. Bare 13 digits are often
+  // timestamps, so only after an ID label.
+  const SA_ID_VALUE = String.raw`\d{6}\s?\d{4}\s?\d{3}`;
+  const SA_ID_LABELLED = labelledId(
+    ID_WORD(
+      String.raw`(?:SA|RSA|South\s+African)\s+ID(?:\s+(?:number|no\.?|#))?|identity\s+(?:number|no\.?)|ID\s*(?:number|no\.?|#)`,
+    ),
+    SA_ID_VALUE,
+  );
+  function saIdValid(v) {
+    const d = idDigits(v);
+    return /^\d{10}[012]\d{2}$/.test(d) && realDate(2000, Number(d.slice(2, 4)), Number(d.slice(4, 6))) && luhn(d);
+  }
+  // Germany's Steuer-ID: 11 digits, the first not 0, one digit used twice or three times in the first ten (the
+  // rest at most once), an ISO 7064 MOD 11,10 check digit.
+  const STEUER_VALUE = String.raw`\d{2}\s?\d{3}\s?\d{3}\s?\d{3}`;
+  const STEUER_LABELLED = labelledId(
+    ID_WORD(
+      String.raw`steuer-?id(?:nr\.?)?|steuer-?identifikationsnummer|steuerliche\s+identifikationsnummer|identifikationsnummer|IdNr\.?`,
+    ),
+    STEUER_VALUE,
+  );
+  function steuerIdValid(v) {
+    const d = idDigits(v);
+    if (!/^[1-9]\d{10}$/.test(d)) return false;
+    const counts = new Array(10).fill(0);
+    for (const ch of d.slice(0, 10)) counts[Number(ch)]++;
+    if (counts.filter((c) => c > 1).length !== 1 || counts.some((c) => c > 3)) return false;
+    let product = 10;
+    for (const ch of d.slice(0, 10)) {
+      const sum = (Number(ch) + product) % 10 || 10;
+      product = (sum * 2) % 11;
+    }
+    return (11 - product) % 10 === Number(d[10]);
+  }
+  // South Korea's resident registration number: birth date, a digit for sex and century, then 6 digits. Its
+  // last digit was a check digit until late 2020, so bare ones need it; after a label the date is enough.
+  const RRN_CENTURY = { 1: 1900, 2: 1900, 3: 2000, 4: 2000, 5: 1900, 6: 1900, 7: 2000, 8: 2000 };
+  const RRN_BARE = bareId(String.raw`\d{6}-[1-8]\d{6}`);
+  const RRN_SHAPE = bareId(String.raw`\d{6}-\d{7}`);
+  const RRN_VALUE = String.raw`\d{6}-?[1-8]\d{6}`;
+  const RRN_LABELLED = labelledId(
+    String.raw`주민등록번호|주민번호|${ID_WORD(String.raw`RRN|resident\s+registration\s+number`)}`,
+    RRN_VALUE,
+  );
+  const rrnYear = (d) => RRN_CENTURY[d[6]] + Number(d.slice(0, 2));
+  function rrnDated(v) {
+    const d = idDigits(v);
+    return rrnYear(d) <= NOW_YEAR && realDate(rrnYear(d), Number(d.slice(2, 4)), Number(d.slice(4, 6)));
+  }
+  const rrnValid = (v) => {
+    const d = idDigits(v);
+    return (
+      rrnDated(v) &&
+      adultBirthYear(rrnYear(d)) &&
+      (11 - (weighted(d, [2, 3, 4, 5, 6, 7, 8, 9, 2, 3, 4, 5]) % 11)) % 10 === Number(d[12])
+    );
+  };
+  // Japan's My Number: 12 digits, the last a check digit. In English only "My Number" in capitals, since "my
+  // number is …" is usually a phone.
+  const MY_NUMBER_VALUE = String.raw`\d{4}\s?\d{4}\s?\d{4}`;
+  const MY_NUMBER_LABELLED = labelledId(
+    String.raw`マイナンバー|個人番号|(?<![\p{L}])(?:My\s?Number|[Ii]ndividual\s+[Nn]umber)(?![\p{L}])`,
+    MY_NUMBER_VALUE,
+    "gu",
+  );
+  function myNumberValid(v) {
+    const d = idDigits(v);
+    if (!/^\d{12}$/.test(d)) return false;
+    let sum = 0;
+    for (let n = 1; n <= 11; n++) sum += Number(d[11 - n]) * (n <= 6 ? n + 1 : n - 5);
+    const r = sum % 11;
+    return (r <= 1 ? 0 : 11 - r) === Number(d[11]);
+  }
+  // China's resident ID: region, birth date (YYYYMMDD), serial, ISO 7064 MOD 11-2 check (X for 10).
+  // The first two digits are a province (11 Beijing … 65 Xinjiang, 71 Taiwan, 81-83 Hong Kong, Macau, Taiwan
+  // residents), and the birth date can't be in the future. Bare, it also needs an adult's birth year, unless an
+  // ID-card label is right before it.
+  const CN_ID_BARE = bareId(String.raw`[1-8]\d{5}(?:18|19|20)\d{2}[01]\d[0-3]\d\d{3}[\dXx]`);
+  const CN_ID_SHAPE = bareId(String.raw`\d{17}[\dXx]`);
+  const CN_PROVINCE = /^(?:1[1-5]|2[1-3]|3[1-7]|4[1-6]|5[0-4]|6[1-5]|71|8[1-3])/;
+  const CN_ID_LABEL_BEFORE =
+    /(?:身份证|身份證|身份号码|身份號碼|(?<![\p{L}])(?:resident|identity|ID)\s*(?:ID|card)?)[^\n\d]{0,20}$/iu;
+  function cnIdValid(v, text, index) {
+    const d = v.toUpperCase();
+    const year = Number(d.slice(6, 10));
+    if (!CN_PROVINCE.test(d) || year > NOW_YEAR) return false;
+    if (!realDate(year, Number(d.slice(10, 12)), Number(d.slice(12, 14)))) return false;
+    const sum = weighted(d, [7, 9, 10, 5, 8, 4, 2, 1, 6, 3, 7, 9, 10, 5, 8, 4, 2]);
+    if ("10X98765432"[sum % 11] !== d[17]) return false;
+    return adultBirthYear(year) || CN_ID_LABEL_BEFORE.test(text.slice(Math.max(0, index - 40), index));
+  }
+  const valuesOf = (re, text, ok) => [...text.matchAll(re)].map((m) => m[1] ?? m[0]).filter(ok);
+
+  // A bare ID right after the name of something else ("Order", "SKU", "ref", "Commande:", "Pedido nº") is
+  // that thing's number.
+  const ID_REFERENCE_BEFORE =
+    /(?<![\p{L}])(?:order|invoice|ticket|sku|ref|reference|tracking|booking|confirmation|transaction|txn|serial|model|part|item|article|artikel|art\.?-?nr|bestell|rechnung|auftrag|commande|facture|pedido|factura|ordine|fattura|zam[oó]wieni|faktur|factuur|reserv|주문|注文|订单|运单|快递)\p{L}*[^\n\d\p{L}]{0,6}(?:(?:no|nr|n[º°o]|num(?:ber|ero|éro)?|id|de|do|da)\.?[^\n\d\p{L}]{0,4})?$/iu;
+  // Bare IDs, minus those after a reference label. When most numbers of the same shape in the message fail the
+  // check (a column of order references, an SQL dump of 18-digit ids), the few that pass are chance and none
+  // counts. A list of real IDs passes all of them.
+  function bareIds(re, text, ok, shape = re) {
+    const valid = [];
+    for (const m of text.matchAll(re)) if (ok(m[0], text, m.index)) valid.push(m);
+    if (!valid.length) return [];
+    const all = [...text.matchAll(shape)].length;
+    if (all >= 3 && valid.length * 2 < all) return [];
+    return valid
+      .filter((m) => !ID_REFERENCE_BEFORE.test(text.slice(Math.max(0, m.index - 40), m.index)))
+      .map((m) => m[0]);
+  }
+
+  // The IDs that only count after their label, also found under a CSV or table column of that name, or as the
+  // value of a JSON, YAML or URL key named for them ("cpfNumber", "nr_pesel", "steuerIdNr"). The column or key
+  // name is split into words first, so "cpfNumber" reads "cpf number".
+  const LABEL_ONLY_IDS = [
+    [/\bcpf\b/, CPF_VALUE, cpfValid],
+    [/\bcnpj\b/, CNPJ_VALUE, cnpjValid],
+    [/\bpan\b|\bpermanent account number\b/, PAN_VALUE, panValid],
+    [/\b(?:nir|insee|s[eé]cu|carte vitale)\b|s[eé]curit[eé] sociale/, NIR_VALUE, nirValid],
+    [/\b(?:bsn|burgerservicenummer|sofi ?nummer)\b/, BSN_VALUE, bsnValid],
+    [/\bpesel\b/, PESEL_VALUE, peselValid],
+    [/\b(?:(?:sa|rsa|south african) id|identity (?:number|no)|id (?:number|no))\b/, SA_ID_VALUE, saIdValid],
+    [/\b(?:steuer ?id|steuer ?identifikationsnummer|identifikationsnummer|id ?nr)\b/, STEUER_VALUE, steuerIdValid],
+    [/\brrn\b|\bresident registration\b|주민등록번호|주민번호/, RRN_VALUE, rrnDated],
+    [/\b(?:my ?number|individual number)\b|マイナンバー|個人番号/, MY_NUMBER_VALUE, myNumberValid],
+  ].map(([name, value, ok]) => ({
+    name,
+    whole: new RegExp(`^(?:${value})$`, "i"),
+    at: new RegExp(`(?:${value})${ID_END}`, "iuy"),
+    ok,
+  }));
+  const ID_NAME_HINT =
+    /cpf|cnpj|pan|nir|insee|s[eé]cu|vitale|bsn|burgerservice|sofi|pesel|identity|id|steuer|identifikation|rrn|resident|number|주민|マイナンバー|個人番号/i;
+  const nameWords = (name) =>
+    name
+      .replace(/([a-z\d])([A-Z])/g, "$1 $2")
+      .replace(/[_.\-\s]+/g, " ")
+      .trim()
+      .toLowerCase();
+  const kindsNamed = (name) => {
+    const words = nameWords(name);
+    return LABEL_ONLY_IDS.filter((k) => k.name.test(words));
+  };
+  const ID_KEY_RE = /(?<![\p{L}\d_])["']?(\p{L}[\p{L}\d_.-]{0,40}?)["']?[ \t]*[:=][ \t]*["']?(?=[\dA-Za-z])/gu;
+  function keyedIds(text) {
+    const found = [];
+    for (const m of text.matchAll(ID_KEY_RE)) {
+      if (!ID_NAME_HINT.test(m[1])) continue;
+      for (const kind of kindsNamed(m[1])) {
+        kind.at.lastIndex = m.index + m[0].length;
+        const value = kind.at.exec(text);
+        if (value && kind.ok(value[0])) found.push(value[0]);
+      }
+    }
+    return found;
+  }
+  const cellsOf = (line) => {
+    const sep = ["|", "\t", ",", ";"].find((s) => line.includes(s));
+    return sep ? line.split(sep).map((c) => c.trim().replace(/^["']|["']$/g, "")) : [line];
+  };
+  function idColumns(text) {
+    if (!text.includes("\n") || !ID_NAME_HINT.test(text)) return [];
+    const found = [];
+    let columns = null;
+    for (const line of text.split("\n")) {
+      const cells = cellsOf(line);
+      if (cells.length < 2) {
+        columns = null;
+        continue;
+      }
+      const header = [];
+      cells.forEach((c, i) => {
+        if (c.length <= 40 && !/\d/.test(c) && ID_NAME_HINT.test(c)) {
+          const kinds = kindsNamed(c);
+          if (kinds.length) header.push([i, kinds]);
+        }
+      });
+      if (header.length) {
+        columns = header;
+        continue;
+      }
+      for (const [i, kinds] of columns || []) {
+        const cell = cells[i];
+        if (cell && kinds.some((k) => k.whole.test(cell) && k.ok(cell))) found.push(cell);
+      }
+    }
+    return found;
+  }
+
+  // Each value once, though a dotted CPF after its label is read by both its rules. National IDs, cards and phones
+  // all ask for these on the same text, so the last text's answer is kept and handed out as a copy.
+  let lastWorldIdsText = null;
+  let lastWorldIds = null;
+  const worldNationalIds = (text) => {
+    if (text !== lastWorldIdsText) {
+      lastWorldIds = readWorldNationalIds(text);
+      lastWorldIdsText = text;
+    }
+    return [...lastWorldIds];
+  };
+  const readWorldNationalIds = (text) => [
+    ...new Set([
+      ...valuesOf(PPS_LABELLED, text, ppsValid),
+      ...bareIds(PPS_BARE, text, ppsValid),
+      ...valuesOf(IRD_LABELLED, text, irdValid),
+      ...valuesOf(NHI_LABELLED, text, nhiValid),
+      ...bareIds(NHI_BARE, text, nhiValid),
+      ...valuesOf(CPF_LABELLED, text, cpfValid),
+      ...bareIds(CPF_DOTTED, text, cpfValid),
+      ...valuesOf(CNPJ_LABELLED, text, cnpjValid),
+      ...bareIds(CNPJ_DOTTED, text, cnpjValid),
+      ...valuesOf(PAN_LABELLED, text, panValid),
+      ...valuesOf(NIR_LABELLED, text, nirValid),
+      ...bareIds(NIR_SPACED, text, nirValid),
+      ...valuesOf(BSN_LABELLED, text, bsnValid),
+      ...valuesOf(PESEL_LABELLED, text, peselValid),
+      ...bareIds(CF_BARE, text, cfValid),
+      ...valuesOf(CF_LABELLED, text, (v) => v !== v.toUpperCase() && cfValid(v)),
+      ...bareIds(NRIC_BARE, text, nricValid),
+      ...valuesOf(SA_ID_LABELLED, text, saIdValid),
+      ...valuesOf(STEUER_LABELLED, text, steuerIdValid),
+      ...bareIds(RRN_BARE, text, rrnValid, RRN_SHAPE),
+      ...valuesOf(RRN_LABELLED, text, rrnDated),
+      ...valuesOf(MY_NUMBER_LABELLED, text, myNumberValid),
+      ...bareIds(CN_ID_BARE, text, cnIdValid, CN_ID_SHAPE),
+      ...keyedIds(text),
+      ...idColumns(text),
+    ]),
+  ];
   const findNationalIds = (text) => [
+    ...worldNationalIds(text),
     ...(text.match(ITIN_RE) || []),
     ...[...text.matchAll(US_ID_LABELLED)].map((m) => m[1]),
     ...[...text.matchAll(RFC_RE)].map((m) => m[1]),
@@ -2589,8 +3151,10 @@
   ];
 
   // Every value read after one of these labels, so findPhones doesn't also read it as a phone, as with
-  // "número de afiliado 912345678" or "mi NSS es 12345678901".
+  // "número de afiliado 912345678" or "mi NSS es 12345678901", and the other countries' national IDs above
+  // ("CPF: 123.456.789-09", "PESEL 44051401458").
   const spanishIdValues = (text) => [
+    ...worldNationalIds(text),
     ...spanishNationalIds(text),
     ...spanishPassports(text),
     ...spanishLicenses(text),
@@ -2855,6 +3419,28 @@
   // A cap on how many windows one run is checked against, so a huge paste of everyday words still scans in
   // linear time: real seeds are never embedded in thousands of words of surrounding list words anyway.
   const SEED_WINDOW_CAP = 10000;
+  const SEED_SHORT_RUN = 48;
+  const SEED_EXTRA_WORDS = 3;
+  // List words people also write in everyday sentences, so a phrase pasted into "can you check this … please"
+  // runs on into them. Up to SEED_PROSE_WORDS of them at either end of a run are read as the sentence around it.
+  const SEED_PROSE_WORDS = 8;
+  const EVERYDAY_LIST_WORDS = new Set(
+    `about above across act add again age agree ahead all almost alone already also always among another answer
+    any appear area around ask away because become before begin behind below best better between bring call can
+    car case cause certain change check child city close come common company country course day deal door draw
+    during early easy either else end enough example eye face fall family feel few field final find fine first
+    fit follow food force forget found friend front fun funny game give glad good great group grow guess half
+    hand happy hard have head help high hold home hope hour idea inside into issue item job just keep kind know
+    large later learn leave left life like list little live long love main make man matter mean message middle
+    mind minute miss moment more move much must name near need never next nice night normal note nothing now
+    number off offer often okay old once one only open order other over own page pass people perfect person place
+    play please point possible post power pretty problem put question quick rather ready real reason receive
+    record remember report result return right road room round run same save say second sense short side simple
+    since small soon sorry sort sound speak special stand start state stay step still story strong such suggest
+    sure talk team tell test thank that then there they thing this thought three time today together top total
+    toward try turn twice two under until upon use used usual very view wait want way what when where will wish
+    wonder word work world wrong year you young`.split(/\s+/),
+  );
   function seedWindows(run) {
     const found = [];
     let checked = 0;
@@ -2866,8 +3452,9 @@
         const edge = s === 0 || s + n === run.length;
         // A valid phrase embedded in a longer run is extremely unlikely to repeat a word. Skipping those windows
         // avoids hashing every overlapping slice of a long everyday-word run, while checking run edges preserves
-        // legitimate vectors with repeated words at the start or end.
-        if (edge || counts.size === n) {
+        // legitimate vectors with repeated words at the start or end. A short run is cheap to check whole, and a
+        // random 12-word phrase repeats a word about 1 time in 30, so there every window is checked.
+        if (edge || counts.size === n || run.length <= SEED_SHORT_RUN) {
           if (checked++ >= SEED_WINDOW_CAP) return found;
           const window = run.slice(s, s + n);
           if (bip39ChecksumValid(window.map((u) => u.word))) found.push(window);
@@ -2885,24 +3472,149 @@
     return found;
   }
 
-  // Twelve or more BIP-39 list words in a row, with a valid checksum somewhere inside, is a seed phrase.
-  // Numbering, commas and line breaks between the words are fine.
-  function findSeedPhrases(text) {
+  // Words that say a run of list words is a wallet's recovery phrase. SEED_LABEL counts anywhere in the
+  // message ("here's my seed phrase" and the words further down); SEED_NEAR only within a few lines of the run,
+  // since "seed", "wallet" or "backup" alone could be about a garden, a purse or a hard drive.
+  const SEED_LABEL =
+    /\b(?:seed[\s-]*(?:phrase|words?)|mnemonic|recovery[\s-]*(?:phrase|words?|seed|sentence)|secret[\s-]*(?:recovery[\s-]*)?phrase|(?:backup|wallet)[\s-]*(?:phrase|words?|seed)|bip[\s-]?39|metamask|trezor|electrum|frase[\s-]+(?:semilla|secreta|mnem[oó]nica|de[\s-]+(?:recuperaci[oó]n|respaldo|seguridad))|palabras[\s-]+(?:semilla|secretas|de[\s-]+(?:recuperaci[oó]n|respaldo|seguridad))|mnem[oó]nic[oa])/gi;
+  const SEED_NEAR =
+    /\b(?:seeds?|wallet|recovery|recover|restore|backup|ledger|crypto|bitcoin|btc|ethereum|eth|coinbase|binance|exodus|phantom|(?:12|24|twelve|twenty[\s-]?four)[\s-]+(?:\w+[\s-]+)?words|semilla|cartera|billetera|monedero|respaldo|recuperaci[oó]n|cripto|(?:12|24|doce|veinticuatro)[\s-]+(?:\w+[\s-]+)?palabras)\b/i;
+  const SEED_NEAR_BEFORE = 300;
+  const SEED_NEAR_AFTER = 100;
+  // The number in front of a list word, as in "3. word", "3) word", "3: word", "#3 word" or "3 word".
+  const SEED_NUMBER = /(?:^|\D)(\d{1,2})[.):]?\s*$/;
+  // What can sit between two words of a phrase: spaces, line breaks, numbering, commas, quotes, brackets, pipes,
+  // slashes and "> " email quoting (a JSON array, "a | b | c", a quoted reply). A colon only after a number.
+  const SEED_GAP = /^(?:[\s,;.)\-\d"'[\]|/>#]|(?<=\d):)*$/;
+  // A numbered list that runs 1 to n with nothing numbered n+1 after it, in any order (a grid copied column by
+  // column reads 1, 5, 9, 2, …), put back into its numbered order.
+  function numberedSeed(run, s, n) {
+    if (s + n > run.length || (s + n < run.length && run[s + n].num === n + 1)) return null;
+    const ordered = new Array(n);
+    for (let i = s; i < s + n; i++) {
+      const k = run[i].num;
+      if (!k || k > n || ordered[k - 1]) return null;
+      ordered[k - 1] = run[i];
+    }
+    return ordered;
+  }
+  // A run is list-shaped when commas, semicolons, full stops, dashes, pipes or slashes separate its words, or it
+  // has one word per line, as a shopping, packing or vocabulary list does. Spaces (and the odd number) make a
+  // typed phrase.
+  function listShaped(run) {
+    let lines = 0;
+    for (let i = 1; i < run.length; i++) {
+      if (/[,;.|/-]/.test(run[i].gap)) return true;
+      if (run[i].gap.includes("\n")) lines++;
+    }
+    return lines * 2 >= run.length - 1;
+  }
+
+  // Twelve or more BIP-39 list words in a row with a valid checksum is a seed phrase. Numbering, commas and
+  // line breaks between the words are fine. A run that's exactly a phrase's length is checked as a whole, and
+  // so is a numbered list running 1 to 12 (or 15, 18, 21, 24). Inside a longer run, every 12-24-word window
+  // passes the checksum about 1 time in 16 by chance, so a long shopping or vocabulary list would almost always
+  // pass somewhere: those windows are only checked with seed words nearby (SEED_LABEL, SEED_NEAR). Without them,
+  // a run typed with spaces still has its first and last 12 and 24 words checked when at most SEED_EXTRA_WORDS
+  // other list words sit next to the phrase (prose around a pasted phrase: "send abuse boss … tattoo"), or when
+  // the run is longer than any everyday list (a phrase pasted after a dump of list words), and the phrase can
+  // start anywhere among up to SEED_PROSE_WORDS everyday words at either end ("can you check this … please").
+  // A comma, bullet or one-per-line list is checked only when it's exactly a phrase's length.
+  // `labelled` is true when a SEED_LABEL sits outside `text`: a paste too large to read in one go is read a window
+  // at a time (detector.js), and when the window that holds a phrase and its label finds the phrase near a seam, the
+  // window on the seam's other side, which reads the phrase whole but can't see the label, is told about it.
+  function findSeedPhrases(text, labelled) {
     const found = [];
     let run = [];
     let lastEnd = -1;
+    let labels = null;
+    const report = (window) => {
+      let start = window[0].start;
+      let end = window[0].end;
+      for (const w of window) {
+        if (w.start < start) start = w.start;
+        if (w.end > end) end = w.end;
+      }
+      found.push(text.slice(start, end));
+    };
+    const check = (window) => window && bip39ChecksumValid(window.map((w) => w.word)) && (report(window), true);
+    // The first and last 12 and 24 words of a run typed with spaces (see above). Both ends, always: the other
+    // words plus the start of a phrase pass the checksum by chance 1 time in 16, and that mustn't hide the phrase.
+    // Then, when everyday words lead into or trail off the run ("can you check this … please"), every place the
+    // phrase could start among them, as long as the window itself isn't mostly everyday words.
+    const atEnds = (words) => {
+      for (const n of [24, 12]) {
+        const extra = words.length - n;
+        if (extra <= 0) continue;
+        const ends = extra <= SEED_EXTRA_WORDS || words.length > SEED_SHORT_RUN;
+        if (ends) {
+          check(words.slice(0, n));
+          check(words.slice(extra));
+        }
+        const everyday = (w) => EVERYDAY_LIST_WORDS.has(w.word);
+        let lead = 0;
+        while (lead < extra && lead < SEED_PROSE_WORDS && everyday(words[lead])) lead++;
+        let trail = 0;
+        while (trail < extra && trail < SEED_PROSE_WORDS && everyday(words[words.length - 1 - trail])) trail++;
+        for (let s = Math.max(0, extra - trail); s <= lead; s++) {
+          if (ends && (s === 0 || s === extra)) continue;
+          const window = words.slice(s, s + n);
+          if (window.filter(everyday).length * 2 <= n) check(window);
+        }
+      }
+    };
+    // "seed" and "phrase" are list words themselves, so a label also counts as a run's first or last two words
+    // ("seed phrase abuse boss …"). A lone "seed" in a gardening list doesn't vouch for the list it's in.
+    const hasContext = () => {
+      if (labelled) return true;
+      const head = run[Math.min(2, run.length - 1)].start;
+      const tail = run[Math.max(0, run.length - 3)].end;
+      if (!labels) labels = [...text.matchAll(SEED_LABEL)].map((m) => [m.index, m.index + m[0].length]);
+      if (labels.some(([a, b]) => a < head || b > tail)) return true;
+      const before = text.slice(Math.max(0, run[0].start - SEED_NEAR_BEFORE), run[0].start);
+      const after = text.slice(lastItem(run).end, lastItem(run).end + SEED_NEAR_AFTER);
+      return SEED_NEAR.test(before) || SEED_NEAR.test(after);
+    };
     // Twelve number words in a row, like someone reading out a card number, are a number, not a seed phrase.
     const allNumbers = () => run.every((w) => ALL_WORDS[w.word] !== undefined);
     const close = () => {
       if (run.length >= 12 && !allNumbers()) {
-        for (const window of seedWindows(run)) found.push(text.slice(window[0].start, lastItem(window).end));
+        const before = found.length;
+        for (let s = 0; s < run.length; s++) {
+          if (run[s].num !== 1) continue;
+          for (const n of SEED_LENGTHS) check(numberedSeed(run, s, n));
+        }
+        if (found.length === before) {
+          if (hasContext()) {
+            for (const window of seedWindows(run)) report(window);
+          } else {
+            if (SEED_LENGTHS.includes(run.length)) check(run);
+            if (found.length === before && !listShaped(run)) {
+              atEnds(run);
+              // Each line on its own too, for a phrase on a line of its own after other list words ("private
+              // key abuse boss …" twice, one per line).
+              let from = 0;
+              for (let i = 1; i <= run.length; i++) {
+                if (i < run.length && !run[i].gap.includes("\n")) continue;
+                if (from > 0 || i < run.length) {
+                  const line = run.slice(from, i);
+                  if (SEED_LENGTHS.includes(line.length)) check(line);
+                  atEnds(line);
+                }
+                from = i;
+              }
+            }
+          }
+        }
       }
       run = [];
     };
     for (const m of text.matchAll(/[A-Za-z]+/g)) {
       const word = m[0].toLowerCase();
-      const w = { start: m.index, end: m.index + m[0].length, word };
-      const gapOk = lastEnd < 0 || /^[\s,;.)\-\d]*$/.test(text.slice(lastEnd, w.start));
+      const gap = text.slice(Math.max(lastEnd, 0), m.index);
+      const number = SEED_NUMBER.exec(gap.length > 8 ? gap.slice(-8) : gap);
+      const w = { start: m.index, end: m.index + m[0].length, word, gap, num: number ? Number(number[1]) : 0 };
+      const gapOk = lastEnd < 0 || SEED_GAP.test(gap);
       if (!BIP39.has(word) || !gapOk) close();
       if (BIP39.has(word)) run.push(w);
       lastEnd = w.end;
@@ -2914,7 +3626,10 @@
   // Told in a sentence ("my private key is 0x…") or handed to a wallet's importprivkey command.
   const CRYPTO_KEY_RE =
     /\b(?:[A-Za-z0-9]{1,30}[_-]){0,4}(?:private|priv|wallet|secret)[\s_-]*key\b(?:\s+(?:is|was))?[\s:="'-]{0,6}((?:0x)?[0-9a-fA-F]{64}|[5KL][1-9A-HJ-NP-Za-km-z]{50,51})\b|\bimportprivkey\s+["']?[5KL][1-9A-HJ-NP-Za-km-z]{50,51}\b/gi;
-  const findCryptoSecrets = (text) => [...findSeedPhrases(text), ...[...text.matchAll(CRYPTO_KEY_RE)].map((m) => m[0])];
+  const findCryptoSecrets = (text, _reasons, labelled) => [
+    ...findSeedPhrases(text, labelled),
+    ...[...text.matchAll(CRYPTO_KEY_RE)].map((m) => m[0]),
+  ];
 
   // ---------- Private keys written as JSON Web Keys ----------
   // A private key can also show up in JWK form (RFC 7517) instead of PEM or OpenSSH, as its own object or
@@ -3255,10 +3970,12 @@
 
   // ---------- Developer secrets: connection strings, JWTs, internal addresses ----------
 
-  // A connection string like scheme://user:password@host, matched only when the password part looks real.
+  // A connection string like scheme://user:password@host, matched only when the password part looks real. A
+  // driver can follow the scheme, as in SQLAlchemy's postgresql+psycopg2:// or mysql+pymysql://, and the user
+  // name can hold an "@", as in Azure's user@server, typed as is or as user%40server.
   const CONN_SCHEME_RE =
-    /\b(?:postgres(?:ql)?|mysql|mariadb|mongodb(?:\+srv)?|redis|rediss|amqps?|mssql|sqlserver|oracle|ftp|sftp|smtp|https?):\/\//gi;
-  const CONN_USER_END = /[\s:/@]/;
+    /\b(?:postgres(?:ql)?|mysql|mariadb|mongodb|redis|rediss|amqps?|mssql|sqlserver|oracle|ftp|sftp|smtp|https?)(?:\+[a-z][a-z0-9_]{0,23})?:\/\//gi;
+  const CONN_USER_END = /[\s:/]/;
   const CONN_PASSWORD_END = /[\s@]/;
   const CONN_HOST_END = /[\s"'<>]/;
   const PLACEHOLDER_PASSWORDS = new Set([
@@ -3282,7 +3999,11 @@
     const nextPasswordEnd = new Int32Array(text.length + 1);
     let passwordEnd = text.length;
     for (let i = text.length - 1; i >= 0; i--) {
-      if (CONN_PASSWORD_END.test(text[i])) passwordEnd = i;
+      // Plain ASCII without a regex: "@", or a space, tab or line break (\s's ASCII members, 9 to 13 and 32).
+      const code = text.charCodeAt(i);
+      if (code < 128 ? code === 64 || code === 32 || (code >= 9 && code <= 13) : CONN_PASSWORD_END.test(text[i])) {
+        passwordEnd = i;
+      }
       nextPasswordEnd[i] = passwordEnd;
     }
     nextPasswordEnd[text.length] = text.length;
@@ -3307,7 +4028,10 @@
       while (end < text.length && !CONN_HOST_END.test(text[end])) end++;
 
       const password = text.slice(passwordStart, at);
+      // With an "@" in the user name, "https://me@host:8080/a@b" is a host and port, not a password.
+      const userHasAt = text.slice(scheme.index + scheme[0].length, colon).includes("@");
       if (
+        !(userHasAt && /^\d{1,5}(?:\/|$)/.test(password)) &&
         !PLACEHOLDER_PASSWORDS.has(password.toLowerCase()) &&
         !/^[<{$[%]/.test(password) &&
         !isPlaceholder(password)
@@ -3325,12 +4049,58 @@
   // Matches the private network ranges 10/8, 172.16/12 and 192.168/16, but not when they're part of a
   // longer dotted number like a version string.
   const IP_RE = /(?<![\d.])(?:10\.\d{1,3}|172\.(?:1[6-9]|2\d|3[01])|192\.168)\.\d{1,3}\.\d{1,3}(?![\d.]*\d)/g;
-  const findInternalIPs = (text) =>
-    (text.match(IP_RE) || []).filter((ip) => ip.split(".").every((o) => Number(o) <= 255));
+  // A version, firmware or build number is dotted the same way, so "Firmware 10.5.14.31", "upgrade from 10.2.3.4",
+  // "v10.1.2.3" and the "to" side of "from 10.2.3.4 to 10.2.3.5" aren't addresses. The version word has to be right
+  // before the number, or an upgrade a package name and "from" or "to" back: "the new version is up on 10.2.3.4" and
+  // "build server at 10.2.3.4" are still servers.
+  const VERSION_BEFORE =
+    /(?:(?<![\p{L}])(?:version|ver|firmware|fw|build|release[ds]?|rev|revision|kernel|sdk)(?:\s+(?:is|was|number|no\.?))?|(?<![\p{L}])(?:upgrade[ds]?|upgrading|downgrade[ds]?|bump(?:ed|s|ing)?)(?:\s+[^\s\d]\S{0,40})?\s+(?:from|to))[\s:=#[(]*v?$/iu;
+  function findInternalIPs(text) {
+    const found = [];
+    let versionEnd = -1;
+    for (const m of text.matchAll(IP_RE)) {
+      if (!m[0].split(".").every((o) => Number(o) <= 255)) continue;
+      const before = text.slice(Math.max(0, m.index - 60), m.index);
+      const versionTo = versionEnd >= 0 && /^\s*(?:to|->|→|=>)\s*v?$/i.test(text.slice(versionEnd, m.index));
+      if (/(?<![\p{L}])v$/iu.test(before) || VERSION_BEFORE.test(before) || versionTo) {
+        versionEnd = m.index + m[0].length;
+        continue;
+      }
+      found.push(m[0]);
+    }
+    return found;
+  }
 
   // Catches hostnames on internal-only domains, like build-01.corp, printer.local or api.internal.
   const HOST_RE =
     /\b(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.){1,8}(?:internal|corp|local|lan|intranet|localdomain|home\.arpa)\b(?![.-]?\w)/gi;
+  // Code reads like an internal hostname too. These aren't hosts: an import or namespace (kotlinx.coroutines.internal,
+  // Microsoft.AspNetCore.Internal, com.acme.billing.internal), a member read or set in code (this.internal,
+  // if(spec.local), node.local = true), a Django settings.local module, and the names Docker and Kubernetes give every
+  // install (host.docker.internal, redis.default.svc.cluster.local).
+  const PLATFORM_HOST =
+    /^(?:(?:host|gateway|kubernetes)\.docker\.internal|.*\.cluster\.local|(?:\w+\.)?settings\.local)$/i;
+  const CODE_LINE = /(?:^|\n)\s*(?:import|from|using|package|namespace|@import|#include)\s[^\n]*$/;
+  const REVERSE_DNS_START = /^(?:com|org|net|io|dev|co|me|uk|de|kotlinx|kotlin|java|javax|android|androidx|jakarta)$/i;
+  const MEMBER_OWNER =
+    /^(?:this|self|spec|node|t|e|n|r|o|s|ctx|props|state|module|exports|window|document|opts|options|cfg|config)$/;
+  const MEMBER_ALWAYS = /^(?:this|self)$/;
+  function codeHostName(text, at, host) {
+    if (PLATFORM_HOST.test(host)) return true;
+    const labels = host.split(".");
+    if (labels.some((l) => /[a-z][A-Z]/.test(l)) || /^[A-Z][a-z]+$/.test(lastItem(labels))) return true;
+    if (labels.length >= 3 && REVERSE_DNS_START.test(labels[0])) return true;
+    const before = text.slice(Math.max(0, at - 200), at);
+    if (CODE_LINE.test(before)) return true;
+    if (labels.length === 2 && MEMBER_OWNER.test(labels[0])) {
+      if (MEMBER_ALWAYS.test(labels[0])) return true;
+      const after = text.slice(at + host.length, at + host.length + 3);
+      if (/^\s*(?:=(?!=)|[);?,}\]&|])/.test(after) || /(?:[(!]|\b(?:return|if|typeof))\s*$/.test(before)) return true;
+    }
+    return false;
+  }
+  const findInternalHosts = (text) =>
+    [...text.matchAll(HOST_RE)].filter((m) => !codeHostName(text, m.index, m[0])).map((m) => m[0]);
 
   // An AWS secret access key only has a recognizable shape beside its labeled access key ID.
   const AWS_PAIR_CHARS = 200;
@@ -3370,19 +4140,23 @@
   // "AB-######" is stored as a shape instead (# for a digit, @ for a letter), and phone, email and address
   // entries are value fingerprints, matched in content.js against whatever the regular patterns found.
 
-  let vault = null; // { salt, words: Map(fp → type), maxWords, shapes: [{ type, re, near }] }
+  let vault = null; // { salt, words: Map(fp → type), maxWords, shapes: [{ type, re, whole, near }] }
   let vaultHits = { text: null, hits: [] };
 
   // Turns a shape into a regular expression built only from literal characters plus a digit class for each
   // # and a letter class for each @, with no repeats, choices or groups to backtrack through. A shape is at
   // most 40 characters (MAX_SHAPE), so a team's own formats can never make matching slow.
   const MAX_SHAPE = 40;
-  function shapeToRegExp(shape) {
-    const body = [...shape]
+  const shapeBody = (shape) =>
+    [...shape]
       .map((ch) => (ch === "#" ? "\\d" : ch === "@" ? "[A-Za-z]" : ch.replace(/[.*+?^${}()|[\]\\/-]/g, "\\$&")))
       .join("");
-    return new RegExp(String.raw`(?<![\w-])${body}(?![\w-])`, "gi");
-  }
+  const shapeToRegExp = (shape) => new RegExp(String.raw`(?<![\w-])${shapeBody(shape)}(?![\w-])`, "gi");
+
+  // Whether all of `value` fits one of the saved formats, as an ID number a format found does. Cover it hides such a
+  // value everywhere it appears (detector.js isSavedWord), since the number itself would still show inside a
+  // longer word, where a saved name inside a longer word is a different word.
+  const isVaultFormat = (value) => Boolean(vault?.shapes.some(({ whole }) => whole.test(value)));
   const goodShape = (s) => typeof s === "string" && s.length <= MAX_SHAPE && !/\d/.test(s) && /[#@].*[#@]/.test(s);
 
   // A format that lists "near" words only counts when one of them shows up as a whole word within the 40
@@ -3449,7 +4223,12 @@
       salt: v.salt,
       words: new Map(words.map((e) => [e.fp, e.type])),
       maxWords: Math.min(4, Math.max(1, ...words.map((e) => e.words || 1))),
-      shapes: shapes.map((e) => ({ type: e.type, re: shapeToRegExp(e.shape), near: cleanNear(e.near) })),
+      shapes: shapes.map((e) => ({
+        type: e.type,
+        re: shapeToRegExp(e.shape),
+        whole: new RegExp(`^${shapeBody(e.shape)}$`, "i"),
+        near: cleanNear(e.near),
+      })),
     };
   }
 
@@ -3510,6 +4289,444 @@
   // Key and token labels have a distinct kind, while password labels stay in LABELLED_SECRET.
   const LABELLED_API_KEY =
     /\b(?:[A-Za-z0-9]{1,30}[_-]){0,4}(?:api[ _-]?key|[A-Za-z0-9]{1,30}[ _-](?:key|token)|client[ _-]secret|token\s+de\s+acceso)["']?\]?\s*(?:\??:\s*(?:string|str)\s*=[^\S\n]*|:\s*|=[^\S\n]*)["']?([^\s"',;]+)/gi;
+  // A setting named after a secret is often about the secret rather than holding it: token_limit, pin_memory,
+  // PASSWORD_RESET_TIMEOUT, api_key_header, password_hash_algorithm. These words after the secret's name mark that.
+  // A place or a person (_prod, _db, _admin, _root, _user) still names the secret itself, so those aren't here.
+  const ABOUT_THE_SECRET = new Set(
+    (
+      "count limit budget ttl timeout expiry expires expiration lifetime age duration interval window type types id ids " +
+      "rate fail failed length len min max size header headers required field fields algorithm algo memory policy url " +
+      "uri endpoint path file dir name names hash hashed hasher hashers version threshold digits layout prefix suffix " +
+      "param params regex pattern label placeholder hint reset mode format enabled enable disabled flag style text " +
+      "message msg error title description help input class kind schema strategy scheme method provider store manager " +
+      "location source rotation validator validation validators strength complexity retries attempts"
+    ).split(" "),
+  );
+  const LABEL_SECRET_WORD =
+    /(?:password|passwd|pwd|pass|pw|passcode|passphrase|pin|secret|token|api[_ -]?key|key|contrase(?:ñ|n)a|clave|pgpass(?:word)?|sshpass)((?:_[a-z0-9]+)*)$/i;
+  // What the value is, when it plainly isn't a secret: a flag, an empty value, a unit-bearing or decimal number, an
+  // auth scheme or a Kubernetes secret type, a YAML or CloudFormation tag, a well-known resource name, or code.
+  const NOT_A_SECRET_VALUE =
+    /^(?:true|false|yes|no|on|off|none|null|nil|undefined|nan|bearer|basic|digest|opaque|jwt|oauth2?|secretstr|secretbytes|\d+\.\d+)$/i;
+  // A number with a unit (30m, 3600s, 512mb) is a setting after a token or key label, but after a password or PIN
+  // label it can be the password itself ("pin: 2024s").
+  const UNIT_NUMBER = /^\d+(?:ms|s|m|h|d|kb|mb|gb|k|%)$/i;
+  const PASSWORD_WORD =
+    /^(?:password|passwd|pwd|pass|pw|passcode|passphrase|pin|contrase(?:ñ|n)a|clave|pgpass(?:word)?|sshpass)$/i;
+  // An auth scheme word told after a secret's label, with the credential after it: "token: Bearer …", "Basic …",
+  // GitHub's and Django REST's "Token …", Discord's "Bot …", and OAuth, Digest, JWT or Opaque.
+  const AUTH_SCHEME = /^(?:bearer|basic|digest|oauth2?|jwt|opaque|bot|token)$/i;
+  // The credential after a scheme word is the whole run up to a space, whatever marks are in it (%2B, $, !, &next=…),
+  // less the sentence's own punctuation at its end. A mark the run doesn't expect never drops it. A colon, comma or
+  // dash can sit between the scheme and the run ("Bearer: …", "Bearer - …"), and the run can be the whole next line
+  // ("token: Bearer" then the token under it), but not a setting of its own ("expires_in: 3600").
+  // A quote closing a quoted scheme word ('"Bearer" …') can sit before the run too, but not one that ends a JSON
+  // key's value with more keys after it ('"Bearer", "expires_in": …').
+  function schemeCredential(text, schemeEnd) {
+    const from = schemeEnd + (/^["'”’][^\S\r\n]+[^\s"'{[,:;]/u.test(text.slice(schemeEnd, schemeEnd + 4)) ? 1 : 0);
+    const run = /^[^\S\r\n]*(?:=>|->|[:,;=\-–—])?(?:[^\S\r\n]+|[^\S\r\n]*(\r?\n)[^\S\r\n]*)(\S+)/u.exec(
+      text.slice(from, from + 600),
+    );
+    if (!run) return null;
+    if (run[1] && (/[:=][^=]|:$/.test(run[2]) || !/^[^\S\r\n]*(?:\r?\n|$)/.test(text.slice(from + run[0].length)))) {
+      return null;
+    }
+    const lead = /^["'“‘(<[`]*/.exec(run[2])[0].length;
+    const value = run[2].slice(lead).replace(/[.,;:!?'"”’)\]}>`]+$/u, "");
+    return value ? { value, end: from + run[0].length } : null;
+  }
+  // The scheme word at the start of a value told at `at`, less a bracket before it ("(Bearer …)") and a colon, comma
+  // or dash after it, and the credential after it; null when the value doesn't start with a scheme word followed by
+  // a credential.
+  function schemeAt(text, at, value) {
+    const lead = /^[([]?/.exec(value)[0].length;
+    const word = value.slice(lead).replace(/[:,\-–—]+$/u, "");
+    if (!AUTH_SCHEME.test(word)) return null;
+    const credential = schemeCredential(text, at + lead + word.length);
+    return credential && { word, value: credential.value, end: credential.end };
+  }
+  // Base64 read without atob, which Node 14 doesn't have. The "=" padding at the end is optional.
+  const BASE64_DIGITS = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+  function base64Text(v) {
+    const padded = /=$/.test(v);
+    if (!/^[A-Za-z0-9+/]+={0,2}$/.test(v) || (padded ? v.length % 4 !== 0 : v.length % 4 === 1)) return null;
+    let bits = 0;
+    let count = 0;
+    let out = "";
+    for (const ch of v.replace(/=+$/, "")) {
+      bits = ((bits << 6) | BASE64_DIGITS.indexOf(ch)) & 0xffffff;
+      count += 6;
+      if (count >= 8) {
+        count -= 8;
+        out += String.fromCharCode((bits >> count) & 0xff);
+      }
+    }
+    return out;
+  }
+  // HTTP Basic's credential is base64 of "name:password", so one that decodes to that is a sign-in.
+  const basicSignIn = (plain) => Boolean(plain) && /^[\x21-\x7e][\x20-\x7e]*:[\x20-\x7e]*[\x21-\x7e]$/.test(plain);
+  // A constant's name that stands in for a value still to be filled in: CHANGE_ME, TODO_FIXME, REPLACE_WITH_YOURS.
+  const PLACEHOLDER_CONSTANT =
+    /(?:^|_)(?:CHANGE|CHANGEME|TODO|FIXME|TBD|TBC|REPLACE|FILL|ENTER|INSERT|ASK|HERE|XXX+|DUMMY|SAMPLE|PLACEHOLDER|REDACTED|HIDDEN|MASKED|UNSET|NOTSET)(?:_|$)/;
+  // A parameter after a scheme word isn't its credential: "Bearer, expires_in=3600", 'Digest realm="api"',
+  // "Bearer; charset=UTF-8", "OAuth oauth_consumer_key=…", or a known parameter's name with ":" or nothing after it.
+  // A token's own "=" is only base64 padding at its end, so a name and an "=" with more after it is a parameter.
+  const SCHEME_PARAMETER = /^[A-Za-z_][\w.-]*=(?!=*$)/;
+  const SCHEME_PARAMETER_NAME =
+    /^(?:realm|scope|error|error_description|error_uri|charset|expires|expires_in|expires_at|ttl|max[_-]?age|version|kid|alg|typ|nonce|cnonce|nc|qop|opaque|algorithm|stale|domain|uri|response|username|userhash|oauth_[a-z_]+|token_type|state|audience|aud|iss|sub|exp|iat|nbf)(?:[:=]|$)/i;
+  // A protocol's name and version after a scheme word: "Bearer; HTTP/1.1".
+  const PROTOCOL_VERSION = /^[A-Za-z]+\/\d+(?:\.\d+)*$/;
+  // Whether the run after "Bearer" or "Basic" is a credential: digits among its letters, random letters, or for
+  // Basic a "name:password" in base64. "Basic Authentication" or "Bearer tokens" isn't one.
+  // The standard's own example, Aladdin's "open sesame", is in every guide to Basic, and "username:password" is a
+  // placeholder.
+  // A Bearer token (RFC 6750's b64token) and Basic's base64 never hold a ":", so a run with one is a parameter or a
+  // claim told after the scheme: "Bearer, client_id:app42", "Bearer, jti:a1b2c3".
+  function schemeCredentialLike(scheme, v) {
+    if (/:/.test(v)) return false;
+    if (SCHEME_PARAMETER.test(v) || SCHEME_PARAMETER_NAME.test(v) || PROTOCOL_VERSION.test(v)) return false;
+    if (/^basic$/i.test(scheme)) {
+      const plain = base64Text(v);
+      if (plain && /^(?:aladdin:open sesame|username:password)$/i.test(plain)) return false;
+      if (basicSignIn(plain)) return true;
+    }
+    // Letters alone are a credential when they're random or switch case the way a token does ("XkfQaLmPzRtVbNw"),
+    // which the same label reads as a password without the scheme word too.
+    const caseSwitches = (v.match(/[a-z][A-Z]/g) || []).length;
+    // A setting's name in snake case with a number on the end ("expires_in3600") is the next key, not a credential.
+    if (/^[a-z]+(?:_[a-z]+)+\d*$/.test(v)) return false;
+    return (
+      (/\d/.test(v) && /[A-Za-z]/.test(v)) ||
+      (v.length >= 16 && looksRandomLetters(v)) ||
+      (v.length >= 10 && /^[A-Za-z]+$/.test(v) && caseSwitches >= 3)
+    );
+  }
+  // The text before `index` on its line, up to 200 characters, starting with "\n" when it reaches the line's start.
+  function lineBefore(text, index) {
+    const from = Math.max(0, index - 200);
+    const chunk = text.slice(from, index);
+    const lineStart = chunk.lastIndexOf("\n");
+    if (lineStart >= 0) return chunk.slice(lineStart);
+    return (from === 0 ? "\n" : "") + chunk;
+  }
+  // What follows a value only in code: an operator like ||, && or ??, a default after a type ("password: Optional[str]
+  // = None"), a comma ending the line as in an object's lines, or a bracket on the next line that closes the object or
+  // call the value sits in. A comma inside a line, a ")" or "and" is ordinary writing too.
+  // A comma ends an object's line only when the next line is code too: another "name:" or "name =", a call, a
+  // comment, or the closing bracket. "superSecret,\nthanks" ends a line of a letter.
+  const CODE_AFTER =
+    /^[^\S\r\n]*(?:\|\||&&|\?\?|=(?!=)|,[^\S\r\n]*(?:\r?\n(?:[^\S\r\n]*(?:[)}\]]|["']?[\w$.-]+["']?[^\S\r\n]*[:=(]|\/\/|\/\*|#|\.\.\.|$)|[^\S\r\n]+[\w$.]+,)|$)|\r?\n[^\S\r\n]*[)}\]])/;
+  // After a spaced " = " assignment, a semicolon or a Python "or", "and", "if" or "+" is code; an INI file's
+  // "password = superSecret" alone is not, and nor is its comment after a spaced " ; ".
+  const ASSIGNED_CODE_AFTER =
+    /^(?:;|[^\S\r\n]+;[^\S\r\n]*(?:\r?\n|$|[\w$.]+[^\S\r\n]*[=(])|[^\S\r\n]*(?:\+|or\b|and\b|if\b))/;
+  // What comes before a label in code: a declaration at the start of its line (let, const, private String) or an
+  // object (this., self.). "the final password:" or "Our public password:" is a sentence.
+  const DECLARED_BEFORE =
+    /(?:^|[\n;{(,])[^\S\n]*(?:(?:export|let|const|var|val|final|static|private|public|protected|readonly|String|string|str|auto|def)\s+)+$/;
+  // Declaration words that also start a sentence ("final password: …", "public password: …"). Before a label set
+  // with ":" they make the value a type, and a type isn't written in lower camel case like "superSecret".
+  const PROSE_DECLARATION =
+    /^(?:final|public|private|protected|static)(?:\s+(?:final|public|private|protected|static))*$/;
+  const MEMBER_BEFORE = /[.$]$/;
+  // An INI or TOML section's header on a line of its own before the label: "[database]", "[wifi]".
+  const INI_SECTION = /(?:^|\n)[^\S\r\n]*\[[A-Za-z][\w .-]*\][^\S\r\n]*\r?\n/;
+  // Generic types and the types they hold, as in a Python or TypeScript annotation: Optional[str], List[str],
+  // Annotated[str, Form()], Optional[SecretStr].
+  const TYPE_GENERIC =
+    /^(?:optional|list|dict|union|annotated|tuple|set|frozenset|sequence|mapping|mutablemapping|iterable|iterator|generator|literal|type|callable|awaitable|coroutine|classvar|final|required|notrequired|readonly|array|record|partial|promise|maybe|nullable|option|result|vec|box|rc|arc|some|ok|err|ref|cell|refcell|map|hashmap|future|lazy)$/;
+  const TYPE_WORD =
+    /^(?:str|int|float|bool|bytes|none|any|object|string|number|boolean|unknown|never|void|null|undefined|text|char|byte|long|integer|uuid|date|datetime|secretstr|secretbytes|emailstr|httpurl|anyurl|path|json|self|true|false)$/;
+  // A secret's own word inside a name: Optional[Password], Some(Token), SECRET_KEY, ADMIN_PASS.
+  const SECRET_PART =
+    /^(?:pass|passwd|pwd|password|pw|pin|key|keys|token|tokens|secret|secrets|cred|creds|credential|credentials|auth|hash|api|salt)$/i;
+  // A constant made only of a word that says "secret" and one that stresses it is a password typed in capitals:
+  // SUPER_SECRET, TOP_SECRET. CLIENT_SECRET or DB_PASS names a stored one.
+  const STRESSED_SECRET = /^(?:SUPER|TOP|VERY|ULTRA|MEGA|MOST)_SECRET$/;
+  // A word and a number spelled out, the way "hunter2" is typed in capitals: HUNTER_TWO. A step, level or phase
+  // with a number is an enum's value (PHASE_TWO, LEVEL_ONE), a test's or an account's constant is a fixture
+  // (MOCK_TWO, ADMIN_TWO, WPA_TWO), and an instruction is a placeholder (PICK_ONE, ANY_TWO).
+  // "_ONE" alone is too often "pick one" or "use one" to count.
+  const CAPS_WORD_NUMBER = /^([A-Z]{3,})_(?:TWO|THREE|FOUR|FIVE|SIX|SEVEN|EIGHT|NINE|TEN|ELEVEN|TWELVE)$/;
+  const ENUM_STEP =
+    /^(?:LEVEL|PHASE|STEP|STAGE|TIER|OPTION|VERSION|ROUND|PLAN|CASE|GROUP|CLASS|RULE|FACTOR|METHOD|SCHEME|POLICY|TEAM|ZONE|REGION|NODE|SLOT|PART|PAGE|ITEM|CHOICE|LAYER|GRADE|ROLE|BATCH|SHARD|REPLICA|PRIORITY|NUMBER|INDEX|ORDER|RANK|SIZE|SET|SIDE|AREA|PLAYER|SCREEN|FORM|FIELD|SECTION|ENTRY|STATE|STATUS|TEST|ANY|SOME|ALL|EACH|EVERY|NOT|NONE|ONLY|JUST|PICK|CHOOSE|SELECT|USE|GENERATE|CREATE|MAKE|ADD|GET|NEED|NEEDS|ENTER|INPUT|ASK|SEE|FIND|GIVE|TAKE|FIRST|LAST|NEXT|PREV|PREVIOUS|TOP|BOTTOM|PLUS|MINUS|TIMES|AUTO|MANUAL|STRATEGY|FLOW|TOTAL|DEMO|MOCK|FAKE|STUB|FIXTURE|TESTING|ADMIN|GUEST|ROOT|BACKUP|ACCOUNT|PRIMARY|SECONDARY|BUILD|SPRINT|DAY|WAVE|OAUTH|SHA|WPA)$/;
+  // Whether a constant in capitals is a password a person typed rather than an enum's value, a setting or a
+  // placeholder (SET_ME, NOT_REQUIRED, USE_SSO, MYSQL_ROOT, SOME_CONSTANT), which are far more common after a label.
+  // Only a stressed "secret" (SUPER_SECRET) or a word and a number word (HUNTER_TWO) is; a quoted "MY_SECRET_PASS" is
+  // a string typed out too.
+  function capsPassword(v, quoted) {
+    if (STRESSED_SECRET.test(v) || (quoted && /^MY_(?:(?:SUPER|TOP)_)?SECRET_PASS$/.test(v))) return true;
+    const numbered = CAPS_WORD_NUMBER.exec(v);
+    if (!numbered) return false;
+    const w = numbered[1];
+    return !(CODE_CONSTANT_PART.test(w) || SECRET_PART.test(w) || ENUM_STEP.test(w) || PLACEHOLDER_CONSTANT.test(w));
+  }
+  // Words in a constant's name that code uses and a typed password doesn't: DEFAULT_VALUE, MAX_LENGTH, EMPTY_STRING.
+  const CODE_CONSTANT_PART =
+    /^(?:DEFAULT|DEFAULTS|CONFIG|CONF|SETTING|SETTINGS|ENV|ENVIRON|VAR|VARS|VALUE|VALUES|NAME|PATH|FILE|DIR|URL|URI|HOST|PORT|USER|USERNAME|MAX|MIN|LEN|LENGTH|SIZE|EMPTY|STRING|STR|NONE|NULL|NIL|INT|BOOL|TRUE|FALSE|FIELD|FIELDS|TYPE|KIND|HEADER|PREFIX|SUFFIX|CHARS|REGEX|PATTERN|TIMEOUT|TTL|LIMIT|COUNT|MODE|FLAG|ID|KEY|DB|SQL|HTTP|HTTPS|API|APP|SERVER|CLIENT|SERVICE|CACHE|STORE|VAULT|PROD|DEV|TEST|STAGING|LOCAL|GLOBAL|CONST|INITIAL|INIT|ORIGINAL|CURRENT|OLD|NEW)$/;
+  // Objects and holders that code reads a value from, at any place in a member chain: App.Settings.Value,
+  // vault.kv.read, os.environ.get.
+  const CODE_HOLDER =
+    /^(?:settings|setting|config|configs|conf|cfg|env|environ|vault|secrets|params|request|req|client|server|instance|current|defaults|default|prefs|preferences|keys|globals|vars|variables|properties|props|attrs|attributes|fields|field|model|module|exports|process|global|locals|services|service|provider|manager|cache|storage|value|values|get|read|load|fetch|app|self|this|state|ctx|context|data|form|store|options|opts|sys|os|args|kwargs|payload|result|response|resp|res|db|api|system|environment|java|javax|microsoft|android|util|lang|security|crypto|net|io|application|credentials|creds|keychain|keyring|account|accounts|login)$/i;
+  // A part of a member chain two letters or shorter is code when it has no vowel or is a usual short name in code
+  // (kv, db, Pw, id, os); "I.love.my.dog" or "me.and.you" is a passphrase of short words.
+  const shortCodePart = (p) =>
+    p.length <= 2 && (!/[aeiouy]/i.test(p) || /^(?:id|os|io|ui|ip|op|el|ev|ex|re|ok|ai|au)$/i.test(p));
+  // A function's or index's name around a single word, and what follows its bracket: "Kitty[Paw]", "Fluffy(cat)9".
+  const BRACKETED = /^([A-Za-z_$][\w$]*)([([])([^()[\]{}]*)([)\]])([\s\S]*)$/;
+  // A constant's or an environment variable's name: DEFAULT_HASHERS, SESSION_SECRET.
+  const CONSTANT_NAME = /^[A-Z]+(?:_[A-Z]+)+$/;
+  // A variable's name in code: a secret's name with a word code uses for it, like hashedPassword or access_token.
+  // Words a person also puts in a weak password (admin, default, temp, new, user, db) aren't here.
+  const CODE_SECRET_NAME =
+    /^(?:(?:hash|hashed|encrypted|enc|salted|old|current|stored|plain|plaintext|raw|access|refresh|auth|session|csrf|jwt|input|confirm|reset|bearer|id|api)(?:password|passwd|pwd|pass|token|secret|key|pin)|(?:password|passwd|pwd|pass|token|secret|key|pin)(?:hash|hashed|encrypted|salt|input|field|value|confirm|confirmation|id|str|string|bytes|data))$/;
+  // Names that are a variable in code and a weak password typed by a person alike, read as a password after a
+  // password label.
+  const WEAK_PASSWORD_NAME = /^(?:old|current|reset|auth|session)(?:password|passwd|pwd|pass)$/;
+  // A password's word with a word code puts after it, anywhere in a longer name: resetPasswordToken,
+  // sessionPasswordHash, user_password_field.
+  const PASSWORD_THEN_CODE =
+    /(?:password|passwd|pwd)(?:hash|hashed|encrypted|salt|input|field|value|confirm|confirmation|id|str|string|bytes|data|token|key|reset|digest)$/;
+  // A function that makes or reads a secret, called around a word: Hash(pw), Decrypt(cfg), Secret(name).
+  const SECRET_FUNCTION =
+    /^(?:hash|crypt|encrypt|decrypt|encode|decode|digest|cipher|hmac|sign|bcrypt|scrypt|argon2|sha\d*|md5|base64|b64encode|b64decode|getenv|env|secret|token|password|passwd|key|apikey|credential|credentials)$/;
+  // Whether the text just before `index` is inside code: an object's "{" or a call's or index's "(" or "[" right
+  // after a name, still open. A "(" after a space or at the start is a sentence's aside: "(password: …)".
+  function insideCode(text, index) {
+    let depth = 0;
+    for (let i = index - 1; i >= 0 && i >= index - 300; i--) {
+      const c = text[i];
+      if (c === ")" || c === "]" || c === "}") depth++;
+      else if (c === "(" || c === "[" || c === "{") {
+        if (depth > 0) {
+          depth--;
+          continue;
+        }
+        return c === "{" || /[\w$.)\]]/.test(text[i - 1] || "");
+      }
+    }
+    return false;
+  }
+  // Whether a word around a word ("Kitty[Paw]", "Fluffy(cat)9") is a password rather than code. Code calls and
+  // indexes look the same as these (Field(alias), Settings[key], Some(pw), Optional[str], Inject(Config)), so this
+  // takes only what code doesn't write: letters or digits right after the closing bracket, or, in an INI file
+  // where a value is never code, a capitalised word that isn't a generic type, a secret's function or the label's
+  // word around a plain word ("[wifi]\npassword = Fluffy(cat)"). A sentence can describe code ("Set the password:
+  // Input(prompt)"), so it isn't enough.
+  function bracketedPassword(value, word, inCode, ini) {
+    if (inCode) return false;
+    const b = BRACKETED.exec(value.trim().replace(/[.,;:!?]+$/, ""));
+    if (!b) return false;
+    const [, fn, , inner, , rest] = b;
+    // A chain on the result is code: Secret(name).value, get(pw)[0].
+    if (/^(?:\.[A-Za-z_$]|[([])/.test(rest)) return false;
+    if (/^[A-Za-z0-9]/.test(rest)) return true;
+    if (rest || !ini || !/^[A-Z][a-z]+$/.test(fn) || !/^[A-Za-z]+$/.test(inner)) return false;
+    const lower = fn.toLowerCase();
+    if (TYPE_GENERIC.test(lower) || SECRET_FUNCTION.test(lower) || lower === word) return false;
+    return !TYPE_WORD.test(inner.toLowerCase()) && !/pass|pwd|token|secret|key|pin|cred|auth/i.test(inner);
+  }
+  // The word in a setting's name that says what secret it is, run together: "apikey" for API_KEY, "password".
+  function secretWordOf(settingName) {
+    const named = settingName && LABEL_SECRET_WORD.exec(settingName);
+    return named
+      ? named[0]
+          .slice(0, named[0].length - named[1].length)
+          .replace(/[_ -]/g, "")
+          .toLowerCase()
+      : "";
+  }
+  const YAML_TAG =
+    /^!(?:vault|Ref|Sub|GetAtt|ImportValue|Join|Select|Split|If|Base64|FindInMap|Equals|Condition|env|include|secret|encrypted)$/;
+  const DOMAIN_ENDING = String.raw`\.(?:com|org|net|io|app|dev|co|ai|gov|edu|me|us|uk|de|cloud|sh)`;
+  const DOMAIN_VALUE = new RegExp(String.raw`^[a-z0-9-]+(?:\.[a-z0-9-]+)*${DOMAIN_ENDING}(?:/[\w./-]*)?$`);
+  // Objects that code reads a value from, like tokenizer.eos_token or state.auth.token.
+  const CODE_OBJECT =
+    /^(?:self|this|tokenizer|response|resp|res|state|props|ctx|context|data|user|form|session|store|auth|options|opts|cfg|conf|app|sys|os|window|document|tokens|credentials|creds|payload|result|args|kwargs|jwt|crypto|bcrypt|hashlib|secrets)$/;
+  // A name in code is words, maybe with a number at the end (eos_token, getPassword, argv, v2). A random token cut at
+  // its dots has digits in the middle of its pieces, so it never reads as one.
+  const IDENT = String.raw`[A-Za-z_$][A-Za-z_$]*\d{0,3}(?![\w$])`;
+  // Code that names, reads or computes a secret instead of holding one. `settingName` is the setting's name, lower
+  // case. `around` says what's next to the value: the text before the label on its line (`before`), the text after
+  // the value (`after`), whether the label was set with a spaced " = " (`assigned`) or with any "=" (`equals`), and
+  // whether the label sits inside an object or a call (`enclosed`). People's passwords can look like code too
+  // ("Correct.Horse.Battery", "superSecret", "Fluffy(cat)9"), so a shape that both write needs code around it, and
+  // ordinary writing (a comma, a bracket, "and", an INI file's " = ") isn't that.
+  // Whether a label and its value stand alone the way a note writes them: "wifi password: myPassword". Set with "=",
+  // a quoted key ("password": …), a colon with no space after it, an indented line (an object's or YAML's member),
+  // code punctuation or a comment right after the value, or a closing bracket after blank or comment lines is code
+  // or a settings file.
+  const CODE_RIGHT_AFTER = /^[^\S\r\n]*(?:[)}\];]|\/\/|\/\*|#|,[^\S\r\n]*(?:\r?\n|$))/;
+  const CLOSES_LATER = /^[^\S\r\n]*(?:\r?\n[^\S\r\n]*(?:(?:\/\/|#|\/\*)[^\r\n]*)?)*\r?\n[^\S\r\n]*[)}\]]/;
+  function bareLabel(near, after) {
+    if (near.equals || near.quotedKey || near.tight) return false;
+    if (/^\n[^\S\n]+/.test(near.before || "")) return false;
+    return !CODE_RIGHT_AFTER.test(after) && !CLOSES_LATER.test(after);
+  }
+  // The code shapes around any variable's name, which a note doesn't write either: a quoted key with an unquoted
+  // value ("password": superSecret), or a ";", "}" or "//" comment right after it, or a closing bracket after blank
+  // or comment lines. A ")" or "," is a sentence's too: "(password: superSecret)", and so is an INI file's comment
+  // after a spaced " ; ".
+  const VARIABLE_RIGHT_AFTER = /^(?:;|[^\S\r\n]*(?:\}|\/\/|\/\*|;[^\S\r\n]*(?:\r?\n|$)))/;
+  // More of an object or a call after the value, which a note doesn't write either: a comma and another member
+  // ("email })", "...rest", a "remember: true" or "email: email" set to a literal or its own name) or a comment, a
+  // TypeScript cast ("as string", "satisfies Login"), a "+" or a "? :" around it, or indented member lines down to
+  // the bracket that closes them. A comma and a word ("thanks!", "and the guest one", "host: x") is a sentence's.
+  const MEMBERS_AFTER =
+    /^(?:[^\S\r\n]*,[^\S\r\n]*(?:\.\.\.|\/\/|\/\*|#|[A-Za-z_$][\w$]*[^\S\r\n]*[,)}]|([A-Za-z_$][\w$]*):[^\S\r\n]*(?:true|false|null|undefined|\d+|\1)(?![\w$]))|[^\S\r\n]+(?:as[^\S\r\n]+(?:const|string|number|boolean|any|unknown|[A-Z][\w$]*)(?![\w$])|satisfies[^\S\r\n]+[A-Za-z_$]|\+[^\S\r\n]+[\w$(]|\?[^\S\r\n]+[^\r\n]*?[^\S\r\n]:[^\S\r\n])|[^\S\r\n]*(?:\r?\n[^\S\r\n]+(?:,?[^\S\r\n]*["']?[\w$-]+["']?|\/\/|#|\/\*)[^\r\n]*)+\r?\n[^\S\r\n]*[)}\]])/;
+  const variableInCode = (near, after) =>
+    Boolean(near.quotedKey) ||
+    VARIABLE_RIGHT_AFTER.test(after) ||
+    CLOSES_LATER.test(after) ||
+    MEMBERS_AFTER.test(after);
+  // Whether a variable-like name stands on a bare line the way a note writes it: nothing after it up to the line's end
+  // is a code character (a bracket, "=", "+", "?", ";", a quote, "<", ">", "|", "&", "!" or a member's "."), apart
+  // from a ")" that closes a "(" opened before the label on its line ("(password: superSecret)") and a closing "!" or
+  // "?" of a sentence, and the next line that isn't blank isn't indented and doesn't start with a closing bracket.
+  // "password: superSecret, thanks" and "user: bob, password: mySecret, host: x" are bare; "password: newPassword,
+  // email })", "password: newPassword === confirm" and "password: newPassword\n  ...rest\n}" aren't. An INI file's
+  // comment after a spaced " ; " or " # " is the file's, not code.
+  // A later member set to a camelCase name ("email: emailInput", "confirm: confirmPassword") is code too; "host: x" or
+  // "wifi: HomeNet" is a note's.
+  const BARE_LINE_CODE =
+    /[(){}[\]=+;'"`<>|&]|![\w$!(=]|\?(?![^\S\r\n]*$)|\.[A-Za-z_$]|:[^\S\r\n]*[a-z][a-z\d]*[A-Z][\w$]*(?![\w$])/;
+  function bareLine(near, rest) {
+    const newline = rest.search(/\r?\n/);
+    let line = newline < 0 ? rest : rest.slice(0, newline);
+    if (near.assigned || near.ini) line = line.replace(/[^\S\r\n]+[;#][^\S\r\n][\s\S]*$/, "");
+    const before = near.before || "";
+    let opened = (before.match(/\(/g) || []).length - (before.match(/\)/g) || []).length;
+    while (opened > 0 && line.includes(")")) {
+      line = line.replace(")", "");
+      opened--;
+    }
+    if (BARE_LINE_CODE.test(line)) return false;
+    if (newline < 0) return true;
+    const next = /^(?:[^\S\r\n]*\r?\n)*([^\S\r\n]*)(\S?)/.exec(rest.slice(newline).replace(/^\r?\n/, ""));
+    return !(next && next[2] && (next[1].length > 0 || /[)}\]]/.test(next[2])));
+  }
+  function codeValue(value, settingName, around) {
+    const near = around || {};
+    const v = value.trim().replace(/[)\]}>]+$/, "");
+    // Brackets at the end that close nothing in the value, then what follows the value.
+    const open = (v.match(/[([{]/g) || []).length - (v.match(/[)\]}]/g) || []).length;
+    const closers = value.trim().slice(v.length + Math.max(0, open));
+    const after = closers + (near.after || "");
+    // A declaration before a label set with ":" makes the value a type ("private password: String"), and a type is
+    // capitalised or a built-in word, so "private password: superSecret" is a sentence's label.
+    const declaration = DECLARED_BEFORE.exec(near.before || "");
+    const declared =
+      Boolean(declaration) &&
+      (Boolean(near.equals) ||
+        !/^[a-z]/.test(v) ||
+        TYPE_WORD.test(v) ||
+        !PROSE_DECLARATION.test(declaration[0].replace(/^[\n;{(,]/, "").trim()));
+    const inCode =
+      Boolean(near.enclosed) ||
+      CODE_AFTER.test(after) ||
+      declared ||
+      MEMBER_BEFORE.test(near.before || "") ||
+      // An indented member ending in ";", as in a TypeScript class or interface: "  password: superSecret;".
+      (/^\n[^\S\n]+$/.test(near.before || "") && /^;[^\S\r\n]*(?:\r?\n|$)/.test(after)) ||
+      Boolean(near.assigned && ASSIGNED_CODE_AFTER.test(after));
+    const word = secretWordOf(settingName);
+    const passwordLabel = PASSWORD_WORD.test(word);
+    // A type after a declaration: "private password: String", "readonly token: Token".
+    if (declared && !near.equals && /^[A-Z][A-Za-z]*$/.test(v)) return true;
+    // A type named for the label's own secret inside code: "token: Token;" in an interface, "password: Password,".
+    if (inCode && word && /^[A-Z][A-Za-z]*$/.test(v) && v.toLowerCase().includes(word)) return true;
+    // A call or an index: generate_token(32, crypt($1, response.json()["…, tokens['…, sys.argv[1, hash(pw.
+    const call = new RegExp(String.raw`^(${IDENT}(?:\.${IDENT})*)(?:\(\))*([([])(.?)`).exec(v);
+    if (call) {
+      const [, name, , next] = call;
+      if (/[._]/.test(name) || /[a-z][A-Z]/.test(name) || /^[$'")\]]$/.test(next) || next === "") return true;
+      // A plain word around a word: hash(pw), creds[key], Optional[str], Field(alias), Kitty[Paw], Fluffy(cat)9.
+      if (/^[A-Za-z_]$/.test(next) && !bracketedPassword(value, word, inCode, near.ini)) return true;
+    }
+    // A member chain: tokenizer.eos_token, state.auth.token, user.password, vault.kv.read, Settings.Db.Pw,
+    // App.Settings.Value. Dotted words with nothing code-like in them ("Correct.Horse.Battery", "I.love.my.dog") are
+    // a passphrase.
+    const parts = new RegExp(String.raw`^${IDENT}(?:\.${IDENT})+$`).test(v) ? v.split(".") : null;
+    if (parts) {
+      const last = parts[parts.length - 1].toLowerCase();
+      if (
+        parts.some((p) => /_/.test(p) || /[a-z][A-Z]/.test(p) || shortCodePart(p) || CODE_HOLDER.test(p)) ||
+        CODE_OBJECT.test(parts[0]) ||
+        /pass|token|secret|key|pin/.test(last)
+      ) {
+        return true;
+      }
+    }
+    // A variable named for the secret: api_key, hashedPassword, DEFAULT_HASHERS. A word plus digits stays a password.
+    if (new RegExp(String.raw`^${IDENT}$`).test(v) && !/\d/.test(v)) {
+      const flat = v.replace(/_/g, "").toLowerCase();
+      const ownWord = Boolean(word) && flat.includes(word);
+      // A constant is code, a setting or a placeholder (DB_PASSWORD, SECRET_KEY, NOT_SET, USE_SSO) unless it's a
+      // password typed in capitals ("SUPER_SECRET", "HUNTER_TWO") outside code.
+      // A setting for how secret something is holds a classification: PASSWORD_LEVEL=TOP_SECRET.
+      if (CONSTANT_NAME.test(v)) {
+        return (
+          inCode ||
+          ownWord ||
+          !capsPassword(v, false) ||
+          /[_ -](?:level|classification|scope|audience|visibility)$/.test(settingName)
+        );
+      }
+      if (!(/_/.test(v) || /^[a-z]+[A-Z]/.test(v))) return false;
+      if (!ownWord && !/password|token|secret/.test(flat)) return false;
+      if (inCode) return true;
+      // Whatever the label, such a name is the variable unless it stands on a bare line ("token: newPassword, email })"
+      // is code; "password: dbPassword" is a weak password).
+      if (!bareLine(near, closers + (near.rest != null ? near.rest : near.after || ""))) return true;
+      // A name holding a password's word after a password label (newPassword, dbPassword) reads as a weak password
+      // only on a bare "password: dbPassword" line. Any sign of code or settings around it makes it the variable, and
+      // so does snake case (my_password), which is how a variable is written rather than a password.
+      if (passwordLabel && /pass|pwd/.test(flat)) {
+        if ((ownWord && /_/.test(v)) || !bareLabel(near, after)) return true;
+      }
+      if (variableInCode(near, after)) return true;
+      // A weak password reads like a variable after a password label: oldPassword, currentPassword, authPassword.
+      if (CODE_SECRET_NAME.test(flat) && !(passwordLabel && WEAK_PASSWORD_NAME.test(flat))) return true;
+      if (PASSWORD_THEN_CODE.test(flat)) return true;
+      // Nobody picks a token or a key by hand, so after a token, secret or key label a name holding that label's own
+      // word is a variable: githubToken, webhookSecret, openai_api_key. A password is picked by hand, and a weak one
+      // reads the same as a variable ("adminPassword", "superSecret"), so it's read as a password.
+      if (!passwordLabel && ownWord) return true;
+    }
+    return false;
+  }
+  // Whether a value told after a secret's label is really about the secret or code, given the label's text up to
+  // its ":" or "=". A real password ("Summer2024!", "Fluffy12", a PIN of digits) still passes.
+  function labelledNotSecret(labelText, value, around) {
+    const name = labelText
+      .replace(/\??\s*(?::\s*(?:string|str)\s*)?[:=][\s\S]*$/, "")
+      .replace(/["'\]\s]+$/, "")
+      .replace(/^.*\[["']?/, "");
+    const named = LABEL_SECRET_WORD.exec(name);
+    if (named) {
+      const suffix = named[1].toLowerCase().split("_").filter(Boolean);
+      // Vault's AppRole secret_id is itself a credential.
+      const secretId = /^secret$/i.test(named[0].slice(0, named[0].length - named[1].length)) && suffix[0] === "id";
+      if (!secretId && suffix.some((part) => ABOUT_THE_SECRET.has(part))) return true;
+      const prefix = name.slice(0, named.index).toLowerCase().split(/[_-]/).filter(Boolean);
+      if (prefix.some((part) => /^(?:max|min|num|total|count)$/.test(part))) return true;
+    }
+    const v = value.trim().replace(/[.,;:!?)\]}>]+$/, "");
+    if (NOT_A_SECRET_VALUE.test(v) || YAML_TAG.test(v) || DOMAIN_VALUE.test(v)) return true;
+    const passwordLabel = named && PASSWORD_WORD.test(named[0].slice(0, named[0].length - named[1].length));
+    if (UNIT_NUMBER.test(v) && !passwordLabel) return true;
+    if (CONSTANT_NAME.test(v) && PLACEHOLDER_CONSTANT.test(v)) return true;
+    // A quoted value is a string, not code that names the secret: password = "superSecret". A quoted constant's name
+    // is still a placeholder, an enum's value or the name of a setting (session_secret_env = "SESSION_SECRET",
+    // "password": "NOT_SET", token: "MY_API_KEY"), unless it's a password typed in capitals: password: "SUPER_SECRET".
+    if (around && around.quoted) {
+      if (!CONSTANT_NAME.test(v)) return false;
+      const word = secretWordOf(name.toLowerCase());
+      const ownWord = Boolean(word) && v.replace(/_/g, "").toLowerCase().includes(word);
+      return ownWord || !capsPassword(v, true);
+    }
+    return codeValue(value, name.toLowerCase(), around);
+  }
   const PROVIDER_CREDENTIAL_LABEL =
     /^(?:GITHUB|GH_APP_INSTALLATION|GITLAB|PERPLEXITY|SLACK|DIGITALOCEAN|HUGGINGFACE|HEROKU|1PASSWORD|OP_SERVICE_ACCOUNT|CLOUDFLARE|TWILIO)(?:_|$)/i;
   // `inTwilio` is twilioLookup of the whole text, which each caller builds once: reading the pairs again for every
@@ -3957,8 +5174,9 @@
   const RECOVERY_WORD = new RegExp(RECOVERY_LABEL, "iu");
   const BACKUP_CODE =
     /^[ \t]*([0-9]{8}|(?=[A-Za-z0-9]{6,10}$)(?=[^0-9]*[0-9])(?=[^A-Za-z]*[A-Za-z])[A-Za-z0-9]{6,10})(?:[ \t]+([0-9]{8}|(?=[A-Za-z0-9]{6,10}$)(?=[^0-9]*[0-9])(?=[^A-Za-z]*[A-Za-z])[A-Za-z0-9]{6,10}))?[ \t]*$/;
-  function findBackupCodes(text) {
-    if (!RECOVERY_WORD.test(text)) return [];
+  // `labelled`: true when that wording sits outside `text`, a window of a large paste, as for findSeedPhrases.
+  function findBackupCodes(text, _reasons, labelled) {
+    if (!labelled && !RECOVERY_WORD.test(text)) return [];
     const found = [];
     let runStart = -1;
     let runEnd = -1;
@@ -4037,8 +5255,23 @@
     }
     return secretValuePatterns.some((pattern) => pattern.test(value));
   }
+  // Trailing dots and closing brackets end a sentence or an aside, but a bracket that closes one the value opened is
+  // part of it: "Hello(World)", "Pass[word]".
+  const OPENER = { ")": "(", "]": "[", "}": "{", ">": "<" };
+  function trimValueEnd(raw) {
+    let end = raw.length;
+    while (end > 0 && /[.)\]}>]/.test(raw[end - 1])) {
+      const opener = OPENER[raw[end - 1]];
+      if (opener) {
+        const head = raw.slice(0, end - 1);
+        if (head.split(opener).length > head.split(raw[end - 1]).length) break;
+      }
+      end--;
+    }
+    return raw.slice(0, end);
+  }
   function secretValue(raw, needsComplexity, minLength = 4) {
-    const v = trimTrailing(raw, /[.)\]}>]/);
+    const v = trimValueEnd(raw);
     if (v.length < minLength || (v.length > 128 && !longToken(v)) || NOT_A_SECRET.has(v.toLowerCase())) return null;
     if (/^[*•x.#-]+$/i.test(v) || /^[<{$[%(]/.test(v) || isPlaceholder(v)) return null; // masked, template, placeholder
     // Code that reads the secret from somewhere else: process.env.X, os.environ[…], config.x.
@@ -4049,7 +5282,12 @@
     ) {
       return null;
     }
-    if (/[[(]$/.test(v)) return null; // code that continues on the next token: request.form['…'], getpass(
+    // Code that continues on the next token or calls with nothing in the brackets: request.form['…'], getpass(),
+    // Field(...).
+    if (/[[(]$|\((?:\.\.\.|…)?\)$/.test(v)) return null;
+    // A call whose name reads as code, like generate_token(32) or crypto.randomBytes(16), computes the secret.
+    const call = /^([A-Za-z_$][\w$]*(?:\.[A-Za-z_$][\w$]*)*)\(.*\)$/.exec(v);
+    if (call && /[._]|[a-z][A-Z]/.test(call[1])) return null;
     // PowerShell building or asking for the secret: the value is what comes after the cmdlet, if anything.
     if (/^(?:ConvertTo-SecureString|ConvertFrom-SecureString|Read-Host|Get-Credential|Get-Secret)$/i.test(v)) {
       return null;
@@ -4438,6 +5676,46 @@
       const at = valueStart(m);
       if (inTwilio(at, at + m[1].length)) return;
       if (isProviderCredentialLabel(m[0], labelTwilio, m[1], at)) return;
+      const whole = wholeValue(text, at, m[1]);
+      const before = lineBefore(text, m.index);
+      const labelPart = m[0].slice(0, m[0].length - m[1].length);
+      const enclosed = insideCode(text, m.index);
+      // An unquoted scheme word ("Bearer", "Basic", "Token", "Bot" …) is the scheme, and the credential is the run after
+      // it, even past a colon, comma, dash or line break: "token: Bearer …", "token: Bearer: …". That run is what gets
+      // reported and covered. "Bearer" alone ("token_type: Bearer") is a scheme name.
+      const scheme = schemeAt(text, at, whole);
+      if (scheme) {
+        const credential = scheme.value;
+        const after = text.slice(scheme.end, scheme.end + 40);
+        if (labelledNotSecret(m[0], credential, { before, after, enclosed })) return;
+        if (LOOKUP_TOKEN_LABEL.test(text.slice(Math.max(0, m.index - 40), at))) return;
+        if (schemeCredentialLike(scheme.word, credential)) add(credential, false, 8);
+        return;
+      }
+      // Judged on the whole value and what's around it, so "Bearer" alone is a scheme name and "hashedPassword," in
+      // code names the secret, while a password that looks like code ("superSecret", "Correct.Horse.Battery") is read.
+      const afterValue = text.slice(at + whole.length, at + whole.length + 40);
+      const around = {
+        before,
+        after: afterValue,
+        rest: text.slice(at + whole.length, at + whole.length + 400),
+        ini: INI_SECTION.test(text.slice(Math.max(0, m.index - 2000), m.index)),
+        assigned: /\s=/.test(labelPart),
+        equals: /=/.test(labelPart),
+        quotedKey: /["']\]?\s*(?:\??:|=)/.test(labelPart),
+        tight: /:["']?$/.test(labelPart),
+        enclosed,
+        quoted: Boolean(QUOTE_CLOSE[text[at - 1]]),
+      };
+      if (labelledNotSecret(m[0], whole, around)) return;
+      if (LOOKUP_TOKEN_LABEL.test(text.slice(Math.max(0, m.index - 40), at))) return;
+      // A quoted sentence after the label is a message or a hint ("Enter your password here"), not the password.
+      const close = QUOTE_CLOSE[text[at - 1]];
+      if (close && /^[^\S\r\n]+[^\s"'”’]/.test(text.slice(at + m[1].length, at + m[1].length + 8))) {
+        const end = text.indexOf(close, at + m[1].length);
+        const inner = end > 0 && end - at <= 128 ? text.slice(at, end) : "";
+        if (inner && !/[\r\n]/.test(inner) && wholeValue(text, at, m[1]) === m[1]) return;
+      }
       if (!addWhole(m, true)) passphraseAt(at);
     };
     for (const m of labelledSecretText.matchAll(LABELLED_SECRET)) labelledSecret(m);
@@ -4532,6 +5810,263 @@
     return out;
   }
 
+  // Provider tokens told apart by a prefix or marker their provider puts in every one, in each provider's documented
+  // length and characters. The rest of the token has to look machine-made, so a doc's "dckr_pat_your_token_here" or a
+  // body spelled out of words stays quiet. A prefix that ordinary words or names could start, like "secret_" or "fw_",
+  // asks for mixed case and a digit as well.
+  // A body with no digit reads as words when its lowercase comes in runs of several letters with vowels in them, as
+  // in "DockerHubPersonalToken". Random letters rarely do.
+  const readsAsWords = (s) => {
+    const runs = s.match(/[a-z]+/g) || [];
+    const letters = runs.join("");
+    return (
+      letters.length > 0 &&
+      letters.length >= 2.5 * runs.length &&
+      (letters.match(/[aeiou]/g) || []).length >= 0.3 * letters.length
+    );
+  };
+  // A short body drawn from letters, digits, "-" and "_" can have its runs broken up by chance, so one in mixed case
+  // with a digit also passes on its letters and digits alone.
+  const machineMade = (body) =>
+    looksRandomAnyCase(body) ||
+    (looksRandomLetters(body) && !readsAsWords(body)) ||
+    (/[-_]/.test(body) && /[A-Z]/.test(body) && /[a-z]/.test(body) && looksRandomAnyCase(body.replace(/[-_]/g, "")));
+  const strictlyRandom = (body) => looksRandom(body, Math.min(20, body.length));
+  // A prefix only one provider uses, at a fixed length, needs no digit: a random body can go without one by chance.
+  // Mixed case and the spread of random characters are enough, unless it has no digit and reads as words.
+  const randomMixedCase = (body) => {
+    const s = body.replace(/[^A-Za-z0-9]/g, "");
+    return /[A-Z]/.test(s) && /[a-z]/.test(s) && entropy(s) >= 3.5 && (/\d/.test(s) || !readsAsWords(s));
+  };
+  const ownPrefix = (body) => machineMade(body) || randomMixedCase(body);
+  // A token can sit between Markdown's emphasis underscores, "_token_", but not inside a longer name like "my_token".
+  const BEFORE = String.raw`(?<![A-Za-z0-9])(?<![A-Za-z0-9_]_)`;
+  const AFTER = String.raw`(?![A-Za-z0-9-])(?!_[A-Za-z0-9_-])`;
+  // [marker(s) found by indexOf, how far before the marker the token starts, source, check]. The source matches at
+  // the token's start; its first group, when it has one, is the part the check reads.
+  const PREFIXED_TOKENS = [
+    ["GOCSPX-", 0, String.raw`${BEFORE}GOCSPX-([A-Za-z0-9_-]{28})${AFTER}`, ownPrefix],
+    ["ya29.", 0, String.raw`${BEFORE}ya29\.([A-Za-z0-9_-]{40,2048})${AFTER}`],
+    // A Google refresh token.
+    ["1//0", 0, String.raw`(?<![A-Za-z0-9/:])(?<![A-Za-z0-9_]_)1//0([A-Za-z0-9_-]{60,512})${AFTER}`, strictlyRandom],
+    // A Microsoft Entra client secret: three characters, a digit, "Q~" and 31 to 34 more. A "." can be inside one
+    // but not end it, so a sentence's full stop stays out.
+    [
+      "Q~",
+      4,
+      String.raw`(?<![A-Za-z0-9~.-])(?<![A-Za-z0-9_]_)[A-Za-z0-9_~.-]{3}\dQ~([A-Za-z0-9_~.-]{30,33}[A-Za-z0-9_~-])(?![A-Za-z0-9~-])(?![_.][A-Za-z0-9_~-])`,
+      ownPrefix,
+    ],
+    // An Azure DevOps token in its 84-character form carries "AZDO" at a fixed place.
+    ["AZDO", 76, String.raw`(?<![A-Za-z0-9])[A-Za-z0-9]{76}AZDO[A-Za-z0-9]{4}(?![A-Za-z0-9])`, strictlyRandom],
+    // An Azure Container Registry password carries "+ACR" at a fixed place.
+    ["+ACR", 42, String.raw`(?<![A-Za-z0-9+/])[A-Za-z0-9+/]{42}\+ACR[A-Za-z0-9]{6}(?![A-Za-z0-9+/=])`, strictlyRandom],
+    // A Microsoft Entra refresh token.
+    [
+      ["0.A", "1.A"],
+      0,
+      String.raw`(?<![A-Za-z0-9.-])(?<![A-Za-z0-9_]_)[01]\.A([A-Za-z0-9_-]{50,4000}(?:\.\d)?\.Ag[A-Za-z0-9_-]{250,8000}(?:\.A[A-Za-z0-9_-]{200,8000})?)${AFTER}`,
+    ],
+    ["sbp_", 0, String.raw`${BEFORE}sbp_([a-z0-9]{40})${AFTER}`],
+    ["lsv2_", 0, String.raw`${BEFORE}lsv2_(?:pt|sk)_([a-f0-9]{32}_[a-f0-9]{10})${AFTER}`],
+    ["sk-lf-", 0, String.raw`${BEFORE}sk-lf-([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})${AFTER}`],
+    ["pcsk_", 0, String.raw`${BEFORE}pcsk_([A-Za-z0-9]{5,6}_[A-Za-z0-9]{63})${AFTER}`],
+    ["dckr_pat_", 0, String.raw`${BEFORE}dckr_pat_([A-Za-z0-9_-]{27})${AFTER}`, ownPrefix],
+    ["dckr_oat_", 0, String.raw`${BEFORE}dckr_oat_([A-Za-z0-9_-]{32})${AFTER}`, ownPrefix],
+    // A Notion token: 11 digits, then the random part.
+    ["ntn_", 0, String.raw`${BEFORE}ntn_\d{11}([A-Za-z0-9]{35})${AFTER}`],
+    ["secret_", 0, String.raw`${BEFORE}secret_([A-Za-z0-9]{43})${AFTER}`, strictlyRandom],
+    // An Airtable token: "pat", 14 characters, a dot and 64 hex.
+    ["pat", 0, String.raw`${BEFORE}pat([A-Za-z0-9]{14}\.[a-f0-9]{64})${AFTER}`],
+    ["ATBB", 0, String.raw`${BEFORE}ATBB([A-Za-z0-9_=-]{28,64})(?![A-Za-z0-9_=-])`],
+    ["BBDC-", 0, String.raw`${BEFORE}BBDC-([A-Za-z0-9+/_-]{44})(?![A-Za-z0-9+/=-])(?!_[A-Za-z0-9+/=_-])`],
+    // A Terraform Cloud token: 14 characters, ".atlasv1." and the secret.
+    [".atlasv1.", 14, String.raw`(?<![A-Za-z0-9])[A-Za-z0-9]{14}\.atlasv1\.([A-Za-z0-9_=-]{60,70})(?![A-Za-z0-9_=-])`],
+    [
+      "dp.",
+      0,
+      String.raw`(?<![A-Za-z0-9.])(?<![A-Za-z0-9_]_)dp\.(?:ct|pt|st(?:\.[a-z0-9_-]{2,35})?|sa|scim|audit)\.([A-Za-z0-9]{40,44})${AFTER}`,
+    ],
+    // A Discord bot token for a newer bot, whose ID in base64 starts with "O". "O" is too common to look for one at a
+    // time, so this one is a single scan.
+    [
+      null,
+      0,
+      String.raw`(?<![A-Za-z0-9])(?<![A-Za-z0-9_]_)O([A-Za-z0-9]{23,25}\.[A-Za-z0-9_-]{6}\.[A-Za-z0-9_-]{27,38})(?![A-Za-z0-9])(?!_[A-Za-z0-9_-])`,
+    ],
+    ["fw_", 0, String.raw`${BEFORE}fw_([A-Za-z0-9]{20,40})${AFTER}`, strictlyRandom],
+    ["EAAA", 0, String.raw`${BEFORE}EAAA([A-Za-z0-9_+=-]{60})(?![A-Za-z0-9+=-])(?!_[A-Za-z0-9_+=-])`],
+    ["sq0c", 0, String.raw`${BEFORE}sq0c[a-z]{2}-([A-Za-z0-9_-]{40,50})${AFTER}`, ownPrefix],
+    ["sq0atp-", 0, String.raw`${BEFORE}sq0atp-([A-Za-z0-9_-]{22})${AFTER}`, ownPrefix],
+    [
+      "access_token$",
+      0,
+      String.raw`${BEFORE}access_token\$(?:production|sandbox)\$([a-z0-9]{16}\$[a-f0-9]{32})(?![A-Za-z0-9])`,
+    ],
+    // A Facebook (Meta) access token.
+    ["EAA", 0, String.raw`${BEFORE}EAA[A-Z]([A-Za-z0-9]{100,1000})${AFTER}`, strictlyRandom],
+    // A Dropbox token.
+    [
+      "sl.",
+      0,
+      String.raw`(?<![A-Za-z0-9.])(?<![A-Za-z0-9_]_)sl\.(?:u\.)?([A-Za-z0-9_=-]{130,2000})(?![A-Za-z0-9_=-])`,
+      strictlyRandom,
+    ],
+    // A Mapbox secret token: base64 of its owner, then a random part too short to be sure of a digit in it.
+    [
+      "sk.eyJ",
+      0,
+      String.raw`(?<![A-Za-z0-9.])(?<![A-Za-z0-9_]_)sk\.eyJ[A-Za-z0-9_-]{20,400}\.([A-Za-z0-9_-]{20,100})${AFTER}`,
+      randomMixedCase,
+    ],
+    // A TestPyPI token, whose fixed start is base64 of the index's name. That start is made of characters its body
+    // allows, so the guard in front is what keeps each copy of it in a long run from scanning the rest of the run.
+    [
+      "pypi-AgENdGVzdC5weXBpLm9yZw",
+      0,
+      String.raw`(?<![A-Za-z0-9-])(?<![A-Za-z0-9_]_)pypi-AgENdGVzdC5weXBpLm9yZw([A-Za-z0-9_-]{50,4096})${AFTER}`,
+    ],
+    ["CFPAT-", 0, String.raw`${BEFORE}CFPAT-([A-Za-z0-9_-]{43})${AFTER}`],
+    ["NRAK-", 0, String.raw`${BEFORE}NRAK-([A-Z0-9]{27})${AFTER}`],
+    ["napi_", 0, String.raw`${BEFORE}napi_([a-z0-9]{64})${AFTER}`],
+    ["pscale_", 0, String.raw`${BEFORE}pscale_(?:tkn|pw|oauth)_([A-Za-z0-9_=-]{32,64})(?![A-Za-z0-9_=-])`],
+    ["figd_", 0, String.raw`${BEFORE}figd_([A-Za-z0-9_-]{40})${AFTER}`],
+    ["bkua_", 0, String.raw`${BEFORE}bkua_([a-z0-9]{40})${AFTER}`],
+    ["tfp_", 0, String.raw`${BEFORE}tfp_([A-Za-z0-9_-]{40,59})${AFTER}`],
+    ["pnu_", 0, String.raw`${BEFORE}pnu_([A-Za-z0-9]{36})${AFTER}`],
+    ["rdme_", 0, String.raw`${BEFORE}rdme_([a-z0-9]{70})${AFTER}`],
+    ["dt0c01.", 0, String.raw`${BEFORE}dt0c01\.([A-Z0-9]{24}\.[A-Z0-9]{64})(?![A-Za-z0-9])`],
+    ["EZ", 0, String.raw`${BEFORE}EZ[AT]K([A-Za-z0-9]{54})${AFTER}`],
+    ["fio-u-", 0, String.raw`${BEFORE}fio-u-([A-Za-z0-9_=-]{64})(?![A-Za-z0-9=-])(?!_[A-Za-z0-9_=-])`],
+    ["ico-", 0, String.raw`${BEFORE}ico-([A-Za-z0-9]{32})${AFTER}`, strictlyRandom],
+    ["xkeysib-", 0, String.raw`${BEFORE}xkeysib-([a-f0-9]{64}-[A-Za-z0-9]{16})${AFTER}`],
+    ["shippo_", 0, String.raw`${BEFORE}shippo_(?:live|test)_([a-f0-9]{40})${AFTER}`],
+    ["duffel_", 0, String.raw`${BEFORE}duffel_(?:live|test)_([A-Za-z0-9_-]{43})${AFTER}`],
+    // JFrog Artifactory: an API key, and a reference token, whose "cmVmd" is base64 of "ref".
+    ["AKCp", 0, String.raw`${BEFORE}AKCp([A-Za-z0-9]{69})${AFTER}`],
+    [
+      "cmVmd",
+      0,
+      String.raw`(?<![A-Za-z0-9+/])(?<![A-Za-z0-9_]_)cmVmd([A-Za-z0-9]{59})(?![A-Za-z0-9+/=-])(?!_[A-Za-z0-9_+/=-])`,
+      strictlyRandom,
+    ],
+    // An Alibaba Cloud access key ID.
+    [
+      "LTAI",
+      0,
+      String.raw`${BEFORE}LTAI([A-Za-z0-9]{20})${AFTER}`,
+      (body) => strictlyRandom(body) || randomMixedCase(body),
+    ],
+    // A ClickHouse Cloud key secret.
+    ["4b1d", 0, String.raw`${BEFORE}4b1d([A-Za-z0-9]{38})${AFTER}`, strictlyRandom],
+    // An Adobe client secret.
+    ["p8e-", 0, String.raw`${BEFORE}p8e-([A-Za-z0-9]{32})${AFTER}`],
+    // An OpenShift user token.
+    ["sha256~", 0, String.raw`${BEFORE}sha256~([A-Za-z0-9_-]{43})${AFTER}`],
+    ["tk-us-", 0, String.raw`${BEFORE}tk-us-([A-Za-z0-9_-]{48})${AFTER}`],
+    // A Harness token: "pat." or "sat.", the account, the token's ID and its secret.
+    [
+      ["pat.", "sat."],
+      0,
+      String.raw`${BEFORE}[ps]at\.([A-Za-z0-9_-]{22}\.[A-Za-z0-9]{24}\.[A-Za-z0-9]{20})(?![A-Za-z0-9])`,
+    ],
+    ["sgp_", 0, String.raw`${BEFORE}sgp_((?:[a-f0-9]{16}|local)_[a-f0-9]{40}|[a-f0-9]{40})${AFTER}`],
+    // An Octopus Deploy key.
+    ["API-", 0, String.raw`${BEFORE}API-([A-Z0-9]{26})${AFTER}`],
+    ["FLWSECK", 0, String.raw`${BEFORE}FLWSECK(?:_TEST)?-([a-h0-9]{32})-X${AFTER}`],
+    // A MaxMind licence key ends in "_mmk".
+    ["_mmk", 36, String.raw`${BEFORE}([A-Za-z0-9]{6}_[A-Za-z0-9]{29})_mmk${AFTER}`],
+    // A 42 network (intra.42.fr) client secret.
+    ["s-s4t2", 0, String.raw`${BEFORE}s-s4t2(?:ud|af)-([a-f0-9]{64})${AFTER}`],
+    ["ramp_sec_", 0, String.raw`${BEFORE}ramp_sec_([A-Za-z0-9]{48})${AFTER}`],
+    ["sm_", 0, String.raw`${BEFORE}sm_(?:aat|pat|sat)_([A-Za-z0-9]{16})${AFTER}`, ownPrefix],
+    ["nvapi-", 0, String.raw`${BEFORE}nvapi-([A-Za-z0-9_-]{64})${AFTER}`],
+    // An ElevenLabs key.
+    ["sk_", 0, String.raw`${BEFORE}sk_([a-f0-9]{48})${AFTER}`],
+  ].map(([markers, back, source, check = machineMade]) => ({
+    markers: markers && [].concat(markers),
+    back,
+    re: new RegExp(source, markers ? "y" : "g"),
+    check,
+  }));
+  // A Mailgun key in its newer form: 32 hex, then two groups of 8. Cache keys and IDs come in the same shape, so it
+  // only reads as one near the word Mailgun.
+  const MAILGUN_KEY_RE = /(?<![A-Za-z0-9_-])([0-9a-f]{32})-[0-9a-f]{8}-[0-9a-f]{8}(?![A-Za-z0-9_-])/g;
+  const MAILGUN_WORD = /mailgun/i;
+  // An Okta API token is "00" and 40 more, which only reads as one after its "SSWS" scheme or near the word Okta.
+  const OKTA_TOKEN_RE =
+    /(?<![A-Za-z0-9=-])(?<![A-Za-z0-9_]_)00([A-Za-z0-9_=-]{40})(?![A-Za-z0-9=-])(?!_[A-Za-z0-9_=-])/g;
+  const OKTA_WORD = /okta/i;
+  const SSWS_BEFORE = /\bSSWS\s{1,4}$/;
+  // An Azure DevOps token in its older form is 52 lowercase letters and digits, which only reads as one near Azure.
+  const OLD_AZURE_DEVOPS_RE = /(?<![A-Za-z0-9])[a-z0-9]{52}(?![A-Za-z0-9])/g;
+  const AZURE_WORD = /azure|devops|visualstudio/i;
+  // An Azure shared access signature: a link's sig= is the HMAC that lets anyone holding the link in, and an sv=
+  // storage version in the same query says it is Azure's. Its value is 32 bytes in base64, percent-encoded or not.
+  // HTML writes the query's "&" as "&amp;", and Go's JSON (terraform.tfstate) as "\u0026".
+  const SAS_SIG_RE = /(?:[?&]|&amp;|\\u0026)sig=([A-Za-z0-9%+/=]{40,140})/g;
+  const SAS_VERSION = /(?:^|[?&;=]|\\u0026)sv=\d{4}-\d\d-\d\d(?!\d)/;
+  const SAS_QUERY_END = /[\s"'<>;]/;
+  const queryEndsAt = (text, i) => SAS_QUERY_END.test(text[i]) && !(text[i] === ";" && text.endsWith("&amp", i));
+
+  function findPrefixedTokens(text) {
+    const found = [];
+    for (const { markers, back, re, check } of PREFIXED_TOKENS) {
+      if (!markers) {
+        for (const m of text.matchAll(re)) if (!isPlaceholder(m[0]) && check(m[1] ?? m[0])) found.push(m[0]);
+        continue;
+      }
+      for (const marker of markers) {
+        for (let at = text.indexOf(marker); at >= 0; at = text.indexOf(marker, at + 1)) {
+          if (at < back) continue;
+          re.lastIndex = at - back;
+          const m = re.exec(text);
+          if (m && !isPlaceholder(m[0]) && check(m[1] ?? m[0])) found.push(m[0]);
+        }
+      }
+    }
+    if (MAILGUN_WORD.test(text)) {
+      for (const m of text.matchAll(MAILGUN_KEY_RE)) {
+        const near = text.slice(Math.max(0, m.index - 200), m.index + m[0].length + 100);
+        if (MAILGUN_WORD.test(near) && looksRandomAnyCase(m[1])) found.push(m[0]);
+      }
+    }
+    if (text.includes("SSWS") || OKTA_WORD.test(text)) {
+      for (const m of text.matchAll(OKTA_TOKEN_RE)) {
+        const before = text.slice(Math.max(0, m.index - 200), m.index);
+        const near = SSWS_BEFORE.test(before) || OKTA_WORD.test(before + text.slice(m.index, m.index + 142));
+        if (near && !isPlaceholder(m[0]) && machineMade(m[1])) found.push(m[0]);
+      }
+    }
+    if (AZURE_WORD.test(text)) {
+      for (const m of text.matchAll(OLD_AZURE_DEVOPS_RE)) {
+        const near = text.slice(Math.max(0, m.index - 200), m.index + m[0].length + 100);
+        if (AZURE_WORD.test(near) && !isPlaceholder(m[0]) && looksRandomAnyCase(m[0])) found.push(m[0]);
+      }
+    }
+    if (text.includes("sig=")) {
+      // One query read for every sig= in it, so a query of many of them is not walked again for each.
+      let query = "";
+      let queryEnd = -1;
+      for (const m of text.matchAll(SAS_SIG_RE)) {
+        if (m.index >= queryEnd) {
+          let start = m.index;
+          const floor = Math.max(0, m.index - 2000);
+          while (start > floor && !queryEndsAt(text, start - 1)) start--;
+          queryEnd = m.index + m[0].length;
+          const ceiling = Math.min(text.length, queryEnd + 2000);
+          while (queryEnd < ceiling && !queryEndsAt(text, queryEnd)) queryEnd++;
+          query = text.slice(start, queryEnd);
+        }
+        const sig = m[1].replace(/%2B/gi, "+").replace(/%2F/gi, "/").replace(/%3D/gi, "=");
+        if (SAS_VERSION.test(query) && /^[A-Za-z0-9+/]{43}=$/.test(sig) && !isPlaceholder(sig)) {
+          found.push(m[1]);
+        }
+      }
+    }
+    return found;
+  }
+
   // `group` = the Settings section: "credentials" (keys, passwords), "personal" (info about a person),
   // or "custom" (the user's own watch list).
   // Distinct provider prefixes share one service-token kind and one Settings row.
@@ -4575,22 +6110,40 @@
       if (isProviderCredentialLabel(m[0], inTwilio, m[1], at)) return;
       if (inTwilio(at, at + m[1].length)) return;
       const lookupLabel = m[0].slice(0, m[0].length - m[1].length);
+      const labelBefore = text.slice(Math.max(0, m.index - 40), m.index) + lookupLabel;
+      if (LOOKUP_TOKEN_LABEL.test(labelBefore)) return;
+      // "stripe key: Bearer …" or "stripe key: 'Bearer …'": a scheme word starts the value, and the credential is the
+      // whole run after it.
+      let told = m[1];
+      if (AUTH_SCHEME.test(m[1].replace(/[:,\-–—]+$/u, ""))) {
+        const scheme = schemeAt(text, at, m[1]);
+        if (!scheme || !schemeCredentialLike(scheme.word, scheme.value)) return;
+        told = scheme.value;
+      }
       if (LOOKUP_KEY_LABEL.test(lookupLabel)) {
-        const rawValue = m[1].split(/\\[nrt]/)[0];
+        const rawValue = told.split(/\\[nrt]/)[0];
         const value = trimTrailing(rawValue, /[.)\]}>]/);
         const contextBefore = text
           .slice(Math.max(0, m.index - 40), m.index)
           .trimEnd()
           .toLowerCase();
         const duplicateDatabaseKey = contextBefore.endsWith("duplicate");
+        // An Azure storage account key or an AWS secret pasted as someone's bucket key is still a credential.
+        const cloudKey = /^[A-Za-z0-9+/]{40,88}={0,2}$/.test(value) && keyLike(value);
         const primaryCredential =
           /\bprimary[ _.-]key\b/i.test(lookupLabel) &&
           !duplicateDatabaseKey &&
-          ((hexKey(value) && !isPlaceholder(value)) || (/^[A-Za-z0-9+/]{40,88}={0,2}$/.test(value) && keyLike(value)));
-        if (!primaryCredential) return;
+          ((hexKey(value) && !isPlaceholder(value)) || cloudKey);
+        const storageCredential = /(?:storage|s3)[ _.-]key\b/i.test(lookupLabel) && cloudKey;
+        if (!primaryCredential && !storageCredential) return;
+      }
+      // A key named for a credential (api, access, secret, license…) is read whatever its value; any other key or
+      // token holding a name or a file path is a lookup key.
+      if (!CREDENTIAL_KEY_LABEL.test(lookupLabel) && namedValue(trimTrailing(told.split(/\\[nrt]/)[0], /[.)\]}>]/))) {
+        return;
       }
       // A JSON string's \n or \t ends the value; what follows one is read again on its own (detector.js).
-      const raw = m[1].split(/\\[nrt]/)[0];
+      const raw = told.split(/\\[nrt]/)[0];
       // A hex key's "sk-" also starts an OpenAI key, whose own rule turns it down for having no capitals.
       const hex = trimTrailing(raw, /[.)\]}>]/);
       // A public key is meant to be shared, so its label alone can't vouch for a hex value or a very long one,
@@ -4614,6 +6167,7 @@
       const value = secretValue(m[1], false, 8);
       if (value) found.push(value);
     }
+    for (const token of findPrefixedTokens(text)) found.push(token);
     return [...new Set(found)];
   }
   const NPMRC_TOKEN = /(?<![\w-]):?_authToken\s*=\s*["']?([^\s"']+)/g;
@@ -4624,9 +6178,28 @@
   // A key named for what it looks up rather than what it unlocks, like a cache, sort, partition or idempotency key or a
   // table's primary key, holds a hash or an ID, and "Cache saved with key: …" is a line of a CI log. A primary key in
   // an Azure portal can still be a real credential, so keep that label when its value has an Azure key shape.
+  // A translation, message, Redis, bucket, React, storage, env, feature-flag, hash, map or registry key names a thing too.
+  // Only said ones count: a setting named S3_KEY or STORAGE_KEY can hold the real key.
   const LOOKUP_KEY_WORD = String.raw`(?:cache|caching|sort|partition|primary|foreign|composite|object|idempotency|dedup(?:e|lication)?|lookup|row|routing|shard|range|index|search|unique|etag|checksum|with|from|by)`;
+  const SAID_LOOKUP_KEY_WORD = String.raw`(?:${LOOKUP_KEY_WORD.slice(3, -1)}|translation|i18n|l10n|locale|message|msg|redis|s3|react|storage|env|flag|hash|map|dict|registry)`;
+  // A page, cursor or CSRF token, or a model's padding and end-of-text tokens, is not a credential someone can reuse.
+  const LOOKUP_TOKEN_LABEL =
+    /(?:^|[^A-Za-z0-9])(?:next|page|continuation|pagination|cursor|csrf|xsrf|pad|eos|bos|unk|sep|cls|mask)[ _.-]token["'\]]?[^A-Za-z0-9]*$/i;
+  // The word before "key" or "token" that makes it a credential whatever its value looks like.
+  const CREDENTIAL_KEY_LABEL =
+    /(?:api|access|secret|private|license|licence|product|service|auth|client|master|signing|encryption|account|admin|deploy|app|bearer|refresh|session|personal|bot|webhook)[ _.-]?(?:key|token)["'\]]?[^A-Za-z0-9]*$/i;
+  // A value made of words and short numbers names something (user:12345:session:v2, home.hero.title_2024,
+  // ERR_TOKEN_EXPIRED_401, HKEY_LOCAL_MACHINE\SOFTWARE\…), and a file path ends in an extension. A key has random parts.
+  const NAMED_PART = /^(?:[a-z]+|[A-Z][a-z]+|[A-Za-z]+\d{1,4}|\d{1,8}|\d{1,4}[A-Za-z]{1,2})$/;
+  function namedValue(v) {
+    if (/^HKEY_[A-Z_]+\\/.test(v)) return true;
+    if (/^[A-Z]+(?:_[A-Z]+\d{0,4}|_\d{1,4}){2,}$/.test(v)) return true;
+    if (/^[\w.-]*(?:\/[\w.-]+)+\.[a-z][a-z0-9]{0,4}$/i.test(v) && !/\/\//.test(v)) return true;
+    const parts = v.split(/[:._/#\\-]/);
+    return parts.length >= 2 && parts.every((p) => NAMED_PART.test(p)) && parts.some((p) => /[a-z]{3}/i.test(p));
+  }
   const LOOKUP_KEY_LABEL = new RegExp(
-    String.raw`(?:^|[^A-Za-z0-9])${LOOKUP_KEY_WORD}[ _.-]key["'\]]?[^A-Za-z0-9]*(?:(?:string|str)[^A-Za-z0-9]*)?$`,
+    String.raw`(?:^|[^A-Za-z0-9])${SAID_LOOKUP_KEY_WORD}[ _.-]key["'\]]?[^A-Za-z0-9]*(?:(?:string|str)[^A-Za-z0-9]*)?$`,
     "i",
   );
   const LOOKUP_KEY_NAME = new RegExp(String.raw`(?:^|[_.-])${LOOKUP_KEY_WORD}[_.-]key$`, "i");
@@ -4805,7 +6378,14 @@
         if (m.startsWith("xoxe-")) return looksRandomAnyCase(m.slice(m.lastIndexOf("-") + 1));
         if (m.startsWith("xoxe.")) return looksRandomAnyCase(m.slice(m.lastIndexOf("-") + 1));
         if (m.startsWith("https://hooks.slack.com/")) return looksRandomAnyCase(m.slice(m.lastIndexOf("/") + 1));
-        return true;
+        // A bot, user or app token carries its workspace's and user's numbers, a random part, or both. Words alone
+        // ("not-a-real-token" after the prefix) or counting digits ("1234-5678-abcd") are a docs placeholder.
+        const tail = m.slice(m.lastIndexOf("-") + 1);
+        if (looksRandomAnyCase(tail) || (tail.length >= 20 && looksRandomLetters(tail))) return true;
+        // Random letters swap case often; a camelCase name ("notARealToken") only at each word.
+        if (/^[A-Za-z]{8,}$/.test(tail) && (tail.match(/[a-z][A-Z]/g) || []).length >= 3) return true;
+        const digits = m.slice(5).replace(/\D/g, "");
+        return digits.length > 0 && !isPlaceholder(digits);
       },
     },
     {
@@ -4815,9 +6395,9 @@
       name: "GitLab Token",
       severity: "high",
       regex:
-        /(?:\bglpat-[A-Za-z0-9_-]{20,300}(?:\.[a-z0-9]{9})?|\bgldt-[A-Za-z0-9_-]{20,300}|\bglcbt-(?:[0-9a-fA-F]{2}_)?[A-Za-z0-9_-]{20,300}|\bglrt-(?:t\d_[A-Za-z0-9_-]{27,300}\.[a-z0-9]{9}|[A-Za-z0-9_-]{20,300})|\bglft-[A-Za-z0-9_-]{20,300}|\bglsoat-[A-Za-z0-9_-]{20,300}|\bglagent-[A-Za-z0-9_-]{50,1024}|\bgloas-[A-Za-z0-9_-]{64})(?![A-Za-z0-9_-])/g,
+        /(?:\bglpat-[A-Za-z0-9_-]{20,300}(?:\.[a-z0-9]{9})?|\bgldt-[A-Za-z0-9_-]{20,300}|\bglcbt-(?:[0-9a-fA-F]{2}_)?[A-Za-z0-9_-]{20,300}|\bglrt-(?:t\d_[A-Za-z0-9_-]{27,300}\.[a-z0-9]{9}|[A-Za-z0-9_-]{20,300})|\bglft-[A-Za-z0-9_-]{20,300}|\bglsoat-[A-Za-z0-9_-]{20,300}|\bglagent-[A-Za-z0-9_-]{50,1024}|\bgloas-[A-Za-z0-9_-]{64}|\bglptt-[0-9a-f]{40}|\bglffct-[A-Za-z0-9_-]{20}|\bglimt-[A-Za-z0-9_-]{25}|\bGR1348941[A-Za-z0-9_-]{20})(?![A-Za-z0-9_-])/g,
       validate: (m) => {
-        const body = m.replace(/^gl(?:pat|dt|cbt|rt|ft|soat|agent|oas)-?/, "");
+        const body = m.replace(/^(?:gl(?:pat|dt|cbt|rt|ft|soat|agent|oas|ptt|ffct|imt)-?|GR1348941)/, "");
         const randomBody = body
           .replace(/\.[a-z0-9]{9}$/, "")
           .replace(/^t\d_/, "")
@@ -4908,9 +6488,14 @@
       secret: true,
       name: "Grafana Token",
       severity: "high",
-      // A service account token ends in "_" and an 8-hex checksum. A Grafana Cloud token is one base64 run.
-      regex: /\bgl(?:sa_[A-Za-z0-9]{32}_[0-9a-f]{8}\b|c_[A-Za-z0-9+/]{32,400}={0,3}(?![A-Za-z0-9+/=]))/g,
-      validate: (m) => looksRandom(m.startsWith("glsa_") ? m.slice(5, 37) : m.slice(4).replace(/=+$/, "")),
+      // A service account token ends in "_" and an 8-hex checksum. A Grafana Cloud token is one base64 run, and so is
+      // an older API key, whose "eyJrIjoi" is base64 of the start of its JSON.
+      regex:
+        /\b(?:gl(?:sa_[A-Za-z0-9]{32}_[0-9a-f]{8}\b|c_[A-Za-z0-9+/]{32,400}={0,3}(?![A-Za-z0-9+/=]))|eyJrIjoi[A-Za-z0-9]{70,400}={0,3}(?![A-Za-z0-9+/=]))/g,
+      validate: (m) => {
+        if (m.startsWith("glsa_")) return looksRandom(m.slice(5, 37));
+        return looksRandom(m.slice(m.startsWith("glc_") ? 4 : 8).replace(/=+$/, ""));
+      },
     },
     {
       id: "vault_token",
@@ -5004,12 +6589,16 @@
     // GitLab, SendGrid, Twilio, Mailgun, DigitalOcean, Telegram and Discord bots, Azure storage
     // and service-bus keys, Tailscale, Fly.io, NuGet and crates.io, and Slack or Discord
     // webhook URLs, since anyone with one of those URLs can post as the bot that owns it.
+    // The service-token row (below) also holds the provider tokens in PREFIXED_TOKENS: Google OAuth,
+    // Microsoft Entra and Azure DevOps, Azure storage signatures, Okta, and developer platforms
+    // like Docker Hub, Supabase, Notion, Terraform Cloud, Doppler and Square.
     {
       id: "crypto_secret",
       group: "credentials",
       name: "Crypto Wallet Seed or Key",
       severity: "high",
       find: findCryptoSecrets,
+      labelAnywhere: SEED_LABEL,
     },
     {
       id: "service_token",
@@ -5029,7 +6618,13 @@
     },
     { id: "jwt", group: "credentials", secret: true, name: "Login Token (JWT)", severity: "high", regex: JWT_RE },
     { id: "internal_ip", group: "credentials", name: "Internal IP Address", severity: "medium", find: findInternalIPs },
-    { id: "internal_host", group: "credentials", name: "Internal Hostname", severity: "medium", regex: HOST_RE },
+    {
+      id: "internal_host",
+      group: "credentials",
+      name: "Internal Hostname",
+      severity: "medium",
+      find: findInternalHosts,
+    },
     {
       id: "otp_secret",
       group: "credentials",
@@ -5043,6 +6638,7 @@
       name: "Backup Codes",
       severity: "high",
       find: findBackupCodes,
+      labelAnywhere: RECOVERY_WORD,
     },
     { id: "password", group: "credentials", name: "Password or Secret", severity: "high", find: findSecrets },
 
@@ -5170,6 +6766,7 @@
     isPlaceholder,
     setVault,
     vaultKinds,
+    isVaultFormat,
     addressCore,
     msg,
     cleanableParamsOf,

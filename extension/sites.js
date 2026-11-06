@@ -334,12 +334,20 @@
   // Where Clotr runs on the sites someone added themselves: for each granted host that isn't already built in,
   // either the sections they chose, or the whole host if the grant predates per-section scoping. Sites switched
   // on one by one under "Everywhere I type" come from its own entry (picksUnderEverywhere says why).
+  // Chromium ignores the path in a host permission, so a built-in section like huggingface.co/chat/* also comes
+  // back from getAll() as its whole host. That copy is the manifest's, not the person's, unless they chose a
+  // section on that host themselves. A whole-host grant there from before sections were recorded looks the same,
+  // so in Chromium it stops counting too. Firefox keeps the path and adds no such copy, so there that grant is
+  // still the person's and still listed.
   async function userSitePatterns() {
     const builtIn = new Set(builtInMatches());
+    const keepsPath = Boolean(chrome.runtime.getManifest().browser_specific_settings?.gecko);
+    const builtInHosts = new Set(keepsPath ? [] : builtInMatches().map(permissionFor));
     const { origins = [] } = await chrome.permissions.getAll();
     const { siteScopes = {} } = await chrome.storage.local.get("siteScopes");
     const granted = origins
       .filter((o) => !builtIn.has(o) && o !== EVERYWHERE_ORIGIN)
+      .filter((o) => !builtInHosts.has(o) || siteScopes[o]?.length)
       .flatMap((o) => (siteScopes[o]?.length ? siteScopes[o] : [o]));
     const picked = picksUnderEverywhere(origins, siteScopes).filter((p) => !builtIn.has(p));
     return [...new Set([...granted, ...picked])].sort();

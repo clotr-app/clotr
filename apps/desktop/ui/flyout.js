@@ -22,12 +22,11 @@
     return W.t("ws.kickerQuiet", checked);
   }
 
-  // The same Look Settings picks for the main window (main.js's applyLook), so the flyout never looks like a
-  // different app from the one it opens.
+  // The same Look Settings picks for the main window (main.js's applyLook), including old saved choices.
   function applyLook(look) {
-    if (look === "dark" || look === "light" || look === "plum" || look === "ember") {
-      document.documentElement.dataset.theme = look;
-    } else delete document.documentElement.dataset.theme;
+    if (look === "dark" || look === "ember") document.documentElement.dataset.theme = "ember";
+    else if (look === "light" || look === "plum") document.documentElement.dataset.theme = "plum";
+    else delete document.documentElement.dataset.theme;
   }
 
   // The language comes with every reading too, so Settings' Language reaches the flyout without a restart.

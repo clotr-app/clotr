@@ -8,59 +8,47 @@ const test = require("node:test");
 const assert = require("node:assert/strict");
 
 require("../extension/patterns.js");
+require("../extension/detector.js");
 require("../extension/editor.js");
 const { isChatComposer, replacementSpans } = globalThis.Clotr.editor;
 
-test("email Cover it leaves an identical phone in the Outlook quote untouched", async () => {
-  const phone = "555-555-0123";
-  const oldGlobals = { Node: globalThis.Node, document: globalThis.document, window: globalThis.window };
-  class TextNode {
-    constructor(value) {
-      this.nodeType = 3;
-      this.nodeName = "#text";
-      this.nodeValue = value;
-      this.parentNode = null;
-    }
-    get parentElement() {
-      return this.parentNode;
-    }
+// Just enough of a page to cover text in place: text and element nodes, one selection, and an insertText that
+// edits a single text node the way the browser does.
+class TextNode {
+  constructor(value) {
+    this.nodeType = 3;
+    this.nodeName = "#text";
+    this.nodeValue = value;
+    this.parentNode = null;
   }
-  class ElementNode {
-    constructor(tagName, children = []) {
-      this.nodeType = 1;
-      this.nodeName = tagName.toUpperCase();
-      this.tagName = this.nodeName;
-      this.childNodes = children;
-      this.parentNode = null;
-      this.isContentEditable = true;
-      for (const child of children) child.parentNode = this;
-    }
-    get parentElement() {
-      return this.parentNode;
-    }
-    get innerText() {
-      return this.childNodes.map((child) => (child.nodeType === 3 ? child.nodeValue : child.innerText)).join("\n");
-    }
-    focus() {}
-    contains(node) {
-      return this === node || this.childNodes.some((child) => child === node || child.contains?.(node));
-    }
+  get parentElement() {
+    return this.parentNode;
   }
+}
+class ElementNode {
+  constructor(tagName, children = []) {
+    this.nodeType = 1;
+    this.nodeName = tagName.toUpperCase();
+    this.tagName = this.nodeName;
+    this.childNodes = children;
+    this.parentNode = null;
+    this.isContentEditable = true;
+    for (const child of children) child.parentNode = this;
+  }
+  get parentElement() {
+    return this.parentNode;
+  }
+  get innerText() {
+    return this.childNodes.map((child) => (child.nodeType === 3 ? child.nodeValue : child.innerText)).join("\n");
+  }
+  focus() {}
+  contains(node) {
+    return this === node || this.childNodes.some((child) => child === node || child.contains?.(node));
+  }
+}
 
-  const replyText = new TextNode(`Jerry, My number is ${phone}.`);
-  const quoteText = new TextNode(`Please write back. Call me at ${phone}.`);
-  const reply = new ElementNode("div", [replyText]);
-  const quoteBody = new ElementNode("div", [quoteText]);
-  const appendMarker = new ElementNode("div");
-  const signature = new ElementNode("div", [new ElementNode("p", [new TextNode("Best,")])]);
-  const history = new ElementNode("div", [
-    new ElementNode("div", [new TextNode("From: Professor Example")]),
-    quoteBody,
-  ]);
-  const spacer = new ElementNode("hr");
-  const editor = new ElementNode("div", [reply, appendMarker, spacer, signature, history]);
-  new ElementNode("body", [editor]);
-  const excluded = new Set([appendMarker, spacer, signature, history]);
+async function withFakePage(fn) {
+  const oldGlobals = { Node: globalThis.Node, document: globalThis.document, window: globalThis.window };
   let selected = null;
   const listeners = new Set();
   const range = {
@@ -100,6 +88,31 @@ test("email Cover it leaves an identical phone in the Outlook quote untouched", 
   };
 
   try {
+    return await fn();
+  } finally {
+    globalThis.Node = oldGlobals.Node;
+    globalThis.document = oldGlobals.document;
+    globalThis.window = oldGlobals.window;
+  }
+}
+
+test("email Cover it leaves an identical phone in the Outlook quote untouched", async () => {
+  const phone = "555-555-0123";
+  const replyText = new TextNode(`Jerry, My number is ${phone}.`);
+  const quoteText = new TextNode(`Please write back. Call me at ${phone}.`);
+  const reply = new ElementNode("div", [replyText]);
+  const quoteBody = new ElementNode("div", [quoteText]);
+  const appendMarker = new ElementNode("div");
+  const signature = new ElementNode("div", [new ElementNode("p", [new TextNode("Best,")])]);
+  const history = new ElementNode("div", [
+    new ElementNode("div", [new TextNode("From: Professor Example")]),
+    quoteBody,
+  ]);
+  const spacer = new ElementNode("hr");
+  const editor = new ElementNode("div", [reply, appendMarker, spacer, signature, history]);
+  new ElementNode("body", [editor]);
+  const excluded = new Set([appendMarker, spacer, signature, history]);
+  await withFakePage(async () => {
     const { richTextMap } = globalThis.Clotr.editor;
     assert.equal(richTextMap(editor, excluded).text, `Jerry, My number is ${phone}.`);
     const forwardMap = richTextMap([signature, history]);
@@ -132,11 +145,7 @@ test("email Cover it leaves an identical phone in the Outlook quote untouched", 
     assert.deepEqual(overlapping.uncovered, []);
     assert.match(quoteText.nodeValue, /\[edited key\]/);
     assert.match(quoteText.nodeValue, /\[forwarded key\]/);
-  } finally {
-    globalThis.Node = oldGlobals.Node;
-    globalThis.document = oldGlobals.document;
-    globalThis.window = oldGlobals.window;
-  }
+  });
 });
 
 // Bandage kept calling with the old { pairs, excluded } shape after the scopes came in, and got "nothing changed" back,
@@ -166,6 +175,34 @@ test("replacement planning keeps editable matches when another value is outside 
       missing: [key],
     },
   );
+});
+
+// A saved word (a pair's third item says so) is swapped only where it stands as a word, so Ann's cover never turns
+// Annabelle into "[Me]abelle". Anything else is still swapped wherever it appears.
+test("replacement planning swaps a saved word only where it stands as a word", () => {
+  const text = "Ann wrote to Annabelle";
+  assert.deepEqual(replacementSpans(text, [["Ann", "[Me]", true]]), {
+    spans: [{ start: 0, end: 3, replacement: "[Me]" }],
+    missing: [],
+  });
+  assert.deepEqual(replacementSpans("Annabelle wrote", [["Ann", "[Me]", true]]), {
+    spans: [],
+    missing: ["Ann"],
+  });
+  assert.equal(replacementSpans(text, [["Ann", "[x]"]]).spans.length, 2);
+});
+
+test("in-place covering leaves a saved word inside a longer word, and doesn't call it uncovered", async () => {
+  const words = new TextNode("Ann wrote to Annabelle");
+  const editor = new ElementNode("div", [new ElementNode("div", [words])]);
+  new ElementNode("body", [editor]);
+  await withFakePage(async () => {
+    const result = await globalThis.Clotr.editor.replaceMatchesInPlace(editor, [
+      { kind: "main", root: editor, excludedNodes: new Set(), pairs: [["Ann", "[Me]", true]] },
+    ]);
+    assert.equal(words.nodeValue, "[Me] wrote to Annabelle");
+    assert.deepEqual(result, { changed: true, uncovered: [] });
+  });
 });
 
 test("isChatComposer: a chat composer, a multi-line box next to a Send button", () => {
@@ -218,4 +255,18 @@ test("user input provenance reads edits, paste data, replacement text and bounde
   assert.equal(entered, "Jane 555-555-5636");
   assert.equal(removeSourceText(entered, "555-555-5636"), "Jane ");
   assert.equal(appendSourceText("x".repeat(MAX_SOURCE_CHARS), "Jane"), `${"x".repeat(MAX_SOURCE_CHARS - 4)}Jane`);
+});
+
+test("user input provenance keeps a fix made in the middle of the text in its place", () => {
+  const { editSourceText } = globalThis.Clotr.editor;
+  // A digit put back between two others, and a letter fixed inside a name.
+  assert.equal(editSourceText("call 555-555-013", "call 555-555-013", 15, "", "2"), "call 555-555-0123");
+  assert.equal(editSourceText("Hi, I'm Rwan", "Hi, I'm Rwan", 9, "", "o"), "Hi, I'm Rowan");
+  // A wrong digit replaced in place.
+  assert.equal(editSourceText("call 555-555-0923", "call 555-555-0923", 14, "9", "1"), "call 555-555-0123");
+  // Text the page put in front never joins the stream, and the fix still lands in place after it.
+  assert.equal(editSourceText("Rwan", "page text Rwan", 11, "", "o"), "Rowan");
+  // Plain typing at the end, and a page-only box, work as before.
+  assert.equal(editSourceText("Jane", "Jane", 4, "", " Doe"), "Jane Doe");
+  assert.equal(editSourceText("", "page guess", 0, "", "x"), "x");
 });

@@ -2,7 +2,7 @@
 
 Clotr Guard checks prompts and file reads through hooks for supported AI coding assistants. You can also check a text
 file yourself or set up the Git pre-commit check. It uses the same on-device engine as Clotr's other apps. A clean
-prompt passes. Medium and high findings pause that prompt and show their kind and masked form. Low findings pass with
+prompt passes. Medium and high findings pause that prompt and show their kind. Low findings pass with
 one short line on stderr. The default lets email addresses, license plates, gamer tags and share links through. Send
 the same prompt again within two minutes to send it anyway. A new finding pauses it again.
 
@@ -12,12 +12,10 @@ assistant is allowed to send still goes to that assistant's AI service as usual.
 
 ## Runs locally
 
-Guard, including its `clotr-mcp` server, runs on your machine as a child process of your AI client and talks to it
-over stdio (standard input and output). It opens no network connection and never stores the text it scans. So you
-can resend a paused prompt, the prompt hooks keep a salted fingerprint of what they found for two minutes, never the
-text itself. MCP calls the
-side that offers tools a "server" because that's the name of its role in the protocol, not because it's a remote
-machine.
+Guard, including `clotr-mcp`, runs as a local child process and talks to your AI client over stdio (standard input
+and output). Prompt hooks keep salted fingerprints of findings for two minutes so you can resend a paused prompt.
+They never store prompt text. The MCP server makes no network calls; in MCP, "server" means the process that offers
+tools.
 
 ## Stable and preview
 
@@ -143,8 +141,12 @@ Settings. [Cline's hook guide](https://github.com/cline/cline/blob/main/.clineru
 events and platforms. Cline hooks are supported on macOS and Linux only. Other project settings files are `.claude/settings.json`,
 `.cursor/hooks.json`, `.gemini/settings.json` and `.codex/hooks.json` in the current directory.
 
-Prompt, file-read and commit checks leave personal details out by default while credentials stay checked. Add
-`--personal-details` to Guard hook setup or `commit-check` to include them. An internal network address or host name
+Prompt, file-read, shell, MCP tool and commit checks leave personal details out by default while credentials stay
+checked. Personal details are the kinds the engine groups as personal, such as names, email addresses, phone numbers,
+street addresses, national ID and passport numbers, and dates of birth. Card numbers, card security codes, gift-card
+codes and bank account numbers sit in that group too, but they're money, so Guard always checks them like a
+credential. Add `--personal-details` to Guard hook setup or `commit-check` to include the rest. An internal network
+address or host name
 counts as a personal detail here. With the option on, Guard names it in a short line but lets the prompt, read or
 commit through, since telling an assistant about your own server is ordinary work.
 
@@ -152,24 +154,34 @@ The prompt hook checks only the prompt field each tool sends to it. Claude Code 
 Cursor checks MCP arguments and shell commands. Those checks stop credentials and medium or high findings, asking you
 to decide where the tool supports a question. The Bash and shell hooks look for credentials in commands, common
 environment dumps and file readers that could print secret files. They use the same secret-file rules as reads and
-commits. They do not scan ordinary command words. File-read hooks check Claude Code's `Read`, Cursor's Agent file
+commits. They do not scan ordinary command words. They read commands the way common shells write them, so an unusual
+command can still get past them. Each shell check has limits. For globs it lists at most 8,192 folder
+entries or spends 1 second listing folders, and it looks up at most 250,000 paths or spends 2 seconds on them; past
+either, it judges the remaining paths by their names alone. A folder a reader such as `grep -r` reads in full is walked,
+up to 131,072 entries in all, within the path check's 5 seconds; a folder too big or too slow for that stops the command. If the path check runs past 5 seconds, or the whole check past 10
+seconds, Guard stops the command and its message says why. The check runs in a process of its own that Guard stops at
+the 10-second limit, so a slow drive or folder can't hold it past that. File-read hooks check Claude Code's `Read`, Cursor's Agent file
 reads, Gemini CLI's `read_file`, Windsurf Cascade's `pre_read_code` and Cline's `PreToolUse`. Binary files and folders pass without a message. Text saved as
 UTF-16, with or without a byte order mark, or in an older single-byte code page is checked like any other text. A
-larger text read checks the first 256 KiB and says the rest wasn't checked. The read hooks show only finding kinds and masked forms. Secret
+larger text read checks the first 256 KiB and says the rest wasn't checked. The read hooks show only finding kinds. Secret
 files are denied in every tool with a reason for the assistant
 and no prompt to you. In Claude Code, ordinary files with credentials ask whether to allow the read. The other tools
 stop it, because a second read would come from the assistant rather than from you, so reading the same file again
 never lets it through. Claude Code also
-gets a `Bash` hook for plain commands that print secret files or dump the environment. Gemini CLI also loads `.env` files by default. After
+gets a `Bash` and `PowerShell` hook for plain commands that print secret files or dump the environment. Gemini CLI also loads `.env` files by default. After
 `setup gemini`, Clotr prints how to turn this off with `advanced.ignoreLocalEnv` in Gemini's `settings.json`; Clotr
 does not change that setting. Hook findings never include the full value in their
 message. On Windows, Clotr keeps its repeat record in `%LOCALAPPDATA%\Clotr\guard`; other systems use their per-user
 application data folder. The record is local plain state readable by the same computer account or its processes, and
 Guard does not sync it. It holds a random salt, salted fingerprints of the findings and the time of the first warning.
-Clotr does not save prompt text or file contents. If Clotr hits an internal error while checking readable input, Guard
-lets the action through with a visible note that says it went through unchecked. Guard stops input it can't read,
-including malformed hook input and text over the size limit. Claude Code, Gemini CLI and Codex CLI give each check up to
-15 seconds.
+Clotr does not save prompt text or file contents. If Clotr hits an internal error while checking a prompt, a file read
+or an MCP tool call, Guard lets it through with a visible note that says it went through unchecked. A shell command is
+stopped instead: when its check hits an internal error or doesn't finish in time, the message says which, and a hook
+that crashes once it has started stops it as a check that didn't finish. A check of a prompt, a file read or an MCP tool call that runs out
+of time, at Guard's own 10-second limit or the engine's, doesn't let it through either: a prompt is stopped, and a read
+or tool call is put to the person (or stopped, where the assistant can't ask), with a message saying part of it wasn't
+checked. Guard stops input it can't read, including malformed hook input and text over the size limit. Claude Code,
+Gemini CLI and Codex CLI give each check up to 15 seconds.
 
 ### Search results
 
@@ -186,6 +198,8 @@ Guard follows the tools' filters when deciding whether a found file can be retur
 - Cline's `search_files` invokes ripgrep without `--hidden`, so hidden paths such as `.env` are skipped, along with
   ripgrep's normal ignored paths. If ripgrep is unavailable, Cline's fallback uses an extension allowlist and skips
   extensionless dotfiles. See [Cline's search executor](https://github.com/cline/cline/blob/main/sdk/packages/core/src/extensions/tools/executors/search.ts).
+- In both, a search glob that matches a file overrides ripgrep's ignore and hidden-file rules, so Guard counts a
+  secret file the glob matches, such as `.env` under `*`, as one the search can return.
 - Gemini's content search tries `git grep --untracked` first, which skips Git-ignored untracked files but can search
   tracked files; its system `grep` fallback can include hidden and ignored files. `names_only` returns paths only, and
   `exclude_pattern` filters matching lines, not filenames. See [Gemini's grep tool](https://github.com/google-gemini/gemini-cli/blob/main/packages/core/src/tools/grep.ts).
@@ -211,7 +225,10 @@ type prompt.txt | clotr-guard check --json
 The command prints one masked finding per line and returns 1 if it found something at or above the minimum severity.
 `--json` prints the result object, including its decision and masked findings. When nothing is found, the command
 prints "Nothing found." in a terminal and nothing at all when its output goes to another program.
-Files above 1 MiB return the same short error used when Clotr cannot check text.
+If the engine stops before the end of the text, for example after 10 seconds, the command also prints "Clotr ran out
+of time, so part of this text wasn't checked." to stderr, `--json` adds `truncated: true` and its decision is
+`block`, and the command returns 1, as for a finding, since the rest of the text wasn't checked. When Clotr can't check
+the text at all, it prints "Clotr couldn't check this text." and returns 2. Files above 1 MiB return that same error.
 
 ## Check staged Git changes
 
@@ -224,7 +241,8 @@ working copy is not scanned. `git commit --no-verify` skips Git hooks, as Git al
 
 Guard reads each staged diff separately. If one is larger than 16 MiB, it checks the first 256 KiB of added text,
 names the file, says the rest wasn't checked and stops the commit. Split the change or keep large generated files out
-of the repository. If a file's diff can't be read, Guard names that
+of the repository. A file whose added lines the engine runs out of time on is named and stops the commit the same way.
+If a file's diff can't be read, Guard names that
 file and stops the commit after checking the other staged files. Only a check that can't run at all, such as one
 outside a Git repository or with Git or Guard missing, lets the commit through with a line saying it wasn't checked.
 

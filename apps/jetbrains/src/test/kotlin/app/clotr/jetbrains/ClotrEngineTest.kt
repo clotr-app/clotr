@@ -50,6 +50,22 @@ class ClotrEngineTest : BasePlatformTestCase() {
         }
     }
 
+    fun testOneScanGivesTheSameFindingsAndRangesAsSeparateCalls() {
+        val engine = ClotrEngine.start("00112233445566778899aabbccddeeff")
+        val text = "key=AKIA4HPQ7XZ2R6TWLJ3N\nCall me at 555-555-0123 or 555-555-0123.\nagain AKIA4HPQ7XZ2R6TWLJ3N"
+        try {
+            val scan = engine.scan(text)
+            assertFalse(scan.truncated)
+            assertEquals(engine.check(text), scan.findings)
+            assertEquals(
+                engine.detectRanges(text).map { listOf(it.start, it.end, it.type, it.fp) },
+                scan.ranges.map { listOf(it.start, it.end, it.type, it.fp) },
+            )
+        } finally {
+            engine.close()
+        }
+    }
+
     fun testDetectionMatchesTheExtensionAcrossSharedDetectionCorpora() {
         val root = Path.of(System.getProperty("clotr.repoRoot"))
         // The shared corpus comes from tools/engine-parity.js, which stays private with the corpus (like Guard's

@@ -9,7 +9,7 @@ require("../extension/detector.js");
 require("../extension/decide.js");
 const { SECRET_KINDS, makeGen, makeSecrets } = require("./fixtures/secrets.js");
 const { PHONE_LIST_FALSE_ALARM } = require("./fixtures/engine-corpus.js");
-const { bestOfPair, grewMoreThan } = require("./timing.js");
+const { bestOfPair, grewMoreThan, grewEveryTime } = require("./timing.js");
 
 // The extension's own detect(), reshaped to { patternId: [matched text, …] }
 function detect(text) {
@@ -28,11 +28,11 @@ test("growth checks fail slow code: a quadratic function and a backtracking patt
     return n;
   };
   const missed = /time grew too much/;
-  assert.throws(() => assertLinear(quadratic, repeat, ["7 Oak Dr. "], 700, 3, 12), missed);
+  assert.throws(() => assertLinear(quadratic, repeat, ["7 Oak Dr. "], 700), missed);
   // This repeats the old email pattern's mistake too: without an @, it tries every start position and runs to the
   // end of the text from each one. That version took about 3 seconds on 20,000 characters of "a-a-a-…".
   const email = /[\w.-]+@[\w-]+\.\w+/;
-  assert.throws(() => assertLinear((text) => email.test(text), repeat, ["a-"], 1400, 3, 12), missed);
+  assert.throws(() => assertLinear((text) => email.test(text), repeat, ["a-"], 1400), missed);
   // The same kind of work passes when its time grows with the text: 400 passes over it, so 4 times the text takes
   // about 4 times as long.
   const linear = (t) => {
@@ -50,18 +50,24 @@ function expectNone(text) {
 
 // Checks that code reading attacker-controlled input grows linearly: 4 times the input should take about 4 times
 // the time, not 16 times (quadratic). The timing helper warms both sizes and takes the best of three in alternating
-// order, so a pause can't land on just one side of the comparison.
-function assertLinear(fn, makeInput, units, n = 8000, runs = 3, limit = 16) {
+// order, so a pause can't land on just one side of the comparison. Measured quadratic growth lands on both sides of
+// 16, so the limit sits at 10, well above linear growth and below quadratic; a unit fails only when it goes over on
+// three attempts running, which a pause on a busy machine doesn't do.
+function assertLinear(fn, makeInput, units, n = 8000, runs = 3, limit = 10) {
   for (const unit of units) {
     const smallInput = makeInput(unit, n);
     const bigInput = makeInput(unit, n * 4);
-    const [small, big] = bestOfPair(
-      () => fn(smallInput),
-      () => fn(bigInput),
-      4,
-      runs,
+    const slow = grewEveryTime(
+      () =>
+        bestOfPair(
+          () => fn(smallInput),
+          () => fn(bigInput),
+          4,
+          runs,
+        ),
+      (small, big) => grewMoreThan(small, big, limit),
     );
-    assert.ok(!grewMoreThan(small, big, limit), `${JSON.stringify(unit)}: time grew too much for 4× the input`);
+    assert.ok(!slow, `${JSON.stringify(unit)}: time grew too much for 4× the input`);
   }
 }
 
@@ -3189,6 +3195,91 @@ test("vault: your words by category (fingerprinted) and ID formats", () => {
   expectNothing("status of project falcon");
 });
 
+test("Cover it swaps a saved word only where it stands as a word; a found secret goes everywhere it appears", () => {
+  const C = globalThis.Clotr;
+  const salt = "s4lt";
+  C.setVault({
+    salt,
+    entries: [{ kind: "word", type: "my_name", fp: C.fingerprint(salt, "watch_list", "Ann"), words: 1 }],
+  });
+  try {
+    const text = "Ann asked about the annual report and Annabelle's plan.";
+    const want = "[REDACTED YOUR NAME] asked about the annual report and Annabelle's plan.";
+    assert.equal(C.redact(text, C.detect(text)), want);
+    assert.equal(C.generalize(text, C.detect(text), "en"), want);
+  } finally {
+    C.setVault(null);
+  }
+  const key = ["AKIA", "4HPQ7XZ2", "R6TWLJ3N"].join("");
+  const withKey = `key ${key} and again in id${key}`;
+  assert.ok(!C.redact(withKey, C.detect(withKey)).includes(key));
+});
+
+test("Cover it covers a value found by a saved format everywhere, even right beside other scripts' letters", () => {
+  const C = globalThis.Clotr;
+  C.setVault({ entries: [{ kind: "shape", type: "my_id", shape: "@@@######" }] });
+  const hidden = "[REDACTED YOUR ACCOUNT/ID NUMBER]";
+  try {
+    for (const [text, want] of [
+      ["社員EMP123456です", `社員${hidden}です`],
+      ["éEMP123456", `é${hidden}`],
+      ["EMP123456é", `${hidden}é`],
+      ["EMP123456 and 社員EMP123456です", `${hidden} and 社員${hidden}です`],
+      // The ID itself would still show inside a longer word, so it goes there too, once a format has found it.
+      ["EMP123456 and xEMP123456", `${hidden} and x${hidden}`],
+    ]) {
+      const found = C.detect(text);
+      assert.deepEqual(
+        found.map((r) => r.id),
+        ["my_id"],
+        text,
+      );
+      assert.equal(C.redact(text, found), want, text);
+      assert.equal(C.generalize(text, found, "en"), want, text);
+    }
+  } finally {
+    C.setVault(null);
+  }
+});
+
+test("Cover it reads a saved word's edges as detect() read them, and never leaves a found one showing", () => {
+  const C = globalThis.Clotr;
+  const salt = "s4lt";
+  C.setVault({
+    salt,
+    entries: [{ kind: "word", type: "my_name", fp: C.fingerprint(salt, "watch_list", "Ann"), words: 1 }],
+  });
+  const hidden = "[REDACTED YOUR NAME]";
+  const bs = "\\";
+  try {
+    for (const [text, want] of [
+      // In a JSON string, "\n" is a line break, so the name after it stands on its own, as detect() read it.
+      [`{"note":"hi${bs}nAnn"}`, `{"note":"hi${bs}n${hidden}"}`],
+      [`Ann and {"note":"hi${bs}nAnn"}`, `${hidden} and {"note":"hi${bs}n${hidden}"}`],
+      // "%20" in a link is a space.
+      ["https://example.com/?to=hi%20Ann", `https://example.com/?to=hi%20${hidden}`],
+      // A longer word in any script holding it is still a different word.
+      ["Ann wrote to Annéa and 社員Ann", `${hidden} wrote to Annéa and 社員Ann`],
+    ]) {
+      const found = C.detect(text);
+      assert.deepEqual(
+        found.map((r) => r.id),
+        ["my_name"],
+        text,
+      );
+      assert.equal(C.redact(text, found), want, text);
+      assert.equal(C.generalize(text, found, "en"), want, text);
+    }
+    // A name found that can't be seen standing anywhere (here, handed over with the text around it changed) is
+    // still covered wherever it appears rather than left showing.
+    const found = C.detect("Ann");
+    assert.equal(C.redact("JoAnn", found), `Jo${hidden}`);
+    assert.equal(C.generalize("JoAnn", found, "en"), `Jo${hidden}`);
+  } finally {
+    C.setVault(null);
+  }
+});
+
 // A team's own kinds come from its browser policy, so they can't live in the static PATTERNS table. setVault takes
 // them in with the vault, and detect() checks them like any other kind.
 const MATTER = { id: "team_matter_number", name: "Matter number", cover: "Matter" };
@@ -3500,10 +3591,19 @@ test("many Twilio labels and pairs scan in linear time", () => {
 
 // Spreading a list as big as the text into one call overflows the stack past about 120,000 items, and that stopped
 // every warning for the whole text. A key-shaped value made of dashes, a value pasted 130,000 times and a list of
-// 130,000 numbers each did it.
-test("a value or a list big enough to overflow the stack doesn't stop the scan", () => {
+// 130,000 numbers each did it. Scans now go 40 KB at a time, so a list from the whole text, like the 130,000 numbers
+// found in the list, is what could still be spread. The list takes about 4 seconds to scan, so on a busy machine it ran
+// past detect()'s 10-second time limit, which cut the scan short before the key. The clock stands still here, so the
+// limit can't reach it and only a thrown error can stop the scan.
+test("a value or a list big enough to overflow the stack doesn't stop the scan", (t) => {
+  const now = Date.now();
+  t.mock.method(Date, "now", () => now);
   const key = `AKIA4HPQ7XZ2R6TWLJ3N`;
-  const kindsIn = (text) => globalThis.Clotr.detect(`${text}\n${key}`).map((result) => result.id);
+  const kindsIn = (text) => {
+    const results = globalThis.Clotr.detect(`${text}\n${key}`);
+    assert.ok(!results.truncated, "the scan was cut short");
+    return results.map((result) => result.id);
+  };
   for (const value of [`ghs_1_a1${"-".repeat(200_000)}.bbbbbbbb.cccccccc`, `sk-a1B2${"-".repeat(200_000)}c3D4`]) {
     assert.ok(kindsIn(value).includes("aws_access_key"), value.slice(0, 8));
   }
@@ -3519,21 +3619,25 @@ test("a value or a list big enough to overflow the stack doesn't stop the scan",
 // else detect() does on that much text. On a busy 22-core machine the run-to-run noise on the clock alone was wider
 // than the real gap between linear and pairwise growth, however many of the slowest-of-several timings were tried.
 // Counting how many candidates the overlap check actually looks at has no such noise instead: it's a counter in
-// detector.js that detect() resets on every call, and linear growth comes out as exactly n, pairwise as exactly n²
-// (1,000 and 1,000,000 here).
+// detector.js that is reset for every scanned window, and linear growth comes out as exactly n, pairwise as exactly
+// n² (900 and 810,000 here). Both pastes have to fit in one window: a longer paste is scanned in windows, and the
+// counter would then hold only the last, smaller window's count, which can't show any growth at all.
 test("a paste with thousands of different details scans in linear time (overlap check isn't pairwise)", () => {
   const csv = (n) =>
     Array.from(
       { length: n },
       (_, i) => `Person ${i},p${i}@example.com,555-555-${String(1000 + (i % 9000)).padStart(4, "0")}`,
     ).join("\n");
-  globalThis.Clotr.detect(csv(1000));
+  const bigText = csv(900);
+  assert.ok(bigText.length <= globalThis.Clotr.DETECT_WINDOW_CHARS, "the larger paste fits in one scanned window");
+  globalThis.Clotr.detect(csv(225));
   const small = globalThis.Clotr.overlapChecks;
-  globalThis.Clotr.detect(csv(8000));
+  globalThis.Clotr.detect(bigText);
   const big = globalThis.Clotr.overlapChecks;
-  // 8 times the lines should mean about 8 times the candidates on this check. The limit of 20 times leaves room
-  // without reaching the 64 times a pairwise scan would give.
-  assert.ok(big / small < 20, `1,000 → 8,000 lines: ${small} → ${big} overlap checks`);
+  assert.ok(big >= 900, `the overlap check saw every one of the 900 lines: ${big}`);
+  // 4 times the lines should mean 4 times the candidates on this check. The limit of 8 times leaves room without
+  // reaching the 16 times a pairwise scan would give.
+  assert.ok(big / small < 8, `225 → 900 lines: ${small} → ${big} overlap checks`);
 });
 
 test("home coordinates are an address; other places are not", () => {
@@ -3773,8 +3877,28 @@ for (const id of ["connection_string", "password"]) {
   });
 }
 
+// Compares 1,000 and 4,000 characters of one repeated unit in the same run. Most patterns finish the longer text in
+// well under half a millisecond, which is too short to time, so those pass. The rest compare the times as measured:
+// dividing by a half-millisecond floor instead shrank the old email pattern's quadratic growth to about 3 times, and
+// the fuzz passed it. Only a small side too short to measure at all is raised, to a twentieth of a millisecond.
+function grewOnHostileText(p, u) {
+  const N = 1000;
+  const make = (n) => u.repeat(Math.ceil(n / u.length)).slice(0, n) + "!";
+  const smallText = make(N);
+  const bigText = make(N * 4);
+  return grewEveryTime(
+    () =>
+      bestOfPair(
+        () => (p.find ? p.find(smallText) : smallText.match(p.regex)),
+        () => (p.find ? p.find(bigText) : bigText.match(p.regex)),
+        4,
+        3,
+      ),
+    (small, big) => big.wall >= 0.5 && big.wall / Math.max(small.wall, 0.05) >= 10,
+  );
+}
+
 test("no pattern grows too fast on hostile text (ReDoS fuzz)", () => {
-  const N = 500;
   const units = [
     "a",
     "1",
@@ -3840,24 +3964,17 @@ test("no pattern grows too fast on hostile text (ReDoS fuzz)", () => {
     "plate number A1 ",
     "placas son ",
   ];
-  // Compare 500 and 2,000 characters in the same run. The best of several warmed measurements keeps a pause from
-  // making one side look slower than the other.
-  const make = (u, n) => u.repeat(Math.ceil(n / u.length)).slice(0, n) + "!";
   const slow = [];
   for (const u of units) {
     for (const p of globalThis.Clotr.PATTERNS) {
-      const smallText = make(u, N);
-      const bigText = make(u, N * 4);
-      const [small, big] = bestOfPair(
-        () => (p.find ? p.find(smallText) : smallText.match(p.regex)),
-        () => (p.find ? p.find(bigText) : bigText.match(p.regex)),
-        4,
-        3,
-      );
-      if (grewMoreThan(small, big, 16, 0.5)) slow.push(`${p.id} on ${JSON.stringify(u)} grew too fast`);
+      if (grewOnHostileText(p, u)) slow.push(`${p.id} on ${JSON.stringify(u)} grew too fast`);
     }
   }
   assert.deepEqual(slow, []);
+});
+
+test("the ReDoS fuzz catches the old email pattern's backtracking", () => {
+  assert.ok(grewOnHostileText({ id: "old_email", regex: /[\w.-]+@[\w-]+\.\w+/g }, "a-"));
 });
 
 // A label, then a huge run of spaces or line breaks, then no value, as in "password is" followed by a pasted
@@ -3867,12 +3984,22 @@ test("no pattern grows too fast on hostile text (ReDoS fuzz)", () => {
 // whole thing took quadratic time, or cubic with three such gaps: "ITIN", 5,000 spaces and a comma once took
 // about a minute. Each label below once sat in front of such a gap; "_" marks where the run goes. Add any new
 // labelled pattern's own gap here, the same way, before it ships.
-test("a label before a huge run of spaces with no value grows linearly", () => {
+let labelReads = 0;
+function readLabelled(text) {
   const C = globalThis.Clotr;
-  let runs = 0; // each run gets its own text, so no kept answer hides the work
-  const read = (text) => {
-    for (const r of C.detect(text + " ".repeat(++runs % 7))) for (const m of r.matches) C.fingerprint("s", r.id, m);
-  };
+  // each read gets its own text, so no kept answer hides the work
+  for (const r of C.detect(text + " ".repeat(++labelReads % 7))) for (const m of r.matches) C.fingerprint("s", r.id, m);
+}
+
+// 4,000 and 16,000 characters: with shorter runs, the fixed cost of every other rule in detect() hid a quadratic
+// gap's growth, and only a cubic one failed. The longer run still fits in one scanned window.
+function assertLabelGapsLinear(labels) {
+  for (const gap of [" ", "\n"]) {
+    assertLinear(readLabelled, (label, n) => label.replace("_", gap.repeat(n)), labels, 4000);
+  }
+}
+
+test("a label before a huge run of spaces with no value grows linearly", () => {
   const labels = [
     "my password is_,",
     "mi contraseña es_,",
@@ -3907,8 +4034,24 @@ test("a label before a huge run of spaces with no value grows linearly", () => {
     "transit 12345 institution_,",
     "sort code 12-34-56 account_,",
   ];
-  for (const gap of [" ", "\n"]) assertLinear(read, (label, n) => label.replace("_", gap.repeat(n)), labels, 500);
+  assertLabelGapsLinear(labels);
 });
+
+// Same sizes and limit as the labels above, for the same reason.
+function assertGapGrowsInStep(name, make) {
+  const smallText = make(4000);
+  const bigText = make(16000);
+  const slow = grewEveryTime(
+    () =>
+      bestOfPair(
+        () => globalThis.Clotr.detect(smallText),
+        () => globalThis.Clotr.detect(bigText),
+        4,
+      ),
+    (small, big) => grewMoreThan(small, big, 10),
+  );
+  assert.ok(!slow, `${name}: time grew too much for 4× the gap`);
+}
 
 test("untrusted label gaps grow in step with their length", () => {
   const sid = `AC${"A".repeat(32)}`;
@@ -3923,13 +4066,27 @@ test("untrusted label gaps grow in step with their length", () => {
     ["login followed by a missing password phrase", (n) => `username ab${" ".repeat(n)},`],
     ["incomplete Twilio credential pair", (n) => `TWILIO_ACCOUNT_SID=${sid}${" ".repeat(n)},`],
   ];
-  for (const [name, make] of cases) {
-    const [small, big] = bestOfPair(
-      () => globalThis.Clotr.detect(make(160)),
-      () => globalThis.Clotr.detect(make(640)),
-      4,
-    );
-    assert.ok(!grewMoreThan(small, big, 12), `${name}: time grew too much for 4× the gap`);
+  for (const [name, make] of cases) assertGapGrowsInStep(name, make);
+});
+
+// Both checks above must fail a gap that is only quadratic, not just a cubic one. This rule reads the spaces after
+// its label with two optional pieces, the shape described above.
+test("the label-gap checks catch a quadratic gap", () => {
+  const gap = /(?:my password is|passwort ist)[ \t]*[ \n]*([^\s,]{4,})/gi;
+  const planted = {
+    id: "planted_gap",
+    name: "Planted gap",
+    severity: "medium",
+    find: (text) => [...text.matchAll(gap)].map((m) => m[1]),
+  };
+  const { PATTERNS } = globalThis.Clotr;
+  PATTERNS.push(planted);
+  try {
+    const missed = /time grew too much/;
+    assert.throws(() => assertLabelGapsLinear(["my password is_,"]), missed);
+    assert.throws(() => assertGapGrowsInStep("planted gap", (n) => `passwort ist${" ".repeat(n)},`), missed);
+  } finally {
+    PATTERNS.splice(PATTERNS.indexOf(planted), 1);
   }
 });
 
@@ -5394,6 +5551,7 @@ test("a slow clock doesn't change what a normal message finds", () => {
   const real = Date.now.bind(Date);
   const start = real();
   let fake = start;
+  globalThis.Clotr.detect.forget(); // scan again on the slow clock, not hand back the answer kept from the baseline
   Date.now = () => (fake += 10);
   let slow;
   try {

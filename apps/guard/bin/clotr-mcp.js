@@ -2,12 +2,9 @@
 /* global require, module, process, __dirname, Buffer */
 "use strict";
 
-const fs = require("node:fs");
 const path = require("node:path");
-const vm = require("node:vm");
-const { check, ENGINE_PATH } = require("../lib/engine.js");
-const { isSecretFile } = require("../lib/secret-files.js");
-const { isNpxCachePath } = require("./clotr-guard.js");
+const { check, scan, engineContext, isPersonalKind } = require("../lib/engine.js");
+const { isNpxCachePath, isSecretPath, onMountedVolume, pathReadings } = require("./clotr-guard.js");
 
 const SERVER_NAME = "clotr";
 const NPX_CONFIG_MESSAGE =
@@ -19,8 +16,6 @@ const PROTOCOL_META = "io.modelcontextprotocol/protocolVersion";
 const SERVER_INFO_META = "io.modelcontextprotocol/serverInfo";
 const MAX_TEXT_BYTES = 64 * 1024;
 const MAX_LINE_BYTES = 256 * 1024;
-const PERSONAL_KIND =
-  /email|phone|person|name|address|ssn|social|passport|license.?plate|national.?id|account.?id|student.?id|birth|dob|vin|ip.?address/i;
 
 // The assistant is sent this list with every request, so each word in it costs the developer tokens, and a test holds
 // it to a budget. A description says when to call the tool and what comes back; the README carries the rest.
@@ -28,56 +23,86 @@ const PERSONAL_DETAILS_OPTION = {
   type: "boolean",
   description: "Also check personal details like emails. Default false.",
 };
+// Every tool reads only what it's given, keeps nothing and calls nothing outside this computer.
+const READ_ONLY = { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false };
 const TOOLS = [
   {
     name: "check_text",
+    title: "Check text",
     description:
       "Check text for credentials before it leaves this computer or goes to another tool. Returns kinds and masked forms, and blocks nothing.",
     inputSchema: {
       type: "object",
       properties: {
-        text: { type: "string" },
+        text: { type: "string", description: "The text to check, up to 64 KiB." },
         include_personal_details: PERSONAL_DETAILS_OPTION,
       },
       required: ["text"],
       additionalProperties: false,
     },
+    annotations: READ_ONLY,
   },
   {
     name: "clean_text",
-    description: "Returns text with each finding replaced by a placeholder.",
+    title: "Clean text",
+    description:
+      "Runs check_text's check and returns the text with each finding replaced by a placeholder, plus their kinds and masked forms.",
     inputSchema: {
       type: "object",
       properties: {
-        text: { type: "string" },
+        text: { type: "string", description: "The text to clean, up to 64 KiB." },
         include_personal_details: PERSONAL_DETAILS_OPTION,
       },
       required: ["text"],
       additionalProperties: false,
     },
+    annotations: READ_ONLY,
   },
   {
     name: "is_secret_file",
+    title: "Check a file path",
     description:
       "Call before reading a local file. True means Clotr treats the path as a secret file, so don't read it.",
     inputSchema: {
       type: "object",
-      properties: { path: { type: "string", maxLength: 4096 } },
+      properties: {
+        path: {
+          type: "string",
+          maxLength: 4096,
+          description: "The file's path, absolute or relative to where the server runs. The file isn't read.",
+        },
+      },
       required: ["path"],
       additionalProperties: false,
     },
+    annotations: READ_ONLY,
   },
 ];
 
-let engineContext;
-
-function getEngineContext() {
-  if (!engineContext) {
-    engineContext = vm.createContext({ console: Object.freeze({ info() {} }) });
-    vm.runInContext(fs.readFileSync(ENGINE_PATH, "utf8"), engineContext, { filename: "clotr-engine.js" });
+// An older client gets only the fields its protocol version has. The first version has neither annotations nor a
+// title, and the second has annotations with the title inside them.
+function toolsFor(protocolVersion) {
+  if (protocolVersion === "2024-11-05") {
+    return TOOLS.map((tool) => {
+      const older = { ...tool };
+      delete older.title;
+      delete older.annotations;
+      return older;
+    });
   }
-  return engineContext;
+  if (protocolVersion === "2025-03-26") {
+    return TOOLS.map(({ title, annotations, ...tool }) => ({ ...tool, annotations: { title, ...annotations } }));
+  }
+  return TOOLS;
 }
+
+// Sent once at the start, where a client may add it to the assistant's prompt.
+const INSTRUCTIONS =
+  "Clotr checks text on this computer and returns each finding's kind and a masked form, never the full value. " +
+  "Call check_text before you send text that may hold a credential to another tool or service. " +
+  "Call clean_text when you want a copy with the findings replaced. " +
+  "Call is_secret_file before you read a local file. " +
+  "Clotr checks only what you pass it and stops nothing itself.";
 
 function fail(message) {
   return { isError: true, content: [{ type: "text", text: message }] };
@@ -86,37 +111,37 @@ function fail(message) {
 function checkedText(text, includePersonalDetails) {
   if (typeof text !== "string") return { error: "text must be a string" };
   if (Buffer.byteLength(text, "utf8") > MAX_TEXT_BYTES) return { error: "Text is too large to check." };
-  const result = check(text, { site: "clotr-mcp" });
-  const selected = result.findings.filter((finding) => includePersonalDetails || !PERSONAL_KIND.test(finding.kind));
+  // One scan for both the list and, in clean_text, what gets hidden: a second scan cut short by the time limit could
+  // stop earlier and leave a listed value in the cleaned text.
+  const scanned = scan(text);
+  const result = check(text, { site: "clotr-mcp", scanned });
+  const selected = result.findings.filter((finding) => includePersonalDetails || !isPersonalKind(finding.kind));
   const jwtMasks = new Set(selected.filter((finding) => finding.kind === "jwt").map((finding) => finding.masked));
   const findings = selected.filter((finding) => !(finding.kind === "password" && jwtMasks.has(finding.masked)));
-  return { findings };
+  return { findings, found: scanned.found, ...(result.truncated ? { truncated: true } : {}) };
 }
+
+const PARTLY_CHECKED = "Clotr ran out of time, so part of this text wasn't checked.";
 
 function checkResult(text, includePersonalDetails) {
   const result = checkedText(text, includePersonalDetails);
   if (result.error) return fail(result.error);
   const findings = result.findings.map(({ kind, masked }) => ({ kind, masked }));
   const verdict = findings.length ? "Review these findings before sending." : "No findings.";
+  if (result.truncated) return { findings, verdict: `${verdict} ${PARTLY_CHECKED}`, truncated: true };
   return { findings, verdict };
 }
 
 function cleanResult(text, includePersonalDetails = false) {
   const result = checkedText(text, includePersonalDetails);
   if (result.error) return fail(result.error);
-  const engine = getEngineContext().Clotr;
-  const detections = engine
-    .detect(text)
-    .map((detection) => ({
-      ...detection,
-      matches: detection.matches,
-    }))
-    .filter((detection) => detection.matches.length);
+  const engine = engineContext().Clotr;
+  const detections = result.found.filter((detection) => detection.matches.length);
   const allowedKinds = new Set(result.findings.map((finding) => finding.kind));
   const selected = detections.filter((detection) => allowedKinds.has(detection.id));
   const cleaned = engine.redact(text, selected);
   const replaced = result.findings.map(({ kind, masked }) => ({ kind, masked }));
-  return { text: cleaned, replaced };
+  return { text: cleaned, replaced, ...(result.truncated ? { truncated: true } : {}) };
 }
 
 function callTool(name, args) {
@@ -144,7 +169,15 @@ function callTool(name, args) {
     if (typeof args.path !== "string" || args.path.length > 4096) {
       return fail("path must be a string of at most 4096 characters.");
     }
-    return { is_secret_file: isSecretFile(args.path) };
+    // The path is resolved, never read, so a link or a Windows short name (`ENV~1`) is judged by the file it opens. A
+    // path under /Volumes, often a share another computer serves, is judged by name: this server makes no network calls.
+    // A path under the home folder (`~/...`) is judged as written and as the file there, which a file tool opens.
+    const readings = [args.path, ...pathReadings(args.path, { homeOnly: true })];
+    return {
+      is_secret_file: readings.some((reading) =>
+        isSecretPath(reading, "", process.cwd(), { byName: onMountedVolume(reading) }),
+      ),
+    };
   }
   return null;
 }
@@ -163,6 +196,7 @@ function rpcError(id, code, message) {
 }
 
 let protocolMode = null;
+let legacyProtocol = null;
 
 function rpcResult(request, result, { cacheable = false, modern = false } = {}) {
   if (!modern) return { jsonrpc: "2.0", id: request.id, result };
@@ -183,7 +217,8 @@ function handleRequest(request) {
   if (!request || typeof request !== "object" || Array.isArray(request) || request.jsonrpc !== "2.0") {
     return rpcError(request?.id, -32600, "Invalid Request");
   }
-  const notification = !Object.hasOwn(request, "id");
+  // JSON-RPC never answers a notification, not even with an error, so none of the checks below may reply to one.
+  if (!Object.hasOwn(request, "id")) return null;
   const method = request.method;
   const params =
     request.params && typeof request.params === "object" && !Array.isArray(request.params) ? request.params : {};
@@ -220,6 +255,7 @@ function handleRequest(request) {
     const requested = params.protocolVersion;
     const protocolVersion = LEGACY_PROTOCOLS.has(requested) ? requested : "2025-11-25";
     protocolMode = "legacy";
+    legacyProtocol = protocolVersion;
     return {
       jsonrpc: "2.0",
       id: request.id,
@@ -227,6 +263,7 @@ function handleRequest(request) {
         protocolVersion,
         capabilities: { tools: {} },
         serverInfo: { name: SERVER_NAME, version: SERVER_VERSION },
+        instructions: INSTRUCTIONS,
       },
     };
   }
@@ -234,13 +271,15 @@ function handleRequest(request) {
     protocolMode = "modern";
     return rpcResult(
       request,
-      { supportedVersions: [CURRENT_PROTOCOL], capabilities: { tools: {} } },
+      { supportedVersions: [CURRENT_PROTOCOL], capabilities: { tools: {} }, instructions: INSTRUCTIONS },
       { cacheable: true, modern: true },
     );
   }
-  if (notification) return null;
   if (method === "ping") return rpcResult(request, {}, { modern });
-  if (method === "tools/list") return rpcResult(request, { tools: TOOLS }, { cacheable: true, modern });
+  if (method === "tools/list") {
+    const tools = toolsFor(modern ? CURRENT_PROTOCOL : legacyProtocol);
+    return rpcResult(request, { tools }, { cacheable: true, modern });
+  }
   if (method === "tools/call") {
     if (typeof params.name !== "string") return rpcError(request.id, -32602, "Tool name is required");
     const result = callTool(params.name, params.arguments);

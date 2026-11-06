@@ -368,4 +368,114 @@ module.exports = async function (env) {
       });
     }, true),
   );
+
+  // A saved name, in an email app's rich editor that's covered piece by piece in place: only where it stands as a
+  // word, never inside a longer word holding it, and that longer word isn't a detail left showing.
+  const saveName = (other, name) =>
+    other.worker.evaluate(async (value) => {
+      const salt = await ensureSalt();
+      const fp = globalThis.Clotr.fingerprint(salt, "watch_list", value);
+      await chrome.storage.local.set({ vault: [{ kind: "word", type: "my_name", fp, words: 1, added: Date.now() }] });
+    }, name);
+  const replyText = (page) => page.$eval("#reply", (node) => node.textContent);
+
+  await check("EQ8", "Email reply: Clot this leak hides a saved name in place, not inside a longer word", () =>
+    withGmailCopy(async (other) => {
+      await saveName(other, "Ann");
+      await withReplyPage(other, craftedReply(""), async (page) => {
+        await page.evaluate(caretAtEnd, "#reply");
+        await typeText(page, " Ann wrote to Annabelle");
+        const warning = await waitFor(async () => {
+          const shown = (await readNotice(page)) || (await readDialog(page));
+          return shown && /Your Name/.test(shown.text) ? shown : null;
+        }, 6000);
+        expect(warning, "no warning for the saved name");
+        const cover = warning.buttons.find((button) => button.text === "Clot this leak");
+        expect(cover, `no cover button: ${warning.text}`);
+        await clickNode(page, cover.nodeId);
+        const want = "Jerry, [REDACTED YOUR NAME] wrote to Annabelle";
+        const after = await waitFor(async () => ((await replyText(page)) === want ? true : null), 3000);
+        expect(after, `reply: "${await replyText(page)}"`);
+        await new Promise((r) => setTimeout(r, 300));
+        const left = (await readDialog(page)) || (await readNotice(page));
+        expect(!left, `a warning stayed after the name was hidden: ${left?.text}`);
+        return "hid the saved name and left the longer word alone";
+      });
+    }),
+  );
+
+  await check("EQ9", "Bandage in an email reply swaps a saved name in place, not inside a longer word", () =>
+    withGmailCopy(async (other) => {
+      await saveName(other, "Ann");
+      await store.set(other, { bandage: { "mail.google.com": true } });
+      await withReplyPage(other, craftedReply(""), async (page) => {
+        await page.evaluate(caretAtEnd, "#reply");
+        await typeText(page, " Ann wrote to Annabelle");
+        const want = "Jerry, [Me] wrote to Annabelle";
+        const after = await waitFor(async () => ((await replyText(page)) === want ? true : null), 4000);
+        expect(after, `reply: "${await replyText(page)}"`);
+        await new Promise((r) => setTimeout(r, 500));
+        const left = (await readNotice(page)) || (await readDialog(page));
+        expect(!left, `Bandage warned after the name was swapped: ${left?.text}`);
+        return "swapped the saved name and left the longer word alone";
+      });
+    }, true),
+  );
+
+  // An ID number in a saved format, typed right against Japanese text, where the format still finds it: covered in
+  // place like any other found detail, never dropped from what's covered or what's checked as left showing.
+  const saveFormat = (other) =>
+    other.worker.evaluate(async () => {
+      await chrome.storage.local.set({
+        vault: [{ kind: "shape", type: "my_id", shape: "@@@######", added: Date.now() }],
+      });
+    });
+
+  await check(
+    "EQ10",
+    "Email reply: Clot this leak hides an ID in a saved format typed right against Japanese text",
+    () =>
+      withGmailCopy(async (other) => {
+        await saveFormat(other);
+        await withReplyPage(other, craftedReply(""), async (page) => {
+          await page.evaluate(caretAtEnd, "#reply");
+          await typeText(page, " 社員EMP123456です");
+          const warning = await waitFor(async () => {
+            const shown = (await readNotice(page)) || (await readDialog(page));
+            return shown && /Account\/ID/i.test(shown.text) ? shown : null;
+          }, 6000);
+          expect(warning, "no warning for the ID");
+          const cover = warning.buttons.find((button) => button.text === "Clot this leak");
+          expect(cover, `no cover button: ${warning.text}`);
+          await clickNode(page, cover.nodeId);
+          const want = "Jerry, 社員[REDACTED YOUR ACCOUNT/ID NUMBER]です";
+          const after = await waitFor(async () => ((await replyText(page)) === want ? true : null), 3000);
+          expect(after, `reply: "${await replyText(page)}"`);
+          await new Promise((r) => setTimeout(r, 300));
+          const left = (await readDialog(page)) || (await readNotice(page));
+          expect(!left, `a warning stayed after the ID was hidden: ${left?.text}`);
+          return "hid the ID beside the Japanese text";
+        });
+      }),
+  );
+
+  await check("EQ11", "Bandage in an email reply swaps an ID in a saved format typed right against Japanese text", () =>
+    withGmailCopy(async (other) => {
+      await saveFormat(other);
+      await store.set(other, { bandage: { "mail.google.com": true } });
+      await withReplyPage(other, craftedReply(""), async (page) => {
+        await page.evaluate(caretAtEnd, "#reply");
+        await typeText(page, " 社員EMP123456です");
+        const after = await waitFor(async () => {
+          const reply = await replyText(page);
+          return /^Jerry, 社員\[[^\]]+\]です$/.test(reply) ? reply : null;
+        }, 4000);
+        expect(after, `reply: "${await replyText(page)}"`);
+        await new Promise((r) => setTimeout(r, 500));
+        const left = (await readNotice(page)) || (await readDialog(page));
+        expect(!left, `Bandage warned after the ID was swapped: ${left?.text}`);
+        return `swapped the ID: ${after}`;
+      });
+    }, true),
+  );
 };

@@ -3,7 +3,14 @@ package app.clotr.jetbrains
 import com.intellij.codeInsight.daemon.DaemonCodeAnalyzer
 import com.intellij.codeInsight.daemon.impl.DaemonCodeAnalyzerImpl
 import com.intellij.lang.annotation.HighlightSeverity
+import com.intellij.codeInspection.InspectionManager
 import com.intellij.codeInspection.ProblemHighlightType
+import com.intellij.codeInspection.ProblemsHolder
+import com.intellij.testFramework.PlatformTestUtil
+import java.util.concurrent.atomic.AtomicReference
+import kotlin.concurrent.thread
+import com.intellij.openapi.ui.TestDialog
+import com.intellij.openapi.ui.TestDialogManager
 import com.intellij.testFramework.fixtures.BasePlatformTestCase
 import java.nio.file.Files
 import java.nio.file.Path
@@ -134,7 +141,77 @@ class ClotrInspectionTest : BasePlatformTestCase() {
         assertFalse(service.shouldShowSecretNote(true, false))
         assertTrue(service.shouldShowSecretNote(false, false))
         Files.writeString(ignoreFile, "")
-        assertFalse(service.isIgnoredByGit(".env", root))
+        assertFalse(service.isIgnoredByGit(".env", root, null))
+    }
+
+    // A wrong "ignored" hides the only note before a secret file is committed, so these follow Git's own rules.
+    fun testGitignoreRulesAreReadAsGitReadsThem() {
+        val repo = Files.createTempDirectory("clotr-gitignore-git")
+        val service = project.getService(ClotrProjectService::class.java)
+        try {
+            Files.createDirectories(repo.resolve(".git/info"))
+            // A leading slash keeps a rule to the folder of its .gitignore.
+            Files.writeString(repo.resolve(".gitignore"), "/.env\n")
+            assertTrue(service.isIgnoredByGit(".env", repo, null))
+            assertFalse(service.isIgnoredByGit("backend/.env", repo, null))
+            Files.writeString(repo.resolve(".gitignore"), "config/.env\n")
+            assertTrue(service.isIgnoredByGit("config/.env", repo, null))
+            assertFalse(service.isIgnoredByGit("app/config/.env", repo, null))
+
+            // The project can be a folder inside the repository, whose top .gitignore still counts.
+            val sub = Files.createDirectories(repo.resolve("sub"))
+            Files.writeString(repo.resolve(".gitignore"), ".env\n")
+            assertTrue(service.isIgnoredByGit(".env", sub, null))
+
+            // The repository's own exclude file and the person's global one count too.
+            Files.writeString(repo.resolve(".gitignore"), "")
+            Files.writeString(repo.resolve(".git/info/exclude"), ".env\n")
+            assertTrue(service.isIgnoredByGit(".env", sub, null))
+            Files.writeString(repo.resolve(".git/info/exclude"), "")
+            assertFalse(service.isIgnoredByGit(".env", sub, null))
+            val global = Files.writeString(Files.createTempFile("clotr-global-ignore", ""), "*.env\n")
+            try {
+                assertTrue(service.isIgnoredByGit(".env", sub, global))
+                Files.writeString(repo.resolve(".gitignore"), "!.env\n")
+                assertFalse("a .gitignore rule outranks the global file", service.isIgnoredByGit(".env", sub, global))
+            } finally {
+                Files.deleteIfExists(global)
+            }
+        } finally {
+            repo.toFile().deleteRecursively()
+        }
+    }
+
+    fun testTheGlobalGitIgnoreFileIsFoundWhereGitLooks() {
+        val home = Files.createTempDirectory("clotr-git-home")
+        val service = project.getService(ClotrProjectService::class.java)
+        try {
+            assertEquals(home.resolve(".config/git/ignore"), service.globalGitExcludesFile(home, null))
+            val xdg = Files.createDirectories(home.resolve("xdg"))
+            assertEquals(xdg.resolve("git/ignore"), service.globalGitExcludesFile(home, xdg.toString()))
+            Files.writeString(home.resolve(".gitconfig"), "[user]\n\tname = Example\n[core]\n\texcludesFile = ~/my-ignore\n")
+            assertEquals(home.resolve("my-ignore"), service.globalGitExcludesFile(home, null))
+        } finally {
+            home.toFile().deleteRecursively()
+        }
+    }
+
+    // In a Git worktree, .git is a file naming the real folder, which shares its exclude file with the main checkout.
+    fun testAWorktreeReadsTheSharedExcludeFile() {
+        val main = Files.createTempDirectory("clotr-git-main")
+        val tree = Files.createTempDirectory("clotr-git-tree")
+        val service = project.getService(ClotrProjectService::class.java)
+        try {
+            val worktreeDir = Files.createDirectories(main.resolve(".git/worktrees/tree"))
+            Files.createDirectories(main.resolve(".git/info"))
+            Files.writeString(main.resolve(".git/info/exclude"), ".env\n")
+            Files.writeString(worktreeDir.resolve("commondir"), "../..\n")
+            Files.writeString(tree.resolve(".git"), "gitdir: $worktreeDir\n")
+            assertTrue(service.isIgnoredByGit(".env", tree, null))
+        } finally {
+            main.toFile().deleteRecursively()
+            tree.toFile().deleteRecursively()
+        }
     }
 
     fun testProjectGitignoreRulesHaveTheSameInputLimitsAsClotrIgnore() {
@@ -144,13 +221,13 @@ class ClotrInspectionTest : BasePlatformTestCase() {
         try {
             val oversizedPattern = "*".repeat(1025) + "\n"
             Files.writeString(ignoreFile, oversizedPattern)
-            assertFalse(service.isIgnoredByGit(".env", root))
+            assertFalse(service.isIgnoredByGit(".env", root, null))
 
             Files.writeString(ignoreFile, ".env\n" + "#".repeat(65 * 1024))
-            assertFalse(service.isIgnoredByGit(".env", root))
+            assertFalse(service.isIgnoredByGit(".env", root, null))
 
             Files.writeString(ignoreFile, "# padding\n".repeat(8192) + ".env\n")
-            assertFalse(service.isIgnoredByGit(".env", root))
+            assertFalse(service.isIgnoredByGit(".env", root, null))
         } finally {
             Files.deleteIfExists(ignoreFile)
             Files.deleteIfExists(root)
@@ -165,7 +242,7 @@ class ClotrInspectionTest : BasePlatformTestCase() {
         try {
             val started = System.nanoTime()
             assertFalse(project.getService(ClotrProjectService::class.java)
-                .isIgnoredByGit("a".repeat(120) + "c", root))
+                .isIgnoredByGit("a".repeat(120) + "c", root, null))
             val elapsed = (System.nanoTime() - started) / 1_000_000
             assertTrue("A bounded Git ignore match took $elapsed ms", elapsed < 500)
         } finally {
@@ -269,6 +346,78 @@ class ClotrInspectionTest : BasePlatformTestCase() {
         assertTrue(myFixture.doHighlighting().none { it.description?.contains("Clotr") == true })
     }
 
+    // Inspect Code and the check before a commit visit files nobody opened, and only closing a file clears its count.
+    fun testFilesThatAreNotOpenNeverCountInTheStatusBar() {
+        val service = project.getService(ClotrProjectService::class.java)
+        val (findings, unchecked) = service.findingCount() to service.uncheckedCount()
+        val closed = myFixture.addFileToProject("closed/Leak.txt", "key=AKIA4HPQ7XZ2R6TWLJ3N")
+        val tooLarge = myFixture.addFileToProject("closed/Large.txt", "x".repeat(1024 * 1024 + 1))
+        for (onTheFly in listOf(false, true)) for (file in listOf(closed, tooLarge)) {
+            val holder = ProblemsHolder(InspectionManager.getInstance(project), file, onTheFly)
+            ClotrInspection().buildVisitor(holder, onTheFly).visitFile(file)
+            if (file == closed) assertEquals(1, holder.resultCount)
+        }
+        assertEquals(findings, service.findingCount())
+        assertEquals(unchecked, service.uncheckedCount())
+    }
+
+    fun testStatusCountsCanBeReadWhileInspectionsUpdateThem() {
+        val service = project.getService(ClotrProjectService::class.java)
+        val (findings, unchecked) = service.findingCount() to service.uncheckedCount()
+        val failure = AtomicReference<Throwable>()
+        val writers = (0 until 4).map { writer ->
+            thread {
+                try {
+                    for (i in 0 until 5000) {
+                        if (i % 2 == 0) service.updateCount("/clotr-race/$writer/$i", 1) else service.markUnchecked("/clotr-race/$writer/$i")
+                    }
+                } catch (error: Throwable) {
+                    failure.compareAndSet(null, error)
+                }
+            }
+        }
+        try {
+            while (writers.any { it.isAlive } && failure.get() == null) {
+                service.findingCount()
+                service.uncheckedCount()
+            }
+        } catch (error: Throwable) {
+            failure.compareAndSet(null, error)
+        }
+        writers.forEach { it.join() }
+        PlatformTestUtil.dispatchAllInvocationEventsInIdeEventQueue()
+        assertNull(failure.get())
+        assertEquals(findings + 10000, service.findingCount())
+        assertEquals(unchecked + 10000, service.uncheckedCount())
+        for (writer in 0 until 4) for (i in 0 until 5000) service.updateCount("/clotr-race/$writer/$i", 0)
+        PlatformTestUtil.dispatchAllInvocationEventsInIdeEventQueue()
+    }
+
+    fun testEveryCopyOfARepeatedCredentialIsHighlighted() {
+        val key = "AKIA4HPQ7XZ2R6TWLJ3N"
+        val text = "first = $key\nsecond = $key\n"
+        myFixture.configureByText("Twice.txt", text)
+        val problems = myFixture.doHighlighting().filter { it.description?.contains("AWS Access Key") == true }
+        assertEquals(listOf(text.indexOf(key), text.lastIndexOf(key)), problems.map { it.startOffset }.sorted())
+        assertEquals(2, project.getService(ClotrProjectService::class.java).findingCount())
+    }
+
+    // The engine's own group decides what is a personal detail, not the kind's name: a card number is one too.
+    fun testCardAndBankNumbersStayOffWithPersonalDetails() {
+        val prefs = ClotrPreferences.getInstance()
+        assertFalse(prefs.personalDetailsInFiles)
+        myFixture.configureByText("Billing.txt", "card 4111 1111 1111 1111")
+        assertTrue(myFixture.doHighlighting().none { it.description?.contains("Sensitive information found") == true })
+
+        prefs.personalDetailsInFiles = true
+        try {
+            myFixture.configureByText("Billing.txt", "card 4111 1111 1111 1111")
+            assertTrue(myFixture.doHighlighting().any { it.description?.contains("Credit Card") == true })
+        } finally {
+            prefs.personalDetailsInFiles = false
+        }
+    }
+
     fun testOversizedFileIsMarkedUncheckedInsteadOfShowingAnAllClearStatus() {
         myFixture.configureByText("Sample.kt", "val key = \"AKIA4HPQ7XZ2R6TWLJ3N\"")
         myFixture.doHighlighting()
@@ -281,6 +430,45 @@ class ClotrInspectionTest : BasePlatformTestCase() {
         assertEquals(0, service.findingCount())
         assertEquals(1, service.uncheckedCount())
         assertTrue(warnings.any { it.description?.contains("over 1 MiB") == true })
+    }
+
+    /** Runs `work` while the engine's clock jumps a second at each look, so every scan stops at its time limit. */
+    private fun <T> withScanTimeLimitReached(work: () -> T): T {
+        val engine = project.getService(ClotrProjectService::class.java).engine
+        engine.evalForTest("globalThis.clotrRealNow = Date.now; { let now = Date.now(); Date.now = () => (now += 1000); }")
+        try {
+            return work()
+        } finally {
+            engine.evalForTest("Date.now = globalThis.clotrRealNow")
+        }
+    }
+
+    // A long file runs into the engine's time limit (it runs without a JIT in the IDE). What it didn't check could
+    // hold a credential, so the file must not count as clean.
+    fun testPartlyCheckedFileIsMarkedUncheckedInsteadOfShowingAnAllClearStatus() {
+        val service = project.getService(ClotrProjectService::class.java)
+        val text = "val line = \"partly checked\"\n".repeat(2000) + "val key = \"AKIA4HPQ7XZ2R6TWLJ3N\"\n"
+        myFixture.configureByText("Partial.txt", text)
+
+        val warnings = withScanTimeLimitReached { myFixture.doHighlighting() }
+
+        assertEquals(1, service.uncheckedCount())
+        assertTrue(warnings.any { it.description?.contains("did not check part of this file") == true })
+    }
+
+    fun testPartlyCheckedClipboardNeverSaysItFoundNothing() {
+        val shown = mutableListOf<String>()
+        val previous = TestDialogManager.setTestDialog(TestDialog { message: String -> shown += message; -1 })
+        try {
+            withScanTimeLimitReached {
+                showCheck(project, "line = \"partly checked clipboard\"\n".repeat(2000) + "key=AKIA4HPQ7XZ2R6TWLJ3N\n")
+            }
+        } finally {
+            TestDialogManager.setTestDialog(previous)
+        }
+        assertEquals(1, shown.size)
+        assertFalse(shown.single() == ClotrBundle.message("found.none"))
+        assertTrue(shown.single().contains("did not check part of this text"))
     }
 
     fun testClipboardCheckOffersMaskedBandagedText() {

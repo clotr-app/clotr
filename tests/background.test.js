@@ -9,7 +9,7 @@ const fs = require("fs");
 const path = require("path");
 const vm = require("vm");
 const { webcrypto, createHash } = require("crypto");
-const { safariManifest } = require("../tools/package.js");
+const { firefoxManifest, safariManifest } = require("../tools/package.js");
 
 const EXT = path.join(__dirname, "..", "extension");
 const source = () => JSON.parse(fs.readFileSync(path.join(EXT, "manifest.json"), "utf8"));
@@ -43,10 +43,13 @@ function area() {
 // declarativeContent, no storage lock, and a badge color it rejects as a string), "safari-no-session" for the
 // same thing without session storage, or "chrome" for an unpacked Chrome copy. The chromeManifest option
 // simulates Safari running the Chrome build's manifest, which happens when someone packages the app without a
-// dedicated Safari build.
-function loadBackground(browser, { chromeManifest = false } = {}) {
+// dedicated Safari build. "firefox" loads the Firefox build's manifest, with installType saying how Firefox
+// installed it: "normal" from addons.mozilla.org, "development" for a temporary or folder install.
+function loadBackground(browser, { chromeManifest = false, installType = "development" } = {}) {
   const safari = browser.startsWith("safari");
-  const manifest = safari && !chromeManifest ? safariManifest(source()) : source();
+  const firefox = browser === "firefox";
+  const manifest =
+    safari && !chromeManifest ? safariManifest(source()) : firefox ? firefoxManifest(source()) : source();
   const calls = {
     alarms: [],
     alarmAt: {},
@@ -64,7 +67,8 @@ function loadBackground(browser, { chromeManifest = false } = {}) {
     runtime: {
       id: "clotr-test",
       getManifest: () => manifest,
-      getURL: (p) => `${safari ? "safari-web-extension" : "chrome-extension"}://clotr-test/${p}`,
+      getURL: (p) =>
+        `${safari ? "safari-web-extension" : firefox ? "moz-extension" : "chrome-extension"}://clotr-test/${p}`,
       onInstalled: event(),
       onStartup: event(),
       onMessage: event(),
@@ -122,6 +126,7 @@ function loadBackground(browser, { chromeManifest = false } = {}) {
     },
     commands: { onCommand: event() },
     i18n: { getMessage: () => "" },
+    management: { getSelf: async () => ({ id: "clotr-test", installType }) },
   };
   if (!safari) {
     chrome.storage.managed = { get: async () => ({}) };
@@ -248,6 +253,22 @@ test("Safari: no local update check in a store install (the app updates it)", as
   const fromChromeBuild = loadBackground("safari", { chromeManifest: true });
   await fromChromeBuild.install("update");
   assert.ok(!fromChromeBuild.calls.alarms.includes("local-update-check"), "Safari got the update check");
+});
+
+// An add-on from addons.mozilla.org has no update_url either (Firefox updates it itself), so the manifest alone
+// can't tell it from a folder copy. Waking it every minute to read its own files costs battery on a phone.
+test("Firefox: no local update check in an addons.mozilla.org install; a temporary install still checks", async () => {
+  const store = loadBackground("firefox", { installType: "normal" });
+  assert.ok(store.manifest.browser_specific_settings?.gecko, "not the Firefox build's manifest");
+  await store.install("update");
+  for (const fn of store.chrome.runtime.onStartup.listeners) fn();
+  await settle();
+  assert.ok(!store.calls.alarms.includes("local-update-check"), "a store install got the one-minute update check");
+  assert.ok(store.calls.alarms.includes("refresh-toolbar"), "the toolbar's half-hourly refresh still runs");
+  const temporary = loadBackground("firefox", { installType: "development" });
+  await temporary.install();
+  assert.ok(temporary.calls.alarms.includes("local-update-check"), "a temporary install stopped checking its folder");
+  assert.deepEqual([...store.calls.errors, ...temporary.calls.errors], []);
 });
 
 test("Safari: no managed storage, and settings still reach the page (no team policy)", async () => {
@@ -634,6 +655,62 @@ const fire = async (bg, name) => {
   await settle();
 };
 
+// A loaded file can change only the salt (its vault matches what's here, or both are empty). The team's watch
+// words and every fingerprint a tab makes depend on it, so open tabs are told to fetch their settings again.
+test("A new salt alone tells open tabs to fetch their settings again", async () => {
+  const bg = loadBackground("chrome");
+  await bg.install();
+  bg.chrome.tabs.query = async () => [{ id: 7 }];
+  bg.calls.sent.length = 0;
+  await changed(bg, { salt: { oldValue: "aa".repeat(16), newValue: "bb".repeat(16) } });
+  assert.deepEqual(plain(bg.calls.sent), [{ tabId: 7, type: "clotr:settingsChanged" }]);
+});
+
+// The tab port's early Bandage answer and the full settings must agree on every kind of site. On a search
+// engine, a support chat or a site covered only by Everywhere I type, a stored "on" (from a loaded file, say)
+// must not switch cover names on there even for the moment before the full settings arrive.
+test("The tab port's Bandage answer matches the full settings on search, support and Everywhere-only sites", async () => {
+  const bg = loadBackground("chrome");
+  await bg.install();
+  bg.chrome.permissions.getAll = async () => ({ origins: ["https://*/*"] });
+  const hosts = ["forum.example.org", "www.google.com", "widget.intercom.io", "chatgpt.com"];
+  await bg.local.set({ bandage: Object.fromEntries(hosts.map((h) => [h, true])) });
+  const portSays = (url) =>
+    new Promise((resolve) => {
+      const port = { name: "clotr:tab", sender: { id: "clotr-test", url }, postMessage: (m) => resolve(m.on) };
+      for (const fn of bg.chrome.runtime.onConnect.listeners) fn(port);
+    });
+  for (const host of hosts) {
+    const url = `https://${host}/`;
+    const settings = await bg.send({ type: "clotr:getSettings" }, { url, tab: { id: 7, url } });
+    assert.equal(await portSays(url), settings.bandage, `${host}: the port and the settings disagree`);
+  }
+  assert.equal(await portSays("https://chatgpt.com/"), true, "a built-in AI chat keeps its stored answer");
+});
+
+// Firefox drops every alarm when the browser closes, and Chrome says it may, so a browser start has to set the
+// half-hourly refresh again; without it, history older than "Keep history for" stays until the next detection.
+test("A browser start sets the half-hourly refresh again and drops history past the chosen period", async () => {
+  const bg = loadBackground("chrome");
+  const now = Date.now();
+  await bg.local.set({
+    keepDays: 90,
+    events: [
+      { ...todaysEvent(), t: now - 200 * DAY },
+      { ...todaysEvent(), t: now - DAY },
+    ],
+  });
+  for (const fn of bg.chrome.runtime.onStartup.listeners) fn();
+  await settle();
+  assert.ok(bg.calls.alarms.includes("refresh-toolbar"), "the half-hourly refresh is gone after a restart");
+  assert.deepEqual(
+    bg.local.data.events.map((e) => e.t),
+    [now - DAY],
+    "a record older than the chosen period was kept",
+  );
+  assert.deepEqual(bg.calls.errors, []);
+});
+
 test("After a scam: turning it on sets the end alarm at the stored end; a start re-creates it from storage", async () => {
   for (const browser of ["chrome", "safari"]) {
     const bg = loadBackground(browser);
@@ -784,6 +861,32 @@ test("Added sites: a script another sync unregistered in the meantime is registe
   assert.deepEqual(bg.calls.errors, []);
   assert.equal(updated.length, 1, "tried to update before falling back");
   assert.deepEqual(plain(registered.get("clotr-user-sites").matches), ["https://chat.example/*"]);
+});
+
+// Chromium ignores the path in a host permission, so a fresh install's getAll() lists the manifest's
+// "https://huggingface.co/chat/*" a second time as the whole host. That isn't a site the person added, so Clotr
+// must not start running on every Hugging Face page because of it.
+test("Fresh install: the browser's whole-host copy of a built-in section isn't treated as a site you added", async () => {
+  const bg = loadBackground("chrome");
+  const registered = new Map();
+  const builtIn = bg.manifest.host_permissions;
+  const wholeHosts = builtIn.map((p) => `https://${new URL(p.replace(/\*$/, "")).hostname}/*`);
+  bg.chrome.permissions.getAll = async () => ({ origins: [...new Set([...builtIn, ...wholeHosts])] });
+  Object.assign(bg.chrome.scripting, {
+    getRegisteredContentScripts: async ({ ids }) =>
+      ids.filter((id) => registered.has(id)).map((id) => registered.get(id)),
+    registerContentScripts: async (scripts) => scripts.forEach((s) => registered.set(s.id, s)),
+    updateContentScripts: async (scripts) => scripts.forEach((s) => registered.set(s.id, s)),
+  });
+  assert.ok(wholeHosts.includes("https://huggingface.co/*"), "the manifest no longer has a section-only entry");
+  await bg.install();
+  assert.deepEqual(bg.calls.errors, []);
+  assert.equal(registered.has("clotr-user-sites"), false, "Clotr runs on every Hugging Face page");
+  // A section the person protected on that host themselves still counts.
+  await bg.local.set({ siteScopes: { "https://huggingface.co/*": ["https://huggingface.co/spaces/owner/app/*"] } });
+  for (const fn of bg.chrome.runtime.onStartup.listeners) fn();
+  await settle();
+  assert.deepEqual(plain(registered.get("clotr-user-sites")?.matches), ["https://huggingface.co/spaces/owner/app/*"]);
 });
 
 // Removing a site can race the same way: the registration is already gone (another sync got there first), and

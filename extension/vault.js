@@ -4,11 +4,13 @@
 // The typed text is cleared right after saving and is never written anywhere.
 "use strict";
 
-const { detect, redact, fingerprint, fingerprintStrong, addressCore, msg, practiceNotice } = globalThis.Clotr;
+const { detect, redact, fingerprint, fingerprintStrong, addressCore, cleanVaultEntry, msg, practiceNotice } =
+  globalThis.Clotr;
 const Sites = globalThis.ClotrSites;
 const $ = (id) => document.getElementById(id);
 // Which held-back features this build ships (`clotr_features` in manifest.json).
 const FEATURES = chrome.runtime.getManifest().clotr_features || {};
+let pageLocked = false; // settings are locked (a PIN and its 10 minutes up, or a policy): see stillUnlocked
 
 const CATEGORY = {
   my_name: msg("vt_cName", "Your name"),
@@ -40,9 +42,13 @@ function toShape(line) {
 // One typed line → vault entries, or an error message.
 function entriesFor(kind, type, line, salt) {
   if (kind === "word") {
-    if (type === "watch_list" && /[#@]/.test(line)) {
+    // A # or @ makes a line a format, unless it has a digit too ("Project #2"): a format never does, so that's a
+    // phrase to watch for, kept as one.
+    if (type === "watch_list" && /[#@]/.test(line) && !/\d/.test(line)) {
       const shape = toShape(line);
-      return shape ? [{ kind: "shape", type, shape }] : msg("vt_errFormat", "a format needs 4+ # or @ marks");
+      return shape
+        ? [{ kind: "shape", type, shape }]
+        : msg("vt_errFormat", "a format needs 4+ # or @ marks (# for any digit, @ for any letter)");
     }
     const phrase = line.replace(/\s+/g, " ");
     if (phrase.split(" ").length > 4) return msg("vt_errWords", "up to 4 words per line");
@@ -82,14 +88,26 @@ function entriesFor(kind, type, line, salt) {
 
 $("vault-form").addEventListener("submit", async (e) => {
   e.preventDefault();
-  const { salt } = await chrome.runtime.sendMessage({ type: "clotr:getSalt" });
+  if (!(await stillUnlocked())) return;
+  // The background not answering (restarting, say) or answering with an error is a failed save, never a saved one.
+  const ask = async (message) => {
+    try {
+      const reply = await chrome.runtime.sendMessage(message);
+      return reply && !reply.error ? reply : null;
+    } catch {
+      return null;
+    }
+  };
+  const failed = () => ($("save-msg").textContent = msg("vt_saveFailed", "Couldn't save right now. Try again."));
+  const { salt } = (await ask({ type: "clotr:getSalt" })) || {};
   if (!salt) {
-    $("save-msg").textContent = msg("vt_saveFailed", "Couldn't save right now. Try again.");
+    failed();
     return;
   }
 
   const entries = [];
   const problems = [];
+  const kept = new Map(); // each box → the lines it keeps once the save is through: the ones to fix
   for (const box of document.querySelectorAll("textarea[data-type]")) {
     const lines = box.value
       .split("\n")
@@ -97,15 +115,26 @@ $("vault-form").addEventListener("submit", async (e) => {
       .filter(Boolean);
     const keep = [];
     for (const line of lines) {
-      const out = entriesFor(box.dataset.kind, box.dataset.type, line, salt);
+      let out = entriesFor(box.dataset.kind, box.dataset.type, line, salt);
+      // What the background would refuse to keep (decide.js), said here so the line stays to fix.
+      if (typeof out !== "string" && !out.every((x) => cleanVaultEntry(x))) {
+        out = msg("vt_errTooLong", "a format can be up to 40 characters");
+      }
       if (typeof out === "string") {
         problems.push(`${CATEGORY[box.dataset.type]}: "${line}" ${out}`);
         keep.push(line);
       } else entries.push(...out);
     }
-    box.value = keep.join("\n"); // clear what was saved; leave only lines to fix
+    kept.set(box, keep);
   }
-  const { added = 0 } = entries.length ? await chrome.runtime.sendMessage({ type: "clotr:vaultAdd", entries }) : {};
+  const reply = entries.length ? await ask({ type: "clotr:vaultAdd", entries }) : {};
+  if (!reply) {
+    failed(); // nothing is cleared: what was typed stays, to try again
+    return;
+  }
+  for (const [box, keep] of kept) box.value = keep.join("\n"); // clear what was saved; leave only lines to fix
+  const { added = 0, rejected = 0 } = reply;
+  const already = entries.length - added - rejected;
   $("save-msg").textContent =
     [
       entries.length
@@ -113,7 +142,8 @@ $("vault-form").addEventListener("submit", async (e) => {
           ? msg("vt_savedOne", "Saved 1 new item.")
           : msg("vt_savedMany", "Saved $1 new items.", added)
         : "",
-      entries.length && added < entries.length ? msg("vt_already", "$1 already there.", entries.length - added) : "",
+      already > 0 ? msg("vt_already", "$1 already there.", already) : "",
+      rejected > 0 ? msg("vt_notSaved", "$1 couldn't be saved.", rejected) : "",
       ...problems,
     ]
       .filter(Boolean)
@@ -140,9 +170,11 @@ function render(vault) {
   $("vault-list").replaceChildren(
     ...vault.map((e) => {
       const remove = el("button", { className: "btn", textContent: msg("pp_remove", "Remove") });
-      remove.addEventListener("click", () =>
-        chrome.runtime.sendMessage({ type: "clotr:vaultUpdate", key: vaultKey(e), change: "remove" }),
-      );
+      remove.addEventListener("click", async () => {
+        if (await stillUnlocked()) {
+          await chrome.runtime.sendMessage({ type: "clotr:vaultUpdate", key: vaultKey(e), change: "remove" });
+        }
+      });
       const controls = [remove];
       if (e.kind === "value") {
         const mode = el("select", { className: "resp" }, [
@@ -154,9 +186,11 @@ function render(vault) {
           }),
         ]);
         mode.setAttribute("aria-label", msg("vt_modeLabel", "$1: watch or OK to share", categoryOf(e)));
-        mode.addEventListener("change", () =>
-          chrome.runtime.sendMessage({ type: "clotr:vaultUpdate", key: vaultKey(e), change: mode.value }),
-        );
+        mode.addEventListener("change", async () => {
+          if (await stillUnlocked()) {
+            await chrome.runtime.sendMessage({ type: "clotr:vaultUpdate", key: vaultKey(e), change: mode.value });
+          }
+        });
         controls.unshift(mode);
       }
       return el("li", {}, [
@@ -171,7 +205,7 @@ function render(vault) {
       ]);
     }),
   );
-  $("vault-empty").hidden = vault.length > 0;
+  $("vault-empty").hidden = vault.length > 0 || pageLocked;
   // Re-saving a value needs it typed again (a one-way hash can't be upgraded in place), so this only ever
   // offers; it never removes a weaker entry on its own.
   $("strengthen-offer").hidden = !vault.some((e) => e.kind === "value" && e.scheme !== 2);
@@ -527,11 +561,26 @@ async function settingsLocked() {
   const policy = (await chrome.storage.managed?.get(null).catch(() => ({}))) || {};
   return policy.lockSettings === true || (Boolean(lock) && Date.now() >= unlockedUntil);
 }
-(async () => {
-  if (!(await settingsLocked())) return;
-  document.getElementById("vault-locked").hidden = false;
-  for (const id of ["vault-lead", "vault-form", "vault-list", "vault-empty"]) {
-    const node = document.getElementById(id);
-    if (node) node.hidden = true;
-  }
-})();
+// The 10 minutes can run out while the page is open: it locks itself then, and opens again once the PIN is entered
+// in the popup (as its note says). Save, Remove and OK to share each check the time again first.
+let relock = null;
+async function stillUnlocked() {
+  const locked = await settingsLocked();
+  if (locked !== pageLocked) showLocked(locked);
+  clearTimeout(relock);
+  const { unlockedUntil = 0 } = await chrome.storage.session.get("unlockedUntil").catch(() => ({}));
+  if (!locked && unlockedUntil > Date.now()) relock = setTimeout(stillUnlocked, unlockedUntil - Date.now());
+  return !locked;
+}
+function showLocked(locked) {
+  pageLocked = locked;
+  $("vault-locked").hidden = !locked;
+  $("vault-form").hidden = locked;
+  $("vault-list").hidden = locked;
+  $("vault-lead").hidden = locked || new URLSearchParams(location.search).has("welcome");
+  $("vault-empty").hidden = locked || $("vault-list").children.length > 0;
+}
+stillUnlocked();
+chrome.storage.onChanged.addListener((changes, area) => {
+  if ((area === "local" && changes.lock) || (area === "session" && changes.unlockedUntil)) stillUnlocked();
+});

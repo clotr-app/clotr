@@ -7,7 +7,7 @@
 // - app-words.js: the words only the apps use (apps/locales/*.json) as ClotrAppWords;
 // - ai-sites.js: Extension check's AI site list (extension/ai-sites.json) as ClotrAiSites, so results.js never
 //   needs fetch() for its own bundled data;
-// - kit/: the suite's look (the tokens, the parts and Atkinson Hyperlegible with its SIL OFL licence),
+// - kit/: the suite's tokens and parts, Recursive variable font, Atkinson assets and their SIL OFL licences,
 //   which the main window wears, byte for byte.
 // A file is written only when it changed, so a build that runs this (build.rs) doesn't start the next build again.
 // Usage: node tools/prepare-ui.js

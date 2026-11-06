@@ -6,9 +6,8 @@ It returns kinds and masked forms, and makes no network requests or saved copy o
 
 ## Runs locally
 
-Clotr MCP runs on your machine as a child process of your AI client, started over stdio (standard input and output).
-It opens no network connection, and it stores nothing it scans. "Server" is MCP's name for a role, the side that
-offers tools, not a remote machine.
+Clotr MCP runs locally as a child process and talks to your AI client over stdio (standard input and output). It
+makes no network calls and stores no scanned text. In MCP, "server" means the process that offers tools.
 
 The `clotr-mcp` command ships with Clotr Guard and uses Guard's engine and secret-file rules. It implements MCP
 2026-07-28 and accepts the older `initialize` handshake for existing clients.
@@ -76,3 +75,7 @@ The snippets use each host's documented local stdio format. The MCP specificatio
 
 Text over 64 KiB is refused before the engine checks it. Findings contain only a kind and masked form. Cleaned text
 contains the original text around each replaced finding, so review the cleaned copy before sending it.
+
+The engine can stop a scan before the end of the text, for example after 10 seconds. Then `check_text` and
+`clean_text` return `truncated: true`, and the `check_text` verdict ends with "Clotr ran out of time, so part of this
+text wasn't checked." Findings in the part it didn't reach aren't listed or replaced.

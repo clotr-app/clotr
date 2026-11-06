@@ -14,7 +14,7 @@ every entry point, backed by automated checks that now run on every change, list
 ## Reviewed, no change needed
 - Clotr sets no `externally_connectable` and no web-accessible resources, so a web page can't message Clotr or
   load its pages. The background only accepts messages from Clotr's own scripts, checked through `sender.id`, and
-  it validates every write. Events are rebuilt field by field through `sanitize`, vault entries must be
+  it validates every write. Events are rebuilt field by field through `cleanEvent`, vault entries must be
   fingerprint- or format-shaped through `cleanVaultEntry`, and type ids must match `^[a-z_]{2,40}$`.
 - The dialog and notice live in closed shadow roots, so page scripts can't read them or press their buttons.
   Synthetic events don't activate buttons, and the page has no reference to them in the first place. Detected
@@ -25,7 +25,7 @@ every entry point, backed by automated checks that now run on every change, list
   enforces, and every `fetch` reads one of the extension's own files through `chrome.runtime.getURL`, like
   `manifest.json` for the local update check, also enforced by a test.
 - Permissions cover the built-in AI sites only. Any other site needs the person to click "Protect this site" and
-  approve it as one optional host permission, narrowed to the chosen section on a shared host.
+  approve it as one optional host permission, narrowed to the chosen section on a shared host, or all at once through "Everywhere I type", which starts off.
 
 ## Added later (v0.9.27–0.9.31)
 | # | Finding | Fix | Test |
@@ -210,6 +210,143 @@ No blocking issues. One thing to watch rather than fix now is that nothing today
 script a message it acts on, so Tourniquet's storage has no path from a hostile page to tamper with. If a future
 feature ever adds one, it should come with a test proving Tourniquet can't be reached through it, the same way the
 vault probing in finding 23 got one.
+
+## 1.4.0 and Clotr for Windows 1.0
+Two reviews ran before this release. One was a separate review of the extension and Clotr for Windows. The other
+was a security scan of everything in `extension/` that changed since 1.3.0 and all of Clotr for Windows, plus a check by
+hand of the new detection code for slow patterns. Each fix started with a test that failed first.
+- A page could hide a phone number or SSN by gluing one letter to it. The new check that leaves file and release names
+  alone, like `Dune.Part.Two.2024.2160p`, took the number for part of a file name. Now only a whole token shaped like a
+  release name, or one with a resolution or codec tag, is left alone.
+- A real recovery phrase after 500 repeated list words went unchecked, because the repeats used up the checksum
+  check's budget. The budget now counts only real checksum checks, and a run of all 2,048 list words is checked in
+  about 120 ms.
+- Taking a photo's place out could miss a place saved in its XMP data under a different prefix, and still report
+  success. The remover and its check now find those fields whatever their prefix.
+- Importing a settings backup read the whole file and accepted any amount of key-stretching work, so a crafted file
+  could stall the settings page. Imports now stop at 1 MiB, check the salt and IV sizes exactly, and accept only the
+  work count Clotr itself writes.
+- In Clotr for Windows, a Results card left on screen from an earlier scan could recycle or move whichever file a new
+  scan had put at the same place in its list. Each scan now has its own number, and an action from an older scan is
+  refused.
+- "Move it somewhere private" checked a file by its path and then moved it, so a program on the same computer could
+  swap the file for a link in between. It now opens the file without following links and moves the file it checked.
+- Automatic paste checked which window had focus and then pasted, so a program that took focus in between could
+  receive the paste. Clotr for Windows now checks focus again right before pasting. That narrows the gap rather than
+  closing it, and a program able to do this can already read the clipboard.
+- The zip library Clotr for Windows reads archives with had three published advisories, all about unpacking files to
+  disk, which Clotr never does. It was updated anyway.
+- The new stronger fingerprint is 1,000 rounds of SHA-256. A real password-hashing function would slow guessing on a
+  graphics card far more. The scan rated this low, since it needs full access to the browser profile already, and it
+  stays for now because changing it changes every stored fingerprint. "Accepted limits" below covers it.
+- Two more candidates were ruled out on a closer look. One was a timing gap in the private-folder checks, reachable
+  only through the stale Results card above. The other was a build script's program search order, which nothing
+  untrusted can reach. `npm audit`, zizmor and actionlint found nothing, and gitleaks found only a made-up test key.
+
+## 1.4.1
+1.4.1 changed three detections, all from an outside contributor's fixes: Cover it on a whole pasted private key,
+16-character xAI keys, and a Redis URL without a username. It added no new way of reading or storing anything, and no
+separate security review was recorded for it. The 1.5.0 review below starts from it.
+
+## 1.5.0
+Three reviews ran. One, partway through, covered the new handling of quoted email replies. A two-pass review then
+covered everything that changed since 1.4.1 in the extension, the detection engine, Clotr for Windows 1.0.2 and the
+developer tools: Guard, the VS Code extension and the JetBrains plugin. Neither pass found a change that sends, stores
+or logs a person's text or a found value in full. All 16 high and medium findings were fixed before release, each with
+a regression test seen failing first.
+- In email replies, a reply marker or forward header the sender put inside their own quoted message made Clotr skip
+  everything typed below the quote. The first thing typed into a quote was taken for old text, and a quote padded with
+  blank lines cost seconds per keystroke. All four of these problems are fixed.
+- A huge run of dashes inside one value, one value pasted 130,000 times, or a list of 130,000 numbers overflowed the
+  stack, so nothing in that paste got a warning. Pastes of many wrapped values, distinct emails, AWS key pairs or
+  Twilio labels took from seconds to almost two minutes, where 1.4.1 took a fraction of a second. Each check is linear
+  again.
+- Cover it could leave part or all of a secret behind in a JSON value split by an escaped line break near its start,
+  after a doubly escaped line break, or in a Twilio token written a second time. In an email reply it stopped without
+  a word on a forwarded thread of about 120,000 characters. All of these are covered now.
+- A cache or lookup key, like a CI log's `Cache saved with key:`, warned as a service token. 1.4.1 never did.
+- In Guard and the editor plugins, a `.clotrignore` rule full of stars, or long rules on a deep path, could hang a
+  commit or an editor for seconds to minutes, and escaped wildcards were misread. `ignore-value` fingerprinted any
+  value next to its salt in a file meant to be committed, so anyone with the repository could guess a phone number or
+  PIN back out. It now refuses values like that. A large UTF-16 file in a commit went partly or wholly unchecked.
+- A clean build of Clotr for Windows 1.0.2 failed, because it granted commands for a held-back feature that only
+  leftover generated files satisfied. The package itself was clean, and those grants now come only with that feature.
+- The two passes also recorded 17 low findings. Fifteen were reported for a later fix and two were kept as they are on
+  purpose. Two of the 17 are older than 1.4.1.
+
+## 1.6.0
+Before the cut, three review passes covered the developer tools, and a fourth covered everything in the extension that
+changed since 1.5.0, which found nothing. Then a separate security scan covered each part on its own: the extension,
+the detection engine, Guard and its built-in tool server, the VS Code extension, the JetBrains plugin and the website.
+Each fix came with a regression test.
+- A chat page could put guesses in its own chat box and watch whether Clotr's warning or a Bandage label appeared, to
+  learn which guesses were saved details. A saved detail now counts only in text the person typed, pasted or dictated
+  in that box, so a page's own text stays quiet. The reply check no longer shows anything on the page either. A match
+  goes to Clotr's toolbar count, popup and Activity instead.
+- Reading a crafted photo's XMP place, and the copied-command check on long runs of invisible spaces, could freeze a
+  chat tab. Both are linear now. A finding about how guessable short values' fingerprints are was already a known
+  limit, and stays one.
+- Several password phrases in other languages backtracked on long runs of spaces, and so did one Twilio pattern. All
+  are linear now. The engine package's check worked out the slow fingerprint for every finding with no cap, and now
+  does it for at most eight per check.
+- Guard's guessability check let ordinary passwords through to `.clotrignore`, and the VS Code quick fix could write
+  one there. Both now refuse passwords, personal details and weak values. On Linux, the read hook let the process
+  environment file through. Searches could return a secret file's contents, because the secret-file rule covered only
+  read tools. Guard's messages to the assistant showed part of the value they refused. Each is fixed, and the messages
+  now name only kinds and places.
+- Earlier passes found that hook input that was malformed or over the size limit could pass unchecked, and it's
+  stopped now. Setup and removal could replace another tool's hook or follow a link. Hook commands now quote their
+  paths and name Node by its full path, and the editor plugins no longer run a `node`, `npm` or Guard placed inside the
+  project. A workspace's own settings can't switch off VS Code's checks, and a `.clotrignore` path rule no longer
+  skips ordinary files silently. The editors now say a file wasn't checked, where they used to show an all-clear for
+  large or binary files. Look-alike letters from other alphabets in a label like "password" hid its value, and so did
+  a test-output prefix. A test-only dependency with a published advisory was updated.
+- In VS Code and JetBrains, a project's `.gitignore` lines became backtracking patterns that could freeze the editor,
+  and adding a file to `.gitignore` followed a linked `.gitignore` to wherever it pointed. VS Code's "Move to .env"
+  could write into a parent folder another user had set up. The JetBrains build used fixed folder names in the shared
+  temp folder. All of these are fixed.
+- The website scan's three candidates weren't security problems, since pasted text is only checked in the person's
+  own browser. The slowdown behind them was real, though, and is fixed, and the Try page now checks at most 100,000
+  characters, like the extension. The tool server scan found nothing.
+
+## 1.6.1 and Guard 0.1.2
+A separate review covered what changed since 1.6.0 in the extension, the detection engine, Guard and its tool server,
+and the apps. Each fix was written test-first, then attacked by another reviewer and repaired until nothing
+release-blocking was left.
+
+Nine problems are still open. All nine were already in 1.6.0, and they wait for a later release.
+- Four are in Guard's preview shell check, which still misses a few less common command forms and can be held past its
+  time limit.
+- File-reading tools from other tool servers aren't checked for secret files.
+- A search in count mode can still tell whether a secret file matches.
+- An install path with a curly apostrophe breaks Guard's Windows hooks.
+- One fingerprint step in the engine package has no time budget.
+- The JetBrains plugin reads a folder-only `.gitignore` rule as covering a file of the same name.
+
+Ten problems came from changes made since 1.6.0. All ten are fixed.
+- A token after "Bearer", "Basic" and similar words under a secret label gave no warning.
+- Real passwords that only look a little like code, like a dotted passphrase, were skipped.
+- In a paste over 40,000 characters, a recovery phrase could go unwarned where the paste is split for checking.
+- Hide it left a URL-encoded or JSON-quoted copy of a short value like an SSN.
+- In Guard, placing each finding was quadratic, so a prompt holding tens of thousands of emails ran past the assistant's
+  15-second hook limit and went unchecked.
+- `is_secret_file` looked up the path it was given, so a network path made Windows connect to that host. It now judges
+  such a path by its name.
+- Clotr for Android's test build, which isn't released, logged key presses for debugging. That logging is off now.
+- Once Guard's shell check ran out of time on path lookups, it judged the rest of a long command's paths by name alone,
+  so padding a command could slip a link or a Windows short name to a secret file through. On macOS and Linux that undid
+  1.6.0's check of a link to a secret file. Now a path past that point that is on disk stops the command.
+- A Windows short name behind a `\\?\` or `\\.\` device path was judged by name alone. It's now checked as the drive path
+  it opens.
+- A folder too big to check now stops a command that reads a whole folder tree.
+
+While these were fixed, the reviewers also found that a path padded with a long run of dots or spaces could hold the
+shell check past the assistant's hook time limit, so the command went ahead unchecked. That's fixed too.
+
+Three older problems sat in code this release changed, and they're fixed too, including these.
+- Guard ignored the engine's sign that it had stopped before the end of a long text, so a secret after enough filler went
+  through. Now a check that doesn't finish stops the action.
+- Hide it left URL-encoded copies outside a link, like in a form body or a request line.
 
 ## Events a page's script can cause
 A security scan of 1.2.1 found two more ways around finding 23, and a second look found a few close relatives. The

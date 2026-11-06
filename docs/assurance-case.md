@@ -92,5 +92,6 @@ The checklist here is Saltzer and Schroeder's, the classic list.
 The limits are in SECURITY.md and in security-review.md's "Accepted limits". The biggest is that a hostile AI site can
 defeat Clotr on its own pages, though it can't learn anything it wasn't already about to receive.
 
-Each release gets a security review before it ships, recorded in security-review.md, and the full test suite runs on every pull
-request in between, with CodeQL and OpenSSF Scorecard scanning the public repo as well.
+Releases that change what Clotr reads or stores get a security review before they ship, recorded in
+security-review.md, and the full test suite runs on every pull request in between, with CodeQL and OpenSSF Scorecard
+scanning the public repo as well.

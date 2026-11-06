@@ -2,6 +2,22 @@
 
 What changed in each version of Clotr. How the version numbers work is in [VERSIONING.md](VERSIONING.md).
 
+## 1.6.1 (2026-11-06)
+
+- Clotr now reads more national ID numbers, from Ireland, New Zealand, Brazil, India, France, the Netherlands, Poland, Italy, Germany, Singapore, South Africa, Korea, Japan and China.
+- More access tokens are caught by how they start, with no label needed, including Google, Microsoft Entra, Docker Hub, Notion and Pinecone tokens.
+- A key wrapped across lines or encoded inside a link is found and covered whole, and so is a token or password written after a word like Bearer. Real passwords that only look a little like code are no longer skipped.
+- A recovery phrase is found inside an everyday sentence, a JSON array or a quoted reply, and long everyday word lists no longer read as one.
+- Hide it also hides each other copy of what it found, written another way in the same message. Hide it and Clot this leak change a saved word only where it stands as a word.
+- Fewer false alarms on date-times, web log lines, git hashes, version and order numbers, and settings under password labels.
+- A typical message is checked in about four fifths of the time it took in 1.6.0, even with the new checks.
+- A message that's still in the box, with more typed after it, no longer counts as sent, and Clotr checks a draft that wasn't typed in this tab when you click Send.
+- Clotr says when an attached file is locked, damaged or too large to check, and reads more PDF and Office files correctly.
+- Is this a scam? counts cheap web endings, link shorteners and links with a path, and shows the phone line for toll-free numbers too.
+- Vault and helper pages lock when the PIN window ends, open again once the PIN is entered, and keep what you typed until the save is confirmed.
+
+Every change in detail is in `docs/extension/1.6.1-details.md` in the repo.
+
 ## 1.6.0 (2026-10-27)
 
 - The practice key is assembled when its pages open, so examples still work without shipping a whole copy of a key.

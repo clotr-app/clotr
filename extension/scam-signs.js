@@ -543,6 +543,12 @@
   );
   const LINK_PREFIX = /https?:\/\/|www\./iu;
   const LINK_DOMAIN_END = /\.(?:com|net|org|invalid|info|co|io|us|gov|es)(?![\p{L}\p{N}])/giu;
+  // The cheap endings scam texts use and the link shorteners' (bit.ly, is.gd, rb.gy), only in lower case the way
+  // a link is written, so two sentences run together ("at work.Shop later") aren't read as one. Any other ending
+  // counts once a path follows it ("example.dev/pay").
+  const LINK_CHEAP_END =
+    /\.(?:top|xyz|app|link|click|shop|online|site|live|icu|vip|buzz|sbs|cfd|cyou|club|me|cc|ly|gd|gy)(?![\p{L}\p{N}])/gu;
+  const LINK_PATH_END = /\.[a-z]{2,24}(?=\/[\p{L}\p{N}])/gu;
   const domainLabelChar = (code) =>
     (code >= 48 && code <= 57) || (code >= 65 && code <= 90) || (code >= 97 && code <= 122) || code === 45;
   function domainStartBoundary(text, at) {
@@ -556,11 +562,13 @@
   }
   function hasLink(text) {
     if (LINK_PREFIX.test(text)) return true;
-    LINK_DOMAIN_END.lastIndex = 0;
-    for (const match of text.matchAll(LINK_DOMAIN_END)) {
-      let start = match.index - 1;
-      while (start >= 0 && domainLabelChar(text.charCodeAt(start))) start--;
-      if (start < match.index - 1 && domainStartBoundary(text, start + 1)) return true;
+    for (const end of [LINK_DOMAIN_END, LINK_CHEAP_END, LINK_PATH_END]) {
+      end.lastIndex = 0;
+      for (const match of text.matchAll(end)) {
+        let start = match.index - 1;
+        while (start >= 0 && domainLabelChar(text.charCodeAt(start))) start--;
+        if (start < match.index - 1 && domainStartBoundary(text, start + 1)) return true;
+      }
     }
     return false;
   }
@@ -675,5 +683,14 @@
   // Tells the page whether the message has a link in it, for the "don't use it to check" line.
   const scamHasLink = (text) => typeof text === "string" && hasLink(text);
 
-  globalThis.Clotr = { ...(globalThis.Clotr || {}), SCAM_SIGNS, scamSigns, scamHasLink };
+  // Tells the page whether the message has a number to call, for the "don't call it to check" line. The
+  // personal-data check skips toll-free numbers as business lines, but they're the ones tech-support and account
+  // scams give you, so a written-out 800, 833, 844, 855, 866, 877 or 888 number counts here too.
+  const TOLL_FREE_PHONE =
+    /(?<![\p{N}.$€])(?:\+?1[\s.-]?)?(?:\(8(?:00|33|44|55|66|77|88)\)\s?|8(?:00|33|44|55|66|77|88)[\s.-])\d{3}[\s.-]\d{4}(?!\p{N}|[.,]\p{N})/u;
+  const scamHasPhone = (text) =>
+    typeof text === "string" &&
+    (TOLL_FREE_PHONE.test(text) || globalThis.Clotr.detect(text).some((r) => r.id === "phone_number"));
+
+  globalThis.Clotr = { ...(globalThis.Clotr || {}), SCAM_SIGNS, scamSigns, scamHasLink, scamHasPhone };
 })();

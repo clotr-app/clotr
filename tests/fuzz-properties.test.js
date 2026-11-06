@@ -118,12 +118,31 @@ test("property: every finding detect() returns is well formed", () => {
   );
 });
 
+const agreesWithItself = fc.property(arbitraryText, (t) => {
+  const first = resultShape(detect(t));
+  globalThis.Clotr.detect.forget(); // scan the text again, not hand back the answer kept from the first call
+  assert.deepEqual(first, resultShape(detect(t)));
+});
+
 test("property: detect() agrees with itself on the same text", () => {
-  fc.assert(
-    fc.property(arbitraryText, (t) => {
-      assert.deepEqual(resultShape(detect(t)), resultShape(detect(t)));
-    }),
-  );
+  fc.assert(agreesWithItself);
+});
+
+test("the agreement property fails a rule that changes its answer on the same text", () => {
+  let runs = 0;
+  const unstable = {
+    id: "planted_unstable",
+    name: "Planted",
+    severity: "low",
+    find: (text) => (text && runs++ % 2 ? [text[0]] : []),
+  };
+  const { PATTERNS } = globalThis.Clotr;
+  PATTERNS.push(unstable);
+  try {
+    assert.throws(() => fc.assert(agreesWithItself));
+  } finally {
+    PATTERNS.splice(PATTERNS.indexOf(unstable), 1);
+  }
 });
 
 test("property: detect() grows with an ordinary paste", () => {

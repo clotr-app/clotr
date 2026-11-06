@@ -5,7 +5,7 @@
 (() => {
   "use strict";
 
-  const { msg, mask, noticeWords } = globalThis.Clotr;
+  const { msg, mask, noticeWords } = globalThis.Clotr || {};
 
   function el(tag, props = {}, children = []) {
     const node = document.createElement(tag);

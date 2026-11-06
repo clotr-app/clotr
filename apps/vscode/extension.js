@@ -12,9 +12,10 @@ const { isSecretFile } = require("./guard/lib/secret-files.js");
 const DEMO_AWS_KEY = ["AKIA", "4HPQ7XZ2", "R6TWLJ3N"].join("");
 const {
   MAX_PATTERN_LENGTH,
+  globMatches,
   globMatchesAt,
-  globSteps,
   parseClotrIgnore,
+  parseRule,
   readClotrIgnore,
   valueFingerprint,
 } = require("./guard/lib/clotrignore.js");
@@ -38,6 +39,18 @@ const TOOL_LABELS = {
   cline: "Cline",
   git: "Git",
 };
+
+// A secret file by its path, or a service-account key file by its content. The shared content rule matches the shape
+// anywhere, so a source file or README that only mentions it would lose every finding; here the file must be that key.
+function editorSecretFile(file, text) {
+  if (isSecretFile(file)) return true;
+  if (typeof text !== "string" || !isSecretFile(file, text)) return false;
+  try {
+    return JSON.parse(text.charCodeAt(0) === 0xfeff ? text.slice(1) : text)?.type === "service_account";
+  } catch {
+    return false;
+  }
+}
 
 function runGuardCommand(command, args, options, timeoutMs = GUARD_COMMAND_TIMEOUT_MS, spawnProcess = spawn) {
   return new Promise((resolve, reject) => {
@@ -355,7 +368,12 @@ function activate(context) {
     return (config().get("skipList", []) || []).some((pattern) => matchGlob(pattern, rel));
   }
   function clotrIgnoreForDocument(document) {
-    const filePath = path.resolve(document.uri.fsPath);
+    const root = projectRoot(document.uri);
+    return { root, config: root ? cachedClotrIgnore(root) : parseClotrIgnore("") };
+  }
+  // The nearest folder with .git at or above the file, inside its workspace folder; else that workspace folder.
+  function projectRoot(fileUri) {
+    const filePath = path.resolve(fileUri.fsPath);
     const workspace = vscode.workspace.workspaceFolders?.find((folder) => {
       const relative = path.relative(path.resolve(folder.uri.fsPath), filePath);
       return (
@@ -379,7 +397,7 @@ function activate(context) {
       if (parent === directory) break;
       directory = parent;
     }
-    return { root, config: root ? cachedClotrIgnore(root) : parseClotrIgnore("") };
+    return root;
   }
   function clotrIgnoreForWorkspace() {
     const root = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
@@ -478,7 +496,7 @@ function activate(context) {
       return diagnostics.get(document.uri);
     }
     const text = bounded.text;
-    if (!untitled && isSecretFile(document.uri.fsPath, text)) {
+    if (!untitled && editorSecretFile(document.uri.fsPath, text)) {
       ignoredOnce.delete(key);
       diagnostics.delete(document.uri);
       diagnosticData.delete(key);
@@ -515,6 +533,17 @@ function activate(context) {
     }
     pruneIgnoredOnce(ignoredOnce.get(key), activeIgnored);
     if (!ignoredOnce.get(key)?.size) ignoredOnce.delete(key);
+    // The engine stopped before the end (its time limit): say so at the top, beside whatever it did find.
+    if (checked.truncated) {
+      const partial = new vscode.Diagnostic(
+        new vscode.Range(document.positionAt(0), document.positionAt(0)),
+        t("notCheckedPart"),
+        vscode.DiagnosticSeverity.Warning,
+      );
+      partial.source = SOURCE;
+      partial.code = "check_partial";
+      next.push(partial);
+    }
     diagnostics.set(document.uri, next);
     return next;
   }
@@ -539,22 +568,30 @@ function activate(context) {
     );
   }
 
-  function gitIgnoreMatches(pattern, candidate) {
-    if (!pattern || pattern.length > MAX_PATTERN_LENGTH) return false;
-    let steps;
-    try {
-      steps = globSteps(pattern);
-    } catch {
-      return false;
-    }
-    // A Git ignore rule also covers descendants of a matched directory. Check every path prefix in one pass with
-    // Guard's state-set glob walker; compiling a regex here let star-heavy rules backtrack for an unbounded time.
+  // What one .gitignore says about each part of a path relative to its folder (each folder on the way down, then the
+  // file): true or false from the last of its lines that names that part, undefined when none does. Guard's rule
+  // parser keeps a trailing slash's folders-only meaning, and its state-set glob walker can't backtrack for an
+  // unbounded time the way a compiled regex could on a star-heavy rule.
+  function gitIgnoreDecisions(lines, parts) {
+    const relativePath = parts.join("/");
     const ends = [];
-    for (let end = candidate.indexOf("/"); end >= 0; end = candidate.indexOf("/", end + 1)) {
-      if (end > 0) ends.push(end);
+    for (let index = 0, end = -1; index < parts.length; index += 1) ends.push((end += parts[index].length + 1));
+    const excluded = parts.map(() => undefined);
+    for (const line of lines) {
+      const rule = parseRule(line);
+      if (!rule) continue;
+      // A leading slash ties the rule to this .gitignore's folder, as a slash inside it does.
+      const anchored = rule.hasSlash || (rule.negate ? line.slice(1) : line).startsWith("/");
+      // An anchored rule names a whole path from this folder; one without a slash names any single part.
+      const named = anchored
+        ? globMatchesAt(rule.steps, relativePath, ends)
+        : parts.map((part) => globMatches(rule.steps, part));
+      if (rule.directoryOnly) named[named.length - 1] = false;
+      named.forEach((match, index) => {
+        if (match) excluded[index] = !rule.negate;
+      });
     }
-    ends.push(candidate.length);
-    return globMatchesAt(steps, candidate, ends).some(Boolean);
+    return excluded;
   }
   async function secretIgnored(uri) {
     try {
@@ -568,40 +605,30 @@ function activate(context) {
     } catch (_error) {
       // A missing or unavailable Git extension falls back to local ignore files.
     }
-    const folder = vscode.workspace.workspaceFolders?.find((item) =>
-      uri.fsPath.toLowerCase().startsWith(`${item.uri.fsPath.replace(/[\\/]$/, "").toLowerCase()}${path.sep}`),
-    );
-    if (!folder) return false;
-    const root = folder.uri.fsPath;
-    const directories = [];
-    let directory = path.dirname(uri.fsPath);
-    while (directory.toLowerCase().startsWith(root.toLowerCase())) {
-      directories.unshift(directory);
-      if (directory.toLowerCase() === root.toLowerCase()) break;
-      directory = path.dirname(directory);
-    }
-    let ignoredBy = false;
-    for (const current of directories) {
-      const gitignore = path.join(current, ".gitignore");
+    // Read from the file's own repository down, as Git does: a .gitignore above a nested repository's root isn't one
+    // that repository reads.
+    const root = projectRoot(uri);
+    if (!root) return false;
+    const parts = path.relative(root, path.resolve(uri.fsPath)).split(path.sep);
+    if (parts.some((part) => !part || part === "." || part === "..")) return false;
+    // Each folder on the way down and the file itself is decided by the last line that names it, a deeper .gitignore's
+    // lines coming after those above it, and the file is ignored once any of them is: a negation that names only a
+    // folder above the file can't bring back a file an earlier line excluded.
+    const excluded = parts.map(() => false);
+    for (let depth = 0; depth < parts.length; depth += 1) {
       let contents;
       try {
-        contents = readGitIgnore(gitignore);
+        contents = readGitIgnore(path.join(root, ...parts.slice(0, depth), ".gitignore"));
       } catch (_error) {
         continue;
       }
-      if (contents) {
-        const prefix = path.relative(current, uri.fsPath).replace(/\\/g, "/");
-        for (const raw of contents.split(/\r\n|\n|\r/)) {
-          const rule = normalizeGitIgnoreLine(raw);
-          if (!rule || rule.startsWith("#")) continue;
-          const negate = rule.startsWith("!");
-          const pattern = (negate ? rule.slice(1) : rule).replace(/^\//, "");
-          const candidate = pattern.includes("/") ? prefix : path.posix.basename(prefix);
-          if (gitIgnoreMatches(pattern, candidate)) ignoredBy = !negate;
-        }
-      }
+      if (!contents) continue;
+      const lines = contents.split(/\r\n|\n|\r/).map(normalizeGitIgnoreLine);
+      gitIgnoreDecisions(lines, parts.slice(depth)).forEach((decision, index) => {
+        if (decision !== undefined) excluded[depth + index] = decision;
+      });
     }
-    return ignoredBy;
+    return excluded.includes(true);
   }
 
   async function checkWorkspaceSecrets(documents = vscode.workspace.textDocuments) {
@@ -617,20 +644,26 @@ function activate(context) {
       let secret = isSecretFile(doc.uri.fsPath);
       if (!secret) {
         const bounded = boundedDocumentText(doc);
-        secret = bounded.kind === "text" && isSecretFile(doc.uri.fsPath, bounded.text);
+        secret = bounded.kind === "text" && editorSecretFile(doc.uri.fsPath, bounded.text);
       }
       if (secret) {
         const folder = vscode.workspace.workspaceFolders.find((item) =>
           doc.uri.fsPath.toLowerCase().startsWith(`${item.uri.fsPath.replace(/[\\/]$/, "").toLowerCase()}${path.sep}`),
         );
-        const relativePath = folder ? path.relative(folder.uri.fsPath, doc.uri.fsPath).replace(/\\/g, "/") : null;
-        if (relativePath && !(await secretIgnored(doc.uri))) unignored.push({ root: folder.uri.fsPath, relativePath });
+        // A repository nested in the workspace folder never reads the folder's .gitignore, so write into its own.
+        const root = folder ? projectRoot(doc.uri) || folder.uri.fsPath : null;
+        const relativePath = root ? path.relative(root, doc.uri.fsPath).replace(/\\/g, "/") : null;
+        if (relativePath && !(await secretIgnored(doc.uri))) unignored.push({ root, relativePath });
       }
     }
     if (!unignored.length) return;
     await state.update("workspaceSecretNoteShown", true);
     workspaceSecretNoteShown = true;
-    const action = await vscode.window.showInformationMessage(t("unignoredSecretNote"), t("addToGitignore"));
+    await offerGitIgnore(unignored, t("unignoredSecretNote"));
+  }
+  // Asks before adding each { root, relativePath } to the .gitignore in its root.
+  async function offerGitIgnore(unignored, message) {
+    const action = await vscode.window.showInformationMessage(message, t("addToGitignore"));
     if (action !== t("addToGitignore")) return;
     try {
       const safePaths = unignored.map((item) => {
@@ -776,6 +809,8 @@ function activate(context) {
     } else {
       status.tooltip = t("statusProtected").replace("{0}", String(files)).replace("{1}", String(count));
     }
+    const off = vscode.workspace.textDocuments.filter((doc) => disabled.has(uriKey(doc.uri))).length;
+    if (off) status.tooltip += `\n${t("statusFilesOff").replace("{0}", String(off))}`;
     status.show();
   }
   const actions = {
@@ -901,8 +936,12 @@ function activate(context) {
     const quote = source[start - 1];
     if (!["'", '"'].includes(quote) || source[end] !== quote) return;
     const envFile = path.join(root, ".env");
-    const envText = safeExistingEnv(envFile);
-    if (envText === null) {
+    const envUri = vscode.Uri.file(envFile);
+    const onDisk = safeExistingEnv(envFile);
+    // An earlier move's line can sit unsaved in the open .env, so its editor text decides the name and the position.
+    const envDocument = onDisk === null ? null : documentFor(envUri);
+    const envText = envDocument ? envDocument.getText() : onDisk;
+    if (envText === null || (envDocument && (envText.includes("\0") || Buffer.byteLength(envText) > MAX_BYTES))) {
       await vscode.window.showWarningMessage(t("moveToEnvError"));
       return;
     }
@@ -920,8 +959,7 @@ function activate(context) {
       new vscode.Range(document.positionAt(start - 1), document.positionAt(end + 1)),
       `process.env.${variable}`,
     );
-    const envUri = vscode.Uri.file(envFile);
-    if (envText === undefined) edit.createFile(envUri);
+    if (onDisk === undefined) edit.createFile(envUri);
     edit.insert(envUri, appendPosition(envText || ""), insertion);
     try {
       if (!(await vscode.workspace.applyEdit(edit))) throw new Error("edit failed");
@@ -930,7 +968,10 @@ function activate(context) {
       updateStatus();
     } catch (_error) {
       await vscode.window.showWarningMessage(t("moveToEnvError"));
+      return;
     }
+    // .env is skipped as a secret file, so nothing else would say the credential now sits in a file Git can commit.
+    if (!(await secretIgnored(envUri))) await offerGitIgnore([{ root, relativePath: ".env" }], t("movedEnvNotIgnored"));
   }
   context.subscriptions.push(
     diagnostics,
@@ -968,12 +1009,27 @@ function activate(context) {
       findingEmitter.fire();
       updateStatus();
     }),
+    // Undoes Turn off for this file: from the Command Palette it takes the file in the active editor.
+    vscode.commands.registerCommand("clotr.turnOnFile", async (uri) => {
+      const target = uri || vscode.window.activeTextEditor?.document.uri;
+      if (!target || !disabled.delete(uriKey(target))) return;
+      await state.update("disabledFiles", [...disabled]);
+      const doc = documentFor(target);
+      if (doc) analyze(doc);
+      findingEmitter.fire();
+      updateStatus();
+    }),
   );
   context.subscriptions.push(
     vscode.commands.registerCommand("clotr.focusView", () => vscode.commands.executeCommand("workbench.view.explorer")),
   );
   const ignoreWatcher = vscode.workspace.createFileSystemWatcher("**/.clotrignore");
-  const invalidateIgnore = (uri) => clotrIgnoreCache.delete(path.resolve(path.dirname(uri.fsPath)));
+  const invalidateIgnore = (uri) => {
+    clotrIgnoreCache.delete(path.resolve(path.dirname(uri.fsPath)));
+    // Open files keep findings from the old rules until they're checked again, so check them on the usual debounce.
+    for (const document of vscode.workspace.textDocuments) pendingDocuments.set(uriKey(document.uri), document);
+    schedule();
+  };
   context.subscriptions.push(
     ignoreWatcher,
     ignoreWatcher.onDidCreate(invalidateIgnore),
@@ -1036,12 +1092,15 @@ function activate(context) {
 
   async function showChecked(text) {
     if (Buffer.byteLength(text, "utf8") > MAX_BYTES) {
-      await vscode.window.showInformationMessage(t("notCheckedLarge"));
+      await vscode.window.showInformationMessage(t("notCheckedTextLarge"));
       return;
     }
     const rank = { high: 3, medium: 2, low: 1 };
     const minimum = config().get("minSeverity", "medium");
-    const checked = host.check(text, { app: "vscode", source: "copied" }).findings;
+    // One scan: its groups map the values, and its time-limit flag says whether the whole text was checked.
+    const { checked: result, groups = [] } = checkWithDetection(text, { app: "vscode", source: "copied" });
+    const checked = result.findings;
+    const partial = result.truncated === true;
     const document = vscode.window.activeTextEditor?.document;
     const ignore = document ? clotrIgnoreForDocument(document).config : clotrIgnoreForWorkspace().config;
     const byValue = new Map();
@@ -1052,7 +1111,6 @@ function activate(context) {
       byValue.set(key, [...(byValue.get(key) || []), finding]);
     }
     const matches = [];
-    const groups = vmContext.Clotr.detect(text);
     for (let groupIndex = 0; groupIndex < groups.length; groupIndex += 1) {
       const group = groups[groupIndex];
       for (let matchIndex = 0; matchIndex < group.matches.length; matchIndex += 1) {
@@ -1068,10 +1126,16 @@ function activate(context) {
       return rank[finding.severity] >= rank[minimum] && (!fingerprint || !ignore?.fingerprints.has(fingerprint));
     });
     if (!findings.length) {
-      await vscode.window.showInformationMessage(t("nothingFound"));
+      if (partial) await vscode.window.showWarningMessage(t("notCheckedTextPart"));
+      else await vscode.window.showInformationMessage(t("nothingFound"));
       return;
     }
     const details = findings.map(({ finding }) => `${findingName(finding)}: ${t("findingDetected")}`).join("\n");
+    // A cleaned copy of text that wasn't fully checked could still hold a secret past the point the scan stopped.
+    if (partial) {
+      await vscode.window.showWarningMessage(`${t("foundDetails")}\n${details}\n${t("notCheckedTextPart")}`);
+      return;
+    }
     const choice = await vscode.window.showWarningMessage(`${t("foundDetails")}\n${details}`, t("copyClean"));
     if (choice) {
       const cleaned = host.redact(
@@ -1092,11 +1156,16 @@ function activate(context) {
   async function checkSelection() {
     try {
       const selectionEditor = vscode.window.activeTextEditor;
-      if (!selectionEditor || selectionEditor.selection.isEmpty) {
+      // With several cursors, copying takes every selection, so all of them are checked, in document order.
+      const document = selectionEditor?.document;
+      const selections = (selectionEditor?.selections || [selectionEditor?.selection])
+        .filter((selection) => selection && !selection.isEmpty)
+        .sort((a, b) => document.offsetAt(a.start) - document.offsetAt(b.start));
+      if (!selections.length) {
         await vscode.window.showInformationMessage(t("selectText"));
         return;
       }
-      await showChecked(selectionEditor.document.getText(selectionEditor.selection));
+      await showChecked(selections.map((selection) => document.getText(selection)).join("\n"));
     } catch (_error) {
       await vscode.window.showErrorMessage(t("checkFailed"));
     }
@@ -1143,30 +1212,34 @@ function activate(context) {
   let repairPromptShown = false;
   // An update removes the old extension folder, leaving hooks that name a script that's gone.
   async function repairGuardHooks() {
-    if (repairPromptShown || context.globalState.get("extensionVersion") === manifest.version) return;
+    if (repairPromptShown) return;
+    const updated = context.globalState.get("extensionVersion") !== manifest.version;
     const home = context.clotrGuardHome || os.homedir();
     const workspace = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
     const targets = [];
-    for (const tool of guard.IMPLEMENTED_TOOL_NAMES) {
+    for (const tool of updated ? guard.IMPLEMENTED_TOOL_NAMES : []) {
       if (tool === "cline" && hostPlatform === "win32") continue;
       const stale = guard.managedHooks(tool, { home }).find((entry) => inOldExtensionFolder(entry.script));
       if (!stale) continue;
       targets.push(tool);
     }
-    // The open workspace's Git hook too, read from its file, so nothing runs in a workspace that isn't trusted.
+    // The open workspace's Git hook too, read from its file, so nothing runs in a workspace that isn't trusted. Each
+    // repository has its own hook, so it's read in every window, not only the first one after an update.
     if (workspace && vscode.workspace.isTrusted) {
       const hook = path.join(workspace, ".git", "hooks", "pre-commit");
       const script = isFile(hook) ? guard.gitHookScript(fs.readFileSync(hook, "utf8")) : null;
       if (script && inOldExtensionFolder(script)) targets.push("git");
     }
     if (!targets.length) {
-      await context.globalState.update("extensionVersion", manifest.version);
+      if (updated) await context.globalState.update("extensionVersion", manifest.version);
       return;
     }
     repairPromptShown = true;
-    await context.globalState.update("extensionVersion", manifest.version);
     const action = t("guardMovedAction");
-    if ((await vscode.window.showInformationMessage(t("guardMoved"), action)) === action) await configureGuard();
+    // A dismissed prompt asks again next time: until the hooks are set up again, they run a script that's gone.
+    if ((await vscode.window.showInformationMessage(t("guardMoved"), action)) !== action) return;
+    await context.globalState.update("extensionVersion", manifest.version);
+    await configureGuard();
   }
   const repairTimer = setTimeout(() => void repairGuardHooks().catch(() => {}), 0);
   async function configureGuard() {

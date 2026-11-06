@@ -219,6 +219,55 @@ test("scam link check keeps the supported link shapes and boundaries", () => {
   }
 });
 
+// Scam texts mostly link to cheap endings and shorteners, written with no https:// or www.
+test("scam link check counts the cheap endings and shorteners scam texts use, and any ending with a path", () => {
+  for (const d of [
+    "redelivery-example.top/track",
+    "bit.ly/example",
+    "refund-example.xyz",
+    "verify-example.app",
+    "alert-example.link",
+    "toll-example.click",
+    "parcel-example.shop",
+    "pay-example.dev/now",
+  ]) {
+    const text = `Your toll balance is overdue. Pay now at ${d} to avoid a fine.`;
+    assert.equal(scamHasLink(text), true, text);
+  }
+  // Two sentences run together aren't a link, and neither is a file name with no path.
+  for (const text of ["I'm at work.Shop later?", "Thanks.Me too", "See notes.md", "Pay 1.5/2 now"]) {
+    assert.equal(scamHasLink(text), false, text);
+  }
+  // A problem with only a link to act on is still a sign.
+  assert.deepEqual(found("Your account is locked. help-example.xyz/a"), ["prob_account"]);
+});
+
+// The "It has a phone number: don't call it to check" line. A toll-free number is a business line, so the
+// personal-data check skips it, but it's the number tech-support and account scams most often give you to call.
+test("the phone hint counts toll-free numbers, the ones scam texts give you to call", () => {
+  const { scamHasPhone } = globalThis.Clotr;
+  for (const text of [
+    "Microsoft Support: your computer has a virus. Call (877) 555-0142 immediately.",
+    "Your account is locked. Call 1-888-555-0199 now to unlock it.",
+    "Suspicious charge on your card. Call us at 800.555.0100.",
+    "Call +1 866 555 0123 to cancel the order.",
+    "Your account is locked. Call (202) 555-0142 to fix it.",
+  ]) {
+    assert.equal(scamHasPhone(text), true, text);
+  }
+  for (const text of ["Pay $877.55 by Friday.", "Order 8775550142 has shipped.", "Your code is 800 555.", ""]) {
+    assert.equal(scamHasPhone(text), false, text);
+  }
+  // The extension's and the site's "Is this a scam?" ask this, not the personal-data check, for their phone line.
+  // The site's preview isn't in the public copy, so its half is checked only where it exists.
+  for (const file of ["extension/check.js", "website-test/try/scam-check.js"]) {
+    if (file.startsWith("website-test/") && !fs.existsSync(path.join(__dirname, "..", "website-test"))) continue;
+    const src = fs.readFileSync(path.join(__dirname, "..", file), "utf8");
+    assert.match(src, /hidden = !scamHasPhone\(text\)/, file);
+    assert.doesNotMatch(src, /r\.id === "phone_number"/, file);
+  }
+});
+
 // A real pressure-sell email that landed in spam: paid, fake Chrome Web Store reviews, sold with an invented
 // closing window. "Congrats on launching" used to trip prob_prize on the word "Congrats" alone, with no prize
 // anywhere in the message; the real sign here is the made-up deadline.

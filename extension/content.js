@@ -16,6 +16,8 @@
   const {
     redact,
     generalize,
+    wordStarts,
+    isSavedWord,
     fingerprint,
     fingerprintStrong,
     setVault,
@@ -28,7 +30,7 @@
     bandageKindOf,
     msg,
   } = globalThis.Clotr;
-  // Looked up fresh at each call, like readAttachment below, so a test can stand in a result that was cut short.
+  // Looked up fresh at each call, like readAttachmentDetailed below, so a test can stand in a result that was cut short.
   const detect = (text) => globalThis.Clotr.detect(text);
   const {
     realTarget,
@@ -39,8 +41,7 @@
     isChatComposer,
     composerInfo,
     sourceInputText,
-    appendSourceText,
-    removeSourceText,
+    editSourceText,
   } = globalThis.Clotr.editor;
   const IS_TOP = window === window.top;
   // Which held-back features this build ships (`clotr_features` in manifest.json).
@@ -547,8 +548,12 @@
         siteMode = r.siteMode || null;
         vaultEntries = Array.isArray(r.vault) ? r.vault : [];
         teamKinds = Array.isArray(r.kinds) ? r.kinds : [];
-        // The salt comes with the settings, so the words they fingerprinted can be matched at once.
-        if (!saltValue && typeof r.salt === "string" && /^[0-9a-f]{32}$/.test(r.salt)) saltValue = r.salt;
+        // The salt comes with the settings, so the words they fingerprinted can be matched at once. Loading a
+        // saved file replaces it, so a newer one is taken too, or the vault it came with would never match here.
+        if (typeof r.salt === "string" && /^[0-9a-f]{32}$/.test(r.salt) && r.salt !== saltValue) {
+          saltValue = r.salt;
+          saltPromise = Promise.resolve(r.salt);
+        }
         applyVault();
         paused = r.paused ? { [location.hostname]: true } : {};
         if (!settingsLoaded) {
@@ -742,9 +747,8 @@
       const after = getText(editor);
       const before = compositionStartText.get(editor) || "";
       const delta = textChange(before, after);
-      let source = removeSourceText(userInputTexts.get(editor) || "", delta.removed);
       const committed = delta.inserted || (e.data && after.includes(e.data) ? e.data : "");
-      if (committed) source = appendSourceText(source, committed);
+      const source = editSourceText(userInputTexts.get(editor) || "", before, delta.at, delta.removed, committed);
       userInputTexts.set(editor, source);
       compositionStartText.delete(editor);
       clearTimeout(scanTimer);
@@ -758,13 +762,17 @@
 
   // A chat's page has no id in its path before the first message goes out, just something like "/", "/new",
   // or "/app". Once the first message sends, the page moves to the conversation's own path, and I carry
-  // the labels already given over to it so they don't reset.
+  // the labels already given over to it so they don't reset. Only a send does that: opening an older chat
+  // from the start page without sending is a switch, and that chat's labels already mean other details.
   const isStartPage = (path) => !path.split("/").some((part) => part.length >= 8 && /\d/.test(part));
+  let sentFromPath = null; // the path a message last went out from, until the path next changes
   function bandageChat() {
     const path = location.pathname;
     if (path !== bandagePath) {
       const from = bandagePath;
-      if (from && bandageChats.has(from) && !bandageChats.has(path) && isStartPage(from) && !isStartPage(path)) {
+      const sent = Boolean(from) && from === sentFromPath;
+      sentFromPath = null;
+      if (sent && bandageChats.has(from) && !bandageChats.has(path) && isStartPage(from) && !isStartPage(path)) {
         bandageChats.set(path, bandageChats.get(from));
         bandageChats.delete(from);
       }
@@ -985,22 +993,52 @@
     !allowedValues.has(m) &&
     respFor(r, m) !== "log";
 
+  // Where the found values in `results`, found in `text`, count as there. A saved word counts only where it stands
+  // as a word (detector.js wordStarts), never inside a longer one, just as redact() and generalize() swap it;
+  // anything else, a value in a saved format or one also found as something else included, counts wherever it
+  // appears. So does a saved word that stands nowhere in `text`, since a found detail is never left out of a cover.
+  function wordRule(results, text) {
+    const whole = new Map();
+    for (const r of results) for (const m of r.matches) whole.set(m, (whole.get(m) ?? true) && isSavedWord(r, m));
+    for (const [m, saved] of whole) if (saved && !wordStarts(text, m, true).length) whole.set(m, false);
+    const wholeWord = (value) => whole.get(value) ?? false;
+    const starts = (inText, value) => wordStarts(inText, value, wholeWord(value));
+    return { wholeWord, starts, appears: (inText, value) => starts(inText, value).length > 0 };
+  }
+
   // Swaps the details in `text` (the chat box's text right now) for their labels. If the box won't take the edit,
   // those details fall back to the normal warning.
   async function bandageCover(editor, text, results) {
     const now = Date.now();
     bandageRounds = bandageRounds.filter((t) => now - t < 2000).concat(now);
+    const rule = wordRule(results, text);
+    const { starts, appears } = rule;
     const pairs = results
       .flatMap((r) => r.matches.map((m) => [m, bandageLabel(r, m)]))
       .sort((a, b) => b[0].length - a[0].length);
-    let next = text;
-    for (const [m, label] of pairs) next = next.split(m).join(label);
+    // One pass over the text as it is, longest first, so a shorter detail never lands inside a longer one's spot
+    // or inside a label just put in.
+    const spans = [];
+    for (const [m, label] of pairs) {
+      for (const start of starts(text, m)) {
+        const end = start + m.length;
+        if (!spans.some((s) => start < s.end && end > s.start)) spans.push({ start, end, label });
+      }
+    }
+    spans.sort((a, b) => a.start - b.start);
+    let next = "";
+    let at = 0;
+    for (const span of spans) {
+      next += text.slice(at, span.start) + span.label;
+      at = span.end;
+    }
+    next += text.slice(at);
     // A swap that changes nothing, or keeps finding more to swap, would never end: warn instead.
     const stuck = next === text || bandageRounds.length > 5;
     const inPlace = editor?.isContentEditable && everyday ? emailParts(editor, text) : null;
     const targetText = inPlace ? inPlace.text : text;
-    const targets = results.flatMap((r) => r.matches).filter((value) => targetText.includes(value));
-    const scopes = inPlace ? bandagePlan(results, inPlace, editor) : null;
+    const targets = results.flatMap((r) => r.matches).filter((value) => appears(targetText, value));
+    const scopes = inPlace ? bandagePlan(results, inPlace, editor, rule) : null;
     bandaging = true;
     let edit = { changed: false, uncovered: [] };
     try {
@@ -1012,8 +1050,8 @@
     }
     const after = getText(editor);
     const remainingText = inPlace ? emailParts(editor, after).text : after;
-    const uncovered = new Set([...edit.uncovered, ...targets.filter((value) => remainingText.includes(value))]);
-    const covered = targets.filter((value) => !uncovered.has(value) && !remainingText.includes(value));
+    const uncovered = new Set([...edit.uncovered, ...targets.filter((value) => appears(remainingText, value))]);
+    const covered = targets.filter((value) => !uncovered.has(value) && !appears(remainingText, value));
     const complete = edit.changed && targets.length > 0 && !uncovered.size && covered.length === targets.length;
     if (covered.length) {
       report(
@@ -1040,8 +1078,9 @@
     if (editor.isConnected) scan(editor);
   }
 
-  function bandagePlan(results, parts, editor) {
+  function bandagePlan(results, parts, editor, rule) {
     const scopes = [];
+    const { wholeWord, appears } = rule;
     const scopeFor = (kind, root, excludedNodes, start, end, match, replacement) => {
       let scope = scopes.find(
         (item) =>
@@ -1055,17 +1094,17 @@
         scope = { kind, root, excludedNodes, start, end, pairs: [] };
         scopes.push(scope);
       }
-      if (!scope.pairs.some(([value]) => value === match)) scope.pairs.push([match, replacement]);
+      if (!scope.pairs.some(([value]) => value === match)) scope.pairs.push([match, replacement, wholeWord(match)]);
     };
 
     for (const result of results) {
       for (const match of result.matches) {
         const replacement = bandageLabel(result, match);
-        if (parts.main.includes(match)) {
+        if (appears(parts.main, match)) {
           scopeFor("main", editor, parts.excluded, undefined, undefined, match, replacement);
         }
         for (const edit of parts.edits) {
-          if (edit.text.includes(match)) {
+          if (appears(edit.text, match)) {
             scopeFor("edit", edit.root, undefined, edit.start, edit.end, match, replacement);
           }
         }
@@ -1313,10 +1352,11 @@
     }
   }
 
-  function coverPlan(results, parts, general, editor) {
+  function coverPlan(results, parts, general, editor, rule) {
     const scopes = [];
     const targets = [];
     const forwardedRoots = parts.forwardedRoots.map(({ root }) => root);
+    const { wholeWord, appears } = rule;
     const targetFor = (result, match) => {
       let target = targets.find((item) => item.result.id === result.id && item.match === match);
       if (!target) {
@@ -1338,26 +1378,26 @@
         scope = { kind, root, excludedNodes, start, end, pairs: [] };
         scopes.push(scope);
       }
-      if (!scope.pairs.some(([value]) => value === match)) scope.pairs.push([match, replacement]);
+      if (!scope.pairs.some(([value]) => value === match)) scope.pairs.push([match, replacement, wholeWord(match)]);
     };
 
     for (const result of results) {
       for (const match of result.matches) {
         const one = { ...result, matches: [match] };
         const replacement = general ? generalize(match, [one], navigator.language) : redact(match, [one]);
-        if (parts.main.includes(match)) {
+        if (appears(parts.main, match)) {
           scopeFor("main", editor, parts.excluded, undefined, undefined, match, replacement);
         }
         for (const edit of parts.edits) {
-          if (edit.text.includes(match)) {
+          if (appears(edit.text, match)) {
             scopeFor("edit", edit.root, undefined, edit.start, edit.end, match, replacement);
           }
         }
-        if (result.group === "credentials" && parts.forwarded.includes(match)) {
+        if (result.group === "credentials" && appears(parts.forwarded, match)) {
           scopeFor("forwarded", forwardedRoots, undefined, undefined, undefined, match, replacement);
         }
-        if (parts.text.includes(match)) targetFor(result, match).sources.push({ kind: "text" });
-        if (result.group === "credentials" && parts.forwarded.includes(match)) {
+        if (appears(parts.text, match)) targetFor(result, match).sources.push({ kind: "text" });
+        if (result.group === "credentials" && appears(parts.forwarded, match)) {
           targetFor(result, match).sources.push({ kind: "forwardedText" });
         }
       }
@@ -1366,17 +1406,18 @@
     return { scopes, targets };
   }
 
-  function coverOutcome(results, plan, parts) {
+  function coverOutcome(results, plan, parts, rule) {
     const covered = new Set();
     const uncovered = new Set();
+    const { appears } = rule;
     const stillInSource = (source, match) => {
-      if (source.kind === "main") return parts.main.includes(match);
+      if (source.kind === "main") return appears(parts.main, match);
       if (source.kind === "edit") {
-        return parts.edits.some((edit) => edit.root === source.root && edit.text.includes(match));
+        return parts.edits.some((edit) => edit.root === source.root && appears(edit.text, match));
       }
-      if (source.kind === "text") return parts.text.includes(match);
-      if (source.kind === "forwardedText") return parts.forwarded.includes(match);
-      return parts.forwardedRoots.some((quote) => quote.root === source.root && quote.text.includes(match));
+      if (source.kind === "text") return appears(parts.text, match);
+      if (source.kind === "forwardedText") return appears(parts.forwarded, match);
+      return parts.forwardedRoots.some((quote) => quote.root === source.root && appears(quote.text, match));
     };
     for (const result of results) {
       for (const match of result.matches) {
@@ -1403,14 +1444,17 @@
     // the scan waiting on it, so it's checked now and covered with the rest. A value since edited away isn't hidden.
     const parts = editor ? emailParts(editor, text) : null;
     const unscanned = Boolean(parts) && parts.text !== currentScanText;
-    const results = unscanned ? filterMatches(withNewFinds(shown, parts), (_r, m) => text.includes(m)) : shown;
+    const found = unscanned ? withNewFinds(shown, parts) : shown;
+    const rule = wordRule(found, text);
+    const { appears } = rule;
+    const results = unscanned ? filterMatches(found, (_r, m) => appears(text, m)) : shown;
     const next = general ? generalize(text, results, navigator.language) : redact(text, results);
     const inPlace = editor?.isContentEditable && everyday ? parts : null;
-    const plan = inPlace ? coverPlan(results, inPlace, general, editor) : null;
+    const plan = inPlace ? coverPlan(results, inPlace, general, editor, rule) : null;
     if (editor) await setText(editor, next, plan ? plan.scopes : null);
     const afterText = editor ? getText(editor) : "";
     if (plan) {
-      const outcome = coverOutcome(results, plan, emailParts(editor, afterText));
+      const outcome = coverOutcome(results, plan, emailParts(editor, afterText), rule);
       if (outcome.covered.length) report(outcome.covered, "redacted");
       if (outcome.uncovered.length) {
         reportHealth({ editFailed: true });
@@ -1423,8 +1467,9 @@
       }
       return;
     }
-    const originalValues = new Set(results.flatMap((r) => r.matches).filter((value) => text.includes(value)));
-    const remainingValues = new Set(results.flatMap((r) => r.matches).filter((value) => afterText.includes(value)));
+    // A saved word left inside a longer word ("Ann" in "Annabelle") was never one to cover, so it isn't left over.
+    const originalValues = new Set(results.flatMap((r) => r.matches).filter((value) => appears(text, value)));
+    const remainingValues = new Set(results.flatMap((r) => r.matches).filter((value) => appears(afterText, value)));
     const covered = filterMatches(results, (_r, value) => originalValues.has(value) && !remainingValues.has(value));
     const uncovered = filterMatches(results, (_r, value) => originalValues.has(value) && remainingValues.has(value));
     if (covered.length) report(covered, "redacted");
@@ -1594,7 +1639,8 @@
   // `handBack(files)`, which returns the files the page actually got, or null if it ignored them. A send in
   // the meantime waits, as it does for any file still being read.
   function holdForPlaces(list, kind, handBack) {
-    const reading = { names: list.map((f) => f.name), late: false };
+    // `place` marks a picture that hasn't reached the page yet: a send waits for it whatever the responses are.
+    const reading = { names: list.map((f) => f.name), late: false, place: true };
     fileReads.add(reading);
     let finished = false;
     let timer = 0;
@@ -1977,6 +2023,7 @@
   // confirmSent, so clicking Attach or the microphone never counts as sending.
   function shouldBlock(opts) {
     const held = shouldHold(opts);
+    if (!held) sentFromPath = location.pathname;
     if (!held && activeEditor) openReplyWindow();
     if (!held && !opts?.unsure) filesWentOut();
     return held;
@@ -2046,12 +2093,30 @@
     return true;
   }
 
+  // The chat box a send button or form belongs to: the nearest one around it, or failing that the page's own.
+  function composerNear(via) {
+    let area = via instanceof Element ? via : null;
+    for (let i = 0; i < 6 && area; i++, area = area.parentElement) {
+      for (const node of area.querySelectorAll("textarea, [contenteditable]")) {
+        const editor = qualifyingEditor(node);
+        if (editor) return editor;
+      }
+    }
+    return findChatBox();
+  }
+
   function shouldHold({ unsure = false, via = null } = {}) {
     if (passThrough) return false;
     if (isPaused() || health.uiRemoved) return false; // a page removing Clotr's dialog must not leave you stuck
     if (ui.isDialogOpen()) {
       if (!orphaned()) return true;
       ui.closeDialog(); // opened before the update: an orphaned copy never holds a message
+    }
+    // A draft the site put back or filled in itself was never typed here, so nothing has named the chat box
+    // yet: a send still checks the box beside its button or form, the same as Enter would.
+    if (via && !activeEditor?.isConnected) {
+      const box = composerNear(via);
+      if (box && getText(box).trim()) activeEditor = box;
     }
     // Nothing typed: an attached file can still be sent on its own.
     if (!activeEditor || !activeEditor.isConnected) return holdForFiles(via, unsure);
@@ -2108,10 +2173,11 @@
         setTimeout(check, CONFIRM_POLL_MS);
         return;
       }
-      if (now === before) {
+      // Not sent: the box still holds the message, perhaps with more typed after it.
+      if (now === before || (before && now.includes(before))) {
         scan(editor);
         return;
-      } // not sent
+      }
       ui.closeNotice(); // the warning about what just went
       report(results, "allowed");
       for (const r of results) for (const m of r.matches) allowedValues.add(m);
@@ -2198,7 +2264,7 @@
       beforeEnd--;
       afterEnd--;
     }
-    return { removed: before.slice(start, beforeEnd), inserted: after.slice(start, afterEnd) };
+    return { at: start, removed: before.slice(start, beforeEnd), inserted: after.slice(start, afterEnd) };
   }
   function resetUserInput(editor) {
     userInputTexts.delete(editor);
@@ -2207,13 +2273,11 @@
   }
   function applyUserEdit(editor, edit, after) {
     const delta = textChange(edit.before, after);
-    let text = removeSourceText(userInputTexts.get(editor) || "", delta.removed);
-    if (/^history(?:Undo|Redo)$/i.test(edit.inputType) && delta.inserted) {
-      text = appendSourceText(text, delta.inserted);
-    } else if (edit.sourceText && delta.inserted) {
-      text = appendSourceText(text, edit.sourceText);
-    }
-    userInputTexts.set(editor, text);
+    let inserted = "";
+    if (/^history(?:Undo|Redo)$/i.test(edit.inputType) && delta.inserted) inserted = delta.inserted;
+    else if (edit.sourceText && delta.inserted) inserted = edit.sourceText;
+    const current = userInputTexts.get(editor) || "";
+    userInputTexts.set(editor, editSourceText(current, edit.before, delta.at, delta.removed, inserted));
     if (!after.length) resetUserInput(editor);
   }
   function noteTrustedBeforeInput(editor, e) {
@@ -2222,6 +2286,9 @@
     const inputType = e.inputType || "";
     const paste = isBulkInput(inputType) ? pastedEditors.get(editor) : null;
     if (!before.length) resetUserInput(editor);
+    // Typing into an empty box starts the next message, however the last one left: a send Clotr couldn't be sure
+    // of (an unlabeled button), or the page emptying the box itself, as New chat does.
+    if (!before.trim()) newMessage();
     const transferText = e.dataTransfer?.getData("text/plain") || "";
     const inserted = sourceInputText(inputType, e.data || transferText, paste?.text || transferText);
     const sourceText = /^insert.*Composition/i.test(inputType) ? null : inserted;
@@ -2846,9 +2913,10 @@
       .map((n) => `“${n}”`)
       .join(", ") + (names.length > 3 ? ` ${msg("andMore", "and $1 more", names.length - 3)}` : "");
 
-  // Returns the text of one attached file, or null. A read that throws, or takes longer than
-  // READ_CEILING_MS, gets listed in `unchecked` and counts as nothing found, so a message never gets held
-  // waiting for it.
+  // Returns the text of one attached file, or null. A read that throws, takes longer than READ_CEILING_MS, or
+  // can't read a file of a kind Clotr reads (locked, damaged or past its size limit) gets listed in `unchecked`
+  // and counts as nothing found, so a message never gets held waiting for it. A PDF with no text layer isn't
+  // one of those: its name is still checked (readFindings).
   async function readChecked(file, unchecked) {
     let timer = 0;
     try {
@@ -2856,7 +2924,11 @@
         timer = setTimeout(() => reject(new Error("too slow")), READ_CEILING_MS);
       });
       // Looked up at each read, so a test can stand in a slow or broken reader.
-      return await Promise.race([globalThis.Clotr.readAttachment(file), tooSlow]);
+      const read = await Promise.race([globalThis.Clotr.readAttachmentDetailed(file), tooSlow]);
+      if ((read.reason && read.reason !== "scan") || globalThis.Clotr.overReadLimit(file)) {
+        throw new Error("not readable");
+      }
+      return read.text;
     } catch {
       const kind = (file.name.match(/\.\w+$/) || [""])[0];
       console.info(LOG, "couldn't check an attached file", kind); // the kind of file only, never its name
@@ -2904,7 +2976,7 @@
       return true;
     }
     const reading = [...fileReads].filter((r) => !r.late);
-    if (!reading.length || !couldHoldFiles()) return false;
+    if (!reading.length || !(couldHoldFiles() || reading.some((r) => r.place))) return false;
     waitForFiles(via, reading);
     return true;
   }

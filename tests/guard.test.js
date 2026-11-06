@@ -74,7 +74,7 @@ function packGuard(tempRoot) {
   const packageRoot = path.resolve(__dirname, "../apps/guard");
   const result = npmRun(["pack", "--pack-destination", tempRoot], packageRoot, tempRoot);
   assert.equal(result.status, 0, `${result.stdout}\n${result.stderr}`);
-  const tarball = path.join(tempRoot, "clotr-guard-0.1.1.tgz");
+  const tarball = path.join(tempRoot, "clotr-guard-0.1.2.tgz");
   assert.equal(fs.existsSync(tarball), true, `${result.stdout}\n${result.stderr}`);
   return tarball;
 }
@@ -2582,7 +2582,7 @@ test("the Guard package reads nothing from outside its own folder, so a packed c
   }
   assert.deepEqual(outside, []);
   const pkg = JSON.parse(fs.readFileSync(path.join(root, "package.json"), "utf8"));
-  assert.equal(pkg.version, "0.1.1");
+  assert.equal(pkg.version, "0.1.2");
   assert.equal(pkg.bin["clotr-mcp"], "bin/clotr-mcp.js");
   assert.ok(pkg.files?.includes("dist"), "the engine bundle must ship in the package");
 });
@@ -2594,7 +2594,7 @@ test("Guard prints its package version beside the engine version from the bundle
   const engineVersion = header[1].split(".").slice(0, 3).join(".");
   const version = spawnSync(process.execPath, [script, "--version"], { encoding: "utf8" });
   assert.equal(version.status, 0, version.stderr);
-  assert.equal(version.stdout.trim(), `clotr-guard 0.1.1, engine ${engineVersion}`);
+  assert.equal(version.stdout.trim(), `clotr-guard 0.1.2, engine ${engineVersion}`);
 });
 
 test("the Guard npm package declares its public pages and includes the license", () => {
@@ -2618,6 +2618,7 @@ test("the Guard npm package declares its public pages and includes the license",
   assert.deepEqual(
     details[0].files.map((file) => file.path).sort(),
     [
+      "CHANGELOG.md",
       "LICENSE",
       "README.md",
       "bin/clotr-guard.js",
@@ -2660,7 +2661,7 @@ test("the assistant skill ships in the Guard package and says what the code does
   assert.match(skill, /"Clotr couldn't check this"/);
   assert.match(guardSource, /Work from the variable names or the example file/);
   assert.match(skill, /work from the variable names or an example file/);
-  assert.match(skill, /names the kind of thing it found and where it was found, without showing any part of the value/);
+  assert.match(skill, /names the kind of thing it found and where it was found, without showing the full value/);
   assert.match(skill, /--no-verify/);
   assert.doesNotMatch(skill, /AKIA[0-9A-Z]{16}/, "the skill carries no key, not even a made-up one");
 
@@ -3126,8 +3127,22 @@ test("Guard documents exact fingerprints and local repeat state without promisin
     ["apps/guard/README.md", readme],
     ["public/CONTRIBUTING.md", contributing],
   ]) {
-    assert.match(text, /Clotr hits an internal error while checking readable input/i, file);
-    assert.match(text, /lets\s+(?:the|an)\s+action through with a visible note/i, file);
+    // Prompt, read and MCP tool hooks let the action through on an internal error. The shell hook stops a command
+    // whose check hits an internal error or runs out of time, or whose hook crashes once it has started (one that
+    // crashes while Node or Guard is still loading exits 1, which the assistants read as a hook that failed).
+    const flat = text.replace(/\s+/g, " ");
+    assert.match(
+      flat,
+      /internal error while checking a prompt, a file read or (an MCP tool call|a tool call to a connected server), Guard lets it through with a visible note/,
+      file,
+    );
+    assert.match(
+      flat,
+      /A shell command is stopped instead: when its check hits an internal error or doesn't finish in time, the message says which, and a hook that crashes once it has started stops it as a check that didn't finish\./,
+      file,
+    );
+    assert.doesNotMatch(flat, /errors? in a shell check lets? the command through/i, file);
+    assert.doesNotMatch(flat, /internal error while checking readable input/i, file);
     assert.match(text, /stops input\s+it can't read.*malformed hook input.*size limit/is, file);
     assert.doesNotMatch(
       text,

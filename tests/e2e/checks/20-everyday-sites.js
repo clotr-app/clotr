@@ -1458,7 +1458,7 @@ module.exports = async function (env) {
     "Everywhere I type on: covered apps read On and say why, and a search engine still turns on and stays on",
     () =>
       withBroadGrant(async (other) => {
-        const sw = (list, name) => `#${list} button[aria-label="Clotr on ${name}"]`;
+        const sw = (list, name) => `#${list} button[aria-label$=", Clotr on ${name}"]`;
         const openSettings = async () => {
           const p = await openPopup(other);
           await p.click("#tab-settings");
@@ -1561,7 +1561,7 @@ module.exports = async function (env) {
     () =>
       withGrantedCopy(async (other) => {
         await store.set(other, { siteKinds: { "mail.google.com": "ai" } });
-        const gmail = 'button[aria-label="Clotr on Gmail"]';
+        const gmail = 'button[aria-label$=", Clotr on Gmail"]';
         const popup = await openPopup(other);
         try {
           await popup.click("#tab-settings");

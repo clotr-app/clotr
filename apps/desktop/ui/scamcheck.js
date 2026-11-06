@@ -7,7 +7,8 @@
 // cleared or the app closes.
 (() => {
   "use strict";
-  const { msg, detect, fingerprint, scamSigns, scamHasLink, askSomeoneNoteForScamSigns } = globalThis.Clotr;
+  const { msg, detect, fingerprint, scamSigns, scamHasLink, scamHasPhone, askSomeoneNoteForScamSigns } =
+    globalThis.Clotr;
   const $ = (id) => document.getElementById(id);
   const el = (tag, props = {}, children = []) => {
     const node = document.createElement(tag);
@@ -419,7 +420,7 @@
         ]),
       ),
     );
-    $("sc-before-phone-row").hidden = !detect(text).some((r) => r.id === "phone_number");
+    $("sc-before-phone-row").hidden = !scamHasPhone(text);
     $("sc-before-link-row").hidden = !scamHasLink(text);
     const note = askSomeoneNoteForScamSigns(
       signs.map((s) => s.id),

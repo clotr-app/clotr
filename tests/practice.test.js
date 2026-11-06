@@ -167,6 +167,66 @@ test(
   },
 );
 
+// A pasted scam's long link, or Spot the leak's AWS line, is one unbroken word: without a rule to break it, it ran
+// past its card and the whole page scrolled sideways on a 360 px phone.
+test(
+  "the Try page breaks a long link or key inside its card, so a phone never scrolls sideways",
+  { skip: !fs.existsSync(path.join(__dirname, "..", "website-test", "try.css")) && "website-test is private" },
+  () => {
+    const css = fs.readFileSync(path.join(__dirname, "..", "website-test", "try.css"), "utf8");
+    assert.match(css, /\.try-sec \{[^}]*overflow-wrap: anywhere;/);
+    const html = fs.readFileSync(path.join(__dirname, "..", "website-test", "try.html"), "utf8");
+    for (const id of ["scam-check", "practice"]) assert.match(html, new RegExp(`class="sec try-sec" id="${id}"`), id);
+  },
+);
+
+// A browser that can't parse the engine (Safari before 16.4 has no lookbehind) never sets up Clotr. The Try page's
+// own scripts still load, so Check it says it couldn't check and Practice says it couldn't start, instead of a dead
+// page with no reason given.
+test(
+  "the Try page says so when the engine didn't load, instead of going dead",
+  { skip: !fs.existsSync(path.join(__dirname, "..", "website-test", "try.html")) && "website-test is private" },
+  () => {
+    const vm = require("vm");
+    const site = path.join(__dirname, "..", "website-test");
+    const html = fs.readFileSync(path.join(site, "try.html"), "utf8");
+    const startsHidden = new Set([...html.matchAll(/id="([\w-]+)"[^>]*\bhidden\b/g)].map((m) => m[1]));
+    const els = new Map();
+    const node = (id) => ({
+      id,
+      hidden: startsHidden.has(id),
+      value: "",
+      dataset: {},
+      on: {},
+      addEventListener(type, fn) {
+        this.on[type] = fn;
+      },
+      append() {},
+      replaceChildren() {},
+      focus() {},
+    });
+    const page = {
+      document: {
+        getElementById: (id) => els.get(id) || els.set(id, node(id)).get(id),
+        createElement: () => node(""),
+      },
+      addEventListener() {},
+    };
+    page.window = page;
+    page.globalThis = page;
+    vm.createContext(page);
+    for (const f of ["page-notice.js", "scam-check.js", "practice.js"]) {
+      assert.doesNotThrow(() => vm.runInContext(fs.readFileSync(path.join(site, "try", f), "utf8"), page), f);
+    }
+    assert.ok(html.includes('id="pz-failed"'), "try.html has Practice's note");
+    assert.equal(els.get("pz-failed").hidden, false, "Practice says it couldn't start");
+    assert.equal(els.get("pz-drill").hidden, true, "and hides the empty drill");
+    els.get("sc-message").value = "Your account is locked. Call now.";
+    els.get("sc-check-it").on.click();
+    assert.equal(els.get("sc-failed").hidden, false, "Check it says it couldn't check");
+  },
+);
+
 // Every value in the practice data must be made up, never a real person's detail: phone numbers use 555-01xx,
 // email addresses and links use example.com or example.invalid, and the card number is the well-known test
 // number. A kind that isn't listed below fails until someone checks its value is made up and adds it here.

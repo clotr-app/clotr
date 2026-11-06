@@ -175,7 +175,6 @@
     g.dataset.count = String(n.count || 0);
     if (chosen === n.id) g.classList.add("chosen");
     const text = n.detail || n.label;
-    g.setAttribute("aria-label", text);
     g.append(svgEl("title", {}, text));
 
     const color = STROKE[n.branch].stroke;
@@ -212,12 +211,24 @@
       g.append(
         svgEl("circle", { cx: 0, cy: 0, r: shape.r, fill: "var(--surface)", stroke: ring, "stroke-width": 2.5 }),
       );
-      if (shape.mark) g.append(svgEl("text", { x: 0, y: 4, "text-anchor": "middle", class: "mind-count" }, shape.mark));
     }
+    // The name before the count in the markup (they're drawn apart, so the order only shows in the words below),
+    // with a space after it that isn't drawn, like the pill's, so "chatgpt.com" and "4" read as two words.
     if (label) {
       const cls = shape.type === "dot" ? "mind-leaf-label" : "mind-label";
-      g.append(svgEl("text", { x: label.x, y: label.y, "text-anchor": label.anchor, class: cls }, label.text));
+      const words = shape.mark ? `${label.text} ` : label.text;
+      g.append(svgEl("text", { x: label.x, y: label.y, "text-anchor": label.anchor, class: cls }, words));
     }
+    if (shape.mark) g.append(svgEl("text", { x: 0, y: 4, "text-anchor": "middle", class: "mind-count" }, shape.mark));
+
+    // Its words for screen readers and voice control start with the words drawn on it, in the same order
+    // ("chatgpt.com 4", "Already has 3"), so saying what you see reaches it (WCAG 2.5.3, label in name); then
+    // what it means. A "?" or 💬 is left out: they're pictures, not words.
+    const shown = [...g.querySelectorAll("text")]
+      .map((t) => t.textContent.replace(/\p{Extended_Pictographic}\uFE0F?/gu, "").trim())
+      .filter((t) => /[\p{L}\p{N}]/u.test(t))
+      .join(" ");
+    g.setAttribute("aria-label", n.detail && shown ? `${shown}: ${n.detail}` : text);
     return g;
   }
 

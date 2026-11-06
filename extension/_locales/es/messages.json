@@ -1031,20 +1031,23 @@
     "message": "Lo que Clotr revisa"
   },
   "pp_itemCovered": {
-    "message": "$p1$ se cubrió.",
+    "message": "$name$: se cubrió.",
     "placeholders": {
-      "p1": {
-        "content": "$1"
+      "name": {
+        "content": "$2"
       }
     }
   },
   "pp_itemSent": {
-    "message": "$p1$ se envió tal cual.",
+    "message": "$name$: se envió tal cual.",
     "placeholders": {
-      "p1": {
-        "content": "$1"
+      "name": {
+        "content": "$2"
       }
     }
+  },
+  "pp_today": {
+    "message": "Hoy"
   },
   "pp_caughtSum": {
     "message": "$p1$ detectados en los últimos $p2$ días. $p3$ cubiertos, $p4$ enviados tal cual.",
@@ -1554,7 +1557,7 @@
     "message": "Tu número de documento"
   },
   "vt_errFormat": {
-    "message": "un formato necesita al menos 4 marcas # o @"
+    "message": "un formato necesita al menos 4 marcas # o @ (# para cualquier cifra, @ para cualquier letra)"
   },
   "vt_errWords": {
     "message": "hasta 4 palabras por línea"
@@ -1571,8 +1574,19 @@
   "vt_errPhone": {
     "message": "no parece un número de teléfono"
   },
+  "vt_errTooLong": {
+    "message": "un formato puede tener hasta 40 caracteres"
+  },
   "vt_saveFailed": {
     "message": "No se pudo guardar ahora. Vuelve a intentarlo."
+  },
+  "vt_notSaved": {
+    "message": "$p1$ no se pudieron guardar.",
+    "placeholders": {
+      "p1": {
+        "content": "$1"
+      }
+    }
   },
   "vt_savedOne": {
     "message": "Se guardó 1 dato nuevo."
@@ -2050,7 +2064,7 @@
     "message": "Ver los datos en bruto"
   },
   "st_theExactRecordsAsA": {
-    "message": "Los registros exactos, tal como los vería un desarrollador. El secreto de las huellas está oculto."
+    "message": "Los registros exactos, tal como los vería un desarrollador. El secreto de las huellas y el PIN están ocultos."
   },
   "st_whatClotrCanReach": {
     "message": "A qué puede acceder Clotr"
@@ -2261,6 +2275,25 @@
   },
   "sj_youAddWhy": {
     "message": "Solo cuando haces clic en Proteger este sitio en una herramienta de IA que Clotr aún no conoce, y solo después de que el navegador te lo pregunte."
+  },
+  "sj_aiSitesWhyOnly": {
+    "message": "Lee lo que escribes en los cuadros de chat de estos sitios de chat de IA para avisarte antes de enviar: $p1$.",
+    "placeholders": {
+      "p1": {
+        "content": "$1"
+      }
+    }
+  },
+  "sj_youAddOn": {
+    "message": "Sitios que activaste o añadiste tú, cada uno solo después de que el navegador te lo preguntara: $p1$.",
+    "placeholders": {
+      "p1": {
+        "content": "$1"
+      }
+    }
+  },
+  "sj_everywhereWhy": {
+    "message": "Activado, después de que el navegador te lo preguntara, así que Clotr también puede leer las páginas de cualquier sitio web (https). Allí solo revisa un cuadro que parezca un chat, para avisarte antes de enviar. Puedes apagarlo en Ajustes."
   },
   "bulkFiles": {
     "message": "$p1$ archivos que adjuntaste ($p2$) contienen $p3$.",

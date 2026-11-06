@@ -1,33 +1,19 @@
-/* Clotr for Windows' look: shared tokens for type, buttons, chips, cards, rows and tables. Three themes: Light (warm
-   paper, orange), Plum (plum on steel and white) and Ember (dark plum with orange). Settings > Look writes data-theme on the root; with no choice the
-   window follows Windows, Light when it's light and Ember when it's dark. "dark" is the old name for Ember and
-   still works, since a saved setting from before keeps it.
-
-   The website uses separate styles and doesn't load these tokens. Legacy names in the app's CSS (--page, --text-sm,
-   --s-4, --r-panel and the rest) are mapped to these. */
-
+/* Clotr for Windows follows the live site: Recursive, Plum/steel in light mode and Ember in dark mode. */
 @font-face {
-  font-family: "Atkinson Hyperlegible";
-  src: url("dist/kit/fonts/atkinson-hyperlegible-400.woff2") format("woff2");
-  font-weight: 400;
-  font-style: normal;
-  font-display: swap;
-}
-@font-face {
-  font-family: "Atkinson Hyperlegible";
-  src: url("dist/kit/fonts/atkinson-hyperlegible-700.woff2") format("woff2");
-  font-weight: 700;
-  font-style: normal;
+  font-family: "Recursive";
+  src: url("dist/kit/fonts/Recursive-var-normal.woff2") format("woff2-variations");
+  font-weight: 300 1000;
+  font-style: oblique 0deg 15deg;
   font-display: swap;
 }
 
 /* ---------- 1. Tokens ---------- */
 
-/* Shapes, type, spacing and motion: the same in every theme. */
+/* Shape and type tokens; the color values below use website-test/kit/tokens.css. */
 :root {
-  --font: "Atkinson Hyperlegible", "Segoe UI Variable Text", "Segoe UI", system-ui, sans-serif;
-  --mono: "Cascadia Mono", Consolas, ui-monospace, monospace;
-  /* Spacing: one 4 px scale. */
+  color-scheme: light;
+  --font: "Recursive", system-ui, "Segoe UI", sans-serif;
+  --mono: "Recursive", ui-monospace, Consolas, monospace;
   --sp-1: 4px;
   --sp-2: 8px;
   --sp-3: 12px;
@@ -36,28 +22,26 @@
   --sp-6: 24px;
   --sp-7: 32px;
   --sp-8: 40px;
-  /* Radius: 8 controls, 12 rows, 14 cards, 18 panels. */
   --r-sm: 8px;
   --r-md: 12px;
   --r-lg: 14px;
   --r-xl: 18px;
-  /* Type: one scale. */
-  --t-2xs: 11.5px;
-  --t-xs: 12.5px;
-  --t-sm: 13.5px;
-  --t-base: 14.5px;
-  --t-md: 15px;
-  --t-lg: 16px;
-  --t-xl: 17px;
-  --t-2xl: 19px;
-  --t-display: 24px;
-  --t-hero: 34px;
+  --t-2xs: 13px;
+  --t-xs: 13px;
+  --t-sm: 14.5px;
+  --t-base: 16px;
+  --t-md: 16px;
+  --t-lg: 18px;
+  --t-xl: 21px;
+  --t-2xl: 26px;
+  --t-display: 34px;
+  --t-hero: 46px;
   --ease: cubic-bezier(0.22, 0.9, 0.26, 1);
   --t-fast: 0.15s;
   --t-med: 0.25s;
   --t-slow: 0.4s;
 
-  /* The old names retained for compatibility with the app's existing CSS. */
+  /* Names already used by the Windows screens. */
   --text-xs: var(--t-xs);
   --text-sm: var(--t-sm);
   --text: var(--t-base);
@@ -81,158 +65,26 @@
   --r-card: var(--r-lg);
   --r-panel: var(--r-xl);
   --r-pill: 999px;
-  --page: var(--paper);
-  --soft: var(--muted);
-  --rule: var(--faint);
-  --frame: var(--line);
-  --link: var(--orange-text);
-  --shadow: var(--float);
-  --progress: var(--grad);
-  --gloss: none;
-  --sheen: var(--signal);
-  /* Scam check's marked words: a warm highlight that reads in every theme. */
-  --caught-hi: #ffd9b8;
-  --warn-ink: #1f2226;
-}
 
-/* Light is the default: warm paper, whiter at the top, an orange glow at the foot. Also the fallback before
-   any of the rules below match. */
-:root {
-  color-scheme: light;
-  --paper: #fdf8f2;
-  --side: #f9f0e7;
-  --surface: #fffdfa;
-  --surface-2: #faf3eb;
-  --faint: #eee2d6;
-  --line: #a89a8d;
-  --ink: #2b1f17;
-  --ink-2: #594a3e;
-  --muted: #75655a;
-  --wash: rgba(120, 60, 20, 0.05);
-  --signal: #ff6700;
-  --on-signal: #2b1206;
-  --signal-wash: #fff0e6;
-  --orange-text: #b84a0c;
-  --plum: #5b3a63;
-  --plum-wash: #efe6f1;
-  --good: #1f7a3f;
-  --good-wash: #e6f4ea;
-  --err: #b3261e;
-  --err-wash: #fce8e6;
-  --warn: #8a5800;
-  --warn-fill: #e3a41f;
-  --warn-wash: #fbf0d8;
-  --on-warn: #2b1a00;
-  --accept: #2e8b57;
-  --focus: #b84a0c;
-  --grad: linear-gradient(90deg, #ff9550, #5b3a63);
-  --g1: #ff9550;
-  --g2: #5b3a63;
-  --glint: #ff9550;
-  --glow-top: rgba(255, 140, 60, 0.2);
-  --glow-dawn: rgba(255, 190, 110, 0.24);
-  --glow-soft: rgba(255, 165, 140, 0.15);
-  --edge: inset 0 1px 0 rgba(255, 255, 255, 0.95);
-  --lift:
-    inset 0 1px 0 rgba(255, 255, 255, 0.9), 0 1px 2px rgba(60, 30, 10, 0.06), 0 16px 38px -18px rgba(140, 70, 20, 0.2);
-  --float: 0 18px 50px rgba(60, 30, 10, 0.16);
-}
-@media (prefers-color-scheme: light) {
-  :root:not([data-theme]) {
-    color-scheme: light;
-    --paper: #fdf8f2;
-    --side: #f9f0e7;
-    --surface: #fffdfa;
-    --surface-2: #faf3eb;
-    --faint: #eee2d6;
-    --line: #a89a8d;
-    --ink: #2b1f17;
-    --ink-2: #594a3e;
-    --muted: #75655a;
-    --wash: rgba(120, 60, 20, 0.05);
-    --signal: #ff6700;
-    --on-signal: #2b1206;
-    --signal-wash: #fff0e6;
-    --orange-text: #b84a0c;
-    --plum: #5b3a63;
-    --plum-wash: #efe6f1;
-    --good: #1f7a3f;
-    --good-wash: #e6f4ea;
-    --err: #b3261e;
-    --err-wash: #fce8e6;
-    --warn: #8a5800;
-    --warn-fill: #e3a41f;
-    --warn-wash: #fbf0d8;
-    --on-warn: #2b1a00;
-    --accept: #2e8b57;
-    --focus: #b84a0c;
-    --grad: linear-gradient(90deg, #ff9550, #5b3a63);
-    --g1: #ff9550;
-    --g2: #5b3a63;
-    --glint: #ff9550;
-    --glow-top: rgba(255, 140, 60, 0.2);
-    --glow-dawn: rgba(255, 190, 110, 0.24);
-    --glow-soft: rgba(255, 165, 140, 0.15);
-    --edge: inset 0 1px 0 rgba(255, 255, 255, 0.95);
-    --lift:
-      inset 0 1px 0 rgba(255, 255, 255, 0.9), 0 1px 2px rgba(60, 30, 10, 0.06), 0 16px 38px -18px rgba(140, 70, 20, 0.2);
-    --float: 0 18px 50px rgba(60, 30, 10, 0.16);
-  }
-}
-:root[data-theme="light"] {
-  color-scheme: light;
-  --paper: #fdf8f2;
-  --side: #f9f0e7;
-  --surface: #fffdfa;
-  --surface-2: #faf3eb;
-  --faint: #eee2d6;
-  --line: #a89a8d;
-  --ink: #2b1f17;
-  --ink-2: #594a3e;
-  --muted: #75655a;
-  --wash: rgba(120, 60, 20, 0.05);
-  --signal: #ff6700;
-  --on-signal: #2b1206;
-  --signal-wash: #fff0e6;
-  --orange-text: #b84a0c;
-  --plum: #5b3a63;
-  --plum-wash: #efe6f1;
-  --good: #1f7a3f;
-  --good-wash: #e6f4ea;
-  --err: #b3261e;
-  --err-wash: #fce8e6;
-  --warn: #8a5800;
-  --warn-fill: #e3a41f;
-  --warn-wash: #fbf0d8;
-  --on-warn: #2b1a00;
-  --accept: #2e8b57;
-  --focus: #b84a0c;
-  --grad: linear-gradient(90deg, #ff9550, #5b3a63);
-  --g1: #ff9550;
-  --g2: #5b3a63;
-  --glint: #ff9550;
-  --glow-top: rgba(255, 140, 60, 0.2);
-  --glow-dawn: rgba(255, 190, 110, 0.24);
-  --glow-soft: rgba(255, 165, 140, 0.15);
-  --edge: inset 0 1px 0 rgba(255, 255, 255, 0.95);
-  --lift:
-    inset 0 1px 0 rgba(255, 255, 255, 0.9), 0 1px 2px rgba(60, 30, 10, 0.06), 0 16px 38px -18px rgba(140, 70, 20, 0.2);
-  --float: 0 18px 50px rgba(60, 30, 10, 0.16);
-}
-
-/* Plum: the website's palette, plum on steel and white. Only Settings > Look turns it on. */
-:root[data-theme="plum"] {
-  color-scheme: light;
+  /* Plum/steel light tokens, with the app's status and warning colors. */
   --paper: #ffffff;
-  --side: #bdc2c7;
+  --side: #f3f4f5;
   --surface: #ffffff;
   --surface-2: #f3f5f6;
-  --faint: #c9ced3;
-  --line: #8d949b;
+  --faint: #dde0e3;
+  --line: #d3d6da;
   --ink: #1f2226;
   --ink-2: #3a3f45;
-  --muted: #4a4f55;
+  --muted: #5e6670;
   --wash: rgba(91, 58, 99, 0.07);
+  --field: #c2c7cc;
+  --field-ink: #5b3a63;
+  --main: #5b3a63;
+  --btn: #5b3a63;
+  --btn-text: #ffffff;
+  --link: #5b3a63;
+  --focus: #5b3a63;
+  --alarm: #9c2b4a;
   --signal: #5b3a63;
   --on-signal: #ffffff;
   --signal-wash: #ece4ee;
@@ -247,22 +99,39 @@
   --warn-fill: #e3a41f;
   --warn-wash: #fbf0d8;
   --on-warn: #2b1a00;
-  --accept: #7d4f8c;
-  --focus: #5b3a63;
-  --grad: linear-gradient(90deg, #ff9550, #5b3a63);
-  --g1: #ff9550;
+  --accept: #5b3a63;
+  --caught-hi: #f7bcd8;
+  --caught-line: #9c2b4a;
+  --warn-paper: #d9dde1;
+  --warn-edge: #9ea4ab;
+  --warn-ink: #1f2226;
+  --warn-label: #5b3a63;
+  --warn-label-ink: #ffffff;
+  --g1: #5b3a63;
   --g2: #5b3a63;
-  --glint: #ff9550;
-  --glow-top: rgba(91, 58, 99, 0.14);
-  --glow-dawn: rgba(194, 199, 204, 0.22);
-  --glow-soft: rgba(91, 58, 99, 0.08);
-  --edge: inset 0 1px 0 rgba(255, 255, 255, 0.95);
-  --lift:
-    inset 0 1px 0 rgba(255, 255, 255, 0.9), 0 1px 2px rgba(31, 34, 38, 0.06), 0 16px 38px -18px rgba(91, 58, 99, 0.22);
-  --float: 0 18px 50px rgba(31, 34, 38, 0.14);
+  --glint: #5b3a63;
+  --glow-top: transparent;
+  --glow-dawn: transparent;
+  --glow-soft: transparent;
+  --grad: #5b3a63;
+  --edge: 0 0 0 transparent;
+  --lift: 0 0 0 transparent;
+  --float: none;
+  --page: var(--paper);
+  --soft: var(--muted);
+  --rule: var(--faint);
+  --frame: var(--line);
+  --shadow: var(--float);
+  --progress: var(--grad);
+  --gloss: none;
+  --sheen: var(--signal);
 }
 
-/* Ember: dark plum with orange, the emblem's colours. Windows' dark mode lands here too. */
+:root[data-theme="plum"] {
+  color-scheme: light;
+}
+
+/* System follows Windows: dark mode uses Ember, while the default light tokens above are Plum. */
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme]) {
     color-scheme: dark;
@@ -276,6 +145,14 @@
     --ink-2: #e0d4ea;
     --muted: #bba9c9;
     --wash: rgba(255, 255, 255, 0.05);
+    --field: #4c3b5c;
+    --field-ink: #f7f1fb;
+    --main: #b98cf0;
+    --btn: #ff6700;
+    --btn-text: #0b0b0b;
+    --link: #ff9a60;
+    --focus: #ff8a3d;
+    --alarm: #ff8a80;
     --signal: #ff6700;
     --on-signal: #0b0b0b;
     --signal-wash: #4a2f28;
@@ -291,19 +168,26 @@
     --warn-wash: #463822;
     --on-warn: #2b1a00;
     --accept: #b98cf0;
-    --focus: #ff8a3d;
-    --grad: linear-gradient(90deg, #ff9550, #9b6bd0);
+    --caught-hi: #4a2f28;
+    --caught-line: #ff8a80;
+    --warn-paper: #463822;
+    --warn-edge: #f4c25c;
+    --warn-ink: #f7f1fb;
+    --warn-label: #f4c25c;
+    --warn-label-ink: #2b1a00;
     --g1: #ff9550;
     --g2: #9b6bd0;
     --glint: #ffffff;
     --glow-top: rgba(255, 150, 80, 0.1);
     --glow-dawn: rgba(155, 107, 208, 0.14);
     --glow-soft: rgba(255, 103, 0, 0.1);
+    --grad: linear-gradient(90deg, #ff9550, #9b6bd0);
     --edge: inset 0 1px 0 rgba(255, 255, 255, 0.05);
     --lift: inset 0 1px 0 rgba(255, 255, 255, 0.05), 0 18px 40px -24px rgba(0, 0, 0, 0.65);
     --float: 0 18px 50px rgba(0, 0, 0, 0.5);
   }
 }
+
 :root[data-theme="ember"],
 :root[data-theme="dark"] {
   color-scheme: dark;
@@ -317,6 +201,14 @@
   --ink-2: #e0d4ea;
   --muted: #bba9c9;
   --wash: rgba(255, 255, 255, 0.05);
+  --field: #4c3b5c;
+  --field-ink: #f7f1fb;
+  --main: #b98cf0;
+  --btn: #ff6700;
+  --btn-text: #0b0b0b;
+  --link: #ff9a60;
+  --focus: #ff8a3d;
+  --alarm: #ff8a80;
   --signal: #ff6700;
   --on-signal: #0b0b0b;
   --signal-wash: #4a2f28;
@@ -332,19 +224,24 @@
   --warn-wash: #463822;
   --on-warn: #2b1a00;
   --accept: #b98cf0;
-  --focus: #ff8a3d;
-  --grad: linear-gradient(90deg, #ff9550, #9b6bd0);
+  --caught-hi: #4a2f28;
+  --caught-line: #ff8a80;
+  --warn-paper: #463822;
+  --warn-edge: #f4c25c;
+  --warn-ink: #f7f1fb;
+  --warn-label: #f4c25c;
+  --warn-label-ink: #2b1a00;
   --g1: #ff9550;
   --g2: #9b6bd0;
   --glint: #ffffff;
   --glow-top: rgba(255, 150, 80, 0.1);
   --glow-dawn: rgba(155, 107, 208, 0.14);
   --glow-soft: rgba(255, 103, 0, 0.1);
+  --grad: linear-gradient(90deg, #ff9550, #9b6bd0);
   --edge: inset 0 1px 0 rgba(255, 255, 255, 0.05);
   --lift: inset 0 1px 0 rgba(255, 255, 255, 0.05), 0 18px 40px -24px rgba(0, 0, 0, 0.65);
   --float: 0 18px 50px rgba(0, 0, 0, 0.5);
 }
-
 /* ---------- 2. Base ---------- */
 
 *,
@@ -358,6 +255,11 @@ body {
 }
 body {
   font: 400 var(--t-base) / 1.5 var(--font);
+  font-variation-settings:
+    "MONO" 0,
+    "CASL" 0,
+    "slnt" 0,
+    "CRSV" 0;
   color: var(--ink);
   background: var(--paper);
 }
@@ -373,7 +275,20 @@ h2,
 h3 {
   margin: 0;
   line-height: 1.25;
+  font-variation-settings:
+    "MONO" 0,
+    "CASL" 1,
+    "slnt" 0,
+    "CRSV" 0;
   font-weight: 700;
+}
+code {
+  font-family: var(--mono);
+  font-variation-settings:
+    "MONO" 1,
+    "CASL" 0,
+    "slnt" 0,
+    "CRSV" 0;
 }
 p {
   margin: 0;

@@ -164,7 +164,7 @@ test(
   { skip: !fs.existsSync(VSIX) },
   () => {
     const manifest = JSON.parse(readZipEntry(VSIX, "extension/package.json"));
-    assert.equal(manifest.version, "0.2.0.1");
+    assert.equal(manifest.version, "0.2.2");
     assert.equal(manifest.engines.vscode, "^1.57.0");
     assert.deepEqual(manifest.extensionKind, ["workspace"]);
     assert.equal(manifest.icon, "icon.png");
@@ -200,27 +200,32 @@ test(
 
 // Open VSX shows the version beside the README, and the engine build changes with every batch, so neither
 // number is typed into the README, where it would go stale.
-test("VS Code is 0.2.0.1 and its README leaves version numbers to the extension listing", () => {
+test("VS Code is 0.2.2 and its README leaves version numbers to the extension listing", () => {
   const editor = JSON.parse(fs.readFileSync(path.join(APP, "package.json"), "utf8"));
   const readme = fs.readFileSync(path.join(APP, "README.md"), "utf8");
-  assert.equal(editor.version, "0.2.0.1");
+  assert.equal(editor.version, "0.2.2");
   assert.doesNotMatch(readme, /^Version \d/m);
   assert.doesNotMatch(readme, /engine \d+\.\d+\.\d+/i);
 });
 
 test("the VS Code README reads as a store page in the owner's voice and keeps build steps behind a link", () => {
   const readme = fs.readFileSync(path.join(APP, "README.md"), "utf8");
-  assert.match(readme, /^# Clotr for VS Code-compatible editors/m);
-  assert.match(readme, /^Local warnings for credentials in open files that AI coding assistants can read\./m);
-  assert.match(readme, /I built Clotr/);
+  const expectedOpening = [
+    "# Clotr for VS Code-compatible editors",
+    "",
+    "I built Clotr for people who code with AI assistants in VS Code, Cursor, Windsurf and VSCodium. It underlines API keys, tokens and passwords in the files you have open, so you know they're there before they end up in a prompt. It names the kind of credential and never shows the value.",
+    "",
+    "Clotr Guard, which you can set up from the extension, goes further: it checks your prompts before they're sent and stops supported assistants from reading secret files such as `.env`.",
+    "",
+    "![Clotr warning on an unsaved sample in Cursor](images/open-file-warning.png)",
+  ].join("\n");
+  assert.ok(readme.startsWith(`${expectedOpening}\n\n## Install\n`), "README opening and screenshot match exactly");
   assert.match(readme, /no network calls/);
-  assert.match(readme, /doesn't show credential values/);
+  assert.match(readme, /without showing its value/);
   assert.match(readme, /\.clotrignore/);
   assert.match(readme, /salted fingerprint/);
   assert.match(readme, /Move to \.env/);
-  assert.match(readme, /Cursor/);
-  assert.match(readme, /Windsurf/);
-  assert.match(readme, /VSCodium/);
+  assert.match(readme, /These steps work in VS Code-compatible editors/);
   assert.match(readme, /Path patterns in `\.clotrignore` do not skip files/);
   assert.match(readme, /Files over 1 MiB and binary files show a warning/);
   assert.match(readme, /Workspace state stores a random salt/);
@@ -298,9 +303,13 @@ test("the Open VSX listing has its install metadata, icon, banner, and repositor
     "secrets",
     "credentials",
     "api key",
+    "api keys",
+    "passwords",
+    "tokens",
     "privacy",
     "pii",
     "ai",
+    "ai coding assistants",
     "claude code",
     "copilot",
     "cursor",
@@ -319,14 +328,43 @@ test("the Open VSX listing has its install metadata, icon, banner, and repositor
   assert.deepEqual(editor.bugs, { url: "https://github.com/clotr-app/clotr/issues" });
   assert.equal(editor.repository.url, "https://github.com/clotr-app/clotr");
   assert.equal(editor.homepage, "https://clotr.app/developers.html");
+  assert.ok(editor.keywords.length <= 30);
+  assert.deepEqual(
+    editor.categories.filter(
+      (category) =>
+        ![
+          // 0.2.0 and 0.2.1 were accepted by both stores with AI; it is the Marketplace shelf AI-editor users browse.
+          "Programming Languages",
+          "Snippets",
+          "AI",
+          "Chat",
+          "Linters",
+          "Themes",
+          "Debuggers",
+          "Formatters",
+          "Keymaps",
+          "SCM Providers",
+          "Other",
+          "Extension Packs",
+          "Language Packs",
+          "Data Science",
+          "Machine Learning",
+          "Visualization",
+          "Notebooks",
+          "Education",
+          "Testing",
+        ].includes(category),
+    ),
+    [],
+  );
   assert.ok(editor.activationEvents.includes("onStartupFinished"));
   assert.ok(!editor.activationEvents.includes("*"));
   const en = require("../apps/vscode/package.nls.json");
   const es = require("../apps/vscode/package.nls.es.json");
   assert.equal(en.displayName, "Clotr for VS Code-compatible editors");
   assert.equal(es.displayName, "Clotr para editores compatibles con VS Code");
-  assert.match(en.description, /credentials/);
-  assert.match(es.description, /credenciales/);
+  assert.match(en.description, /secrets.*API keys.*credentials.*AI coding assistant/i);
+  assert.match(es.description, /secretos.*claves API.*credenciales.*un asistente de programación con IA/i);
 });
 
 test("Open VSX hosts use the workspace host and the VS Code 1.57 API floor", () => {
@@ -481,8 +519,16 @@ test("a first-run walkthrough says what Clotr checks, how to try it, and how to 
   assert.equal(walkthrough.steps[0].completionEvents, undefined);
   assert.match(en[guardStep], /open-vsx\.org\/extension\/clotr-app\/clotr\/reviews/i);
   assert.match(en[guardStep], /github\.com\/clotr-app\/clotr\/issues/i);
+  assert.match(
+    en[guardStep],
+    /Did Clotr catch something\? Tell us\]\(https:\/\/github\.com\/clotr-app\/clotr\/discussions\)/,
+  );
   assert.match(es[guardStep], /open-vsx\.org\/extension\/clotr-app\/clotr\/reviews/i);
   assert.match(es[guardStep], /github\.com\/clotr-app\/clotr\/issues/i);
+  assert.match(
+    es[guardStep],
+    /¿Clotr detectó algo\? Cuéntanos\]\(https:\/\/github\.com\/clotr-app\/clotr\/discussions\)/,
+  );
 });
 
 test("the Guard command's title says it sets Guard up", () => {
@@ -2514,4 +2560,349 @@ test("one document that fails to check doesn't stop later checks", async () => {
   document.setText(`const token = "${KEY}";`);
   fake.fireTextChange(document);
   await waitFor(() => fake.entries.get(document.uri.toString())?.length === 1, "the next check's finding");
+});
+
+test("a clipboard check the engine cut short says part wasn't checked and offers no cleaned copy", async () => {
+  const fake = fakeVscode([]);
+  const copied = `Paste ${KEY} here`;
+  fake.clipboard.value = copied;
+  await activateExtension(fake);
+  const detect = fake.engineContext.Clotr.detect;
+  let scans = 0;
+  fake.engineContext.Clotr.detect = (value) => {
+    const found = detect(value);
+    if (value === copied) {
+      scans += 1;
+      found.truncated = true;
+    }
+    return found;
+  };
+  await fake.commands.get("clotr.checkClipboard")();
+  assert.equal(scans, 1, "the text is scanned once");
+  const call = fake.vscode.window.messageCalls[0];
+  assert.match(call.message, /AWS Access Key/);
+  assert.match(call.message, /ran out of time.*did not check part of this text/i);
+  assert.deepEqual(call.choices, [], "no cleaned copy is offered for text that wasn't fully checked");
+  assert.equal(fake.clipboard.value, copied);
+
+  fake.clipboard.value = "Nothing to see here";
+  fake.engineContext.Clotr.detect = (value) => Object.assign(detect(value), { truncated: true });
+  fake.vscode.window.messages.length = 0;
+  await fake.commands.get("clotr.checkClipboard")();
+  assert.equal(fake.vscode.window.messages.length, 1);
+  assert.match(fake.vscode.window.messages[0], /did not check part of this text/i);
+  assert.doesNotMatch(fake.vscode.window.messages[0], /found nothing/i);
+});
+
+test("Move to .env counts unsaved .env lines, so two moves of one kind get two variables", async () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "clotr-vscode-move-env-dirty-"));
+  const second = `${KEY.slice(0, -1)}P`;
+  try {
+    const fake = fakeVscode([], {}, {}, root);
+    const doc = fake.mkDocument(path.join(root, "app.js"), `const a = "${KEY}";\nconst b = "${second}";`);
+    doc.languageId = "javascript";
+    // The .env is open in the editor, so the moved lines stay in its unsaved text and not on disk.
+    fs.writeFileSync(path.join(root, ".env"), "");
+    const env = fake.mkDocument(path.join(root, ".env"), "");
+    fake.vscode.workspace.textDocuments.push(doc, env);
+    await activateExtension(fake);
+    for (let move = 0; move < 2; move += 1) {
+      const diagnostic = fake.entries.get(doc.uri.toString())[0];
+      const actions = fake.codeActionProviders[0].provider.provideCodeActions(doc, diagnostic.range, {
+        diagnostics: [diagnostic],
+      });
+      const action = actions.find((item) => item.title === "Move to .env");
+      assert.ok(action, `Move to .env is offered for move ${move + 1}`);
+      await fake.commands.get(action.command.command)(...action.command.arguments);
+    }
+    assert.equal(
+      doc.getText(),
+      "const a = process.env.CLOTR_AWS_ACCESS_KEY;\nconst b = process.env.CLOTR_AWS_ACCESS_KEY_2;",
+    );
+    assert.equal(env.getText(), `CLOTR_AWS_ACCESS_KEY=${KEY}\nCLOTR_AWS_ACCESS_KEY_2=${second}\n`);
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("a file turned off can be turned back on, and the status says while checking is off", async () => {
+  const manifest = require("../apps/vscode/package.json");
+  assert.ok(manifest.contributes.commands.some((item) => item.command === "clotr.turnOnFile"));
+  assert.ok(manifest.activationEvents.includes("onCommand:clotr.turnOnFile"));
+  const fake = fakeVscode([]);
+  const doc = fake.mkDocument("C:/project/app.js", `const token = "${KEY}";`);
+  fake.vscode.workspace.textDocuments.push(doc);
+  await activateExtension(fake);
+  await fake.commands.get("clotr.turnOffFile")(doc.uri);
+  assert.equal(fake.entries.has(doc.uri.toString()), false);
+  assert.match(fake.statusItems[0].tooltip, /checking is off for 1 open file/i);
+  // From the Command Palette the command takes the file in the active editor.
+  fake.vscode.window.activeTextEditor = { document: doc };
+  await fake.commands.get("clotr.turnOnFile")();
+  assert.deepEqual(fake.stateValues.disabledFiles, []);
+  assert.equal(fake.entries.get(doc.uri.toString())?.length, 1);
+  assert.doesNotMatch(fake.statusItems[0].tooltip, /checking is off/i);
+});
+
+test("Move to .env offers to add .env to .gitignore when Git doesn't ignore it yet", async () => {
+  for (const ignored of [false, true]) {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), "clotr-vscode-move-env-ignore-"));
+    try {
+      if (ignored) fs.writeFileSync(path.join(root, ".gitignore"), "node_modules/\n.env\n");
+      else fs.writeFileSync(path.join(root, ".gitignore"), "node_modules/\n");
+      // The one-time workspace note was already shown, so only the move itself can say so.
+      const fake = fakeVscode([], { workspaceSecretNoteShown: true }, {}, root);
+      const doc = fake.mkDocument(path.join(root, "app.js"), `const token = "${KEY}";`);
+      doc.languageId = "javascript";
+      fake.vscode.workspace.textDocuments.push(doc);
+      await activateExtension(fake);
+      const diagnostic = fake.entries.get(doc.uri.toString())[0];
+      const actions = fake.codeActionProviders[0].provider.provideCodeActions(doc, diagnostic.range, {
+        diagnostics: [diagnostic],
+      });
+      const move = actions.find((action) => action.title === "Move to .env");
+      await fake.commands.get(move.command.command)(...move.command.arguments);
+      assert.equal(doc.getText(), "const token = process.env.CLOTR_AWS_ACCESS_KEY;");
+      const gitignore = fs.readFileSync(path.join(root, ".gitignore"), "utf8");
+      if (ignored) {
+        assert.deepEqual(fake.vscode.window.messages, []);
+        assert.equal(gitignore, "node_modules/\n.env\n");
+      } else {
+        assert.equal(fake.vscode.window.messageCalls.length, 1);
+        assert.match(fake.vscode.window.messageCalls[0].message, /\.env.*Git doesn't ignore/);
+        assert.deepEqual(fake.vscode.window.messageCalls[0].choices, ["Add it to .gitignore"]);
+        assert.equal(gitignore, "node_modules/\n.env\n");
+      }
+      assert.equal(JSON.stringify(fake.vscode.window.messages).includes(KEY), false);
+    } finally {
+      fs.rmSync(root, { recursive: true, force: true });
+    }
+  }
+});
+
+test("Add to .gitignore writes into the nested repository that holds the secret file", async () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "clotr-vscode-gitignore-nested-"));
+  try {
+    fs.mkdirSync(path.join(root, "svc", ".git"), { recursive: true });
+    const fake = fakeVscode([], {}, {}, root);
+    fake.vscode.workspace.textDocuments.push(fake.mkDocument(path.join(root, "svc", ".env"), ""));
+    fake.setInformationChoice("Add it to .gitignore");
+    await activateExtension(fake);
+    await waitFor(() => fs.existsSync(path.join(root, "svc", ".gitignore")), "the nested .gitignore", 5000);
+    assert.equal(fs.readFileSync(path.join(root, "svc", ".gitignore"), "utf8"), ".env\n");
+    assert.equal(fs.existsSync(path.join(root, ".gitignore")), false, "the outer folder's .gitignore isn't read there");
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("a file that only mentions the service-account shape keeps its findings and gets no secret-file note", async () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "clotr-vscode-service-account-"));
+  try {
+    const fake = fakeVscode([], {}, {}, root);
+    const line = `AWS_KEY = "${KEY}"`;
+    const shape = '{"type": "service_account"}';
+    const files = {
+      "plain.py": line,
+      "commented.py": `${line}\n# example shape: ${shape}`,
+      "README.md": `Key files look like ${shape}.\n\n${line}\n`,
+    };
+    for (const [name, text] of Object.entries(files)) {
+      fake.vscode.workspace.textDocuments.push(fake.mkDocument(path.join(root, name), text));
+    }
+    await activateExtension(fake);
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    for (const name of Object.keys(files)) {
+      const found = fake.entries.get(`file://${path.join(root, name)}`) || [];
+      assert.deepEqual(
+        found.map((item) => item.code),
+        ["aws_access_key"],
+        `${name} keeps its finding`,
+      );
+    }
+    assert.ok(!fake.vscode.window.messages.some((message) => /isn't ignored by Git/.test(message)));
+
+    // A real service-account key file is still a secret file: silent, with the workspace note.
+    const keyFile = fake.mkDocument(
+      path.join(root, "project-key.json"),
+      JSON.stringify({ type: "service_account", private_key_id: KEY }, null, 2),
+    );
+    fake.fireOpen(keyFile);
+    fake.fireTextChange(keyFile);
+    await waitFor(() => fake.vscode.window.messages.some((message) => /isn't ignored by Git/.test(message)), "note");
+    assert.equal((fake.entries.get(keyFile.uri.toString()) || []).length, 0);
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("a .clotrignore change checks open files again without an edit", async (t) => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "clotr-vscode-ignore-recheck-"));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  const ignoreFile = path.join(root, ".clotrignore");
+  const salt = "b".repeat(64);
+  fs.writeFileSync(ignoreFile, `salt: ${salt}\nfingerprint: ${valueFingerprint(salt, KEY)}\n`);
+  const fake = fakeVscode([], {}, {}, root);
+  const doc = fake.mkDocument(path.join(root, "open.js"), `const token = "${KEY}";`);
+  fake.vscode.workspace.textDocuments.push(doc);
+  await activateExtension(fake);
+  assert.equal(fake.entries.get(doc.uri.toString()).length, 0);
+  fs.unlinkSync(ignoreFile);
+  fake.fireFileSystemEvent("delete", ignoreFile);
+  await waitFor(() => fake.entries.get(doc.uri.toString())?.length === 1, "the finding after delete", 5000);
+  fs.writeFileSync(ignoreFile, `salt: ${salt}\nfingerprint: ${valueFingerprint(salt, KEY)}\n`);
+  fake.fireFileSystemEvent("create", ignoreFile);
+  await waitFor(() => fake.entries.get(doc.uri.toString())?.length === 0, "the finding quieted again", 5000);
+});
+
+test("the Guard repair prompt comes back until answered and checks each workspace's Git hook", async () => {
+  const scratch = fs.mkdtempSync(path.join(os.tmpdir(), "clotr-vscode-repair-"));
+  const extensions = path.join(scratch, "extensions");
+  const home = path.join(scratch, "home");
+  const repoA = path.join(scratch, "repo-a");
+  const repoB = path.join(scratch, "repo-b");
+  const moved = "Clotr Guard moved since the last update. Set it up again?";
+  try {
+    const before = packageFolder(extensions, "0.0.1");
+    const after = packageFolder(extensions, "0.0.2");
+    const oldScript = path.join(before, "guard", "bin", "clotr-guard.js");
+    const env = { ...process.env, HOME: home, USERPROFILE: home };
+    for (const repo of [repoA, repoB]) {
+      fs.mkdirSync(repo, { recursive: true });
+      assert.equal(spawnSync("git", ["init", "-q"], { cwd: repo }).status, 0);
+    }
+    fs.mkdirSync(path.join(home, ".claude"), { recursive: true });
+    for (const [args, cwd] of [
+      [["setup", "claude"], repoA],
+      [["setup", "git", "--project"], repoB],
+    ]) {
+      const result = spawnSync(process.execPath, [oldScript, ...args], { cwd, env, encoding: "utf8" });
+      assert.equal(result.status, 0, result.stderr);
+    }
+    const globalValues = { welcomeShown: true, extensionVersion: "0.0.1" };
+    const activate = async (workspace) => {
+      const fake = fakeVscode([], {}, {}, workspace, globalValues);
+      fake.context.clotrGuardHome = home;
+      fake.setInformationChoice(undefined);
+      await activateContainedExtension(after, fake);
+      await new Promise((resolve) => setTimeout(resolve, 200));
+      return fake.vscode.window.messages;
+    };
+    assert.deepEqual(await activate(repoA), [moved]);
+    assert.equal(globalValues.extensionVersion, "0.0.1", "a dismissed prompt isn't counted as answered");
+    assert.deepEqual(await activate(repoA), [moved], "the prompt comes back after a dismissal");
+    // Another window, after the assistants were set up again: its repository's Git hook still names the old folder.
+    globalValues.extensionVersion = "0.0.2";
+    assert.deepEqual(await activate(repoB), [moved]);
+  } finally {
+    fs.rmSync(scratch, { recursive: true, force: true });
+  }
+});
+
+test("without the Git extension, .gitignore anchors and folder rules decide the secret-file note as Git would", async () => {
+  const cases = [
+    { rules: "/.env\n", file: "sub/.env", note: true },
+    { rules: "/.env\n", file: ".env", note: false },
+    { rules: "secrets/\n", file: "secrets/.env", note: false },
+    { rules: "secrets/\n", file: "a/secrets/.env", note: false },
+    { rules: ".env\n", file: "sub/.env", note: false },
+    { rules: "secrets/*\n!secrets/.env\n", file: "secrets/.env", note: true },
+  ];
+  for (const { rules, file, note } of cases) {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), "clotr-vscode-gitignore-fallback-"));
+    try {
+      fs.writeFileSync(path.join(root, ".gitignore"), rules);
+      const fake = fakeVscode([], {}, {}, root);
+      fake.vscode.workspace.textDocuments.push(fake.mkDocument(path.join(root, ...file.split("/")), ""));
+      fake.setInformationChoice(undefined);
+      await activateExtension(fake);
+      await new Promise((resolve) => setTimeout(resolve, 50));
+      assert.equal(
+        fake.vscode.window.messages.includes("A secret file in this workspace isn't ignored by Git."),
+        note,
+        `${JSON.stringify(rules)} with ${file}`,
+      );
+      assert.equal(fs.readFileSync(path.join(root, ".gitignore"), "utf8"), rules);
+    } finally {
+      fs.rmSync(root, { recursive: true, force: true });
+    }
+  }
+});
+
+test("Check selection checks every selection when there are several cursors", async () => {
+  const fake = fakeVscode([]);
+  const doc = fake.mkDocument("C:/project/notes.txt", `hello world\nkey = ${KEY}\n`);
+  await activateExtension(fake);
+  const selection = (line, start, end) => ({
+    start: { line, character: start },
+    end: { line, character: end },
+    isEmpty: start === end,
+  });
+  const harmless = selection(0, 0, 5);
+  const key = selection(1, 6, 6 + KEY.length);
+  fake.vscode.window.activeTextEditor = { document: doc, selection: harmless, selections: [harmless, key] };
+  await fake.commands.get("clotr.checkSelection")();
+  assert.match(fake.vscode.window.messages[0], /AWS Access Key: Sensitive information found/);
+  assert.doesNotMatch(fake.vscode.window.messages[0], new RegExp(KEY));
+});
+
+test("a clipboard too large to check is called text, not a file, in both languages", async () => {
+  for (const [language, pattern] of [
+    ["en", /^This text is too large \(>1 MiB\), so Clotr did not check it\.$/],
+    ["es", /^Este texto es demasiado grande \(>1 MiB\), así que Clotr no lo revisó\.$/],
+  ]) {
+    const fake = fakeVscode([]);
+    fake.vscode.env.language = language;
+    fake.clipboard.value = "x".repeat(1024 * 1024 + 1);
+    await activateExtension(fake);
+    await fake.commands.get("clotr.checkClipboard")();
+    assert.equal(fake.vscode.window.messages.length, 1);
+    assert.match(fake.vscode.window.messages[0], pattern);
+  }
+});
+
+async function gitIgnoreFallbackNote(files, file) {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "clotr-vscode-gitignore-fallback-"));
+  try {
+    for (const [name, text] of Object.entries(files)) {
+      const target = path.join(root, ...name.split("/"));
+      fs.mkdirSync(path.dirname(target), { recursive: true });
+      if (text === null) fs.mkdirSync(target, { recursive: true });
+      else fs.writeFileSync(target, text);
+    }
+    const fake = fakeVscode([], {}, {}, root);
+    fake.vscode.workspace.textDocuments.push(fake.mkDocument(path.join(root, ...file.split("/")), ""));
+    fake.setInformationChoice(undefined);
+    await activateExtension(fake);
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    for (const [name, text] of Object.entries(files)) {
+      if (text !== null) assert.equal(fs.readFileSync(path.join(root, ...name.split("/")), "utf8"), text);
+    }
+    return fake.vscode.window.messages.includes("A secret file in this workspace isn't ignored by Git.");
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+}
+
+test("without the Git extension, a negation naming only a folder above a secret file doesn't bring it back", async () => {
+  const cases = [
+    { files: { ".gitignore": "*\n!*/\n" }, file: "config/.env", note: false },
+    { files: { ".gitignore": ".env\n!sub/\n" }, file: "sub/.env", note: false },
+    { files: { ".gitignore": ".env\n!sub\n" }, file: "sub/.env", note: false },
+    { files: { ".gitignore": "*\n!sub\n" }, file: "sub/.env", note: false },
+    { files: { ".gitignore": "*\n!*/\n!.env\n" }, file: "config/.env", note: true },
+    { files: { ".gitignore": "sub/**\n!sub/.env\n" }, file: "sub/.env", note: true },
+    { files: { ".gitignore": ".env\n", "sub/.gitignore": "!.env\n" }, file: "sub/.env", note: true },
+    { files: { ".gitignore": "sub/\n", "sub/.gitignore": "!.env\n" }, file: "sub/.env", note: false },
+  ];
+  for (const { files, file, note } of cases) {
+    assert.equal(await gitIgnoreFallbackNote(files, file), note, `${JSON.stringify(files)} with ${file}`);
+  }
+});
+
+test("without the Git extension, a nested repository's secret file isn't hidden by a .gitignore above that repository", async () => {
+  const outer = { ".gitignore": ".env\n", "nested/.git": null };
+  assert.equal(await gitIgnoreFallbackNote(outer, "nested/.env"), true);
+  assert.equal(await gitIgnoreFallbackNote({ ...outer, "nested/.gitignore": ".env\n" }, "nested/.env"), false);
+  assert.equal(await gitIgnoreFallbackNote({ ".gitignore": ".env\n", "nested/keep": "" }, "nested/.env"), false);
 });

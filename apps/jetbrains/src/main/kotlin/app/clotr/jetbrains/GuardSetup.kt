@@ -1,11 +1,12 @@
 package app.clotr.jetbrains
 
+import com.intellij.ide.DataManager
 import com.intellij.ide.trustedProjects.TrustedProjects
+import com.intellij.openapi.actionSystem.CommonDataKeys
 import com.intellij.openapi.fileChooser.FileChooser
 import com.intellij.openapi.fileChooser.FileChooserDescriptor
 import com.intellij.openapi.fileChooser.FileChooserDescriptorFactory
 import com.intellij.openapi.project.Project
-import com.intellij.openapi.project.ProjectManager
 import com.intellij.openapi.ui.DialogWrapper
 import com.intellij.openapi.ui.Messages
 import com.intellij.openapi.util.text.StringUtil
@@ -160,6 +161,23 @@ internal object GuardSetup {
     }
 
     fun clineUnsupported(tool: String) = tool == "cline" && isWindows
+
+    /**
+     * Applies each tool in turn and stops at the first failure. Returns null when all of them worked; otherwise says
+     * which tool failed and why, which tools were already changed, and which were not reached.
+     */
+    internal fun applyEach(tools: List<String>, apply: (String) -> GuardResult): String? {
+        for ((index, tool) in tools.withIndex()) {
+            val result = apply(tool)
+            if (result.exitCode == 0) continue
+            return listOfNotNull(
+                ClotrBundle.message("guard.applyFailed", tool, result.output),
+                tools.take(index).takeIf { it.isNotEmpty() }?.let { ClotrBundle.message("guard.applyChanged", it.joinToString(", ")) },
+                tools.drop(index + 1).takeIf { it.isNotEmpty() }?.let { ClotrBundle.message("guard.applyNotChanged", it.joinToString(", ")) },
+            ).joinToString("\n\n")
+        }
+        return null
+    }
 }
 
 internal class GuardSetupDialog(private val project: Project?, private val remove: Boolean, private var cli: Path? = null) : DialogWrapper(project) {
@@ -168,7 +186,7 @@ internal class GuardSetupDialog(private val project: Project?, private val remov
     private val where = JLabel()
 
     init {
-        title = ClotrBundle.message("guard.action")
+        title = guardTitle(project)
         init()
         refresh()
     }
@@ -252,9 +270,8 @@ internal class GuardSetupDialog(private val project: Project?, private val remov
             arrayOf(applyText, Messages.getCancelButton()), 0, Messages.getQuestionIcon())
         if (answer != 0) return
         val failure = withProgress(project, ClotrBundle.message("guard.applying")) {
-            chosen.filterNot(GuardSetup::clineUnsupported).firstNotNullOfOrNull { tool ->
-                val args = GuardSetup.commandArgs(verb, tool, options)
-                GuardSetup.run(cli, args, cwd).takeIf { it.exitCode != 0 }?.output
+            GuardSetup.applyEach(chosen.filterNot(GuardSetup::clineUnsupported)) { tool ->
+                GuardSetup.run(cli, GuardSetup.commandArgs(verb, tool, options), cwd)
             }
         }
         if (failure != null) {
@@ -272,16 +289,22 @@ class GuardSetupAction : com.intellij.openapi.actionSystem.AnAction() {
     }
 }
 
-internal fun addGuardSettingsButton(panel: JPanel) {
+/** Guard's dialogs name the project they act on, since its folder is where Guard and Git run. */
+internal fun guardTitle(project: Project?): String =
+    ClotrBundle.message("guard.action") + (project?.let { " — ${it.name}" } ?: "")
+
+internal fun addGuardSettingsButton(panel: JPanel, show: (Project?) -> Unit = ::showGuardSetup) {
     val button = JButton(ClotrBundle.message("guard.settingsButton"))
+    // The project of the window whose Settings this is, not just the first one open: Guard and Git run in its folder.
+    // Settings opened with no project (the welcome screen) has only the default one, which has no folder.
     button.addActionListener {
-        showGuardSetup(ProjectManager.getInstance().openProjects.firstOrNull())
+        show(CommonDataKeys.PROJECT.getData(DataManager.getInstance().getDataContext(button))?.takeUnless { it.isDefault })
     }
     panel.add(button)
 }
 
 internal fun showGuardSetup(project: Project?) {
-    val title = ClotrBundle.message("guard.action")
+    val title = guardTitle(project)
     // Setup runs Guard and Git in the project's folder, so it waits until the person trusts that project.
     if (!GuardSetup.trusted(project)) {
         Messages.showInfoMessage(project, ClotrBundle.message("guard.untrusted"), title)

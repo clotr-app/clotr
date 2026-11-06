@@ -7,7 +7,11 @@
 module.exports = async function (env) {
   const { ROOT, check, ctx, fs, openExtPage, openPopup, path, resetState, seedEvents, settle, store } = env;
 
-  const dir = path.join(ROOT, "docs", "later", "extension-look");
+  // The design doc's folder is private; where it isn't there (the public tree), the shots go with the other output.
+  const later = path.join(ROOT, "docs", "later");
+  const dir = fs.existsSync(later)
+    ? path.join(later, "extension-look")
+    : path.join(ROOT, "tests", "e2e", "output", "extension-look");
   fs.mkdirSync(dir, { recursive: true });
 
   // shotAt always writes to tests/e2e/output/, but these shots are for the design doc, so I write there instead.

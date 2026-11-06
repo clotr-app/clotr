@@ -1,6 +1,17 @@
 package app.clotr.jetbrains
 
+import com.intellij.ide.DataManager
+import com.intellij.ide.impl.HeadlessDataManager
 import com.intellij.ide.trustedProjects.TrustedProjects
+import com.intellij.openapi.actionSystem.CommonDataKeys
+import com.intellij.openapi.actionSystem.DataProvider
+import com.intellij.openapi.actionSystem.DataSink
+import com.intellij.openapi.actionSystem.UiDataProvider
+import com.intellij.openapi.project.Project
+import com.intellij.openapi.project.ProjectManager
+import java.lang.reflect.Proxy
+import javax.swing.JButton
+import javax.swing.JPanel
 import com.intellij.openapi.ui.TestDialog
 import com.intellij.openapi.ui.TestDialogManager
 import com.intellij.openapi.util.Disposer
@@ -53,6 +64,36 @@ class GuardSetupTest : BasePlatformTestCase() {
             System.clearProperty("idea.trust.headless.disabled")
             TestDialogManager.setTestDialog(previous)
         }
+    }
+
+    // With two projects open, the button in one window's Settings acted on whichever project was opened first.
+    fun testSettingsButtonActsOnTheProjectOfItsOwnWindow() {
+        val other = Proxy.newProxyInstance(javaClass.classLoader, arrayOf(Project::class.java)) { proxy, method, args ->
+            when (method.name) {
+                "equals" -> proxy === args?.get(0)
+                "hashCode" -> System.identityHashCode(proxy)
+                "toString" -> "the other window's project"
+                "getName" -> "Other"
+                else -> if (method.returnType == Boolean::class.javaPrimitiveType) false else null
+            }
+        } as Project
+        assertNotSame(other, ProjectManager.getInstance().openProjects.firstOrNull())
+        // Tests otherwise answer every data lookup with the test's own project, whatever window it's from.
+        HeadlessDataManager.fallbackToProductionDataManager(testRootDisposable)
+        (DataManager.getInstance() as HeadlessDataManager).setTestDataProvider(DataProvider { null }, testRootDisposable)
+        val shown = mutableListOf<Project?>()
+        // Settings opened from the welcome screen has only the default project, which has no folder to run in.
+        for (windowProject in listOf(other, ProjectManager.getInstance().defaultProject)) {
+            val window = object : JPanel(), UiDataProvider {
+                override fun uiDataSnapshot(sink: DataSink) {
+                    sink[CommonDataKeys.PROJECT] = windowProject
+                }
+            }
+            addGuardSettingsButton(window) { shown += it }
+            (window.components.single() as JButton).doClick()
+        }
+        assertEquals(listOf<Project?>(other, null), shown)
+        assertEquals("Clotr Guard — Other", guardTitle(other))
     }
 
     fun testTheDialogRunsNothingWhileItIsBuilt() {
@@ -155,6 +196,31 @@ class GuardSetupTest : BasePlatformTestCase() {
             listOf("setup", "claude", "--dry-run"),
             GuardSetup.commandArgs("setup", "claude", dryRun = true),
         )
+    }
+
+    // After a failure the person has to know which assistant failed and that the ones before it were already changed.
+    fun testAnApplyFailureNamesTheToolAndWhatWasAlreadyChanged() {
+        val ran = mutableListOf<String>()
+        val failure = GuardSetup.applyEach(listOf("claude", "codex", "cursor")) { tool ->
+            ran += tool
+            if (tool == "codex") GuardResult(1, "settings file is not valid JSON") else GuardResult(0, "")
+        }
+        assertEquals("nothing runs after a failure", listOf("claude", "codex"), ran)
+        assertEquals(
+            listOf(
+                ClotrBundle.message("guard.applyFailed", "codex", "settings file is not valid JSON"),
+                ClotrBundle.message("guard.applyChanged", "claude"),
+                ClotrBundle.message("guard.applyNotChanged", "cursor"),
+            ).joinToString("\n\n"),
+            failure,
+        )
+        assertTrue(failure!!.contains("codex") && failure.contains("claude") && failure.contains("cursor"))
+
+        assertEquals(
+            ClotrBundle.message("guard.applyFailed", "claude", "no"),
+            GuardSetup.applyEach(listOf("claude")) { GuardResult(2, "no") },
+        )
+        assertNull(GuardSetup.applyEach(listOf("claude", "git")) { GuardResult(0, "") })
     }
 
     fun testMissingNodeReturnsAnInstallHintWithoutRunningGuard() {

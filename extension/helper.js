@@ -313,6 +313,17 @@ function renderTourniquet() {
   }
 }
 
+const isLocked = () => managed || (Boolean(lock) && Date.now() >= unlockedUntil);
+// The 10 minutes can run out while the page is open: it locks itself then, and every change checks the time again
+// first (another page may have unlocked or locked it since), showing the PIN box instead when it's up.
+let relock = null;
+async function stillUnlocked() {
+  unlockedUntil = await Helper.unlockedUntil();
+  if (!isLocked()) return true;
+  await render();
+  return false;
+}
+
 async function render() {
   const s = await chrome.storage.local.get(["largeText", "responses", "lock", "vault", "tourniquet"]);
   const policy = (await chrome.storage.managed?.get(null).catch(() => ({}))) || {};
@@ -321,7 +332,9 @@ async function render() {
   tourniquet = Sites.cleanTourniquet(s.tourniquet);
   vault = Array.isArray(s.vault) ? s.vault : [];
   unlockedUntil = await Helper.unlockedUntil();
-  const locked = managed || (Boolean(lock) && Date.now() >= unlockedUntil);
+  const locked = isLocked();
+  clearTimeout(relock);
+  if (!locked && lock) relock = setTimeout(render, unlockedUntil - Date.now());
   $("managed-note").hidden = !managed;
   $("unlock").hidden = !locked || managed; // an organization's lock has no PIN
   $("steps").hidden = locked;
@@ -363,6 +376,7 @@ $("tq-on")?.addEventListener("click", async () => {
   const who = chosen();
   if (!isPreset(who)) return;
   disarmOff();
+  if (!(await stillUnlocked())) return;
   // After a scam: 30 days from now, the end in the record (the background ends it: sites.js tourniquetStep).
   const record = who === "after_scam" ? Sites.afterScam(Date.now()) : { for: who, since: Date.now() };
   await chrome.storage.local.set({ tourniquet: record });
@@ -385,6 +399,7 @@ $("tq-off")?.addEventListener("click", async () => {
     return;
   }
   disarmOff();
+  if (!(await stillUnlocked())) return;
   await chrome.storage.local.remove("tourniquet");
   $("tq-state").classList.remove("on");
   $("tq-state").textContent = msg(
@@ -420,9 +435,14 @@ $("after-share-row").hidden = !FEATURES.scamcheck && !FEATURES.practice && !FEAT
 if ($("ext-check-line") && (!FEATURES.extcheck || chrome.runtime.getManifest().browser_specific_settings?.safari)) {
   $("ext-check-line").hidden = true;
 }
-$("large-text").addEventListener("change", (e) => chrome.storage.local.set({ largeText: e.target.checked }));
-$("strict-personal").addEventListener("change", (e) => Helper.setAskBeforePersonal(e.target.checked));
+$("large-text").addEventListener("change", async (e) => {
+  if (await stillUnlocked()) await chrome.storage.local.set({ largeText: e.target.checked });
+});
+$("strict-personal").addEventListener("change", async (e) => {
+  if (await stillUnlocked()) await Helper.setAskBeforePersonal(e.target.checked);
+});
 $("lock-set").addEventListener("click", async () => {
+  if (!(await stillUnlocked())) return;
   const pin = $("pin").value.trim();
   if (!Helper.validPin(pin)) {
     say("lock-msg", msg("pp_pinDigits", "Use 4 to 8 digits."), true);
@@ -460,9 +480,11 @@ $("unlock-pin").addEventListener("keydown", (e) => {
   if (e.key === "Enter") tryUnlock();
 });
 
-// Details added in the vault tab, or settings changed in the popup, show up here too.
+// Details added in the vault tab, or settings changed in the popup, show up here too, and so does the PIN being
+// entered (or the 10 minutes ending) on another page.
 chrome.storage.onChanged.addListener((changes, area) => {
   if (area === "local" && ["largeText", "responses", "lock", "vault", "tourniquet"].some((k) => k in changes)) render();
+  if (area === "session" && "unlockedUntil" in changes) render();
 });
 
 (async () => {

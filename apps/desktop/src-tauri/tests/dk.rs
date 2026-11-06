@@ -15,7 +15,7 @@
 //!   dk_home_status     each of status()'s four states shows its own title, each still true with Windows'
 //!                      Animation effects setting off (restored after, since this runs on a real desktop) --
 //!                      confirming WebView2 follows it the way Edge does; the ember actually holding still is a
-//!                      screenshot check (TESTING.md), since nothing here can read a CSS animation's state
+//!                      manual screenshot check, since nothing here can read a CSS animation's state
 //!   dk_tray_flyout     content present, positioned on the screen, "Pause for an hour" shows its own confirmation
 //!                      rather than a new window, Esc hides it (from the confirmation too), no socket opens.
 //!                      Left-clicking the real tray icon isn't driven here -- a real running trial sits in the
@@ -64,8 +64,8 @@
 //!
 //! Run: npm run test:dk in apps/desktop (cargo test --features dk-test-app --test dk -- --ignored --nocapture
 //! --test-threads=1: one Clotr at a time). It takes the front window, the clipboard (restored afterwards), the
-//! keyboard and mouse, and Windows' Animation effects setting (restored after) for a moment, so leave the PC
-//! alone for the minute it runs.
+//! keyboard and mouse, and Windows' Animation effects setting (restored after) for several minutes, so keep the PC
+//! free while it runs.
 
 #![cfg(feature = "dk-test-app")]
 
@@ -75,7 +75,7 @@ use std::process::{Child, Command};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
-use windows::core::{w, BSTR, PCWSTR};
+use windows::core::{w, PCWSTR};
 use windows::Win32::Foundation::{CloseHandle, HANDLE, HGLOBAL, HWND, LPARAM, POINT, RECT, WPARAM};
 use windows::Win32::Graphics::Gdi::{GetMonitorInfoW, MonitorFromWindow, MONITORINFO, MONITOR_DEFAULTTONEAREST};
 use windows::Win32::NetworkManagement::IpHelper::{
@@ -83,7 +83,9 @@ use windows::Win32::NetworkManagement::IpHelper::{
     MIB_UDPROW_OWNER_PID, TCP_TABLE_OWNER_PID_ALL, UDP_TABLE_OWNER_PID,
 };
 use windows::Win32::Networking::WinSock::{AF_INET, AF_INET6};
-use windows::Win32::System::Com::{CoCreateInstance, CoInitializeEx, CLSCTX_INPROC_SERVER, COINIT_MULTITHREADED};
+use windows::Win32::System::Com::{
+    CoCreateInstance, CoInitializeEx, CoUninitialize, CLSCTX_INPROC_SERVER, COINIT_MULTITHREADED,
+};
 use windows::Win32::System::DataExchange::{
     CloseClipboard, EmptyClipboard, GetClipboardData, IsClipboardFormatAvailable, OpenClipboard, SetClipboardData,
 };
@@ -116,6 +118,22 @@ use windows::Win32::UI::WindowsAndMessaging::{
     SetForegroundWindow, SystemParametersInfoW, GUITHREADINFO, GWL_EXSTYLE, SPI_GETCLIENTAREAANIMATION,
     SPI_SETCLIENTAREAANIMATION, SPIF_SENDCHANGE, WM_CLOSE, WS_EX_NOACTIVATE, WS_EX_TOPMOST, WS_EX_TRANSPARENT,
 };
+
+struct ComApartment(bool);
+
+impl ComApartment {
+    fn enter() -> Self {
+        Self(unsafe { CoInitializeEx(None, COINIT_MULTITHREADED).is_ok() })
+    }
+}
+
+impl Drop for ComApartment {
+    fn drop(&mut self) {
+        if self.0 {
+            unsafe { CoUninitialize() };
+        }
+    }
+}
 
 const KEY: &str = "AKIA4HPQ7XZ2R6TWLJ3N";
 const CARD: &str = "4111 1111 1111 1111";
@@ -337,8 +355,8 @@ fn button(
     card: HWND,
     names: &[&str],
 ) -> Option<(IUIAutomation, windows::Win32::UI::Accessibility::IUIAutomationElement)> {
+    let _com = ComApartment::enter();
     unsafe {
-        let _ = CoInitializeEx(None, COINIT_MULTITHREADED);
         let uia: IUIAutomation = CoCreateInstance(&CUIAutomation, None, CLSCTX_INPROC_SERVER).ok()?;
         for _ in 0..100 {
             let root = uia.ElementFromHandle(card).ok()?;
@@ -484,6 +502,7 @@ struct Watch {
     seen: Arc<Mutex<HashSet<Socket>>>,
     samples: Arc<Mutex<u64>>,
     pids: Arc<Mutex<HashSet<u32>>>,
+    roles: Arc<Mutex<HashMap<u32, String>>>,
     thread: Option<std::thread::JoinHandle<()>>,
 }
 
@@ -492,14 +511,31 @@ fn watch_sockets(root: u32) -> Watch {
     let seen = Arc::new(Mutex::new(HashSet::new()));
     let samples = Arc::new(Mutex::new(0u64));
     let all_pids = Arc::new(Mutex::new(HashSet::new()));
-    let (s, se, sa, ap) = (stop.clone(), seen.clone(), samples.clone(), all_pids.clone());
+    let roles_seen = Arc::new(Mutex::new(HashMap::new()));
+    let (s, se, sa, ap, rp) = (
+        stop.clone(),
+        seen.clone(),
+        samples.clone(),
+        all_pids.clone(),
+        roles_seen.clone(),
+    );
     let thread = std::thread::spawn(move || {
         let mut pids = tree(root);
         let mut last = Instant::now();
+        let mut last_roles = Instant::now() - Duration::from_secs(1);
+        let mut identified = HashSet::new();
         while !s.load(Ordering::Relaxed) {
             if last.elapsed() > Duration::from_millis(40) {
                 pids = tree(root);
                 ap.lock().unwrap().extend(pids.iter().copied());
+                if pids.iter().any(|pid| !identified.contains(pid))
+                    && last_roles.elapsed() >= Duration::from_millis(250)
+                {
+                    let current_roles = roles(&pids);
+                    rp.lock().unwrap().extend(current_roles);
+                    identified.extend(pids.iter().copied());
+                    last_roles = Instant::now();
+                }
                 last = Instant::now();
             }
             for sock in sockets(&pids) {
@@ -514,6 +550,7 @@ fn watch_sockets(root: u32) -> Watch {
         seen,
         samples,
         pids: all_pids,
+        roles: roles_seen,
         thread: Some(thread),
     }
 }
@@ -709,13 +746,15 @@ fn memory_mb(pids: &HashSet<u32>) -> (f64, f64) {
 
 struct Run {
     clotr: Child,
-    ai: Child,
+    ai: Option<Child>,
     saved_clip: Option<String>,
 }
 
 impl Drop for Run {
     fn drop(&mut self) {
-        let _ = self.ai.kill();
+        if let Some(ai) = &mut self.ai {
+            let _ = ai.kill();
+        }
         let _ = self.clotr.kill();
         if let Some(t) = self.saved_clip.take() {
             clip_set(&t);
@@ -747,7 +786,7 @@ fn dk_desktop_trial() {
         .expect("the stand-in AI app starts");
     let mut run = Run {
         clotr,
-        ai,
+        ai: Some(ai),
         saved_clip: clip_get(),
     };
 
@@ -1150,8 +1189,8 @@ fn clear_box(edit: HWND) {
 
 /// Gives the keyboard to one of the stand-in's boxes by its control id, the way a screen reader moves focus.
 fn focus_box(window: HWND, id: &str) -> bool {
+    let _com = ComApartment::enter();
     unsafe {
-        let _ = CoInitializeEx(None, COINIT_MULTITHREADED);
         let Ok(uia) = CoCreateInstance::<_, IUIAutomation>(&CUIAutomation, None, CLSCTX_INPROC_SERVER) else {
             return false;
         };
@@ -1211,7 +1250,7 @@ fn typing_run(tag: &str, store: Option<&str>) -> (Run, Option<HWND>, HWND, HWND,
         .expect("the stand-in AI app starts");
     let run = Run {
         clotr,
-        ai,
+        ai: Some(ai),
         saved_clip: clip_get(),
     };
     let ai_window = {
@@ -1531,6 +1570,7 @@ fn dk_main_window() {
     unsafe {
         let _ = SetProcessDpiAwarenessContext(DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2);
     }
+    let _com = ComApartment::enter();
     let base = std::env::temp_dir().join(format!("clotr-dk6-{}", std::process::id()));
     let data = base.join("data");
     let netlog_file = base.join("netlog.json");
@@ -1575,7 +1615,6 @@ fn dk_main_window() {
     // The keyboard: Tab reaches the six sections in order; Enter opens each, and its heading takes the focus.
     assert!(to_front(win), "the main window comes to the front");
     let uia: IUIAutomation = unsafe {
-        let _ = CoInitializeEx(None, COINIT_MULTITHREADED);
         CoCreateInstance(&CUIAutomation, None, CLSCTX_INPROC_SERVER).expect("UI Automation")
     };
     // From the top of the page, Tab reaches the first section's link (after the skip link). Each press waits for
@@ -1948,8 +1987,8 @@ fn fixtures_dir() -> PathBuf {
 /// would use) rather than a fixed label `button()` already finds by name -- for a value the page fills in at run
 /// time (a count, a percentage) that can't be known ahead of a click.
 fn text_of(window: HWND, automation_id: &str) -> Option<String> {
+    let _com = ComApartment::enter();
     unsafe {
-        let _ = CoInitializeEx(None, COINIT_MULTITHREADED);
         let uia: IUIAutomation = CoCreateInstance(&CUIAutomation, None, CLSCTX_INPROC_SERVER).ok()?;
         let root = uia.ElementFromHandle(window).ok()?;
         let variant = windows::Win32::System::Variant::VARIANT::from(automation_id);
@@ -1972,7 +2011,7 @@ fn open_on_scan_with(data: &Path, netlog_file: &Path, stand_ins: &[(&str, &Path)
     command
         .env("CLOTR_DESKTOP_DATA", data)
         .env("CLOTR_NETLOG", netlog_file)
-        .env("CLOTR_OPEN_MAIN", "1")
+        .env("CLOTR_OPEN_SCAN", "1")
         .env("CLOTR_LOCALE", "en-US");
     for (name, dir) in stand_ins {
         command.env(name, dir);
@@ -1988,8 +2027,6 @@ fn open_on_scan_with(data: &Path, netlog_file: &Path, stand_ins: &[(&str, &Path)
     .expect("Clotr opens its main window");
     sleep(2500); // its page loads
     assert!(to_front(win), "the main window comes to the front");
-    let (_u, scan_link) = button(win, &["Scan"]).expect("the sidebar's Scan link");
-    click(&scan_link);
     (clotr, net, win)
 }
 
@@ -2000,7 +2037,8 @@ fn assert_net1(tag: &str, mut net: Watch, netlog_file: &Path) {
     net.stop.store(true, Ordering::Relaxed);
     net.thread.take().unwrap().join().unwrap();
     let pids = net.pids.lock().unwrap().clone();
-    let parts = roles(&pids);
+    let mut parts = net.roles.lock().unwrap().clone();
+    parts.extend(roles(&pids));
     let seen: Vec<Socket> = net.seen.lock().unwrap().iter().cloned().collect();
     let log = netlog(netlog_file);
     println!(
@@ -2111,8 +2149,8 @@ fn scan_stage(window: HWND) -> Stage {
 
 /// Every name a screen reader would hear in `window` right now, in order.
 fn all_names(window: HWND) -> Vec<String> {
+    let _com = ComApartment::enter();
     unsafe {
-        let _ = CoInitializeEx(None, COINIT_MULTITHREADED);
         let Ok(uia) = CoCreateInstance::<_, IUIAutomation>(&CUIAutomation, None, CLSCTX_INPROC_SERVER) else {
             return vec![];
         };
@@ -2171,14 +2209,19 @@ fn dk_scan_t6_19() {
 
     let (_u, see) = button(win, &["See the result"]).expect("the See the result button");
     click(&see);
-    sleep(800);
+    let (_u, detailed) = button(win, &["Show me everything The full list, sorted and ready to search."])
+        .expect("the first Results visit offers the detailed list");
+    click(&detailed);
+    let (_u, files) = button(win, &["Your files 1"]).expect("the single file result");
+    click(&files);
+    sleep(300);
     let names = all_names(win);
     assert!(
         names.iter().any(|n| n.contains("aws-key.txt")),
         "Results names the file: {names:?}"
     );
     assert!(
-        names.iter().any(|n| n.contains("AWS Access Key")),
+        names.iter().any(|n| n.contains("a cloud account key")),
         "and the kind of key in it: {names:?}"
     );
     assert!(!names.iter().any(|n| n.contains(KEY)), "never the key itself");
@@ -2199,10 +2242,10 @@ fn dk_full_then_quick() {
     let netlog_file = base.join("netlog.json");
     let drive = base.join("drive");
     let floor = drive.join("Users").join("me").join("Downloads");
-    let app = drive.join("Users").join("me").join("AppData").join("Roaming").join("app");
+    let elsewhere = drive.join("Users").join("me").join("Music");
     let system = drive.join("Windows").join("System32");
     let documents = drive.join("Users").join("me").join("Documents");
-    for dir in [&data, &floor, &app, &system, &documents] {
+    for dir in [&data, &floor, &elsewhere, &system, &documents] {
         std::fs::create_dir_all(dir).unwrap();
     }
     std::fs::write(floor.join("statement.txt"), "Nothing to see in here.\n").unwrap();
@@ -2210,7 +2253,7 @@ fn dk_full_then_quick() {
     let project = floor.join("shop");
     std::fs::create_dir_all(project.join(".git")).unwrap();
     std::fs::write(project.join("keys.txt"), format!("test key {KEY}\n")).unwrap();
-    std::fs::write(app.join("aws.txt"), format!("my AWS key is {KEY}\n")).unwrap();
+    std::fs::write(elsewhere.join("aws.txt"), format!("my AWS key is {KEY}\n")).unwrap();
     std::fs::write(system.join("aws.txt"), format!("my AWS key is {KEY}\n")).unwrap();
     let _cleanup = TempBase(base);
 
@@ -2233,8 +2276,8 @@ fn dk_full_then_quick() {
     let stage = scan_stage(win);
     println!("Full: {:?}; read {:?}; worth a look {:?}", stage.title, stage.files_read, stage.found);
     assert!(stage.title.starts_with("Done:"), "it finished on its own ({:?})", stage.title);
-    assert_eq!(stage.files_read, "2", "the floor's file and AppData's, never the project's or the one under Windows");
-    assert_eq!(stage.found, "1", "the key in AppData is worth a look");
+    assert_eq!(stage.files_read, "2", "the floor's file and Music's, never the project's or the one under Windows");
+    assert_eq!(stage.found, "1", "the key outside the floor is worth a look");
     let names = all_names(win);
     assert!(
         names.iter().any(|n| n == "Left out 1 code project with 1 file."),
@@ -2333,19 +2376,20 @@ fn save_dialog(pid: u32) -> Option<HWND> {
     top_windows_of(pid).into_iter().find(|&h| visible(h) && title_of(h) == "Save As")
 }
 
-/// The dialog's filename field: the one Edit control among its descendants, found by control type rather than a
-/// fixed automation id (the common dialog's own ids aren't part of any public contract).
+/// The dialog's actual filename field, found by its accessible label: the file table exposes its columns as Edit
+/// controls too, before this one, so the first Edit is not the one a person types in.
 fn dialog_filename_field(
     dialog: HWND,
 ) -> Option<(IUIAutomation, windows::Win32::UI::Accessibility::IUIAutomationElement)> {
     unsafe {
-        let _ = CoInitializeEx(None, COINIT_MULTITHREADED);
         let uia: IUIAutomation = CoCreateInstance(&CUIAutomation, None, CLSCTX_INPROC_SERVER).ok()?;
         let root = uia.ElementFromHandle(dialog).ok()?;
         let all = root.FindAll(TreeScope_Descendants, &uia.CreateTrueCondition().ok()?).ok()?;
         for i in 0..all.Length().unwrap_or(0) {
             let e = all.GetElement(i).ok()?;
-            if e.CurrentControlType().map(|c| c.0).unwrap_or(0) == UIA_EditControlTypeId.0 {
+            if e.CurrentControlType().map(|c| c.0).unwrap_or(0) == UIA_EditControlTypeId.0
+                && e.CurrentName().is_ok_and(|name| name.to_string() == "File name:")
+            {
                 return Some((uia, e));
             }
         }
@@ -2357,15 +2401,15 @@ fn dialog_filename_field(
 /// presses Save -- the page never learns this path (`scan_save_copy`, main.rs); the test does, because it's the
 /// one who chose it.
 fn save_as(pid: u32, dest: &Path, tag: &str) {
+    let _com = ComApartment::enter();
     assert!(wait_for(10000, || save_dialog(pid).is_some()).is_some(), "{tag}: the Save As dialog opens");
     let dialog = save_dialog(pid).unwrap();
     let (_u, field) = dialog_filename_field(dialog).unwrap_or_else(|| panic!("{tag}: the dialog's filename field"));
-    // A dialog that has only just opened can still turn the first SetValue away ("canceled by the user") while it
-    // fills its own folder view in, so this tries again for a moment before giving up.
+    // The first SetValue can be rejected while the dialog fills its folder view, so retry briefly.
     let typed = wait_for(5000, || unsafe {
         let set = field
             .GetCurrentPatternAs::<IUIAutomationValuePattern>(UIA_ValuePatternId)
-            .and_then(|value| value.SetValue(&BSTR::from(dest.to_string_lossy().to_string())));
+            .and_then(|value| value.SetValue(&windows::core::BSTR::from(dest.to_string_lossy().to_string())));
         if set.is_err() {
             sleep(200);
         }
@@ -2374,7 +2418,8 @@ fn save_as(pid: u32, dest: &Path, tag: &str) {
     assert!(typed.is_some(), "{tag}: the dialog takes the destination's name");
     let (_u2, save) = button(dialog, &["Save"]).unwrap_or_else(|| panic!("{tag}: the dialog's Save button"));
     invoke(&save);
-    assert!(wait_for(10000, || save_dialog(pid).is_none()).is_some(), "{tag}: the dialog closes");
+    let closed = wait_for(10000, || save_dialog(pid).is_none()).is_some();
+    assert!(closed, "{tag}: the dialog closes");
 }
 
 #[test]
@@ -2406,6 +2451,11 @@ fn dk_results_copy_without_place() {
 
     let (_u, results_link) = button(win, &["Results"]).expect("the sidebar's Results link");
     click(&results_link);
+    let (_u, detailed) = button(win, &["Show me everything The full list, sorted and ready to search."])
+        .expect("the first Results visit offers the detailed list");
+    click(&detailed);
+    let (_u, files) = button(win, &["Your files 4"]).expect("the fixture's four file results");
+    click(&files);
     let (_u, strip) = button(win, &["Save a copy without the place"])
         .expect("the vacation photo's card offers Save a copy without the place");
     click(&strip);
@@ -2503,16 +2553,16 @@ fn dk_extension_check() {
 
     let (_u, results_link) = button(win, &["Results"]).expect("the sidebar's Results link");
     click(&results_link);
+    let (_u, extensions) = button(win, &["Browser extensions 2"])
+        .expect("the Extension check disclosure opens its results");
+    click(&extensions);
 
     // The fixture's plain extension reads ChatGPT: Extension check's headline counts it, and its card in the
     // can-read list names the browser it was found in.
     assert!(
-        wait_for(5000, || text_of(win, "res-ext-headline").is_some_and(|t| !t.is_empty())).is_some(),
+        button(win, &["1 of your 2 extensions can read your AI chats"]).is_some(),
         "Extension check's headline fills in from the fixture profile"
     );
-    let headline = text_of(win, "res-ext-headline").unwrap_or_default();
-    println!("{headline:?}");
-    assert!(headline.contains('1'), "one of the fixture's two extensions can read an AI site ({headline:?})");
     assert!(
         button(win, &["Reads ChatGPT"]).is_some(),
         "the extension that reads ChatGPT is named on the screen"
@@ -2558,12 +2608,9 @@ fn dk_live_history() {
         .expect("Clotr starts");
     let clotr_pid = clotr.id();
     let net = watch_sockets(clotr_pid);
-    let ai = Command::new(env!("CARGO_BIN_EXE_clotr-dk-ai"))
-        .spawn()
-        .expect("the stand-in AI app starts");
-    let run = Run {
+    let mut run = Run {
         clotr,
-        ai,
+        ai: None,
         saved_clip: clip_get(),
     };
 
@@ -2586,6 +2633,11 @@ fn dk_live_history() {
 
     // The stand-in AI app in front, a key copied, Clot this leak and paste clicked: the same path the trial test
     // drives, with the main window left exactly as it was (no click on it, no reopen) through the whole thing.
+    run.ai = Some(
+        Command::new(env!("CARGO_BIN_EXE_clotr-dk-ai"))
+            .spawn()
+            .expect("the stand-in AI app starts after the main window is ready"),
+    );
     let ai_window = {
         let mut h = HWND::default();
         wait_for(5000, || {
@@ -2596,6 +2648,7 @@ fn dk_live_history() {
         h
     };
     assert!(to_front(ai_window), "the stand-in comes to the front");
+    press(VK_ESCAPE, false); // leave the Alt menu mode opened by to_front, as the copy-card trial does
     let card = {
         let mut c = None;
         wait_for(10000, || {
@@ -2635,7 +2688,7 @@ fn dk_live_history() {
 /// `tests/fixtures/exports/expected.json`'s "claude" entry): a single `conversations.json`, so the one-file IPC path
 /// `lookback_dk_fixture` hands through needs no folder or zip around it.
 fn lookback_fixture() -> PathBuf {
-    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/exports/claude/conversations.json")
+    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../../tests/fixtures/exports/claude/conversations.json")
 }
 
 /// Opens Clotr's main window with `CLOTR_LOOKBACK_FIXTURE` set (dk-test-app only: `lookback_dk_fixture` in main.rs
@@ -2646,7 +2699,7 @@ fn open_on_lookback(data: &Path, netlog_file: &Path, fixture: &Path) -> (Stop, W
         Command::new(env!("CARGO_BIN_EXE_clotr"))
             .env("CLOTR_DESKTOP_DATA", data)
             .env("CLOTR_NETLOG", netlog_file)
-            .env("CLOTR_OPEN_MAIN", "1")
+            .env("CLOTR_OPEN_SCAN", "1")
             .env("CLOTR_LOCALE", "en-US")
             .env("CLOTR_LOOKBACK_FIXTURE", fixture)
             .spawn()
@@ -2662,8 +2715,6 @@ fn open_on_lookback(data: &Path, netlog_file: &Path, fixture: &Path) -> (Stop, W
     .expect("Clotr opens its main window");
     sleep(2500); // its page loads
     assert!(to_front(win), "the main window comes to the front");
-    let (_u, scan_link) = button(win, &["Scan"]).expect("the sidebar's Scan link");
-    click(&scan_link);
     (clotr, net, win)
 }
 
@@ -2714,12 +2765,17 @@ fn dk_lookback() {
     let (_u, see_found) = button(win, &["See what it found"]).expect("the done card's See what it found link");
     click(&see_found);
 
-    sleep(300); // the Results screen paints
-    let found = text_of(win, "res-chats-found").unwrap_or_default();
-    let note = text_of(win, "res-chats-note").unwrap_or_default();
-    println!("Results: {found:?}; {note:?}");
-    assert_eq!(found, "Found in 2 of 2 chats", "the Results screen repeats the same count");
-    assert!(note.contains("Claude"), "the note names the tool the export came from ({note:?})");
+    let (_u, chats) = button(win, &["Your AI chats 2"]).expect("the Results screen's AI chats disclosure");
+    click(&chats);
+    let names = all_names(win);
+    assert!(
+        names.iter().any(|name| name == "Found in 2 of 2 chats"),
+        "the expanded Results screen repeats the same count: {names:?}"
+    );
+    assert!(
+        names.iter().any(|name| name.starts_with("Your Claude export, read today at ")),
+        "the Results note names the tool the export came from: {names:?}"
+    );
 
     let _ = clotr.0.kill();
     let _ = clotr.0.wait();

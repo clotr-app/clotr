@@ -328,6 +328,24 @@ async function isEverywhereOnly(host, dedicated) {
   return !new Set((await userSitePatterns()).map(hostOf)).has(host);
 }
 
+// What kind of site this is, as far as the page's features go. settingsFor and the tab port's early Bandage
+// answer both read it, so the two can't disagree about where the AI-only features are off.
+async function siteShape(host, siteKinds) {
+  // Email and chat apps: you write to people there, so no cover names and no reading of replies. A support
+  // chat is the same shape (someone on the other end reads it, maybe a bot), so it gets the same wording and
+  // the same features turned off. A search engine has nobody reading what you type either, but it isn't a
+  // person or an AI, so it keeps its own wording (warning-ui.js) while still losing the AI-only features.
+  const everydaySite = isEveryday(host, siteKinds);
+  const support = isSupportSite(host);
+  const search = isSearchSite(host);
+  // Everywhere I type: no list names this host in advance, so it gets the same people-reading wording and
+  // the same AI-only features off as an email or chat app, but the content script also has to tell a chat
+  // box from an ordinary form field itself (the `everywhere` flag below is what tells it to).
+  const everywhere = await isEverywhereOnly(host, everydaySite || support || search);
+  const everyday = everydaySite || support || everywhere;
+  return { everyday, everywhere, search, noAiFeatures: everyday || search };
+}
+
 // Builds what one frame actually needs rather than the whole stored map: its own site's pause state and
 // mode, with the team's policy and Tourniquet already applied so their required responses win. Watch words
 // go out as fingerprints, never as plain text.
@@ -357,19 +375,7 @@ async function settingsFor(url) {
   // mergePolicy adds custom-kind responses to requiredResponses. Check the effective policy so a site's
   // "Just count" mode cannot override a custom managed kind's response floor.
   const hasResponseFloor = Boolean(policy.requiredResponses && Object.keys(policy.requiredResponses).length);
-  // Email and chat apps: you write to people there, so no cover names and no reading of replies. A support
-  // chat is the same shape (someone on the other end reads it, maybe a bot), so it gets the same wording and
-  // the same features turned off. A search engine has nobody reading what you type either, but it isn't a
-  // person or an AI, so it keeps its own wording (warning-ui.js) while still losing the AI-only features.
-  const everydaySite = isEveryday(host, r.siteKinds || {});
-  const support = isSupportSite(host);
-  const search = isSearchSite(host);
-  // Everywhere I type: no list names this host in advance, so it gets the same people-reading wording and
-  // the same AI-only features off as an email or chat app, but the content script also has to tell a chat
-  // box from an ordinary form field itself (the `everywhere` flag below is what tells it to).
-  const everywhere = await isEverywhereOnly(host, everydaySite || support || search);
-  const everyday = everydaySite || support || everywhere;
-  const noAiFeatures = everyday || search;
+  const { everyday, everywhere, search, noAiFeatures } = await siteShape(host, r.siteKinds || {});
   return {
     responses: eff.responses,
     paused: eff.paused,
@@ -465,7 +471,9 @@ chrome.storage.onChanged.addListener((changes, area) => {
     policyRead = null; // before the tabs below ask again
     offerTeamTrainingSafely();
   }
-  if (area !== "managed" && (area !== "local" || !SETTINGS_KEYS.some((k) => changes[k]))) return;
+  // A new salt (a loaded file) changes every fingerprint a page makes, the team's watch words included.
+  const tabsCare = changes.salt || SETTINGS_KEYS.some((k) => changes[k]);
+  if (area !== "managed" && (area !== "local" || !tabsCare)) return;
   // This messages every tab, not just the registered ones, since a tab still starting up would otherwise
   // miss the change; tabs without Clotr running just don't answer.
   chrome.tabs.query({}).then((tabs) => {
@@ -1076,6 +1084,18 @@ const IS_UNPACKED =
   !chrome.runtime.getManifest().browser_specific_settings?.safari &&
   !chrome.runtime.getURL("").startsWith("safari-web-extension:");
 
+// Firefox updates an add-on from addons.mozilla.org itself, and that has no update_url either, so in Firefox
+// only a temporary or folder install ("development") counts. getSelf needs no extra permission there.
+async function isUnpacked() {
+  if (!IS_UNPACKED) return false;
+  if (!chrome.runtime.getManifest().browser_specific_settings?.gecko) return true;
+  try {
+    return (await chrome.management.getSelf()).installType === "development";
+  } catch {
+    return false; // can't tell: a store install is far more likely, and it updates itself
+  }
+}
+
 async function localVersionOnDisk() {
   const res = await fetch(chrome.runtime.getURL("manifest.json"), { cache: "no-store" });
   return (await res.json()).version;
@@ -1106,7 +1126,7 @@ async function localStampOnDisk() {
 }
 
 async function checkForLocalUpdate() {
-  if (!IS_UNPACKED) return false;
+  if (!(await isUnpacked())) return false;
   const onDisk = await localVersionOnDisk();
   const running = chrome.runtime.getManifest().version;
   const stamp = await localStampOnDisk();
@@ -1135,7 +1155,9 @@ async function checkForLocalUpdate() {
 }
 
 function scheduleUpdateCheck() {
-  if (IS_UNPACKED) chrome.alarms.create("local-update-check", { periodInMinutes: 1 });
+  isUnpacked()
+    .then((unpacked) => unpacked && chrome.alarms.create("local-update-check", { periodInMinutes: 1 }))
+    .catch(() => {});
 }
 
 chrome.alarms.onAlarm.addListener((alarm) => {
@@ -1200,7 +1222,10 @@ chrome.runtime.onStartup.addListener(() => {
   // Not injected into open tabs here: the registration persists across sessions, so tabs restored at startup
   // load it themselves, and injecting again would only start a second copy that then steps aside.
   enqueue(syncEverywhere).catch((err) => console.error(LOG, "everywhere sync failed", err));
+  // Firefox drops alarms when the browser closes, and Chrome may too, so the half-hourly refresh is set again.
+  chrome.alarms.create("refresh-toolbar", { periodInMinutes: 30 });
   enqueue(refreshToolbar).catch(() => {});
+  enqueue(pruneEvents).catch(() => {}); // history past "Keep history for" goes now, not at the next detection
   offerTeamTrainingSafely();
   stepTourniquetSafely(); // the end alarm again, or the end itself if it came while the browser was closed
 });
@@ -1377,9 +1402,9 @@ chrome.runtime.onConnect.addListener((port) => {
       /* no url: nothing site-specific to answer */
     }
     const r = await chrome.storage.local.get(["bandage", "siteKinds"]);
-    const everyday = isEveryday(host, r.siteKinds || {});
+    const { noAiFeatures } = await siteShape(host, r.siteKinds || {});
     try {
-      port.postMessage({ type: "clotr:bandage", on: bandageFor(everyday, host, r) });
+      port.postMessage({ type: "clotr:bandage", on: bandageFor(noAiFeatures, host, r) });
     } catch {
       /* the tab closed before this resolved */
     }

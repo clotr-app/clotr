@@ -5,16 +5,21 @@ use std::collections::HashMap;
 use std::sync::Mutex;
 use windows::core::{PCWSTR, PWSTR};
 use windows::Win32::Foundation::{CloseHandle, HANDLE, HWND};
+use windows::Win32::Security::Cryptography::Catalog::{
+    CryptCATAdminAcquireContext2, CryptCATAdminCalcHashFromFileHandle2, CryptCATAdminEnumCatalogFromHash,
+    CryptCATAdminReleaseCatalogContext, CryptCATAdminReleaseContext, CryptCATCatalogInfoFromContext, CATALOG_INFO,
+};
 use windows::Win32::Security::Cryptography::{
     CertCloseStore, CertFindCertificateInStore, CertFreeCertificateContext, CertGetNameStringW, CryptMsgClose,
     CryptMsgGetParam, CryptQueryObject, CERT_FIND_SUBJECT_CERT, CERT_INFO, CERT_NAME_SIMPLE_DISPLAY_TYPE,
-    CERT_QUERY_CONTENT_FLAG_PKCS7_SIGNED_EMBED, CERT_QUERY_FORMAT_FLAG_BINARY, CERT_QUERY_OBJECT_FILE,
-    CMSG_SIGNER_INFO, CMSG_SIGNER_INFO_PARAM, HCERTSTORE, PKCS_7_ASN_ENCODING, X509_ASN_ENCODING,
+    CERT_QUERY_CONTENT_FLAG_PKCS7_SIGNED, CERT_QUERY_CONTENT_FLAG_PKCS7_SIGNED_EMBED, CERT_QUERY_CONTENT_TYPE_FLAGS,
+    CERT_QUERY_FORMAT_FLAG_BINARY, CERT_QUERY_OBJECT_FILE, CMSG_SIGNER_INFO, CMSG_SIGNER_INFO_PARAM, HCERTSTORE,
+    PKCS_7_ASN_ENCODING, X509_ASN_ENCODING,
 };
 use windows::Win32::Security::WinTrust::{
-    WinVerifyTrust, WINTRUST_ACTION_GENERIC_VERIFY_V2, WINTRUST_DATA, WINTRUST_DATA_0, WINTRUST_FILE_INFO,
-    WTD_CACHE_ONLY_URL_RETRIEVAL, WTD_CHOICE_FILE, WTD_REVOKE_NONE, WTD_STATEACTION_CLOSE, WTD_STATEACTION_VERIFY,
-    WTD_UI_NONE,
+    WinVerifyTrust, WINTRUST_ACTION_GENERIC_VERIFY_V2, WINTRUST_CATALOG_INFO, WINTRUST_DATA, WINTRUST_DATA_0,
+    WINTRUST_DATA_UNION_CHOICE, WINTRUST_FILE_INFO, WTD_CACHE_ONLY_URL_RETRIEVAL, WTD_CHOICE_CATALOG, WTD_CHOICE_FILE,
+    WTD_REVOKE_NONE, WTD_STATEACTION_CLOSE, WTD_STATEACTION_VERIFY, WTD_UI_NONE,
 };
 use windows::Win32::Storage::Packaging::Appx::{GetPackageFamilyName, GetPackagesByPackageFamily};
 use windows::Win32::System::Threading::{
@@ -105,12 +110,17 @@ pub fn info(hwnd: HWND) -> Option<Info> {
 static SIGNERS: Mutex<Option<HashMap<String, Option<String>>>> = Mutex::new(None);
 
 /// Who signed a program's file ("Anthropic, PBC"), when the signature checks out on this computer; remembered per
-/// file for as long as Clotr runs.
+/// file for as long as Clotr runs. A file with no signature of its own may still be listed, by its exact contents,
+/// in a catalog Windows signed (cmd.exe and powershell.exe are): then it's the catalog's signer.
 pub fn signer(path: &str) -> Option<String> {
     if let Some(hit) = SIGNERS.lock().ok()?.get_or_insert_with(HashMap::new).get(path) {
         return hit.clone();
     }
-    let found = if verified(path) { subject(path) } else { None };
+    let found = if verified(path) {
+        subject(path, CERT_QUERY_CONTENT_FLAG_PKCS7_SIGNED_EMBED)
+    } else {
+        catalog_signer(path)
+    };
     SIGNERS
         .lock()
         .ok()?
@@ -146,12 +156,84 @@ fn verified(path: &str) -> bool {
         pcwszFilePath: PCWSTR(file.as_ptr()),
         ..Default::default()
     };
+    trusted(WTD_CHOICE_FILE, WINTRUST_DATA_0 { pFile: &mut file_info })
+}
+
+/// The program's signer by way of a Windows catalog: the file's hash is found in a catalog on this computer, the
+/// catalog's signature is checked for this very file (offline, as in `verified`), and the catalog's signer named.
+/// SHA-256 catalogs first, then the older SHA-1 ones.
+fn catalog_signer(path: &str) -> Option<String> {
+    use std::os::windows::io::AsRawHandle;
+    let file = std::fs::File::open(path).ok()?;
+    let handle = HANDLE(file.as_raw_handle());
+    for algorithm in [windows::core::w!("SHA256"), PCWSTR::null()] {
+        let mut admin = 0isize;
+        if unsafe { CryptCATAdminAcquireContext2(&mut admin, None, algorithm, None, None) }.is_err() {
+            continue;
+        }
+        let found = in_catalog(admin, handle, path);
+        unsafe {
+            let _ = CryptCATAdminReleaseContext(admin, 0);
+        }
+        if found.is_some() {
+            return found;
+        }
+    }
+    None
+}
+
+fn in_catalog(admin: isize, file: HANDLE, path: &str) -> Option<String> {
+    let mut hash = [0u8; 64];
+    let mut size = hash.len() as u32;
+    unsafe { CryptCATAdminCalcHashFromFileHandle2(admin, file, &mut size, Some(hash.as_mut_ptr()), None) }.ok()?;
+    let hash = &mut hash[..(size as usize).min(64)];
+    let found = unsafe { CryptCATAdminEnumCatalogFromHash(admin, hash, None, None) };
+    if found == 0 {
+        return None;
+    }
+    let mut info = CATALOG_INFO {
+        cbStruct: std::mem::size_of::<CATALOG_INFO>() as u32,
+        ..Default::default()
+    };
+    let read = unsafe { CryptCATCatalogInfoFromContext(found, &mut info, 0) };
+    unsafe {
+        let _ = CryptCATAdminReleaseCatalogContext(admin, found, 0);
+    }
+    read.ok()?;
+    let end = info
+        .wszCatalogFile
+        .iter()
+        .position(|&c| c == 0)
+        .unwrap_or(info.wszCatalogFile.len());
+    let catalog = String::from_utf16_lossy(&info.wszCatalogFile[..end]);
+    // The catalog names its member by the hash, in capital hex.
+    let tag: String = hash.iter().map(|b| format!("{b:02X}")).collect();
+    let (catalog_w, tag_w, file_w) = (wide(&catalog), wide(&tag), wide(path));
+    let mut member = WINTRUST_CATALOG_INFO {
+        cbStruct: std::mem::size_of::<WINTRUST_CATALOG_INFO>() as u32,
+        pcwszCatalogFilePath: PCWSTR(catalog_w.as_ptr()),
+        pcwszMemberTag: PCWSTR(tag_w.as_ptr()),
+        pcwszMemberFilePath: PCWSTR(file_w.as_ptr()),
+        hMemberFile: file,
+        pbCalculatedFileHash: hash.as_mut_ptr(),
+        cbCalculatedFileHash: hash.len() as u32,
+        hCatAdmin: admin,
+        ..Default::default()
+    };
+    if !trusted(WTD_CHOICE_CATALOG, WINTRUST_DATA_0 { pCatalog: &mut member }) {
+        return None;
+    }
+    subject(&catalog, CERT_QUERY_CONTENT_FLAG_PKCS7_SIGNED)
+}
+
+/// WinVerifyTrust on a file or a catalog's member: whole, and chaining to a root this computer trusts, offline.
+fn trusted(choice: WINTRUST_DATA_UNION_CHOICE, what: WINTRUST_DATA_0) -> bool {
     let mut data = WINTRUST_DATA {
         cbStruct: std::mem::size_of::<WINTRUST_DATA>() as u32,
         dwUIChoice: WTD_UI_NONE,
         fdwRevocationChecks: WTD_REVOKE_NONE,
-        dwUnionChoice: WTD_CHOICE_FILE,
-        Anonymous: WINTRUST_DATA_0 { pFile: &mut file_info },
+        dwUnionChoice: choice,
+        Anonymous: what,
         dwStateAction: WTD_STATEACTION_VERIFY,
         dwProvFlags: WTD_CACHE_ONLY_URL_RETRIEVAL,
         ..Default::default()
@@ -163,8 +245,8 @@ fn verified(path: &str) -> bool {
     status == 0
 }
 
-/// The signing certificate's name, read from the file's embedded signature.
-fn subject(path: &str) -> Option<String> {
+/// The signing certificate's name, read from a signature: a program's embedded one, or a catalog file's own.
+fn subject(path: &str, content: CERT_QUERY_CONTENT_TYPE_FLAGS) -> Option<String> {
     let file = wide(path);
     let mut store = HCERTSTORE::default();
     let mut msg: *mut core::ffi::c_void = std::ptr::null_mut();
@@ -172,7 +254,7 @@ fn subject(path: &str) -> Option<String> {
         CryptQueryObject(
             CERT_QUERY_OBJECT_FILE,
             file.as_ptr() as *const _,
-            CERT_QUERY_CONTENT_FLAG_PKCS7_SIGNED_EMBED,
+            content,
             CERT_QUERY_FORMAT_FLAG_BINARY,
             0,
             None,
@@ -246,6 +328,24 @@ mod tests {
     fn a_signed_programs_publisher_is_read_offline() {
         let Some(exe) = webview_exe() else { return };
         assert_eq!(signer(&exe).as_deref(), Some("Microsoft Corporation"));
+    }
+
+    // Windows' own cmd.exe and powershell.exe carry no signature inside the file: Windows signs them in its
+    // catalogs instead. The terminal list matches both by this publisher alone.
+    #[test]
+    fn a_catalog_signed_windows_program_has_its_publisher() {
+        let root = std::env::var("SystemRoot").unwrap_or_else(|_| r"C:\Windows".to_string());
+        for exe in [r"System32\cmd.exe", r"System32\WindowsPowerShell\v1.0\powershell.exe"] {
+            let path = std::path::Path::new(&root).join(exe);
+            if !path.exists() {
+                continue;
+            }
+            assert_eq!(
+                signer(&path.to_string_lossy()).as_deref(),
+                Some("Microsoft Windows"),
+                "{exe}"
+            );
+        }
     }
 
     #[test]

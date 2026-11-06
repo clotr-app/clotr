@@ -10,6 +10,9 @@ const bundle = fs.readFileSync(path.join(packageDir, "dist", "clotr-engine.js"),
 vm.runInContext(bundle, sandbox, { filename: "clotr-engine.js" });
 const clotr = vm.runInContext("globalThis.Clotr", sandbox);
 const nativeResults = new WeakMap();
+// The engine's own results from the last detect(), so redact() given a copy of them (filtered, say) hides values
+// from that same scan. A new scan cut short by the time limit could stop at a different point and find less.
+let lastScan = null;
 
 const PATTERNS = Object.freeze(
   clotr.PATTERNS.map(({ id, group, name, severity }) => Object.freeze({ id, group, name, severity })),
@@ -27,21 +30,22 @@ function detect(text) {
   }));
   if (found.truncated) results.truncated = true;
   nativeResults.set(results, { text, found });
+  lastScan = { text, found };
   return results;
 }
 
 function redact(text, results = []) {
   if (typeof text !== "string" || !Array.isArray(results)) return "";
+  // The scan these results came from supplies the engine's own findings; what to hide is always what the array
+  // holds now, so a result taken out in place (splice) or a match cleared is left in the text.
   const cached = nativeResults.get(results);
-  if (cached?.text === text) return clotr.redact(text, cached.found);
-
+  const scan = cached?.text === text ? cached : lastScan?.text === text ? lastScan : null;
   const selected = new Map(
     results
       .filter((result) => typeof result?.id === "string" && Array.isArray(result.matches))
       .map((result) => [result.id, new Set(result.matches.filter((match) => typeof match === "string"))]),
   );
-  const found = clotr
-    .detect(text)
+  const found = (scan ? scan.found : clotr.detect(text))
     .map((result) => ({
       ...result,
       matches: result.matches.filter((match) => selected.get(result.id)?.has(match)),

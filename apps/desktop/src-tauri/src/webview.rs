@@ -141,6 +141,12 @@ fn environment(dir: &Path, args: &str, locale: &str) -> Option<ICoreWebView2Envi
     Some(env)
 }
 
+/// Drop the cached WebView2 environment after the last window closes, so its browser process can give back the
+/// memory a long-idle tray app no longer needs. The next window builds a fresh environment through `window()`.
+pub fn release_environment() {
+    ENVIRONMENT.with(|env| drop(env.borrow_mut().take()));
+}
+
 /// A window of Clotr's own pages, kept offline. Call on the main thread.
 pub fn window<'a>(
     app: &'a AppHandle,

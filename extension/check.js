@@ -5,7 +5,7 @@
 "use strict";
 
 (() => {
-  const { msg, detect, fingerprintFor, setVault, scamSigns, scamHasLink } = globalThis.Clotr;
+  const { msg, detect, fingerprintFor, setVault, scamSigns, scamHasLink, scamHasPhone } = globalThis.Clotr;
   const $ = (id) => document.getElementById(id);
   const el = (tag, props = {}, children = []) => {
     const node = document.createElement(tag);
@@ -377,7 +377,7 @@
     $("signs").replaceChildren(...groups);
     // Shows the "before you answer" note every time, with an extra line when the message has its own phone
     // number or link.
-    $("has-phone").hidden = !detect(text).some((r) => r.id === "phone_number");
+    $("has-phone").hidden = !scamHasPhone(text);
     $("has-link").hidden = !scamHasLink(text);
     $("answered").open = false;
     $("ask").hidden = true;

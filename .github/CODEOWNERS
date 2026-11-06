@@ -13,3 +13,5 @@
 /.gitleaks.toml                   @BilliamBaSH
 # Tool settings I rely on, and what decides how a diff shows.
 /.gitattributes                   @BilliamBaSH
+# The sign-off check, what picks the tests that run, and the published copies of the workflows and settings above.
+/tools/dco-check.js               @BilliamBaSH
