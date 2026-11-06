@@ -77,6 +77,9 @@ windows = { version = "0.62", features = [
   "Win32_Graphics_Gdi",
   "Win32_Security",
   "Win32_Security_Cryptography",
+  # Who signed Windows' own programs (program.rs): cmd.exe and powershell.exe are signed in Windows' catalogs,
+  # not inside the file.
+  "Win32_Security_Cryptography_Catalog",
   "Win32_Security_Authorization",
   "Win32_Security_WinTrust",
   "Win32_Storage_FileSystem",

@@ -112,7 +112,18 @@ impl Store {
             .unwrap_or(Value::Null);
         let mut data = clean_settings(&raw, true);
         if let Some(Value::Bool(true)) = raw.get("pausedAll") {
-            data.insert("pausedAll".into(), Value::Bool(true));
+            // A timed pause ("Pause for an hour") keeps its deadline; one that passed while Clotr wasn't running
+            // ends here, rather than coming back as a pause with no end.
+            match raw.get("pausedUntil").and_then(Value::as_i64) {
+                Some(until) if until <= now_ms() as i64 => {}
+                Some(until) => {
+                    data.insert("pausedAll".into(), Value::Bool(true));
+                    data.insert("pausedUntil".into(), json!(until));
+                }
+                None => {
+                    data.insert("pausedAll".into(), Value::Bool(true));
+                }
+            }
         }
         for note in Once::ALL {
             if let Some(Value::Bool(true)) = raw.get(note.key()) {
@@ -232,12 +243,26 @@ impl Store {
         Ok(true)
     }
 
+    /// A plain pause or resume: either way, no deadline (`set_paused_until` adds one for a timed pause).
     pub fn set_paused_all(&mut self, on: bool) -> io::Result<()> {
         if on {
             self.data.insert("pausedAll".into(), Value::Bool(true));
         } else {
             self.data.remove("pausedAll");
         }
+        self.data.remove("pausedUntil");
+        self.write()
+    }
+
+    /// When a timed pause ends, in milliseconds since the epoch: None for a plain pause or no pause.
+    pub fn paused_until(&self) -> Option<i64> {
+        self.data.get("pausedUntil").and_then(Value::as_i64)
+    }
+
+    /// The deadline of the timed pause just started (after `set_paused_all(true)`), kept so a restart within the
+    /// hour still ends it on time.
+    pub fn set_paused_until(&mut self, until: i64) -> io::Result<()> {
+        self.data.insert("pausedUntil".into(), json!(until));
         self.write()
     }
 
@@ -1171,10 +1196,14 @@ pub fn clean_settings(s: &Value, with_salt: bool) -> Map<String, Value> {
         out.insert("startWithWindows".into(), Value::Bool(*b));
     }
     if let Some(v) = s.get("look").and_then(Value::as_str) {
-        if matches!(v, "system" | "dark" | "light" | "plum" | "ember") {
-            out.insert("look".into(), json!(v));
-        } else if v == "savanna" {
-            out.insert("look".into(), json!("plum"));
+        let look = match v {
+            "system" | "plum" | "ember" => Some(v),
+            "light" | "savanna" => Some("plum"),
+            "dark" => Some("ember"),
+            _ => None,
+        };
+        if let Some(look) = look {
+            out.insert("look".into(), json!(look));
         }
     }
     if let Some(v) = s.get("motion").and_then(Value::as_str) {
@@ -1426,6 +1455,36 @@ mod tests {
         assert_eq!(Store::open(&dir).unwrap().settings()["typedNoteSeen"], json!(true));
         // Only the card's own command sets it; a settings save never carries it in.
         assert!(!clean_settings(&json!({ "typedNoteSeen": true }), false).contains_key("typedNoteSeen"));
+        let _ = fs::remove_dir_all(dir);
+    }
+
+    /// "Pause for an hour" stays an hour across a restart: its deadline is kept with the pause, a deadline already
+    /// past by the next start lifts the pause there and then, and a plain pause or resume clears it. It used to
+    /// come back as a pause with no end.
+    #[test]
+    fn a_timed_pause_keeps_its_deadline_over_a_restart_and_ends_if_it_passed_meanwhile() {
+        let dir = temp_dir("timed-pause");
+        let mut store = Store::open(&dir).unwrap();
+        let later = now_ms() as i64 + 30 * 60 * 1000;
+        store.set_paused_all(true).unwrap();
+        store.set_paused_until(later).unwrap();
+        let again = Store::open(&dir).unwrap();
+        assert!(again.paused_all());
+        assert_eq!(again.paused_until(), Some(later));
+
+        // Written by an earlier run whose hour has since passed (the PC was off, or Clotr quit, in between).
+        let past = now_ms() as i64 - 1000;
+        fs::write(dir.join(FILE), json!({ "pausedAll": true, "pausedUntil": past }).to_string()).unwrap();
+        let restarted = Store::open(&dir).unwrap();
+        assert!(!restarted.paused_all(), "an hour that's over doesn't come back as a pause with no end");
+        assert_eq!(restarted.paused_until(), None);
+
+        let mut store = Store::open(&dir).unwrap();
+        store.set_paused_all(true).unwrap();
+        store.set_paused_until(later).unwrap();
+        store.set_paused_all(true).unwrap();
+        assert_eq!(store.paused_until(), None, "a plain pause has no end");
+        assert!(!clean_settings(&json!({ "pausedUntil": 1 }), false).contains_key("pausedUntil"));
         let _ = fs::remove_dir_all(dir);
     }
 
@@ -1920,7 +1979,7 @@ mod tests {
     fn the_main_windows_own_settings_are_kept_only_as_their_named_choices() {
         let s = json!({
             "startWithWindows": true,
-            "look": "dark",
+            "look": "ember",
             "motion": "still",
             "language": "es",
             "weeklyCheck": true,
@@ -1929,7 +1988,7 @@ mod tests {
         });
         let clean = clean_settings(&s, false);
         assert_eq!(clean["startWithWindows"], json!(true));
-        assert_eq!(clean["look"], json!("dark"));
+        assert_eq!(clean["look"], json!("ember"));
         assert_eq!(clean["motion"], json!("still"));
         assert_eq!(clean["language"], json!("es"));
         assert_eq!(clean["weeklyCheck"], json!(true));
@@ -2020,14 +2079,16 @@ mod tests {
     }
 
     #[test]
-    fn savanna_plum_is_migrated_to_plum() {
-        let s = json!({ "look": "savanna" });
-        assert_eq!(clean_settings(&s, false)["look"], json!("plum"));
+    fn old_looks_migrate_to_plum_and_ember() {
+        for (old, current) in [("light", "plum"), ("savanna", "plum"), ("dark", "ember")] {
+            let s = json!({ "look": old });
+            assert_eq!(clean_settings(&s, false)["look"], json!(current), "{old}");
+        }
     }
 
     #[test]
     fn current_named_looks_are_kept_and_unknown_looks_are_dropped() {
-        for look in ["plum", "ember"] {
+        for look in ["system", "plum", "ember"] {
             assert_eq!(clean_settings(&json!({ "look": look }), false)["look"], json!(look));
         }
         assert!(!clean_settings(&json!({ "look": "unknown" }), false).contains_key("look"));

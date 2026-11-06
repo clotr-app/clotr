@@ -852,6 +852,45 @@ module.exports = async function (env) {
     },
   );
 
+  // A loaded file brings its own salt. A chat tab that was already open has to switch to it along with the vault,
+  // or the vault's words never match there, and anything marked from a warning in it is kept under a salt
+  // that no longer exists.
+  await check(
+    "MV2",
+    "Move to a new computer: a chat tab already open matches the loaded vault with its salt",
+    async () => {
+      const before = (await store.get(ctx, "salt")).salt;
+      const fpFor = (salt) =>
+        ctx.worker.evaluate((s) => globalThis.Clotr.fingerprint(s, "watch_list", "project zebra"), salt);
+      await resetState(ctx, {});
+      await store.set(ctx, { vault: [{ kind: "word", type: "watch_list", fp: await fpFor(before), words: 2 }] });
+      const page = await openSite(ctx, "chatgpt");
+      try {
+        await sleep(1500);
+        await typeText(page, "I work on project zebra today");
+        expect(await waitForNotice(page), "no notice for the vault's word before loading the file");
+        await clearEditor(page);
+        await sleep(800);
+        const salt = "0a".repeat(16);
+        // The same request stored.html's Move to a new computer sends once the file is open.
+        const settings = { salt, vault: [{ kind: "word", type: "watch_list", fp: await fpFor(salt), words: 2 }] };
+        const mover = await openExtPage(ctx, "stored.html#move");
+        const res = await mover
+          .evaluate((s) => chrome.runtime.sendMessage({ type: "clotr:importBackup", settings: s }), settings)
+          .finally(() => mover.close());
+        expect(res?.ok, `load: ${JSON.stringify(res)}`);
+        await page.bringToFront();
+        await sleep(1500);
+        await typeText(page, "we talked about project zebra plans");
+        const notice = await waitForNotice(page);
+        expect(notice, "the open tab kept the old salt: the loaded vault's word was missed");
+      } finally {
+        await page.close();
+        await store.set(ctx, { salt: before, vault: [] });
+      }
+    },
+  );
+
   await check(
     "TP1",
     "Team policy: required responses win over the user's; the admin's watch words are caught (sent to the page as fingerprints only)",

@@ -126,6 +126,25 @@ function wrappersFor(candidate) {
       : wrapLines(`${label}${lineValue}`, width);
   const line64 = wrap(64);
   const line76 = wrap(76);
+  // The same wrap read back the ways people paste it: under an indent, a tab, an email's "> " or a YAML folded
+  // value, URL-encoded into a link, with Markdown's escaped underscores, and as a URL password whose user name
+  // holds an encoded "@" (Azure's user%40server form).
+  const lines64 = line64.split("\n");
+  // An env-style label becomes the YAML key; anything else (a header, a connection-string field) uses the kind's
+  // name, so the form tests the folded wrap rather than whether a bare field name reads as a secret label.
+  const labelKey = label.replace(/[=:\s]+$/, "");
+  const yamlKey = /^[A-Z][A-Z0-9_]*$/.test(labelKey) ? labelKey : jsonKey;
+  const valueLines = (
+    isPrivateKey
+      ? wrapLines(source, 64)
+      : kind === "crypto_secret" && !lineValue.startsWith("0x")
+        ? wrapWords(lineValue, 64)
+        : wrapLines(lineValue, 64)
+  ).split("\n");
+  const userinfo =
+    kind === "connection_string"
+      ? lineValue.replace(/^([a-z+]+:\/\/)([^:@/]+):/i, "$1$2%40acct:")
+      : `mysql://svc%40acct:${encodeURIComponent(lineValue)}@10.1.2.3:3306/db`;
   const forms = [
     { name: "bare", text: `${label}${source}`, detect: true },
     { name: "CRLF", text: `${label}${source.replace(/\n/g, "\r\n")}\r\n`, detect: true },
@@ -143,6 +162,20 @@ function wrappersFor(candidate) {
       detect: isPrivateKey && privateKeyBase64IsRecognizable(source),
     },
     { name: "log-line", text: `ERROR worker-7 ${label}${source}\r\n`, detect: true },
+    { name: "indent-4", text: lines64.join("\n    "), detect: true },
+    { name: "indent-tab", text: lines64.join("\n\t"), detect: true },
+    // A seed phrase's words under "> " marks are left to the seed-phrase finder's own word gaps for now.
+    ...(kind === "crypto_secret" && !lineValue.startsWith("0x")
+      ? []
+      : [{ name: "email-quote", text: `> ${lines64.join("\n> ")}`, detect: true }]),
+    { name: "yaml-folded", text: `${yamlKey}: >-\n  ${valueLines.join("\n  ")}\n`, detect: true },
+    {
+      name: "url-encoded",
+      text: `https://example.test/callback?state=1&${jsonKey.toLowerCase()}=${encodeURIComponent(source)}`,
+      detect: true,
+    },
+    { name: "markdown-escaped", text: `${label}${source}`.replace(/_/g, "\\_"), detect: true },
+    { name: "userinfo-at", text: userinfo, detect: true },
   ];
   return forms;
 }

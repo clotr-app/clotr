@@ -19,6 +19,8 @@ import java.nio.file.LinkOption
 import java.nio.file.OpenOption
 import java.nio.file.Path
 import java.nio.file.StandardOpenOption
+import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.ConcurrentSkipListSet
 
 @Service(Service.Level.PROJECT)
 class ClotrProjectService(private val project: Project) : Disposable {
@@ -26,9 +28,10 @@ class ClotrProjectService(private val project: Project) : Disposable {
     private val key = project.locationHash
     // Looked up on each use, so a reload of the local state is never written over with an old entry.
     private val state get() = local.project(key)
-    private val counts = mutableMapOf<String, Int>()
-    private val uncheckedFiles = linkedSetOf<String>()
-    private val secretFiles = linkedSetOf<String>()
+    // Inspections write these from their own threads while the status bar reads them on the UI thread.
+    private val counts = ConcurrentHashMap<String, Int>()
+    private val uncheckedFiles = ConcurrentHashMap.newKeySet<String>()
+    private val secretFiles = ConcurrentSkipListSet<String>()
     private var rawIgnoreWarningShown = false
     private val engineValue = lazy(LazyThreadSafetyMode.SYNCHRONIZED) { ClotrEngine.start(local.salt(state)) }
     val engine: ClotrEngine get() = engineValue.value
@@ -96,29 +99,74 @@ class ClotrProjectService(private val project: Project) : Disposable {
         notification.notify(project)
     }
 
-    internal fun isIgnoredByGit(relative: String, root: Path): Boolean {
+    /**
+     * Whether Git ignores the file, from the same files Git reads: the person's global ignore file, the repository's
+     * own exclude file, then each .gitignore from the top of the repository (which can be above the project's folder)
+     * down to the file's folder. Read in that order, so a later match wins, as it does in Git.
+     */
+    internal fun isIgnoredByGit(relative: String, root: Path, globalExcludes: Path? = globalGitExcludesFile()): Boolean {
         val target = root.resolve(relative)
+        val top = generateSequence(root) { it.parent }.firstOrNull { Files.exists(it.resolve(".git"), LinkOption.NOFOLLOW_LINKS) } ?: root
         val directories = mutableListOf<Path>()
         var current = target.parent
-        while (current != null && current.startsWith(root)) {
+        while (current != null && current.startsWith(top)) {
             directories.add(current)
-            if (current == root) break
+            if (current == top) break
             current = current.parent
         }
         var ignoredByGit = false
-        for (directory in directories.asReversed()) {
-            val ignoreFile = directory.resolve(".gitignore")
-            val content = ClotrIgnore.readGitIgnore(ignoreFile) ?: continue
+        fun apply(content: String?, directory: Path) {
+            content ?: return
             val pathFromIgnore = directory.relativize(target).toString().replace('\\', '/')
             for (line in content.split(Regex("\\r?\\n"))) {
                 val rule = normalizeGitIgnoreLine(line)
                 if (rule.isEmpty() || rule.startsWith("#")) continue
                 val negated = rule.startsWith("!")
-                val pattern = (if (negated) rule.drop(1) else rule).removePrefix("/").removeSuffix("/")
-                if (ClotrIgnore.gitIgnoreMatches(pattern, pathFromIgnore)) ignoredByGit = !negated
+                val body = (if (negated) rule.drop(1) else rule).removeSuffix("/")
+                // A slash at the start or in the middle keeps a rule to the folder it's written for.
+                val anchored = body.contains('/')
+                if (ClotrIgnore.gitIgnoreMatches(body.removePrefix("/"), pathFromIgnore, anchored)) ignoredByGit = !negated
             }
         }
+        globalExcludes?.let { apply(ClotrIgnore.readGitIgnore(it), top) }
+        gitCommonDir(top)?.let { apply(ClotrIgnore.readGitIgnore(it.resolve("info/exclude")), top) }
+        for (directory in directories.asReversed()) apply(ClotrIgnore.readGitIgnore(directory.resolve(".gitignore")), directory)
         return ignoredByGit
+    }
+
+    /** The repository's own folder: `.git` itself, or for a worktree the folder its `.git` file names and shares. */
+    private fun gitCommonDir(top: Path): Path? {
+        val dotGit = top.resolve(".git")
+        if (Files.isDirectory(dotGit, LinkOption.NOFOLLOW_LINKS)) return dotGit
+        val gitDir = ClotrIgnore.readGitIgnore(dotGit)?.lineSequence()?.firstOrNull()?.takeIf { it.startsWith("gitdir:") }
+            ?.let { runCatching { top.resolve(it.removePrefix("gitdir:").trim()) }.getOrNull() } ?: return null
+        val common = ClotrIgnore.readGitIgnore(gitDir.resolve("commondir"))?.trim()?.takeIf(String::isNotEmpty)
+        return common?.let { runCatching { gitDir.resolve(it).normalize() }.getOrNull() } ?: gitDir
+    }
+
+    /**
+     * The person's global ignore file: core.excludesFile from their Git settings, else Git's default under
+     * XDG_CONFIG_HOME or ~/.config. Only these files are read; Git itself is never run.
+     */
+    internal fun globalGitExcludesFile(
+        home: Path? = System.getProperty("user.home")?.let { runCatching { Path.of(it) }.getOrNull() },
+        xdgConfigHome: String? = System.getenv("XDG_CONFIG_HOME"),
+    ): Path? {
+        home ?: return null
+        val config = xdgConfigHome?.takeIf(String::isNotBlank)?.let { runCatching { Path.of(it) }.getOrNull() } ?: home.resolve(".config")
+        var configured: String? = null
+        for (file in listOf(config.resolve("git/config"), home.resolve(".gitconfig"))) {
+            var section = ""
+            for (raw in ClotrIgnore.readGitIgnore(file)?.lineSequence().orEmpty()) {
+                val line = raw.trim()
+                if (line.startsWith("[")) section = line.substringAfter('[').substringBefore(']').trim().lowercase()
+                else if (section == "core" && line.substringBefore('=').trim().equals("excludesfile", ignoreCase = true)) {
+                    configured = line.substringAfter('=', "").trim().removeSurrounding("\"")
+                }
+            }
+        }
+        val path = configured?.takeIf(String::isNotEmpty) ?: return config.resolve("git/ignore")
+        return runCatching { if (path.startsWith("~/")) home.resolve(path.drop(2)) else Path.of(path) }.getOrNull()?.takeIf { it.isAbsolute }
     }
 
     private fun normalizeGitIgnoreLine(line: String): String {
@@ -182,9 +230,10 @@ class ClotrProjectService(private val project: Project) : Disposable {
         uncheckedFiles.add(path)
         refreshStatus()
     }
-    fun updateCount(path: String, value: Int) {
+    /** `partial`: the check stopped before the end of the file, so the file still counts as one Clotr couldn't check. */
+    fun updateCount(path: String, value: Int, partial: Boolean = false) {
         counts[path] = value.coerceAtLeast(0)
-        uncheckedFiles.remove(path)
+        if (partial) uncheckedFiles.add(path) else uncheckedFiles.remove(path)
         refreshStatus()
     }
 
@@ -196,7 +245,8 @@ class ClotrProjectService(private val project: Project) : Disposable {
     override fun dispose() { if (engineValue.isInitialized()) engineValue.value.close() }
 }
 
-data class ClipboardCheck(val findings: List<Finding>, val cleaned: String)
+/** `truncated`: the engine ran out of time, so part of the text was never checked. */
+data class ClipboardCheck(val findings: List<Finding>, val cleaned: String, val truncated: Boolean = false)
 
 object ClipboardChecker {
     fun check(engine: ClotrEngine, text: String, minimumSeverity: String = "medium"): ClipboardCheck =
@@ -209,13 +259,14 @@ object ClipboardChecker {
         ignore: ClotrIgnoreConfig,
     ): ClipboardCheck {
         checkOffUiThread("the engine")
-        val allowedFingerprints = engine.detectRanges(text)
+        val scan = engine.scan(text, "copied")
+        val allowedFingerprints = scan.ranges
             .filterNot { range -> ClotrIgnore.valueFingerprint(ignore.salt, range.value) in ignore.fingerprints }
             .map { it.fp }
             .toSet()
-        val findings = engine.check(text, "copied").filter {
+        val findings = scan.findings.filter {
             it.fp in allowedFingerprints && ClotrInspection.allowed(it.severity, minimumSeverity)
         }
-        return ClipboardCheck(findings, if (findings.isEmpty()) text else engine.redact(text, findings))
+        return ClipboardCheck(findings, if (findings.isEmpty()) text else engine.redact(text, findings), scan.truncated)
     }
 }

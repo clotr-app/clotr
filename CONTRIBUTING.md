@@ -13,8 +13,11 @@ These are checked automatically (`npm test`); a change that breaks one won't be 
 - AI chat sites by default, and nowhere else unless the person adds a site themselves or turns on "Everywhere I type", which starts off. New AI sites go in `extension/ai-sites.json`.
 - Everything runs on the device, with no network requests of any kind from the extension.
 - Never store what someone typed. Only the kind of thing found, the site, the time, what they chose and a scrambled code.
-- The browser extension informs and offers edits, and lets a message through if it has an internal error. Guard lets an
-  action through with a visible note when Clotr hits an internal error while checking readable input. Guard stops input
+- The browser extension informs and offers edits, and lets a message through if it has an internal error. If Clotr hits
+  an internal error while checking a prompt, a file read or a tool call to a connected server, Guard lets it through
+  with a visible note.
+  A shell command is stopped instead: when its check hits an internal error or doesn't finish in time, the message says
+  which, and a hook that crashes once it has started stops it as a check that didn't finish. Guard stops input
   it can't read, including malformed hook input and text over the size limit.
 
 ## Good first contributions

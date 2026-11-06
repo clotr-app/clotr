@@ -15,9 +15,9 @@ class ClotrEngine private constructor(private val context: Context) : AutoClosea
     private val redactFn = context.eval("js", "(text, ids) => ClotrHost.redact(text, JSON.parse(ids))")
     private val fingerprintFn = context.eval("js", "(kind, value) => ClotrHost.fingerprintFor(kind, value)")
     private val rangesFn = context.eval("js", """
-        (text) => {
+        (text, groups = Clotr.detect(text)) => {
           const found = [];
-          for (const group of Clotr.detect(text)) for (const value of group.matches) {
+          for (const group of groups) for (const value of group.matches) {
             if (!value) continue;
             for (let start = text.indexOf(value); start >= 0; start = text.indexOf(value, start + 1)) {
               found.push({ start, end: start + value.length, type: group.id, severity: group.severity, value,
@@ -27,20 +27,51 @@ class ClotrEngine private constructor(private val context: Context) : AutoClosea
           return found;
         }
     """.trimIndent())
+    // One detect() for both lists: check() already runs it on this text, so its groups give the ranges. A second
+    // scan would double the time a long text takes, and could stop at a different point when it runs out of time.
+    private val scanFn = context.eval("js", """
+        (text, source, ranges) => {
+          const detect = Clotr.detect;
+          let groups = [];
+          Clotr.detect = (value) => {
+            const detected = detect(value);
+            if (value === text) groups = detected;
+            return detected;
+          };
+          let checked;
+          try {
+            checked = ClotrHost.check(text, {app: 'jetbrains', source});
+          } finally {
+            Clotr.detect = detect;
+          }
+          return { findings: checked.findings, ranges: ranges(text, groups), truncated: checked.truncated === true };
+        }
+    """.trimIndent())
 
     @Synchronized
-    fun check(text: String, source: String = "typed"): List<Finding> {
-        val result = checkFn.execute(text, source)
-        return (0 until result.arraySize).map { i ->
-            val item = result.getArrayElement(i)
-            Finding(item.getMember("id").asString(), item.getMember("type").asString(), item.getMember("name").asString(),
-                item.getMember("severity").asString(), item.getMember("preview").asString(), item.getMember("fp").asString())
-        }
+    fun check(text: String, source: String = "typed"): List<Finding> = findings(checkFn.execute(text, source))
+
+    /**
+     * What check() and detectRanges() give, from one scan, and whether it stopped before the end of the text (the
+     * engine's time limit), in which case the part it didn't reach was never checked.
+     */
+    @Synchronized
+    fun scan(text: String, source: String = "typed"): Scan {
+        val result = scanFn.execute(text, source, rangesFn)
+        return Scan(findings(result.getMember("findings")), ranges(result.getMember("ranges")), result.getMember("truncated").asBoolean())
+    }
+
+    private fun findings(result: Value): List<Finding> = (0 until result.arraySize).map { i ->
+        val item = result.getArrayElement(i)
+        Finding(item.getMember("id").asString(), item.getMember("type").asString(), item.getMember("name").asString(),
+            item.getMember("severity").asString(), item.getMember("preview").asString(), item.getMember("fp").asString(),
+            item.getMember("group")?.takeIf { it.isString }?.asString().orEmpty())
     }
 
     @Synchronized
-    fun detectRanges(text: String): List<DetectedRange> {
-        val result = rangesFn.execute(text)
+    fun detectRanges(text: String): List<DetectedRange> = ranges(rangesFn.execute(text))
+
+    private fun ranges(result: Value): List<DetectedRange> {
         return (0 until result.arraySize).map { i ->
             val item = result.getArrayElement(i)
             DetectedRange(
@@ -60,6 +91,12 @@ class ClotrEngine private constructor(private val context: Context) : AutoClosea
 
     @Synchronized
     fun fingerprintFor(type: String, value: String): String = fingerprintFn.execute(type, value).asString()
+
+    /** Runs a script in the guest, for tests that need the engine in a given state (a clock that runs fast, say). */
+    @Synchronized
+    internal fun evalForTest(script: String) {
+        context.eval("js", script)
+    }
 
     override fun close() = context.close()
 
@@ -98,5 +135,10 @@ class ClotrEngine private constructor(private val context: Context) : AutoClosea
     }
 }
 
-data class Finding(val id: String, val type: String, val name: String, val severity: String, val preview: String, val fp: String)
+/** `group`: the engine's own sort of the kind, "credentials" or "personal" (and "custom" or "links"). */
+data class Finding(
+    val id: String, val type: String, val name: String, val severity: String, val preview: String, val fp: String,
+    val group: String = "",
+)
+class Scan(val findings: List<Finding>, val ranges: List<DetectedRange>, val truncated: Boolean)
 class DetectedRange(val start: Int, val end: Int, val type: String, val severity: String, val fp: String, internal val value: String)

@@ -1220,7 +1220,7 @@ async function ownPageChecks(check, firefox, ext) {
       );
       if (!granted) throw new Error(`Firefox didn't grant the earlier permission for ${JSON.stringify(origins)}`);
     };
-    const appSwitch = (list, name) => `#${list} button[aria-label="Clotr on ${name}"]`;
+    const appSwitch = (list, name) => `#${list} button[aria-label$=", Clotr on ${name}"]`;
     const reads = (sel) => ff.exec(`return document.querySelector(${JSON.stringify(sel)})?.textContent ?? null;`);
     async function openPopupSettings() {
       // The tab is in the page before popup.js runs, so a click that early does nothing: click until it shows.

@@ -32,9 +32,13 @@ const SECRET_PATHS = [
 ];
 
 // Windows opens "name.", "name " and "name::$DATA" (any "name:stream") as the file "name", so each part of the path is
-// read the way Windows would before the rules below see it.
+// read the way Windows would before the rules below see it. Done with a loop, not a pattern anchored at the end, which
+// is tried from every place in the part: a long run of dots or spaces with more after it took seconds.
 function windowsPart(part) {
-  return part.replace(/:.*$/, "").replace(/[. ]+$/, "");
+  const colon = part.indexOf(":");
+  let end = colon < 0 ? part.length : colon;
+  while (end > 0 && (part[end - 1] === "." || part[end - 1] === " ")) end -= 1;
+  return part.slice(0, end);
 }
 
 function isSecretFile(filePath, content = "") {
@@ -89,7 +93,11 @@ function isSecretFile(filePath, content = "") {
     return true;
   }
   if (name === "credentials" && parent === ".aws") return true;
-  if (SECRET_PATHS.some((suffix) => lowered === suffix || lowered.endsWith(`/${suffix}`))) return true;
+  // The whole path, or its end after a slash, without building a string for each one (a long command asks thousands).
+  const atEnd = (suffix) =>
+    lowered.endsWith(suffix) &&
+    (lowered.length === suffix.length || lowered[lowered.length - suffix.length - 1] === "/");
+  if (SECRET_PATHS.some(atEnd)) return true;
   if (/\.(?:pem|key|p12|pfx|ppk|ovpn|tfvars|tfstate|tfstate\.backup|keystore|jks)$/i.test(name)) return true;
   if (name.startsWith("secrets.") || name.includes(".secrets.") || name === ".secrets") return true;
   return /["']type["']\s*:\s*["']service_account["']/.test(content);

@@ -56,12 +56,12 @@
     return W.pick(view.settings.language, view.locale);
   }
 
-  // Settings' Look and Motion, as the suite kit's CSS reads them (main.css, components.css).
+  // Settings' Look and Motion. Old saved Light and dark choices now resolve to Plum and Ember.
   function applyLook() {
     const { look, motion } = view.settings;
-    if (look === "dark" || look === "light" || look === "plum" || look === "ember") {
-      document.documentElement.dataset.theme = look;
-    } else delete document.documentElement.dataset.theme;
+    if (look === "dark" || look === "ember") document.documentElement.dataset.theme = "ember";
+    else if (look === "light" || look === "plum") document.documentElement.dataset.theme = "plum";
+    else delete document.documentElement.dataset.theme;
     if (motion === "still") document.documentElement.dataset.motion = "still";
     else delete document.documentElement.dataset.motion;
   }

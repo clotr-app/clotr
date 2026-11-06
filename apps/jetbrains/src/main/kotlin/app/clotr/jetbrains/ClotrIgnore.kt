@@ -96,14 +96,16 @@ object ClotrIgnore {
         }
     }
 
-    internal fun gitIgnoreMatches(pattern: String, path: String): Boolean {
+    // An anchored rule (one that had a slash at the start or in the middle) only matches from the ignore file's folder;
+    // any other rule matches a file or folder name at any depth.
+    internal fun gitIgnoreMatches(pattern: String, path: String, anchored: Boolean = pattern.contains('/')): Boolean {
         if (pattern.isEmpty() || pattern.length > MAX_PATTERN_LENGTH) return false
         val steps = try {
             globSteps(pattern)
         } catch (_: Exception) {
             return false
         }
-        if (!pattern.contains('/')) return path.split('/').any { globMatches(steps, it) }
+        if (!anchored) return path.split('/').any { globMatches(steps, it) }
 
         val ends = IntArray(path.count { it == '/' } + 1)
         var end = 0

@@ -76,6 +76,23 @@ test("respFor: decision work grows with the number of saved phone matches", () =
   assert.ok(!grewMoreThan(smallTime, bigTime, 16), "decision work grew too fast for 4× the matches");
 });
 
+// The freeze grew linearly, one strong fingerprint per value, so the growth check above can't see it come back.
+// This counts the slow lookups instead: a spent time budget sets aside every value that would need a strong
+// fingerprint rather than working it out, so `missed` counts them for free and a busy machine can't change the count.
+test("respFor: a saved phone that can't change the answer costs no strong fingerprints", () => {
+  const r = found("phone_number", phones(600));
+  const slowLookups = (saved) => {
+    const s = state({ vault: [saved] });
+    s.budget = { until: -1, missed: [] };
+    for (const m of r.matches) C.respFor(r, m, s);
+    return s.budget.missed.length;
+  };
+  // A phone marked OK to share could quiet any of these warnings, so each one needs its lookup.
+  assert.equal(slowLookups(strong("phone_number", "(555) 555-5636", "allow")), 600);
+  // One marked worth protecting can't raise a warning any higher. Before the fix, these 600 lookups took 5 seconds.
+  assert.equal(slowLookups(strong("phone_number", "(555) 555-5636", "protect")), 0);
+});
+
 test("respFor: an email marked OK to share stays guarded while the host works through its budget", () => {
   const mine = "jo@example.org";
   const list = [...emails(599), mine];

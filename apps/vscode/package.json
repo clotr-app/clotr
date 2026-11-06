@@ -2,14 +2,14 @@
   "name": "clotr",
   "displayName": "%displayName%",
   "description": "%description%",
-  "version": "0.2.0.1",
+  "version": "0.2.2",
   "publisher": "clotr-app",
   "icon": "icon.png",
   "repository": { "type": "git", "url": "https://github.com/clotr-app/clotr" },
   "homepage": "https://clotr.app/developers.html",
   "bugs": { "url": "https://github.com/clotr-app/clotr/issues" },
   "qna": "https://github.com/clotr-app/clotr/discussions",
-  "keywords": ["secrets", "credentials", "api key", "privacy", "pii", "ai", "claude code", "copilot", "cursor", "windsurf", "vscodium", "kiro", "trae", "code-server", "gitpod", "gemini cli", "codex", "cline", "leak"],
+  "keywords": ["secrets", "credentials", "api key", "api keys", "passwords", "tokens", "privacy", "pii", "ai", "ai coding assistants", "claude code", "copilot", "cursor", "windsurf", "vscodium", "kiro", "trae", "code-server", "gitpod", "gemini cli", "codex", "cline", "leak"],
   "engines": { "vscode": "^1.57.0" },
   "extensionKind": ["workspace"],
   "license": "AGPL-3.0-or-later",
@@ -21,7 +21,7 @@
       "restrictedConfigurations": ["clotr.enabled", "clotr.minSeverity", "clotr.personalDetailsInFiles", "clotr.skipList"]
     }
   },
-  "activationEvents": ["onStartupFinished", "onCommand:clotr.tryIt", "onCommand:clotr.checkClipboard", "onCommand:clotr.checkSelection", "onCommand:clotr.setupGuard"],
+  "activationEvents": ["onStartupFinished", "onCommand:clotr.tryIt", "onCommand:clotr.checkClipboard", "onCommand:clotr.checkSelection", "onCommand:clotr.setupGuard", "onCommand:clotr.turnOnFile"],
   "galleryBanner": { "color": "#1A1221", "theme": "dark" },
   "categories": ["AI", "Linters", "Other"],
   "contributes": {
@@ -54,7 +54,7 @@
         ]
       }
     ],
-    "commands": [{"command":"clotr.tryIt","title":"%tryItCommand%"},{"command":"clotr.checkClipboard","title":"%checkClipboard%"},{"command":"clotr.checkSelection","title":"%checkSelection%"},{"command":"clotr.setupGuard","title":"%setupGuard%"}],
+    "commands": [{"command":"clotr.tryIt","title":"%tryItCommand%"},{"command":"clotr.checkClipboard","title":"%checkClipboard%"},{"command":"clotr.checkSelection","title":"%checkSelection%"},{"command":"clotr.setupGuard","title":"%setupGuard%"},{"command":"clotr.turnOnFile","title":"%turnOnFileCommand%"}],
     "views": {"explorer": [{"id":"clotr.findings","name":"%findingsView%"}]},
     "menus": {"editor/context":[{"command":"clotr.checkSelection","group":"navigation@99"}]},
     "configuration": {"title":"Clotr","properties": {

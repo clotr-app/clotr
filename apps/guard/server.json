@@ -9,13 +9,13 @@
     "subfolder": "apps/guard"
   },
   "websiteUrl": "https://github.com/clotr-app/clotr/tree/main/apps/guard#readme",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "packages": [
     {
       "registryType": "npm",
       "registryBaseUrl": "https://registry.npmjs.org",
       "identifier": "clotr-guard",
-      "version": "0.1.1",
+      "version": "0.1.2",
       "runtimeHint": "npx",
       "transport": {
         "type": "stdio"

@@ -6,7 +6,7 @@ const test = require("node:test");
 const assert = require("node:assert/strict");
 const zlib = require("zlib");
 const { crc32 } = require("../tools/package.js");
-const { bestOfAsyncPair, grewMoreThan } = require("./timing.js");
+const { bestOfAsyncPair, bestOfPair, grewMoreThan } = require("./timing.js");
 
 require("../extension/patterns.js");
 require("../extension/detector.js");
@@ -134,4 +134,188 @@ test("SVG pictures are read as text: the words they show, not their drawing numb
     assert.doesNotMatch(text, /0123|0199/, `${file.name}: drawing numbers read as text`);
   }
   assert.equal(await readAttachment(new File([svg.repeat(30000)], "huge.svg")), null, "over the 2 MB text cap");
+});
+
+// Builds a minimal PDF from [object number, dictionary, stream bytes or null, plain body or null] entries.
+function pdf(objects) {
+  let out = "%PDF-1.4\n";
+  for (const [n, dict, data, body] of objects) {
+    out += `${n} 0 obj\n${dict === null ? "" : `<< ${dict} >>\n`}`;
+    if (data) out += `stream\n${data.toString("latin1")}\nendstream\n`;
+    if (body !== undefined && body !== null) out += `${body}\n`;
+    out += "endobj\n";
+  }
+  return new File([Buffer.from(`${out}trailer\n<< /Root 1 0 R >>\n%%EOF\n`, "latin1")], "a.pdf", {
+    type: "application/pdf",
+  });
+}
+const pageStream = (s) => zlib.deflateSync(Buffer.from(`BT /F1 12 Tf 72 720 Td (${s}) Tj ET`));
+const SSN_PAGE = "My SSN is 078-05-1120";
+
+// LibreOffice and many other writers give a stream's length as another object ("/Length 12 0 R"). Reading the
+// object number's first digits as the length cut the stream to a byte or two, and the page came back empty.
+test("PDF: a stream whose /Length names another object is still read, whatever that object's number", async () => {
+  const data = pageStream(SSN_PAGE);
+  for (const n of [7, 12, 345]) {
+    const withObject = pdf([
+      [1, "/Type /Catalog", null],
+      [5, `/Length ${n} 0 R /Filter /FlateDecode`, data],
+      [n, null, null, String(data.length)],
+    ]);
+    assert.match(await readAttachment(withObject), /078-05-1120/, `/Length ${n} 0 R`);
+    const withoutObject = pdf([
+      [1, "/Type /Catalog", null],
+      [5, `/Length ${n} 0 R /Filter /FlateDecode`, data],
+    ]);
+    assert.match(await readAttachment(withoutObject), /078-05-1120/, `/Length ${n} 0 R, no such object`);
+  }
+  // Every page of a longer document, each with its length kept in its own object.
+  const pages = Array.from({ length: 70 }, (_, i) => pageStream(i === 69 ? SSN_PAGE : `Page ${i}`));
+  const long = pdf([
+    [1, "/Type /Catalog", null],
+    ...pages.flatMap((p, i) => [
+      [10 + 2 * i, `/Length ${11 + 2 * i} 0 R /Filter /FlateDecode`, p],
+      [11 + 2 * i, null, null, String(p.length)],
+    ]),
+  ]);
+  assert.match(await readAttachment(long), /078-05-1120/, "the 70th page");
+});
+
+// Excel writes each sheet before xl/sharedStrings.xml, where every text cell lives. A sheet's markup (row and
+// cell tags around numbers and string indices) passed the 2 MB budget long before its text did, and the shared
+// strings, names and SSNs and all, were never read.
+test("big spreadsheets: the shared strings are read even when a sheet's markup alone passes 2 MB", async () => {
+  const rows = Array.from(
+    { length: 40000 },
+    (_, i) =>
+      `<row r="${i + 1}" spans="1:3" x14ac:dyDescent="0.25"><c r="A${i + 1}" s="1" t="s"><v>${i % 2}</v></c>` +
+      `<c r="B${i + 1}" s="2"><v>${1000 + i}</v></c></row>`,
+  ).join("");
+  const sheet = `<worksheet><sheetData>${rows}</sheetData></worksheet>`;
+  assert.ok(sheet.length > 3 * 1024 * 1024, `${sheet.length} characters of sheet markup`);
+  const strings = '<sst count="2"><si><t>Employee</t></si><si><t>SSN 078-05-1120</t></si></sst>';
+  const book = new File(
+    [
+      zip([
+        ["[Content_Types].xml", "<Types/>", true],
+        ["xl/workbook.xml", "<workbook/>", true],
+        ["xl/worksheets/sheet1.xml", sheet, true],
+        ["xl/sharedStrings.xml", strings, true],
+      ]),
+    ],
+    "staff.xlsx",
+  );
+  const text = await readAttachment(book);
+  assert.match(text, /078-05-1120/);
+  // A Word file's own formatting tags count for nothing either: only the words they wrap do.
+  const styled = (words) =>
+    `<w:r><w:rPr>${'<w:rFonts w:ascii="Calibri"/><w:sz w:val="22"/>'.repeat(8)}</w:rPr><w:t>${words}</w:t></w:r>`;
+  const body = Array.from({ length: 6000 }, (_, i) => styled(`Line ${i}`)).join("") + styled("SSN 078-05-1120");
+  const doc = new File(
+    [zip([["word/document.xml", `<w:document><w:body><w:p>${body}</w:p></w:body></w:document>`, true]])],
+    "long.docx",
+  );
+  assert.match(await readAttachment(doc), /078-05-1120/);
+});
+
+// A simple font's ToUnicode map has one-byte codes (<20> to <7E>), and a hex string in its text is read a byte
+// at a time. Stepping four hex digits for every code, as for a two-byte font, dropped every second letter.
+test("PDF page text: a one-byte ToUnicode map reads every character of a hex string", () => {
+  const { pdfPageText, detect } = globalThis.Clotr;
+  const ssn = "<53534E3A203037382D30352D31313230>"; // "SSN: 078-05-1120"
+  const range =
+    "begincmap 1 begincodespacerange <00> <FF> endcodespacerange 1 beginbfrange <20> <7E> <0020> endbfrange endcmap";
+  const text = pdfPageText([range, `BT /F1 12 Tf ${ssn} Tj ET`]);
+  assert.match(text, /SSN: 078-05-1120/);
+  assert.ok(detect(text).some((r) => r.id === "us_ssn"));
+  const chars = "begincmap 2 beginbfchar <41> <0041> <42> <0042> endbfchar endcmap";
+  assert.match(pdfPageText([chars, "BT <414243> Tj ET"]), /AB/);
+  // Two-byte codes still read four hex digits at a time.
+  const wide = "begincmap 1 beginbfrange <0001> <0050> <0041> endbfrange endcmap";
+  assert.match(pdfPageText([wide, "BT <000100020003> Tj ET"]), /ABC/);
+});
+
+// Embedded font programs and colour profiles are streams too, often written before the pages. Unpacking them
+// spent the 2 MB budget on binary data (and fed it to the text reader), and pictures used up the 400-stream cap,
+// so a later page with real text was never read.
+test("PDF: fonts, colour profiles and pictures don't use up the budget the page text needs", async () => {
+  const crypto = require("node:crypto");
+  const page = pageStream(SSN_PAGE);
+  const font = zlib.deflateSync(Buffer.concat([crypto.randomBytes(400 * 1024), Buffer.from("Tj".repeat(2000))]));
+  const bigFont = zlib.deflateSync(Buffer.alloc(900 * 1024, 7));
+  const fonts = pdf([
+    [1, "/Type /Catalog", null],
+    [2, `/Length ${font.length} /Length1 ${400 * 1024 + 4000} /Filter /FlateDecode`, font],
+    ...[3, 4, 5].map((n) => [n, `/Length ${bigFont.length} /Length1 ${900 * 1024} /Filter /FlateDecode`, bigFont]),
+    [6, `/N 3 /Alternate /DeviceRGB /Length ${bigFont.length} /Filter /FlateDecode`, bigFont],
+    [7, `/Length ${page.length} /Filter /FlateDecode`, page],
+  ]);
+  const text = await readAttachment(fonts);
+  assert.match(text, /078-05-1120/);
+  assert.ok(text.length < 1000, `${text.length} characters read from a one-line page`);
+  const picture = Buffer.from("not really a jpeg");
+  const pictures = pdf([
+    [1, "/Type /Catalog", null],
+    ...Array.from({ length: 450 }, (_, i) => [
+      10 + i,
+      `/Type /XObject /Subtype /Image /Filter /DCTDecode /Length ${picture.length}`,
+      picture,
+    ]),
+    [9, `/Length ${page.length} /Filter /FlateDecode`, page],
+  ]);
+  assert.match(await readAttachment(pictures), /078-05-1120/);
+});
+
+// A soft line break, tab or space in Office XML is a tag of its own. Dropping it with no separator glued the
+// words on either side together, and "Card" plus a card number on the next line read as one token.
+test("Office XML to text: soft line breaks, tabs and spaces keep the words apart", () => {
+  const { xmlToText, detect } = globalThis.Clotr;
+  const card = "4111 1111 1111 1111";
+  const ids = (xml) => detect(xmlToText(xml)).map((r) => r.id);
+  for (const gap of [
+    "<a:br/>",
+    '<a:br><a:rPr lang="en-US"/></a:br>',
+    "<w:cr/>",
+    '<w:br w:type="textWrapping"/>',
+    "<text:tab/>",
+    "<text:line-break/>",
+    "<text:s/>",
+    '<text:s text:c="2"/>',
+  ]) {
+    const xml = `<a:p><a:r><a:t>Card</a:t></a:r>${gap}<a:r><a:t>${card}</a:t></a:r></a:p>`;
+    assert.match(xmlToText(xml), /Card\s+4111/, gap);
+    assert.ok(ids(xml).includes("credit_card"), gap);
+  }
+  assert.match(
+    xmlToText("<a:p><a:r><a:t>Call Ann</a:t></a:r><a:br/><a:r><a:t>555-555-5636</a:t></a:r></a:p>"),
+    /Call Ann\s+555-555-5636/,
+  );
+});
+
+// A PDF literal string may hold balanced parentheses without escaping them. Ending the string at the first ")"
+// lost everything after a parenthetical: "(Employee (contractor) SSN …)" read as "Employee (contractor".
+test("PDF page text: balanced parentheses inside a literal string keep the rest of the string", () => {
+  const { pdfPageText, detect } = globalThis.Clotr;
+  const text = pdfPageText(["BT /F1 12 Tf (Employee (contractor) SSN 078-05-1120) Tj ET"]);
+  assert.match(text, /Employee \(contractor\) SSN 078-05-1120/);
+  assert.ok(detect(text).some((r) => r.id === "us_ssn"));
+  assert.match(pdfPageText(["BT ((a (b)) c) Tj (next) Tj ET"]), /\(a \(b\)\) c\s*next/);
+  // An escaped parenthesis doesn't count toward the nesting.
+  assert.match(pdfPageText([String.raw`BT (one \( two) Tj (three) Tj ET`]), /one \( two\s*three/);
+  // An inner "(" that never closes: the string still ends at the first ")", as before.
+  assert.match(pdfPageText(["BT (a ( b) Tj (c) Tj ET"]), /a \( b\s*c/);
+  // Hostile strings: every inner "(" left open, or nested ever deeper, still costs one pass.
+  for (const unit of ["(()", "(()(", "((", "(a)"]) {
+    const page = (k) => `BT ${unit.repeat(k)} Tj ET`;
+    const [small, big] = bestOfPair(
+      () => pdfPageText([page(20000)]),
+      () => pdfPageText([page(80000)]),
+      4,
+      3,
+    );
+    assert.ok(!grewMoreThan(small, big, 16), `${unit}: time grew too much for 4× the input`);
+    // Rescanning a 4,096-character window for every few characters grows linearly too, just a thousand times
+    // slower, so the bigger page also has a generous time limit.
+    assert.ok(big.wall < 2000, `${unit}: ${big.wall.toFixed(0)} ms for 80,000 copies`);
+  }
 });

@@ -80,7 +80,38 @@ test("where Clotr runs for user-added sites: the chosen sections, or the whole h
     "https://huggingface.co/spaces/owner/my-app/*",
   ]);
   stored = {}; // a grant from before v0.9.3: no recorded section
-  assert.deepEqual(await Sites.userSitePatterns(), ["https://chat.newtool.ai/*", "https://huggingface.co/*"]);
+  // The whole of huggingface.co without a section is the browser's own copy of the built-in entry (next test).
+  assert.deepEqual(await Sites.userSitePatterns(), ["https://chat.newtool.ai/*"]);
+});
+
+test("the browser's whole-host form of a built-in section is never listed as a site you added", async () => {
+  // Chromium drops the path from host permissions, so "https://huggingface.co/chat/*" also comes back from
+  // getAll() as the whole host. That grant is the manifest's, it can't be removed, and it isn't a chat.
+  granted = ["https://huggingface.co/chat/*", "https://huggingface.co/*", "https://chatgpt.com/*"];
+  stored = {};
+  assert.deepEqual(await Sites.userSitePatterns(), []);
+  // Sections someone protected on that host themselves still count.
+  stored = { siteScopes: { "https://huggingface.co/*": ["https://huggingface.co/spaces/owner/my-app/*"] } };
+  assert.deepEqual(await Sites.userSitePatterns(), ["https://huggingface.co/spaces/owner/my-app/*"]);
+});
+
+test("in Firefox a whole-host grant on a built-in section's host is the person's own, so it's still listed", async () => {
+  // Firefox keeps the path in host permissions, so it never adds a whole-host copy of huggingface.co/chat/*.
+  // A grant for all of huggingface.co there came from the person, from before sections were recorded.
+  const realGetManifest = globalThis.chrome.runtime.getManifest;
+  globalThis.chrome.runtime.getManifest = () => ({
+    ...manifest,
+    browser_specific_settings: { gecko: { id: "clotr@example" } },
+  });
+  try {
+    granted = ["https://huggingface.co/chat/*", "https://huggingface.co/*", "https://chatgpt.com/*"];
+    stored = {};
+    assert.deepEqual(await Sites.userSitePatterns(), ["https://huggingface.co/*"]);
+    stored = { siteScopes: { "https://huggingface.co/*": ["https://huggingface.co/spaces/owner/my-app/*"] } };
+    assert.deepEqual(await Sites.userSitePatterns(), ["https://huggingface.co/spaces/owner/my-app/*"]);
+  } finally {
+    globalThis.chrome.runtime.getManifest = realGetManifest;
+  }
 });
 
 test("a whole-host grant on a shared host is flagged as wider than needed", () => {

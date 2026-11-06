@@ -260,6 +260,7 @@ module.exports = {
   parseClotrIgnore,
   readClotrIgnore,
   valueFingerprint,
+  parseRule,
   pathIgnored,
   pathIgnoredForFile,
 };

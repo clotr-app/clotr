@@ -27,6 +27,9 @@
   const MAX_DOC_BYTES = 20 * 1024 * 1024; // Office and PDF files
   const MAX_PART_TEXT = 2 * 1024 * 1024;
   const MAX_TOTAL_TEXT = 2 * 1024 * 1024; // like plain-text files: checking more would stall the page
+  // An Office part's XML, markup and all, before it's turned into text (the text is then held to the caps above).
+  const MAX_PART_XML = 8 * 1024 * 1024;
+  const MAX_TOTAL_XML = 16 * 1024 * 1024;
   const MAX_OFFICE_PARTS = 60;
   const MAX_PDF_STREAMS = 400;
 
@@ -106,29 +109,41 @@
     if (eocd < 0) throw new UnreadableDoc("damaged");
     const count = Math.min(view.getUint16(eocd + 10, true), MAX_OFFICE_PARTS * 20);
     let p = view.getUint32(eocd + 16, true);
+    const entries = [];
+    for (let n = 0; n < count && p + 46 <= buf.length; n++) {
+      if (view.getUint32(p, true) !== 0x02014b50) break;
+      const nameLen = view.getUint16(p + 28, true);
+      const name = utf8.decode(buf.subarray(p + 46, p + 46 + nameLen));
+      entries.push({
+        name,
+        method: view.getUint16(p + 10, true),
+        csize: view.getUint32(p + 20, true),
+        local: view.getUint32(p + 42, true),
+      });
+      p += 46 + nameLen + view.getUint16(p + 30, true) + view.getUint16(p + 32, true);
+    }
+    // Every text cell of a spreadsheet lives in xl/sharedStrings.xml, which Excel writes after the sheets, so it's
+    // read first. The budget counts the text each part gives, not its markup: a big sheet's row and cell tags alone
+    // used to spend it before the shared strings were reached. The markup has its own, larger cap.
+    entries.sort((a, b) => (b.name === "xl/sharedStrings.xml") - (a.name === "xl/sharedStrings.xml"));
     let total = 0;
+    let xml = 0;
     let parts = 0;
     let text = "";
-    for (let n = 0; n < count && p + 46 <= buf.length && parts < MAX_OFFICE_PARTS && total < MAX_TOTAL_TEXT; n++) {
-      if (view.getUint32(p, true) !== 0x02014b50) break;
-      const method = view.getUint16(p + 10, true);
-      const csize = view.getUint32(p + 20, true);
-      const nameLen = view.getUint16(p + 28, true);
-      const extraLen = view.getUint16(p + 30, true);
-      const commentLen = view.getUint16(p + 32, true);
-      const local = view.getUint32(p + 42, true);
-      const name = utf8.decode(buf.subarray(p + 46, p + 46 + nameLen));
-      p += 46 + nameLen + extraLen + commentLen;
+    for (const { name, method, csize, local } of entries) {
+      if (parts >= MAX_OFFICE_PARTS || total >= MAX_TOTAL_TEXT || xml >= MAX_TOTAL_XML) break;
       if (!OFFICE_PART.test(name) || local + 30 > buf.length || view.getUint32(local, true) !== 0x04034b50) continue;
       const start = local + 30 + view.getUint16(local + 26, true) + view.getUint16(local + 28, true);
       const packed = buf.subarray(start, Math.min(buf.length, start + csize));
-      const cap = Math.min(MAX_PART_TEXT, MAX_TOTAL_TEXT - total);
+      const cap = Math.min(MAX_PART_XML, MAX_TOTAL_XML - xml);
       const data =
         method === 0 ? packed.subarray(0, cap) : method === 8 ? await inflateCapped(packed, "deflate-raw", cap) : null;
       if (!data) continue;
       parts++;
-      total += data.length;
-      text += `${xmlToText(utf8.decode(data))}\n`;
+      xml += data.length;
+      const words = xmlToText(utf8.decode(data)).slice(0, MAX_TOTAL_TEXT - total);
+      total += words.length;
+      text += `${words}\n`;
     }
     return text;
   }
@@ -150,12 +165,35 @@
     let total = 0;
     let unsized = 0;
     let sawImage = false;
-    for (const { dict, start } of findPdfStreams(raw)) {
+    // A length given as another object ("/Length 12 0 R", as LibreOffice writes it) is read from that object:
+    // every small "12 0 obj 345 endobj" in the file (up to 50,000 of them), found once, with bounded runs so it
+    // stays one linear pass. One that isn't there falls back to looking for "endstream", as a missing /Length does.
+    let lengthObjects = null;
+    const lengthOf = (dict) => {
+      const direct = /\/Length\s+(\d+)\b(?!\s+\d+\s+R)/.exec(dict);
+      if (direct) return Number(direct[1]);
+      const ref = /\/Length\s+(\d{1,10})\s+(\d{1,5})\s+R/.exec(dict);
+      if (!ref) return null;
+      if (!lengthObjects) {
+        lengthObjects = new Map();
+        const object = /(\d{1,10})\s{1,5}(\d{1,5})\s{1,5}obj\s{0,20}(\d{1,10})\s{0,20}endobj/g;
+        for (let m; lengthObjects.size < 50000 && (m = object.exec(raw));) {
+          lengthObjects.set(`${Number(m[1])} ${Number(m[2])}`, Number(m[3]));
+        }
+      }
+      return lengthObjects.get(`${Number(ref[1])} ${Number(ref[2])}`) ?? null;
+    };
+    // The stream cap counts only the streams kept, so pictures ahead of a page can't use it up (findPdfStreams
+    // still looks at no more than 5,000 "stream" keywords).
+    for (const { dict, start } of findPdfStreams(raw, 5000)) {
       if (streams.length >= MAX_PDF_STREAMS || total >= MAX_TOTAL_TEXT) break;
-      const len = /\/Length\s+(\d+)(?!\s+\d+\s+R)/.exec(dict);
+      // An embedded font program (/Length1-3, or a compact font's own subtype) or a colour profile (/N) is never
+      // text: unpacking it spent the budget the pages need, and its bytes could even pass for text operators.
+      if (/\/Length[123]\b|\/Subtype\s*\/(?:Type1C|CIDFontType0C|OpenType)\b|\/N\s+\d/.test(dict)) continue;
+      const len = lengthOf(dict);
       // No /Length: look for "endstream" at most 2 MB ahead, and only for 50 such streams (hostile files).
-      if (!len && ++unsized > 50) continue;
-      const end = len ? start + Number(len[1]) : raw.slice(start, start + 2 * 1024 * 1024).indexOf("endstream") + start;
+      if (len === null && ++unsized > 50) continue;
+      const end = len !== null ? start + len : raw.slice(start, start + 2 * 1024 * 1024).indexOf("endstream") + start;
       if (end <= start || end > buf.length) continue;
       if (/\/Subtype\s*\/Image/.test(dict)) {
         sawImage = true;
@@ -207,5 +245,21 @@
     return (await readAttachmentDetailed(file)).text;
   }
 
-  Object.assign(globalThis.Clotr, { readAttachment, readAttachmentDetailed, ownBytes });
+  // A kind of file Clotr reads, but past the size it reads to: readAttachmentDetailed gives it no text and no
+  // reason, the same as a file of a kind it doesn't read at all.
+  function overReadLimit(file) {
+    if (OFFICE_FILE.test(file.name) || /\.pdf$/i.test(file.name) || file.type === "application/pdf") {
+      return file.size > MAX_DOC_BYTES;
+    }
+    const textLike =
+      SVG_FILE.test(file.name) ||
+      file.type === "image/svg+xml" ||
+      TEXT_FILE.test(file.name) ||
+      KEY_FILE_NAMES.test(file.name) ||
+      ENV_VARIANT.test(file.name) ||
+      /^text\/|json/.test(file.type);
+    return textLike && file.size > MAX_TEXT_FILE_BYTES;
+  }
+
+  Object.assign(globalThis.Clotr, { readAttachment, readAttachmentDetailed, overReadLimit, ownBytes });
 })();

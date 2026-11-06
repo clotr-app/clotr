@@ -6,7 +6,7 @@ Clotr handles the most sensitive thing people type: what they almost sent. Its d
 - The extension makes no network requests. Its own pages run under a policy that blocks connections
   (`connect-src 'self'`), and automated checks fail the build if network code appears.
 - Nothing you type is stored, only metadata and a scrambled code, on your computer.
-- It runs only on the built-in AI chat sites and on sites you add one by one.
+- It runs only on the built-in AI chat sites and on sites you add one by one, or on every site once you turn on "Everywhere I type".
 - Storage belongs to Clotr's own pages, and the part running inside AI pages gets only what it needs, by message.
 - Releases are reproducible. `npm run package` rebuilds any release byte for byte, so you can compare it with the
   published SHA-256.

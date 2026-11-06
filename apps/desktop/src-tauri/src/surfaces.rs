@@ -201,6 +201,30 @@ mod tests {
         );
     }
 
+    /// The real thing, not a stand-in signer: Windows' own console programs, on the built-in list, with the
+    /// publisher read from this PC (their signature is in Windows' catalogs, not inside the file).
+    #[test]
+    fn windows_own_cmd_and_powershell_are_terminals_by_their_real_signature() {
+        let root = std::env::var("SystemRoot").unwrap_or_else(|_| r"C:\Windows".to_string());
+        for exe in [r"System32\cmd.exe", r"System32\WindowsPowerShell\v1.0\powershell.exe"] {
+            let path = std::path::Path::new(&root).join(exe).to_string_lossy().into_owned();
+            if !std::path::Path::new(&path).exists() {
+                continue;
+            }
+            let w = Window {
+                class: "ConsoleWindowClass",
+                owner_exe: &path,
+                package_family: None,
+            };
+            let mut signer = || crate::program::signer(&path);
+            assert_eq!(
+                find(&w, &built_in_terminals(), Some(r"C:\...\chrome.exe"), &mut signer),
+                Some("terminal"),
+                "{exe}"
+            );
+        }
+    }
+
     #[test]
     fn a_terminal_stays_quiet_when_the_clipboard_owner_is_a_code_editor() {
         let w = terminal_window(r"C:\Windows\System32\cmd.exe", None);

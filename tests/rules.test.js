@@ -780,6 +780,17 @@ test("release notes keep UTF-8 text intact", () => {
   const files = [path.join(EXT, "changelog.json")];
   const extraFiles = process.env.CLOTR_ENCODING_CHECK_PATHS?.split(path.delimiter).filter(Boolean) || [];
   files.push(...extraFiles);
+  const storeCopy = process.env.CLOTR_STORE_COPY_DIR;
+  if (storeCopy && fs.existsSync(storeCopy)) {
+    const visit = (dir) => {
+      for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+        const file = path.join(dir, entry.name);
+        if (entry.isDirectory()) visit(file);
+        else if (entry.isFile()) files.push(file);
+      }
+    };
+    visit(storeCopy);
+  }
   const damagedText = /\p{L}\?\p{L}|\uFFFD|â€|Ã/u;
   for (const sample of ["a?b", `a\uFFFDb`, "â€", "Ã"]) {
     assert.match(sample, damagedText, `the damaged-text check misses ${sample}`);

@@ -12,6 +12,7 @@ import com.intellij.openapi.project.ProjectManager
 import com.intellij.openapi.ui.TextFieldWithBrowseButton
 import com.intellij.openapi.util.Disposer
 import com.intellij.ui.components.JBCheckBox
+import com.intellij.ui.components.JBScrollPane
 import com.intellij.ui.components.JBTextArea
 import com.intellij.util.xmlb.XmlSerializerUtil
 import java.awt.BorderLayout
@@ -73,12 +74,15 @@ class ClotrSettingsConfigurable : Configurable {
         fields.add(personalDetails)
         fields.add(JLabel(ClotrBundle.message("settings.minimum")))
         fields.add(severity)
-        fields.add(JLabel(ClotrBundle.message("settings.skip")))
         fields.add(JLabel(ClotrBundle.message("settings.guardPath")))
         fields.add(guardPath)
         addGuardSettingsButton(fields)
+        // The skip label sits right above its list, which scrolls once it's longer than the box.
+        val skip = JPanel(BorderLayout(0, 4))
+        skip.add(JLabel(ClotrBundle.message("settings.skip")).apply { labelFor = skipList }, BorderLayout.NORTH)
+        skip.add(JBScrollPane(skipList), BorderLayout.CENTER)
         content.add(fields, BorderLayout.NORTH)
-        content.add(skipList, BorderLayout.CENTER)
+        content.add(skip, BorderLayout.CENTER)
         panel = content
         return content
     }

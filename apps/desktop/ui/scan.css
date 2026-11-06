@@ -1,85 +1,44 @@
-/* Clotr for Windows' Scan screen: the growing web (trace.js draws it: each folder a node joined to its parent that
-   grows as it's read and takes a colour once done, the card for the file being read beside its folder, one row of
-   kept finds and the count of the rest), the steps, the feed and the Quick scan / Folders I choose picker. scan.js
-   draws every number and word; this only holds the look. A find also reads from a shape (a red dot, an amber
-   triangle) and a word as well as its colour. Under reduced
-   motion (Windows' Animation effects off, or Settings > Motion > Still) nothing moves and every state still
-   shows. */
-
-/* The map's own colours on top of the theme's: Ember (the default, dark), then Light, then Plum. */
+/* The trace map uses status colors for its marks and words for their meaning. */
 :root {
-  --tm-well: #2f2339;
-  --tm-grid: rgba(255, 255, 255, 0.075);
-  --tm-ghost: rgba(255, 255, 255, 0.1);
-  --tm-pulse: #ff8a3d;
-  --tm-pulse-wash: rgba(255, 138, 61, 0.16);
-  --tm-pulse-text: #ff9a60;
-  --tm-warn: #f4c25c;
-  --tm-warn-fill: #f4c25c;
-  --tm-warn-wash: #463822;
-  --tm-on-warn: #2b1a00;
-  --tm-on-good: #14261b;
-  --tm-err-wash: #4a2a2c;
-  --tm-good-wash: var(--good-wash);
-  --tm-g1: #ff9550;
-  --tm-g2: #9b6bd0;
-  --tm-pop: cubic-bezier(0.34, 1.56, 0.64, 1);
-  --tm-ease: cubic-bezier(0.22, 0.9, 0.26, 1);
-}
-@media (prefers-color-scheme: light) {
-  :root:not([data-theme="dark"]):not([data-theme="plum"]):not([data-theme="ember"]) {
-    --tm-well: #f4ebe1;
-    --tm-grid: rgba(120, 60, 20, 0.14);
-    --tm-ghost: rgba(43, 31, 23, 0.12);
-    --tm-pulse: #f2701f;
-    --tm-pulse-wash: rgba(242, 112, 31, 0.14);
-    --tm-pulse-text: #9c3f08;
-    --tm-warn: #7a4e00;
-    --tm-warn-fill: #e3a41f;
-    --tm-warn-wash: #f6e4bf;
-    --tm-on-warn: #2b1a00;
-    --tm-on-good: #ffffff;
-    --tm-err-wash: #f3d9d4;
-    --tm-good-wash: #e8f1e8;
-    --tm-g1: #ff9550;
-    --tm-g2: #b8551a;
-  }
-}
-:root[data-theme="light"] {
-  --tm-well: #f4ebe1;
-  --tm-grid: rgba(120, 60, 20, 0.14);
-  --tm-ghost: rgba(43, 31, 23, 0.12);
-  --tm-pulse: #f2701f;
-  --tm-pulse-wash: rgba(242, 112, 31, 0.14);
-  --tm-pulse-text: #9c3f08;
-  --tm-warn: #7a4e00;
-  --tm-warn-fill: #e3a41f;
-  --tm-warn-wash: #f6e4bf;
-  --tm-on-warn: #2b1a00;
-  --tm-on-good: #ffffff;
-  --tm-err-wash: #f3d9d4;
-  --tm-good-wash: #e8f1e8;
-  --tm-g1: #ff9550;
-  --tm-g2: #b8551a;
-}
-:root[data-theme="plum"] {
-  --tm-well: #f5f3f7;
-  --tm-grid: rgba(91, 58, 99, 0.14);
-  --tm-ghost: rgba(31, 34, 38, 0.13);
-  --tm-pulse: #ff7a2a;
-  --tm-pulse-wash: rgba(255, 122, 42, 0.13);
-  --tm-pulse-text: #b84a0c;
+  --tm-well: #f3f4f5;
+  --tm-grid: rgba(94, 102, 112, 0.24);
+  --tm-ghost: rgba(31, 34, 38, 0.12);
+  --tm-pulse: #5b3a63;
+  --tm-pulse-wash: #ece4ee;
+  --tm-pulse-text: #5b3a63;
   --tm-warn: #8a5800;
   --tm-warn-fill: #e3a41f;
   --tm-warn-wash: #fbf0d8;
   --tm-on-warn: #2b1a00;
   --tm-on-good: #ffffff;
   --tm-err-wash: #f6e1e2;
-  --tm-good-wash: var(--good-wash);
-  --tm-g1: #ff9550;
+  --tm-good-wash: #e1efe5;
+  --tm-g1: #5b3a63;
   --tm-g2: #5b3a63;
+  --tm-pop: cubic-bezier(0.34, 1.56, 0.64, 1);
+  --tm-ease: cubic-bezier(0.22, 0.9, 0.26, 1);
 }
-:root[data-theme="ember"] {
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme]) {
+    --tm-well: #2f2339;
+    --tm-grid: rgba(255, 255, 255, 0.075);
+    --tm-ghost: rgba(255, 255, 255, 0.1);
+    --tm-pulse: #ff8a3d;
+    --tm-pulse-wash: rgba(255, 138, 61, 0.16);
+    --tm-pulse-text: #ff9a60;
+    --tm-warn: #f4c25c;
+    --tm-warn-fill: #f4c25c;
+    --tm-warn-wash: #463822;
+    --tm-on-warn: #2b1a00;
+    --tm-on-good: #14261b;
+    --tm-err-wash: #4a2a2c;
+    --tm-good-wash: #23402f;
+    --tm-g1: #ff9550;
+    --tm-g2: #9b6bd0;
+  }
+}
+:root[data-theme="ember"],
+:root[data-theme="dark"] {
   --tm-well: #2f2339;
   --tm-grid: rgba(255, 255, 255, 0.075);
   --tm-ghost: rgba(255, 255, 255, 0.1);
@@ -92,11 +51,10 @@
   --tm-on-warn: #2b1a00;
   --tm-on-good: #14261b;
   --tm-err-wash: #4a2a2c;
-  --tm-good-wash: var(--good-wash);
+  --tm-good-wash: #23402f;
   --tm-g1: #ff9550;
   --tm-g2: #9b6bd0;
 }
-
 .scan-layout {
   display: grid;
   grid-template-columns: minmax(0, 1fr);

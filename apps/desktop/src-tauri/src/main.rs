@@ -87,7 +87,8 @@ pub struct Clotr {
     /// weekly_check_done and carried over a restart through the store's own lastWeeklyFind.
     worth_a_look: AtomicBool,
     /// When a timed pause (the tray flyout's "Pause for an hour") ends, in milliseconds since the epoch; None
-    /// for an indefinite pause or no pause at all. Never written to disk: it starts over on a restart.
+    /// for an indefinite pause or no pause at all. Saved with the pause (the store's pausedUntil), so a restart
+    /// within the hour picks it up again.
     paused_until: Mutex<Option<i64>>,
     /// The flyout's own real size, reported by flyout.js once its page has laid out; FLYOUT_GUESS until then.
     /// Used to place it (flyout_position) the same way on every open, not just the first.
@@ -190,6 +191,16 @@ fn card_idle_destroy() -> std::time::Duration {
     std::time::Duration::from_secs(600)
 }
 
+/// Whether the idle watchdog may close the card's window: nothing has needed it for `idle`, and the brain holds no
+/// card -- not one on screen, and not one stepped aside until its app comes back, whose warning lives in this page.
+fn card_idle_close_due(
+    last_needed: Option<std::time::Instant>,
+    idle: std::time::Duration,
+    brain: &brain::Brain,
+) -> bool {
+    last_needed.is_some_and(|t| t.elapsed() >= idle) && brain.card.is_none()
+}
+
 /// The card's window, made when the first AI app comes to the front (the web view starts then) and kept, until
 /// the idle watchdog destroys a long-unneeded one and the next AI app in front builds it fresh again here, the
 /// same way the very first one did. Windows are made on the main thread, so a call from elsewhere waits for it
@@ -285,32 +296,28 @@ fn hide_card(app: &AppHandle) {
     watch::follow_window(0);
 }
 
+/// A check for the card's page: sent now once the page has said hello (card_hello), kept for its hello until then.
+/// Decided under `pending`'s lock, the one card_hello sets card_ready and takes `pending` under, so a check can't
+/// be kept just after hello took what was waiting and then never be collected.
+fn ask_card(app: &AppHandle, c: &Arc<Clotr>, event: &str, ask: Value) {
+    let built = card_window(app, c);
+    let mut pending = lock(&c.pending);
+    if built && c.card_ready.load(Ordering::SeqCst) {
+        let _ = app.emit_to("card", event, ask);
+    } else {
+        *pending = Some(ask);
+    }
+}
+
 fn act(app: &AppHandle, c: &Arc<Clotr>, todo: Vec<brain::Do>) {
     for d in todo {
         match d {
-            brain::Do::Check { seq, app: id } => {
-                let ask = json!({ "seq": seq, "app": id });
-                if card_window(app, c) && c.card_ready.load(Ordering::SeqCst) {
-                    let _ = app.emit_to("card", "clip", ask);
-                } else {
-                    *lock(&c.pending) = Some(ask);
-                }
-            }
+            brain::Do::Check { seq, app: id } => ask_card(app, c, "clip", json!({ "seq": seq, "app": id })),
             brain::Do::CheckSurface { seq, kind } => {
-                let ask = json!({ "seq": seq, "surface": kind });
-                if card_window(app, c) && c.card_ready.load(Ordering::SeqCst) {
-                    let _ = app.emit_to("card", "clip", ask);
-                } else {
-                    *lock(&c.pending) = Some(ask);
-                }
+                ask_card(app, c, "clip", json!({ "seq": seq, "surface": kind }))
             }
             brain::Do::CheckTyped { seq, app: id } => {
-                let ask = json!({ "seq": seq, "app": id, "typed": true });
-                if card_window(app, c) && c.card_ready.load(Ordering::SeqCst) {
-                    let _ = app.emit_to("card", "typed", ask);
-                } else {
-                    *lock(&c.pending) = Some(ask);
-                }
+                ask_card(app, c, "typed", json!({ "seq": seq, "app": id, "typed": true }))
             }
             brain::Do::TypingOn { hwnd } => typing::watch(program::real_owner(card::hwnd(hwnd)), hwnd),
             brain::Do::TypingOff => {
@@ -603,7 +610,13 @@ fn only(window: &WebviewWindow, label: &str) -> Result<(), String> {
 #[tauri::command]
 async fn card_hello(window: WebviewWindow, c: State<'_, Arc<Clotr>>) -> Result<Value, String> {
     only(&window, "card")?;
-    c.card_ready.store(true, Ordering::SeqCst);
+    // Ready and what was kept waiting, together under `pending`'s lock (ask_card's own): from here on checks are
+    // sent straight to the page, which card.js already listens for before it says hello.
+    let pending = {
+        let mut pending = lock(&c.pending);
+        c.card_ready.store(true, Ordering::SeqCst);
+        pending.take()
+    };
     let settings = lock(&c.store).settings();
     // Settings' Language when one was picked; the system's own as well, so the card can follow a later change of
     // Language from the "settings" event alone.
@@ -611,7 +624,7 @@ async fn card_hello(window: WebviewWindow, c: State<'_, Arc<Clotr>>) -> Result<V
         "settings": settings,
         "locale": c.locale_now(),
         "systemLocale": c.locale,
-        "pending": lock(&c.pending).take(),
+        "pending": pending,
     }))
 }
 
@@ -1035,16 +1048,24 @@ fn now_ms() -> i64 {
         .as_millis() as i64
 }
 
-/// A timed pause lifts itself once its hour is up, the moment anything next asks Clotr for its state (the one-shot
-/// timer in pause_for_hour does the same the moment it wakes; this is the fallback if the PC was asleep).
-fn expire_pause(c: &Clotr) {
-    let due = {
-        let until = lock(&c.paused_until);
-        matches!(*until, Some(ms) if now_ms() >= ms)
-    };
-    if due {
-        *lock(&c.paused_until) = None;
-        let _ = lock(&c.store).set_paused_all(false);
+/// A timed pause's deadline, taken once its hour is up: true for exactly one caller, which then lifts the pause in
+/// the store, the brain and the tray together (set_paused_all_and_notify), never in the store alone.
+fn take_expired_pause(paused_until: &Mutex<Option<i64>>, now: i64) -> bool {
+    let mut until = lock(paused_until);
+    if matches!(*until, Some(ms) if now >= ms) {
+        *until = None;
+        true
+    } else {
+        false
+    }
+}
+
+/// A timed pause lifts itself once its hour is up, the moment Home or the flyout next asks Clotr for its state (the
+/// one-shot timer in pause_for_hour does the same the moment it wakes; this is the fallback if the PC was asleep).
+/// Lifted the way the timer lifts it, so the brain checks again and the tray says so, not just the saved flag.
+fn expire_pause(app: &AppHandle, c: &Clotr) {
+    if take_expired_pause(&c.paused_until, now_ms()) {
+        set_paused_all_and_notify(app, false);
     }
 }
 
@@ -1111,7 +1132,6 @@ fn windows_version_string() -> String {
 }
 
 fn settings_view(c: &Clotr) -> Value {
-    expire_pause(c);
     let store = lock(&c.store);
     let covered: Vec<&str> = c.covered_apps(&store).iter().map(|a| a.id.as_str()).collect();
     // Every app on the list, each marked covered or not, so Protection can say "Not installed" for the rest.
@@ -1148,6 +1168,7 @@ fn settings_view(c: &Clotr) -> Value {
 #[tauri::command]
 async fn settings_hello(window: WebviewWindow, c: State<'_, Arc<Clotr>>) -> Result<Value, String> {
     only(&window, "main")?;
+    expire_pause(window.app_handle(), &c);
     Ok(settings_view(&c))
 }
 
@@ -1183,7 +1204,7 @@ async fn one_clotr_disconnect(window: WebviewWindow) -> Result<Value, String> {
 #[tauri::command]
 async fn flyout_hello(window: WebviewWindow, c: State<'_, Arc<Clotr>>) -> Result<Value, String> {
     only(&window, "flyout")?;
-    expire_pause(&c);
+    expire_pause(window.app_handle(), &c);
     let store = lock(&c.store);
     let paused = store.paused_all();
     let covered = c.covered_apps(&store);
@@ -2145,6 +2166,7 @@ fn main_size(room: (f64, f64)) -> (f64, f64) {
 /// listens on for its own navigation.
 fn open_main_to(app: &AppHandle, screen: &str) {
     if let Some(w) = app.get_webview_window("main") {
+        dress_main(app, &w);
         let _ = w.unminimize();
         let _ = w.show();
         let _ = w.set_focus();
@@ -2153,15 +2175,7 @@ fn open_main_to(app: &AppHandle, screen: &str) {
         return;
     }
     let c = app.state::<Arc<Clotr>>().inner().clone();
-    let size = app
-        .primary_monitor()
-        .ok()
-        .flatten()
-        .map(|m| {
-            let (area, scale) = (m.work_area(), m.scale_factor());
-            main_size((area.size.width as f64 / scale, area.size.height as f64 / scale))
-        })
-        .unwrap_or(MAIN_SIZE);
+    let size = main_size_here(app);
     let page = format!("main.html#{screen}");
     let built = webview::window(app, &c.webview_dir, &c.browser_args, &c.locale, "main", &page).map(|b| {
         b.title("Clotr")
@@ -2171,27 +2185,61 @@ fn open_main_to(app: &AppHandle, screen: &str) {
             .build()
     });
     if let Some(Ok(w)) = &built {
-        // Minimizing fires a Resized(0, 0) on Windows before anything else notices; is_minimized() confirms it
-        // rather than trusting the size alone, so a plain small resize never gets mistaken for one.
-        let handle = app.clone();
-        w.on_window_event(move |event| {
-            if matches!(event, tauri::WindowEvent::Resized(_)) {
-                if let Some(w) = handle.get_webview_window("main") {
-                    set_visible(&handle, "main", !w.is_minimized().unwrap_or(false));
-                }
-            }
-            if matches!(event, tauri::WindowEvent::CloseRequested { .. }) {
-                let visible = handle
-                    .get_webview_window("main")
-                    .and_then(|w| w.is_visible().ok())
-                    .unwrap_or(false);
-                first_close_toast(&handle, visible);
-            }
-        });
+        watch_main(app, w);
     }
     if !matches!(built, Some(Ok(_))) {
         eprintln!("{LOG} the main window couldn't open");
     }
+}
+
+/// The main window's size for the primary monitor's work area (main_size).
+fn main_size_here(app: &AppHandle) -> (f64, f64) {
+    app.primary_monitor()
+        .ok()
+        .flatten()
+        .map(|m| {
+            let (area, scale) = (m.work_area(), m.scale_factor());
+            main_size((area.size.width as f64 / scale, area.size.height as f64 / scale))
+        })
+        .unwrap_or(MAIN_SIZE)
+}
+
+/// Updates visibility on minimize and checks for the close toast when the main window closes.
+fn watch_main(app: &AppHandle, w: &WebviewWindow) {
+    // Minimizing fires a Resized(0, 0) on Windows before anything else notices; is_minimized() confirms it
+    // rather than trusting the size alone, so a plain small resize never gets mistaken for one.
+    let handle = app.clone();
+    w.on_window_event(move |event| {
+        if matches!(event, tauri::WindowEvent::Resized(_)) {
+            if let Some(w) = handle.get_webview_window("main") {
+                set_visible(&handle, "main", !w.is_minimized().unwrap_or(false));
+            }
+        }
+        if matches!(event, tauri::WindowEvent::CloseRequested { .. }) {
+            let visible = handle
+                .get_webview_window("main")
+                .and_then(|w| w.is_visible().ok())
+                .unwrap_or(false);
+            first_close_toast(&handle, visible);
+        }
+    });
+}
+
+/// The weekly check's hidden window (start_weekly_check), about to be seen: given everything a main window
+/// open_main_to builds has -- title bar and close button, a taskbar button, its size, centred, and its minimize and
+/// close handling. A window that already has its title bar is a real main window and is left as it is.
+fn dress_main(app: &AppHandle, w: &WebviewWindow) {
+    if w.is_decorated().unwrap_or(true) {
+        return;
+    }
+    let size = main_size_here(app);
+    let _ = w.set_title("Clotr");
+    let _ = w.set_decorations(true);
+    let _ = w.set_skip_taskbar(false);
+    let _ = w.set_min_size(Some(tauri::LogicalSize::new(MAIN_MIN.0, MAIN_MIN.1)));
+    let _ = w.set_size(tauri::LogicalSize::new(size.0, size.1));
+    let _ = w.center();
+    watch_main(app, w);
 }
 
 fn open_main(app: &AppHandle) {
@@ -2348,6 +2396,7 @@ async fn weekly_check_done(window: WebviewWindow, c: State<'_, Arc<Clotr>>, file
         // (nothing new, the usual path below), show it, land it on Results, and let scan.js mark the new ones --
         // it already has every file's own kinds in memory, this command only ever sees an index and a path.
         let _ = window.emit("go", "results");
+        dress_main(window.app_handle(), &window);
         let _ = window.show();
         let _ = window.set_focus();
     } else if !window.is_visible().unwrap_or(true) {
@@ -2435,9 +2484,19 @@ fn pause_for_hour(app: &AppHandle, c: &Arc<Clotr>) {
     set_paused_all(app, true);
     let until = now_ms() + PAUSE_HOUR_MS;
     *lock(&c.paused_until) = Some(until);
+    // Saved with the pause, so a restart within the hour still ends it on time (store.rs ends one already past).
+    if lock(&c.store).set_paused_until(until).is_err() {
+        eprintln!("{LOG} couldn't save when the pause ends");
+    }
+    lift_pause_at(app, c, until);
+}
+
+/// The one-shot timer that lifts a timed pause at `until`: started by pause_for_hour, and at start-up for a timed
+/// pause a restart left with time still to run.
+fn lift_pause_at(app: &AppHandle, c: &Arc<Clotr>, until: i64) {
     let (app, c) = (app.clone(), c.clone());
     tauri::async_runtime::spawn_blocking(move || {
-        std::thread::sleep(std::time::Duration::from_millis(PAUSE_HOUR_MS as u64));
+        std::thread::sleep(std::time::Duration::from_millis((until - now_ms()).max(0) as u64));
         if *lock(&c.paused_until) == Some(until) {
             *lock(&c.paused_until) = None;
             set_paused_all_and_notify(&app, false);
@@ -2779,6 +2838,8 @@ fn main() {
         }
     }
     let apps = apps::built_in();
+    // A timed pause from before a restart, still running (Store::open already ended one whose hour passed).
+    let paused_until = store.paused_until();
     let brain = brain::Brain {
         paused: store.paused_all(),
         paused_apps: apps
@@ -2808,7 +2869,7 @@ fn main() {
         move_dest: Mutex::new(None),
         running: AtomicBool::new(running),
         worth_a_look: AtomicBool::new(worth_a_look),
-        paused_until: Mutex::new(None),
+        paused_until: Mutex::new(paused_until),
         flyout_size: Mutex::new(FLYOUT_GUESS),
         flyout_rect: Mutex::new(None),
         tray_items: Mutex::new(None),
@@ -2856,6 +2917,9 @@ fn main() {
                     })?;
             }
             tray(&handle, &shared)?;
+            if let Some(until) = paused_until {
+                lift_pause_at(&handle, &shared, until);
+            }
             // A person launching Clotr (its shortcut, or a taskbar pin) sees the main window open, the same
             // as any other app; only the weekly check's own hidden window (start_weekly_check) and the
             // automated test harness below stay in the tray on purpose, and so does a start at sign-in, which
@@ -2865,7 +2929,9 @@ fn main() {
                 open_main(&handle);
             }
             #[cfg(feature = "dk-test-app")]
-            if std::env::var_os("CLOTR_OPEN_MAIN").is_some() {
+            if std::env::var_os("CLOTR_OPEN_SCAN").is_some() {
+                open_main_to(&handle, "scan");
+            } else if std::env::var_os("CLOTR_OPEN_MAIN").is_some() {
                 open_main(&handle);
             }
             // Testing only, for the idle-memory check (tests/cpu.rs): opens the main window the same way a
@@ -2990,21 +3056,24 @@ fn main() {
                 })?;
             // The card's own idle watchdog: gives its hidden window's memory back once nothing has needed it
             // for CARD_IDLE_DESTROY, rebuilt fresh (card_window, the same path the very first AI app in front
-            // ever used) the next time something does. Never while it's actually on screen.
+            // ever used) the next time something does. Never while a card is on screen or stepped aside for its app.
             let (card_idle_handle, card_idle_c) = (handle.clone(), shared.clone());
             std::thread::Builder::new()
                 .name("clotr-card-idle".into())
                 .spawn(move || loop {
                     std::thread::sleep(std::time::Duration::from_secs(60).min(card_idle_destroy()));
-                    let idle_long_enough =
-                        lock(&card_idle_c.card_last_needed).is_some_and(|t| t.elapsed() >= card_idle_destroy());
-                    let showing = lock(&card_idle_c.brain).showing().is_some();
-                    if idle_long_enough && !showing {
+                    let last_needed = *lock(&card_idle_c.card_last_needed);
+                    let due = card_idle_close_due(last_needed, card_idle_destroy(), &lock(&card_idle_c.brain));
+                    if due {
                         if let Some(w) = card_idle_handle.get_webview_window("card") {
                             card_idle_c.card_ready.store(false, Ordering::SeqCst);
                             let _ = w.close();
                         }
-                        *lock(&card_idle_c.card_last_needed) = None;
+                        // Only the moment this decision read: one written since (card_window) still counts.
+                        let mut needed = lock(&card_idle_c.card_last_needed);
+                        if *needed == last_needed {
+                            *needed = None;
+                        }
                     }
                 })?;
             // The typing check's own thread: idle until the brain names an AI app in front.
@@ -3021,11 +3090,16 @@ fn main() {
         })
         .build(context);
     match app {
-        Ok(app) => app.run(|_, event| {
+        Ok(app) => app.run(|app, event| match event {
+            // No card, main or flyout is left to use WebView2: drop its environment so the browser process can exit.
+            // A new window makes another environment through webview::window when Clotr needs one again.
+            RunEvent::WindowEvent {
+                event: tauri::WindowEvent::Destroyed,
+                ..
+            } if app.webview_windows().is_empty() => webview::release_environment(),
             // Closing a window never quits Clotr: it keeps watching from the tray until "Quit Clotr".
-            if let RunEvent::ExitRequested { api, code: None, .. } = event {
-                api.prevent_exit();
-            }
+            RunEvent::ExitRequested { api, code: None, .. } => api.prevent_exit(),
+            _ => {}
         }),
         Err(_) => eprintln!("{LOG} couldn't start"),
     }
@@ -3254,6 +3328,50 @@ mod tests {
         assert!(!weekly_check_due(last + WEEK_MS - 1, Some(last)));
         assert!(weekly_check_due(last + WEEK_MS, Some(last)));
         assert!(weekly_check_due(last + WEEK_MS * 3, Some(last)));
+    }
+
+    /// A timed pause past its hour is handed over exactly once, so the one caller that takes it lifts the pause in
+    /// the store, the brain and the tray together. It used to clear only the store's flag, leaving the brain paused
+    /// while Home and the flyout said Clotr was on.
+    #[test]
+    fn a_timed_pause_past_its_hour_is_handed_over_once_to_be_lifted_everywhere() {
+        let until = Mutex::new(Some(1_000));
+        assert!(!take_expired_pause(&until, 999), "not before its hour");
+        assert_eq!(*lock(&until), Some(1_000));
+        assert!(take_expired_pause(&until, 1_000));
+        assert_eq!(*lock(&until), None);
+        assert!(!take_expired_pause(&until, 2_000), "once only");
+        assert!(
+            !take_expired_pause(&Mutex::new(None), 2_000),
+            "an indefinite pause never lifts itself"
+        );
+    }
+
+    /// The idle watchdog never closes the card's window while the brain still holds a card, on screen or stepped
+    /// aside until its app comes back: closing it then lost the warning and later showed an empty window.
+    #[test]
+    fn the_idle_card_window_is_kept_while_a_stepped_aside_card_waits_for_its_app() {
+        let idle = std::time::Duration::from_secs(600);
+        let long_ago = std::time::Instant::now().checked_sub(std::time::Duration::from_secs(660));
+        let claude = || {
+            brain::Front::Ai(brain::FrontApp {
+                hwnd: 7,
+                id: "claude".into(),
+            })
+        };
+        let mut b = brain::Brain::default();
+        b.on_front(claude(), 3);
+        b.ready(3, 3, None);
+        b.on_front(brain::Front::Other, 3);
+        assert_eq!(b.showing(), None, "stepped aside: not on screen");
+        assert!(!card_idle_close_due(long_ago, idle, &b), "but still waiting for its app");
+        assert!(b.done(3));
+        assert!(card_idle_close_due(long_ago, idle, &b), "nothing held: its memory goes back");
+        assert!(
+            !card_idle_close_due(Some(std::time::Instant::now()), idle, &b),
+            "needed a moment ago"
+        );
+        assert!(!card_idle_close_due(None, idle, &b), "never built");
     }
 
     #[test]

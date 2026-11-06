@@ -275,9 +275,84 @@ test("MCP stdio initializes with the legacy handshake and lists its three tools"
   assert.equal(replies[1].result.tools[0].inputSchema.additionalProperties, false);
 });
 
+// What the assistant reads before it calls anything: when to call each tool, and what comes back.
+test("initialize and server/discover give the same short instructions, naming each tool", () => {
+  const [legacy] = runStdio([request("initialize", { protocolVersion: "2024-11-05", capabilities: {} })]);
+  const [modern] = runStdio([modernRequest("server/discover", {}, 1)]);
+  const instructions = legacy.result.instructions;
+  assert.equal(typeof instructions, "string");
+  assert.equal(modern.result.instructions, instructions);
+  for (const name of ["check_text", "clean_text", "is_secret_file"]) assert.match(instructions, new RegExp(name));
+  assert.match(instructions, /on this computer/);
+  assert.match(instructions, /masked/);
+  assert.match(instructions, /never the full value/);
+  assert.ok(instructions.length <= 400, `the instructions are ${instructions.length} characters`);
+  // No promise the server can't keep: it checks only when called, and it stops nothing on its own.
+  assert.doesNotMatch(instructions, /\b(always|guarantee|protects?|blocks?|prevents?|all secrets)\b/i);
+});
+
+test("every tool input says what it is", () => {
+  const [, listed] = runStdio([
+    request("initialize", { protocolVersion: "2025-11-25", capabilities: {} }),
+    request("tools/list", {}, 2),
+  ]);
+  for (const tool of listed.result.tools) {
+    for (const [name, property] of Object.entries(tool.inputSchema.properties)) {
+      assert.equal(typeof property.description, "string", `${tool.name}.${name} has no description`);
+      assert.ok(property.description.length >= 10, `${tool.name}.${name}'s description is too short`);
+    }
+  }
+  const byName = Object.fromEntries(listed.result.tools.map((tool) => [tool.name, tool]));
+  assert.match(byName.check_text.inputSchema.properties.text.description, /64 KiB/);
+  assert.match(byName.clean_text.inputSchema.properties.text.description, /64 KiB/);
+  assert.match(byName.is_secret_file.inputSchema.properties.path.description, /isn't read/);
+  // clean_text finds what check_text finds, and its description says so.
+  assert.match(byName.clean_text.description, /check_text/);
+});
+
+// Each tool only reads what it's given and calls nothing outside this computer, and the annotations say so. MCP added
+// annotations in its second version and a tool's own title in its third, so an older client gets only what it knows.
+const ANNOTATIONS = { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false };
+test("tools carry a title and read-only annotations in each protocol version that has them", () => {
+  const listFor = (protocolVersion) =>
+    runStdio([request("initialize", { protocolVersion, capabilities: {} }), request("tools/list", {}, 2)])[1].result
+      .tools;
+  for (const tool of listFor("2024-11-05")) {
+    assert.deepEqual(Object.keys(tool).sort(), ["description", "inputSchema", "name"], tool.name);
+  }
+  for (const tool of listFor("2025-03-26")) {
+    assert.equal(tool.title, undefined, tool.name);
+    const { title, ...hints } = tool.annotations;
+    assert.equal(typeof title, "string", tool.name);
+    assert.deepEqual(hints, ANNOTATIONS, tool.name);
+  }
+  const current = runStdio([modernRequest("tools/list", {}, 1)])[0].result.tools;
+  for (const tools of [listFor("2025-06-18"), listFor("2025-11-25"), current]) {
+    for (const tool of tools) {
+      assert.equal(typeof tool.title, "string", tool.name);
+      assert.deepEqual(tool.annotations, ANNOTATIONS, tool.name);
+    }
+  }
+  assert.deepEqual(
+    current.map((tool) => tool.title),
+    ["Check text", "Clean text", "Check a file path"],
+  );
+});
+
+// Glama builds the server from this file. It installs the published package by version, so a version bump that
+// left it behind would build last release's server.
+test("the Dockerfile installs the Guard version in package.json", () => {
+  const dockerfile = fs.readFileSync(path.join(__dirname, "..", "apps", "guard", "Dockerfile"), "utf8");
+  assert.match(dockerfile, /^FROM node:22-slim$/m);
+  const installs = [...dockerfile.matchAll(/npm install -g clotr-guard@(\S+)/g)].map((match) => match[1]);
+  assert.deepEqual(installs, [guardPackage.version]);
+  assert.match(dockerfile, /^CMD \["clotr-mcp"\]$/m);
+});
+
 // An assistant is sent the whole tool list with every request, so its size is paid in tokens each time. Trimmed, it
-// came to 952 characters, about 240 tokens at four characters a token, and the budget is that plus 10%.
-const TOOL_LIST_BUDGET = 1048;
+// came to 952 characters. Input descriptions, titles and annotations brought it to 1,679, about 420
+// tokens at four characters a token, and the budget is that plus 10%.
+const TOOL_LIST_BUDGET = 1847;
 
 test("the MCP tool list stays within its token budget", () => {
   const [, listed] = runStdio([
@@ -355,10 +430,10 @@ test("MCP reports a JWT once when two engine findings share its range", () => {
   assert.equal(result.findings.length, 1);
 });
 
-test("the Guard package and MCP command use version 0.1.1", () => {
+test("the Guard package and MCP command use version 0.1.2", () => {
   assert.equal(guardPackage.private, true);
   assert.equal(guardPackage.bin["clotr-mcp"], "bin/clotr-mcp.js");
-  assert.equal(guardPackage.version, "0.1.1");
+  assert.equal(guardPackage.version, "0.1.2");
   assert.ok(guardPackage.files.includes("bin"));
   assert.ok(guardPackage.files.includes("lib"));
   assert.ok(guardPackage.files.includes("dist"));
@@ -379,6 +454,14 @@ test("clean_text uses engine placeholders and returns only masked replacement de
   assert.ok(result.replaced.every((finding) => Object.keys(finding).sort().join(",") === "kind,masked"));
   assert.doesNotMatch(JSON.stringify(response), new RegExp(KEY));
   assert.doesNotMatch(JSON.stringify(response), new RegExp(EMAIL));
+});
+
+test("clean_text hides a short value's URL-encoded copy in a link next to its plain copy", () => {
+  const cleaned = cleanResult("SSN 219-09-9999. https://forms.example.com/a?note=ssn%20219-09-9999", true);
+  assert.equal(
+    cleaned.text,
+    "SSN [REDACTED US SOCIAL SECURITY NUMBER]. https://forms.example.com/a?note=ssn%20[REDACTED US SOCIAL SECURITY NUMBER]",
+  );
 });
 
 test("MCP ignores project suppression files and always cleans findings", () => {
@@ -495,4 +578,64 @@ test("print-config refuses an npx cache path and names the global install, as ho
   assert.deepEqual(installed.stderr.lines, []);
   const config = JSON.parse(installed.stdout.lines.join(""));
   assert.deepEqual(config.mcpServers.clotr.args, [path.join(scriptPath, "clotr-mcp.js")]);
+});
+
+test("check_text and clean_text say when the engine ran out of time on part of the text", () => {
+  assert.equal(callTool("check_text", { text: "nothing to see here" }).truncated, undefined);
+  // A pattern that pretends to take longer than the engine's whole time limit, on a fake clock in Guard's engine.
+  const realm = require("node:vm").runInContext("globalThis", require("../apps/guard/lib/engine.js").engineContext());
+  const { Clotr, Date: RealmDate } = realm;
+  const realNow = RealmDate.now;
+  let now = realNow();
+  RealmDate.now = () => now;
+  const slow = {
+    id: "test_stalled",
+    severity: "low",
+    name: "stalled",
+    find: () => ((now += Clotr.DETECT_BACKSTOP_MS + 200), []),
+  };
+  Clotr.PATTERNS.push(slow);
+  let checked;
+  let cleaned;
+  try {
+    checked = callTool("check_text", { text: "a message the engine runs out of time on" });
+    cleaned = callTool("clean_text", { text: "another message the engine runs out of time on" });
+  } finally {
+    RealmDate.now = realNow;
+    Clotr.PATTERNS.splice(Clotr.PATTERNS.indexOf(slow), 1);
+  }
+  assert.equal(checked.truncated, true);
+  assert.match(checked.verdict, /part of this text wasn't checked/i);
+  assert.equal(cleaned.truncated, true);
+});
+
+// Two scans the time limit cuts short can stop at different points. The first one here stops after every rule has
+// run and the next stops before any, so clean_text must hide what its own list names from that one scan, not from
+// a second one that found less.
+test("clean_text hides every value it lists as replaced when the scan is cut short at a different point each time", () => {
+  const realm = require("node:vm").runInContext("globalThis", require("../apps/guard/lib/engine.js").engineContext());
+  const { Clotr, Date: RealmDate } = realm;
+  const realNow = RealmDate.now;
+  let now = realNow();
+  RealmDate.now = () => now;
+  let scans = 0;
+  const stall = () => (now += Clotr.DETECT_BACKSTOP_MS + 200);
+  const head = { id: "test_stall_head", severity: "low", name: "stall", find: () => (++scans > 1 && stall(), []) };
+  const tail = { id: "test_stall_tail", severity: "low", name: "stall", find: () => (scans === 1 && stall(), []) };
+  Clotr.PATTERNS.unshift(head);
+  Clotr.PATTERNS.push(tail);
+  let cleaned;
+  try {
+    cleaned = callTool("clean_text", { text: `deploy with ${KEY} today` });
+  } finally {
+    RealmDate.now = realNow;
+    Clotr.PATTERNS.splice(Clotr.PATTERNS.indexOf(head), 1);
+    Clotr.PATTERNS.splice(Clotr.PATTERNS.indexOf(tail), 1);
+  }
+  assert.equal(cleaned.truncated, true);
+  assert.ok(
+    cleaned.replaced.some((item) => item.kind === "aws_access_key"),
+    JSON.stringify(cleaned.replaced),
+  );
+  assert.ok(!cleaned.text.includes(KEY), "a value listed as replaced is still in the cleaned text");
 });

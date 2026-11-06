@@ -2597,6 +2597,36 @@ module.exports = async function (env) {
   );
 
   await check(
+    "PIC20",
+    "Send pressed while a pasted picture is still held for its place: the send waits, and the picture goes with it",
+    () =>
+      withSite(ctx, "uploadNow", async (page) => {
+        await resetState(ctx, {});
+        await forgetNotes();
+        try {
+          await typeText(page, "what is in this picture");
+          await sleep(500);
+          // Clotr's read of the picture takes a moment here, as a big photo's would, so the hold is still on at the send.
+          await evalInClotr(
+            page,
+            `(() => { const read = Blob.prototype.arrayBuffer; Blob.prototype.arrayBuffer = function () { return new Promise((r) => setTimeout(r, 700)).then(() => read.call(this)); }; return true; })()`,
+          );
+          await pastePicture(page, fx.pngWithGps(fx.PLACES.eiffel), "image/png");
+          await clickSend(page);
+          const sent = await waitFor(async () => ((await sentMessages(page)).length ? sentMessages(page) : null), 4000);
+          await sleep(1500); // a picture handed back after the send would land in the box by now
+          const left = await page.$$eval("#attached li", (items) => items.map((li) => li.textContent));
+          expect(
+            sent?.length === 1 && left.length === 0,
+            `sent ${JSON.stringify(sent)}, left behind ${JSON.stringify(left)}`,
+          );
+        } finally {
+          await forgetNotes();
+        }
+      }),
+  );
+
+  await check(
     "PIC19",
     "A site that ignores the drop Clotr hands back: Clotr says so, offers the cleaned copy, and the next drop goes straight through",
     () =>

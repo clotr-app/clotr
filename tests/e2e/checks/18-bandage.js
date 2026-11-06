@@ -79,6 +79,57 @@ module.exports = async function (env) {
       }),
   );
 
+  // A saved name is found only as a whole word, so Bandage swaps it only there: never inside a longer word, and never
+  // inside a label it has just put in.
+  await check("BN2b", "Bandage swaps a saved name only as a whole word, never inside another word or a label", () =>
+    withSite(ctx, "chatgpt", async (page) => {
+      await resetState(ctx, {});
+      const words = await ctx.worker.evaluate(async () => {
+        const salt = await ensureSalt();
+        const word = (type, value) => ({
+          kind: "word",
+          type,
+          fp: globalThis.Clotr.fingerprint(salt, "watch_list", value),
+          words: 1,
+          added: Date.now(),
+        });
+        return [word("my_name", "Ann"), word("family_name", "Me")];
+      });
+      await store.set(ctx, { bandage: { "chatgpt.com": true }, vault: words });
+      await sleep(300);
+      await typeText(page, "Ann and Me met Annabelle at Mesa.");
+      const want = "[Me] and [Family 1] met Annabelle at Mesa.";
+      expect(await covered(page, want), `chat box: "${await editorText(page)}"`);
+      await resetState(ctx, {});
+    }),
+  );
+
+  // A saved format finds an ID number typed right against Japanese letters, so Bandage swaps it there and counts it.
+  await check("BN2c", "Bandage swaps an ID in a saved format typed right against Japanese text", () =>
+    withSite(ctx, "chatgpt", async (page) => {
+      await resetState(ctx, {});
+      const vault = [{ kind: "shape", type: "my_id", shape: "@@@######", added: Date.now() }];
+      await store.set(ctx, { bandage: { "chatgpt.com": true }, vault });
+      await sleep(300);
+      try {
+        await typeText(page, "社員EMP123456です");
+        const swapped = await waitFor(async () => {
+          const text = await editorText(page);
+          return /^社員\[[^\]]+\]です$/.test(text) ? text : null;
+        }, 4000);
+        expect(swapped, `chat box: "${await editorText(page)}"`);
+        expect(!(await readNotice(page)), "a warning appeared for a covered ID");
+        const counted = await waitFor(async () => {
+          const events = await store.events(ctx);
+          return events.some((e) => e.action === "redacted" && e.type === "my_id") ? true : null;
+        }, 3000);
+        expect(counted, "not counted as hidden");
+      } finally {
+        await resetState(ctx, {});
+      }
+    }),
+  );
+
   await check("BN3", "Bandage never covers passwords or keys: a key still gets its warning", () =>
     withSite(ctx, "chatgpt", async (page) => {
       await store.set(ctx, { bandage: { "chatgpt.com": true } });
@@ -694,6 +745,40 @@ module.exports = async function (env) {
         expect(!leftB, `a hotspot of the chat you left still opens: ${JSON.stringify(leftB)}`);
         const pageText = await page.evaluate(() => document.body.innerText);
         expect(!pageText.includes(PHONE) && !pageText.includes(PHONE2), "a real number is readable in the page");
+        await resetState(ctx, {});
+      }),
+  );
+
+  // Only the first send moves a new chat to its own address. Opening an older chat from the sidebar with an unsent
+  // draft on the start page is a switch, so the draft's labels stay behind and the old chat's [Phone 1] keeps its
+  // own meaning.
+  await check(
+    "BN20b",
+    "Opening an older chat from the start page without sending: its labels never take the draft's details",
+    () =>
+      withSite(ctx, "history", async (page) => {
+        await resetState(ctx, {});
+        await store.set(ctx, { bandage: { "gemini.google.com": true } });
+        await sleep(300);
+        // Chat A was written in an earlier visit: its [Phone 1] stood for another number.
+        await page.evaluate((id) => {
+          const old = [
+            { who: "user", text: "my work line is [Phone 1]" },
+            { who: "ai", text: "I'll call [Phone 1] at work." },
+          ];
+          sessionStorage.setItem(`chat:/app/${id}`, JSON.stringify(old));
+          window.__openChat("");
+        }, CHAT_A);
+        expect(await chatShown(page, ""), "the start page didn't show");
+        await typeText(page, `call me at ${PHONE}`);
+        expect(await covered(page, "call me at [Phone 1]"), `start page: "${await editorText(page)}"`);
+        await page.evaluate((id) => window.__openChat(id), CHAT_A);
+        expect(await chatShown(page, CHAT_A), "chat A didn't show");
+        const old = await peekAt(page, ".reply", "[Phone 1]");
+        expect(!old?.text.includes(PHONE), `chat A's old [Phone 1] showed the draft's number: ${old?.text}`);
+        await clearEditor(page);
+        await typeText(page, `home ${PHONE}`);
+        expect(await covered(page, "home [Phone 2]"), `chat A: "${await editorText(page)}"`);
         await resetState(ctx, {});
       }),
   );

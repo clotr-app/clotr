@@ -425,3 +425,29 @@ test("a stray --windsurf-jetbrains never stops a prompt, and setup refuses it fo
   assert.strictEqual(setup.status, 2);
   assert.match(setup.stderr, /only for Windsurf/);
 });
+
+test("a dry-run Git remove previews the change and leaves the hook and its backup alone", async (t) => {
+  for (const userHook of [null, "#!/bin/sh\necho user-hook\n"]) {
+    const dir = tempDir(t);
+    initGit(dir);
+    const hook = path.join(dir, ".git", "hooks", "pre-commit");
+    const backup = `${hook}.clotr-guard.bak`;
+    if (userHook) fs.writeFileSync(hook, userHook);
+    guard.setupGit({ cwd: dir });
+    const before = fs.readFileSync(hook, "utf8");
+    const log = console.log;
+    const lines = [];
+    console.log = (line) => lines.push(String(line));
+    let status;
+    try {
+      status = await guard.main(["remove", "git", "--project", "--dry-run"], { cwd: dir });
+    } finally {
+      console.log = log;
+    }
+    assert.strictEqual(status, 0);
+    assert.match(lines.join("\n"), /^Removed Git pre-commit hook at .+\.$/m, "the preview still says what remove does");
+    assert.strictEqual(fs.readFileSync(hook, "utf8"), before, "the Clotr hook is still in place");
+    assert.strictEqual(fs.existsSync(backup), Boolean(userHook), "the backup is where setup left it");
+    assert.strictEqual(guard.setupGit({ cwd: dir, remove: true }).changed, true, "a real remove still works");
+  }
+});

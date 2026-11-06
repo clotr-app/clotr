@@ -66,3 +66,68 @@ test("clotr-engine detects and redacts a made-up email address", () => {
   assert.ok(results.some((result) => result.id === "email" && result.matches.includes("person@example.test")));
   assert.doesNotMatch(api.redact(text, results), /person@example\.test/);
 });
+
+// The array detect() returned is a plain array: one edited in place (a false alarm taken out) is redacted as it
+// now reads, the same as a filtered copy.
+test("clotr-engine redacts what the results array holds now, after edits made in place", () => {
+  const api = require(path.join(PACKAGE, "index.cjs"));
+  const text = "Email jane.doe@example.org or call 555-555-5636.";
+  const kept = "Email jane.doe@example.org or call [REDACTED PHONE NUMBER].";
+  const spliced = api.detect(text);
+  spliced.splice(
+    spliced.findIndex((result) => result.id === "email"),
+    1,
+  );
+  assert.equal(api.redact(text, spliced), kept);
+  const cleared = api.detect(text);
+  cleared.find((result) => result.id === "email").matches.length = 0;
+  assert.equal(api.redact(text, cleared), kept);
+  const emptied = api.detect(text);
+  emptied.length = 0;
+  assert.equal(api.redact(text, emptied), text);
+  const untouched = api.detect(text);
+  assert.equal(api.redact(text, untouched), "Email [REDACTED EMAIL ADDRESS] or call [REDACTED PHONE NUMBER].");
+});
+
+// redact() given a copy of detect()'s results (here filtered, so not the array detect() returned) hides those
+// values from that same scan. A second scan cut short at a different point could find less: a preload stalls the
+// engine's clock so the first scan stops after every rule and the next before any.
+test("clotr-engine redacts every value in a copy of the results even when a second scan would stop earlier", () => {
+  const preload = path.join(require("node:os").tmpdir(), `clotr-engine-stall-${nodeProcess.pid}.cjs`);
+  fs.writeFileSync(
+    preload,
+    `const vm = require("node:vm");
+const run = vm.runInContext;
+vm.runInContext = function (code, context, options) {
+  const out = run.call(this, code, context, options);
+  if (options && options.filename === "clotr-engine.js") {
+    run.call(this, \`(() => {
+      let now = Date.now();
+      Date.now = () => now;
+      let scans = 0;
+      const stall = () => (now += Clotr.DETECT_BACKSTOP_MS + 200);
+      Clotr.PATTERNS.unshift({ id: "test_stall_head", severity: "low", name: "stall", find: () => (++scans > 1 && stall(), []) });
+      Clotr.PATTERNS.push({ id: "test_stall_tail", severity: "low", name: "stall", find: () => (scans === 1 && stall(), []) });
+    })()\`, context);
+  }
+  return out;
+};
+`,
+  );
+  try {
+    const out = runNode(
+      `const api = require("clotr-engine");
+const text = "Write to person@example.test";
+const results = api.detect(text);
+const emails = results.filter((result) => result.id === "email");
+process.stdout.write(JSON.stringify({ truncated: results.truncated === true, found: emails.length > 0, hidden: api.redact(text, emails) }));`,
+      ["--require", preload, "-e"],
+    );
+    const { truncated, found, hidden } = JSON.parse(out);
+    assert.equal(truncated, true);
+    assert.equal(found, true);
+    assert.doesNotMatch(hidden, /person@example\.test/);
+  } finally {
+    fs.rmSync(preload, { force: true });
+  }
+});

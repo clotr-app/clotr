@@ -15,7 +15,7 @@ body {
   overflow: hidden;
   background: var(--paper);
 }
-/* The background glow: whiter at the top, a warm light at the foot, in every theme. */
+/* Ember keeps its soft backdrop; Plum leaves these layers clear. */
 body.glow::before {
   content: "";
   position: fixed;

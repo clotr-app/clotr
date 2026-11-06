@@ -899,6 +899,113 @@ module.exports = async function (env) {
     },
   );
 
+  await check("V55", "A vault detail fixed in the middle of the text still warns", async () => {
+    await resetState(ctx, {});
+    const own = `555-555-${String(9000 + Math.floor(Math.random() * 1000))}`;
+    TYPED_VALUES.add(own);
+    const fp = await ctx.worker.evaluate(async (value) => {
+      const salt = await ensureSalt();
+      return globalThis.Clotr.fingerprintStrong(salt, "phone_number", value);
+    }, own);
+    await store.set(ctx, {
+      vault: [{ kind: "value", type: "phone_number", fp, scheme: 2, mode: "protect", added: Date.now() }],
+    });
+    await sleep(300);
+    try {
+      await withSite(ctx, "chatgpt", async (page) => {
+        // Typed with one digit missing, then the caret goes back one place and the digit goes in.
+        await typeText(page, `call me at ${own.slice(0, -2)}${own.slice(-1)}`);
+        await page.keyboard.press("ArrowLeft");
+        await page.keyboard.sendCharacter(own.at(-2));
+        expect((await editorText(page)) === `call me at ${own}`, `box: ${await editorText(page)}`);
+        const notice = await waitForNotice(page, 6000);
+        expect(notice && /Phone Number/.test(notice.text), notice?.text || "no notice");
+      });
+    } finally {
+      await resetState(ctx, {});
+    }
+  });
+
+  // Clot this leak hides a saved name only where it stands as a word, so the same name inside a longer one stays.
+  // That one was never the saved name, so it isn't a detail left showing either.
+  await check(
+    "V56",
+    "Clot this leak hides a saved name beside a longer word holding it, and says it's hidden",
+    async () => {
+      await resetState(ctx, {});
+      const fp = await ctx.worker.evaluate(async () => {
+        const salt = await ensureSalt();
+        return globalThis.Clotr.fingerprint(salt, "watch_list", "Ann");
+      });
+      await store.set(ctx, { vault: [{ kind: "word", type: "my_name", fp, words: 1, added: Date.now() }] });
+      await sleep(300);
+      const tabHealth = () =>
+        ctx.worker.evaluate(async () => {
+          const [tab] = await chrome.tabs.query({ active: true, lastFocusedWindow: true });
+          const { protectedTabs = {} } = await chrome.storage.session.get("protectedTabs");
+          return protectedTabs[tab.id] || null;
+        });
+      try {
+        await withSite(ctx, "chatgpt", async (page) => {
+          await page.bringToFront();
+          await typeText(page, "Ann wrote to Annabelle");
+          const notice = await waitForNotice(page, 6000);
+          expect(notice && /Your Name/.test(notice.text), notice?.text || "no notice");
+          await clickDialogButton(page, "Clot this leak", readNotice);
+          const want = "[REDACTED YOUR NAME] wrote to Annabelle";
+          const after = await waitFor(async () => ((await editorText(page)) === want ? true : null), 3000);
+          expect(after, `chat box: "${await editorText(page)}"`);
+          await sleep(300);
+          const failed = await readNotice(page);
+          expect(!failed, `a warning stayed after the name was hidden: ${failed?.text}`);
+          const health = await tabHealth();
+          expect(!health?.editFailed, `the cover was reported as failed: ${JSON.stringify(health)}`);
+        });
+      } finally {
+        await resetState(ctx, {});
+      }
+    },
+  );
+
+  // A saved format finds an ID number typed right against Japanese or accented letters, so Clot this leak hides it
+  // there and records it as hidden, like any detail it found.
+  await check(
+    "V57",
+    "Clot this leak hides an ID in a saved format typed right against other scripts' letters",
+    async () => {
+      await resetState(ctx, {});
+      await store.set(ctx, { vault: [{ kind: "shape", type: "my_id", shape: "@@@######", added: Date.now() }] });
+      await sleep(300);
+      try {
+        for (const [typed, want] of [
+          ["社員EMP123456です", "社員[REDACTED YOUR ACCOUNT/ID NUMBER]です"],
+          ["éEMP123456 ok", "é[REDACTED YOUR ACCOUNT/ID NUMBER] ok"],
+        ]) {
+          await store.set(ctx, { events: [] });
+          await withSite(ctx, "chatgpt", async (page) => {
+            await page.bringToFront();
+            await typeText(page, typed);
+            const notice = await waitForNotice(page, 6000);
+            expect(notice && /Account\/ID/i.test(notice.text), notice?.text || "no notice");
+            await clickDialogButton(page, "Clot this leak", readNotice);
+            const after = await waitFor(async () => ((await editorText(page)) === want ? true : null), 3000);
+            expect(after, `chat box: "${await editorText(page)}"`);
+            const events = await waitFor(async () => {
+              const hidden = (await store.events(ctx)).filter((e) => e.type === "my_id" && e.action === "redacted");
+              return hidden.length ? hidden : null;
+            }, 3000);
+            expect(events?.length === 1, `events: ${JSON.stringify(await store.events(ctx))}`);
+            await sleep(300);
+            const failed = await readNotice(page);
+            expect(!failed, `a warning stayed after the ID was hidden: ${failed?.text}`);
+          });
+        }
+      } finally {
+        await resetState(ctx, {});
+      }
+    },
+  );
+
   await check(
     "V54",
     "Bandage leaves page-inserted vault guesses alone, whether alone or beside typed text",

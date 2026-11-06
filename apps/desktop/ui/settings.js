@@ -54,7 +54,8 @@
     $("start-note").hidden = !held;
     $("start-note").textContent = held ? W.t(held) : "";
     $("language").value = s.language === "en" || s.language === "es" ? s.language : "system";
-    $("look").value = s.look === "dark" ? "ember" : ["light", "plum", "ember"].includes(s.look) ? s.look : "system";
+    $("look").value =
+      s.look === "dark" || s.look === "ember" ? "ember" : s.look === "light" || s.look === "plum" ? "plum" : "system";
     $("motion").value = s.motion === "still" ? "still" : "system";
     $("results-mode").value = s.resultsMode === "detailed" ? "detailed" : "guided";
     if (document.activeElement !== $("helper-name")) $("helper-name").value = s.helperName || "";

@@ -1250,7 +1250,7 @@ const READS = {
 const stubReader = (page, kind, ms = 0) =>
   evalInClotr(
     page,
-    `(() => { const real = globalThis.Clotr.readAttachment; globalThis.__clotrReads = 0; globalThis.Clotr.readAttachment = (f) => { globalThis.__clotrReads++; return ${READS[kind](ms)}; }; return true; })()`,
+    `(() => { const real = globalThis.Clotr.readAttachmentDetailed; globalThis.__clotrReads = 0; globalThis.Clotr.readAttachmentDetailed = (f) => { globalThis.__clotrReads++; return ${READS[kind](ms)}; }; return true; })()`,
   );
 const readStarted = async (page) =>
   expect(

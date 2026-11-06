@@ -1,6 +1,6 @@
 {
   "name": "clotr-guard",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "description": "Checks what you send to an AI coding assistant for credentials and personal details, on your device, with no network calls.",
   "keywords": [
     "secrets",
@@ -39,6 +39,7 @@
     "dist",
     "skills",
     "README.md",
+    "CHANGELOG.md",
     "LICENSE"
   ],
   "engines": {

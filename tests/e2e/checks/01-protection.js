@@ -206,6 +206,40 @@ module.exports = async function (env) {
     }),
   );
 
+  // A draft the site put back after a reload was never typed on this page, so nothing has named the chat box yet.
+  // A real click on send still checks it, the same as Enter does.
+  await check("A4f", "Send button on a draft the site put back, with nothing typed: it's still checked", () =>
+    withSite(ctx, "chatgpt", async (page) => {
+      await resetState(ctx);
+      await page.evaluate((value) => {
+        document.querySelector("textarea").value = `key ${value}`;
+      }, KEY2);
+      await clickSend(page);
+      await sleep(300);
+      expect((await sentMessages(page)).length === 0, "message was sent");
+      expect(await waitForDialog(page), "no dialog appeared");
+    }),
+  );
+
+  // Leave it alone lasts for one message. An unlabeled send button sends without Clotr being sure it was a send, and
+  // a page can empty its box by itself, so the next message starting in an empty box is a new one either way.
+  await check(
+    "A4g",
+    "Leave it alone, then an unlabeled send: the same key in the next message is asked about again",
+    () =>
+      withSite(ctx, "iconsend", async (page) => {
+        await resetState(ctx);
+        await typeText(page, `key ${KEY}`);
+        expect(await waitForDialog(page), "no dialog appeared");
+        await clickDialogButton(page, "Leave it alone");
+        await clickSend(page);
+        const sent = await waitFor(async () => ((await sentMessages(page)).length ? sentMessages(page) : null), 2000);
+        expect(sent?.length === 1, `sent: ${JSON.stringify(sent)}`);
+        await typeText(page, `again ${KEY}`);
+        expect(await waitForDialog(page), "no dialog for the same key in the next message");
+      }),
+  );
+
   // When the dialog has already stopped a send, like after a settings reset before the page even opens (UB1),
   // "Leave it and send" sends the message exactly once, unchanged, however it was originally sent: the site's
   // own send button, or Enter.

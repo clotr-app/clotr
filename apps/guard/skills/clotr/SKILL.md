@@ -7,7 +7,7 @@ description: Use when Clotr Guard stops a prompt, a file read, a shell command, 
 
 Clotr Guard runs on this computer. Its hooks check prompts, file reads, shell commands, MCP tool calls and Git commits
 for credentials, and for personal details when the person turned that on, and they can stop any of them. A message
-from Clotr names the kind of thing it found and where it was found, without showing any part of the value.
+from Clotr names the kind of thing it found and where it was found, without showing the full value.
 
 ## When Clotr stops something
 
@@ -27,9 +27,14 @@ A stopped prompt goes through if the person sends it again within two minutes wi
 pauses it again. Some checks ask the person instead of stopping. Claude Code asks before reading an ordinary file with a credential in it, and Claude Code
 and Cursor ask before a shell command or MCP tool call whose arguments hold one. That answer is the person's too.
 
-Two messages mean the check didn't cover everything. One that starts "Clotr couldn't check this" means the check
-failed and the action went ahead unchecked, so tell the person. "Clotr checked the first 256 KiB" means the rest of
-that file wasn't checked.
+Some messages mean the check didn't cover everything. One that starts "Clotr couldn't check this" ends one of two
+ways. "..., so it went through" means the check failed and the action went ahead unchecked, so tell the person.
+"..., so it was stopped" means Clotr couldn't read the request and stopped it, so tell the person, who can check it by
+hand. "Clotr checked the first 256 KiB" means the rest of that file wasn't checked. If `check_text` or `clean_text`
+returns `truncated: true`, Clotr ran out of time and part of the text wasn't checked, so tell the person. A hook
+message that says Clotr "ran out of time before checking" means the same: a prompt like that stays stopped even when
+sent again, and a read or tool call goes to the person to decide, or is stopped where the assistant can't ask. Tell
+the person, who can send the prompt in smaller parts.
 
 ## Clotr's MCP tools
 

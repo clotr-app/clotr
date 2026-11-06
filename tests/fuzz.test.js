@@ -14,7 +14,7 @@ const assert = require("node:assert/strict");
 
 require("../extension/patterns.js");
 require("../extension/detector.js");
-const { bestOfPair, grewMoreThan } = require("./timing.js");
+const { bestOfPair, grewMoreThan, grewEveryTime } = require("./timing.js");
 
 // A small, fast generator (mulberry32). The seed is fixed, not time-based, so every run of this file fuzzes the
 // same strings in the same order; printing it in a failure message is enough to reproduce the run by hand.
@@ -242,6 +242,7 @@ test("fuzz: thousands of seeded random strings never crash detect(), every findi
     }
     let second;
     try {
+      globalThis.Clotr.detect.forget(); // scan the text again, not hand back the answer kept from the first call
       second = globalThis.Clotr.detect(text);
     } catch (e) {
       problems.push(
@@ -264,8 +265,12 @@ test("fuzz: thousands of seeded random strings never crash detect(), every findi
   );
 });
 
-// Each seeded hostile string contributes a 1,000-character and 4,000-character prefix. Warmed best-of-three
-// measurements compare their growth, so runner load affects both sizes in the same run.
+// Each seeded hostile string contributes a 500-character and a 4,000-character prefix. Warmed best-of-three
+// measurements compare their growth, so runner load affects both sizes in the same run, and a case is called slow only
+// when it grows too fast on three measurements running. 8 times the text grows linear work 8 times (up to about 13
+// measured on this text) and a quadratic scan 64 times, so the limit of 32 sits about twice away from both. With 4
+// times the text and a limit of 16, a single slow-looking measurement failed the test on a busy machine, and a
+// quadratic scan, which grows 16 times, could pass.
 test("fuzz: detection grows with hostile text", () => {
   const rng = makeRng(SEED ^ 0x9e3779b9);
   const CASES = 10;
@@ -273,13 +278,19 @@ test("fuzz: detection grows with hostile text", () => {
   for (let i = 0; i < CASES; i++) {
     const len = 2000 + int(rng, 18000);
     const text = randomText(rng, len);
-    const [small, big] = bestOfPair(
-      () => globalThis.Clotr.detect(text.slice(0, 1000)),
-      () => globalThis.Clotr.detect(text.slice(0, 4000)),
-      4,
-      3,
+    const small = text.slice(0, 500);
+    const big = text.slice(0, 4000);
+    const grew = grewEveryTime(
+      () =>
+        bestOfPair(
+          () => globalThis.Clotr.detect(small),
+          () => globalThis.Clotr.detect(big),
+          8,
+          3,
+        ),
+      (s, b) => grewMoreThan(s, b, 32),
     );
-    if (grewMoreThan(small, big, 16)) slow.push(`seed ${SEED} case ${i} (${len} chars) grew too fast`);
+    if (grew) slow.push(`seed ${SEED} case ${i} (${len} chars) grew too fast`);
   }
   assert.deepEqual(slow, []);
 });

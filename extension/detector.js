@@ -4,7 +4,7 @@
 (() => {
   "use strict";
 
-  const { PATTERNS, numberRuns, isPlaceholder, addressCore, vaultKinds, ASK_REASONS } = globalThis.Clotr;
+  const { PATTERNS, numberRuns, isPlaceholder, addressCore, vaultKinds, isVaultFormat, ASK_REASONS } = globalThis.Clotr;
 
   const SEVERITY_RANK = { high: 3, medium: 2, low: 1 };
 
@@ -59,9 +59,69 @@
     return String((cp - zero) % 10);
   }
 
-  function cleanText(text) {
-    // Plain ASCII with no URL-encoded "@" (like ann%40gmail.com from a pasted link) needs no cleaning.
-    if (!/[^\x00-\x7f]|%40/i.test(text) && !text.includes("\\n") && !text.includes("\\r\\n")) {
+  // A link's query can carry a secret URL-encoded (encodeURIComponent turns "/" into %2F, a space into %20 and a
+  // line break into %0A), so inside a link a printable ASCII character, a tab or a line break written that way reads
+  // as itself. Anything else, like the bytes of an accented letter, stays as written. Outside a link only %40 reads
+  // as "@" (ann%40gmail.com), since some keys hold a literal "%3D" of their own. Two places read like a link without
+  // its "://": an HTTP request line's target ("GET /pay?card=4539%201488... HTTP/1.1") reads as a link, wherever the
+  // line sits (in an access log's quotes, after curl's "> ", indented), and a form body or query written on its own
+  // ("card=4539%201488...&cvv=123", "body:ssn=...", "/apply?ssn=...") reads as one too from its first key on, but
+  // for "%3D", "%26" and "%25", which stay as written there so a key's own literal "%3D" is kept. A "%3D" that joins
+  // a key to a number ("data=card%3D4539%201488...", a form nested in another) is that form's "=" all the same. A
+  // form writes a space as "+", so a value made of numbers joined by "+" ("card=4539+1488+0343+6467") reads with
+  // spaces; a value with letters in it keeps its "+", since a key's base64 has them. A form also starts right after
+  // a "[" ("[ssn=..." in a log line), and one encoded whole starts at a key whose "%3D" comes before a number
+  // ("ssn%3D219%2D09%2D9999"). A link carried in another link's parameter is encoded twice, so inside a link a run
+  // like "%2520" or "%252D" reads as the character its last two digits stand for.
+  const PERCENT = /%[0-9a-f]{2}/i;
+  const URL_END = /[\s"'`<>]/;
+  const HEX_PAIR = /^[0-9a-f]{2}$/i;
+  const ENCODED_SCHEME_END = /^%3A%2F%2F/i;
+  const REQUEST_LINE = /(?:GET|POST|PUT|PATCH|DELETE|HEAD|OPTIONS) +(?=[^\s"'`<>])/y;
+  const REQUEST_LEAD = /[\s"'`>([]/; // what can sit just before a request line's method
+  const TOKEN = /[^\s"'`<>]*/y;
+  const FORM_KEY = /[A-Za-z_][\w.[\]-]*(?:=|%3D(?=\d|%28|%2B))/iy;
+  const KEY_CHAR = /[\w.[\]-]/;
+  const FORM_KEEPS = /^(?:3D|26|25)$/i;
+  const NESTED_VALUE = /^(?:\d|%28|%2B)/i;
+  const NESTED_ESCAPE = /(?:25)*[0-9a-f]{2}/iy;
+  const PLUS_HINT = /=[^\s"'`<>&;#,=]*\+/;
+  const PLUS_VALUE = /(?:[\d().-]|%[0-9a-f]{2})+(?:\+(?:[\d().-]|%[0-9a-f]{2})+)+(?=[\s"'`<>&;#,]|$)/iy;
+  // Where the last %XX of the token from `from` to `to` starts, or -1.
+  function lastEscapeIn(text, from, to) {
+    for (let j = to - 3; j >= from; j--) {
+      if (text.charCodeAt(j) === 37 && HEX_PAIR.test(text.slice(j + 1, j + 3))) return j;
+    }
+    return -1;
+  }
+  function percentDecoded(text, i) {
+    const hex = text.slice(i + 1, i + 3);
+    if (!HEX_PAIR.test(hex)) return null;
+    const code = parseInt(hex, 16);
+    return (code >= 0x20 && code <= 0x7e) || code === 9 || code === 10 || code === 13
+      ? String.fromCharCode(code)
+      : null;
+  }
+  // A URL's user:password@ part keeps its encoding: there %40 is how a user name like Azure's user@server is
+  // written, and the "@" it would become, or a space from %20, would end the user name or password early.
+  const URL_USERINFO = /[^\s@/?#:]{1,256}:[^\s@/]{1,512}@/y;
+  // Markdown escapes "_" as "\_", which would break every key with an underscore in it, so a "\_" right after a
+  // letter or digit reads as "_".
+  const isWordCode = (code) =>
+    (code >= 48 && code <= 57) || (code >= 65 && code <= 90) || (code >= 97 && code <= 122) || code === 95;
+
+  // `link` is for a window of a large paste that starts inside a link (linkAt): the window reads it as the paste
+  // read from its start would, though it never sees the link's "://".
+  function cleanText(text, link) {
+    // Plain ASCII with no URL encoding (like ann%40gmail.com from a pasted link) and no escapes needs no cleaning.
+    if (
+      !/[^\x00-\x7f]/.test(text) &&
+      !PERCENT.test(text) &&
+      !text.includes("\\n") &&
+      !text.includes("\\r\\n") &&
+      !text.includes("\\_") &&
+      !(text.includes("+") && PLUS_HINT.test(text))
+    ) {
       return { clean: text, start: null, end: null, jsonBreaks: null };
     }
     let clean = "";
@@ -70,6 +130,14 @@
     const jsonBreaks = new Set(); // where each JSON string's \n landed in the cleaned text
     let jsonString = false;
     let jsonEscape = false;
+    let userinfoEnd = link ? link.userinfoEnd : -1; // where the user:password part of a URL ends, at its "@"
+    let inUrl = Boolean(link); // inside a link, from its "://" to the next space or quote
+    let requestTarget = -1; // where an HTTP request line's target starts
+    let inForm = false; // inside a key=value token outside a link, to the next space or quote
+    let tokenEnd = 0; // where the run of text up to the next space or quote ends
+    let tokenEscape = -1; // where that run's last %XX starts
+    let plusUntil = -1; // where a form value of numbers joined by "+" ends
+    const plus = text.includes("+");
     for (let i = 0; i < text.length;) {
       const cp = text.codePointAt(i);
       const ch = String.fromCodePoint(cp);
@@ -80,14 +148,69 @@
         !jsonEscape &&
         ch === "\\" &&
         (text[i + 1] === "n" ? 2 : text.slice(i + 1, i + 4) === "r\\n" ? 4 : 0);
+      if (cp >= 68 && cp <= 80 && (i === 0 || REQUEST_LEAD.test(text[i - 1]))) {
+        REQUEST_LINE.lastIndex = i;
+        if (REQUEST_LINE.test(text)) requestTarget = REQUEST_LINE.lastIndex;
+      }
+      if (URL_END.test(ch)) inForm = false;
+      else {
+        if (i >= tokenEnd) {
+          TOKEN.lastIndex = i;
+          TOKEN.test(text);
+          tokenEnd = TOKEN.lastIndex;
+          tokenEscape = lastEscapeIn(text, i, tokenEnd);
+        }
+        if (!inUrl && !inForm && i < tokenEscape && (i === 0 || text[i - 1] === "[" || !KEY_CHAR.test(text[i - 1]))) {
+          FORM_KEY.lastIndex = i;
+          inForm = FORM_KEY.test(text);
+        }
+      }
+      if (i === requestTarget) {
+        inUrl = true;
+      } else if (ch === ":" && text.charCodeAt(i + 1) === 47 && text.charCodeAt(i + 2) === 47) {
+        inUrl = true;
+        URL_USERINFO.lastIndex = i + 3;
+        if (URL_USERINFO.test(text)) userinfoEnd = URL_USERINFO.lastIndex - 1;
+      } else if (ch === "%" && ENCODED_SCHEME_END.test(text.slice(i, i + 9))) {
+        inUrl = true; // a link encoded whole, as a redirect= parameter carries one: its "://" is "%3A%2F%2F"
+      } else if (inUrl && URL_END.test(ch)) inUrl = false;
+      const hex = ch === "%" ? text.slice(i + 1, i + 3) : "";
+      const formDecodes =
+        inForm &&
+        (!FORM_KEEPS.test(hex) ||
+          (/^3D$/i.test(hex) &&
+            i > 0 &&
+            isWordCode(text.charCodeAt(i - 1)) &&
+            NESTED_VALUE.test(text.slice(i + 3, i + 6))));
+      let decoded =
+        ch === "%" && i >= userinfoEnd && (inUrl || /^40/.test(hex) || formDecodes) ? percentDecoded(text, i) : null;
+      let width = 3;
+      if (decoded === "%" && inUrl) {
+        // A link carried in another link's parameter is encoded twice ("%2520" for a space), or more.
+        NESTED_ESCAPE.lastIndex = i + 3;
+        const nested = NESTED_ESCAPE.exec(text);
+        const inner = nested ? percentDecoded(`%${nested[0].slice(-2)}`, 0) : null;
+        if (inner !== null) {
+          decoded = inner;
+          width += nested[0].length;
+        }
+      }
+      if (plus && (ch === "=" || decoded === "=") && i > 0 && KEY_CHAR.test(text[i - 1])) {
+        PLUS_VALUE.lastIndex = decoded === "=" ? i + width : i + 1;
+        if (PLUS_VALUE.test(text)) plusUntil = PLUS_VALUE.lastIndex;
+      }
       if (jsonBreak) {
         // JSON strings escape token line breaks, so join them as line breaks while keeping the raw span.
         out = "\n";
         next = i + jsonBreak;
         jsonBreaks.add(clean.length);
-      } else if (ch === "%" && text.slice(i + 1, i + 3) === "40") {
-        out = "@";
-        next = i + 3;
+      } else if (decoded !== null) {
+        out = decoded;
+        next = i + width;
+      } else if (ch === "\\" && text.charCodeAt(i + 1) === 95 && i > 0 && isWordCode(text.charCodeAt(i - 1))) {
+        out = ""; // Markdown's "\_"; the "_" itself is read next
+      } else if (ch === "+" && i < plusUntil) {
+        out = " "; // a form's space, between numbers
       } else if (cp >= 0x80) {
         if (INVISIBLE.test(ch)) out = "";
         else if (SPACE.test(ch)) out = " ";
@@ -117,6 +240,23 @@
       i = next;
     }
     return { clean, start, end, jsonBreaks };
+  }
+
+  // Whether a window of a large paste starting at `from` starts inside a link, as cleanText reading the paste from its
+  // start would have it there: a "://", or a link's whole encoded "%3A%2F%2F", since the last space or quote before
+  // `from`, looked for no further back than the windows' overlap. Returns cleanText's `link`, or null.
+  function linkAt(text, from) {
+    let i = from;
+    const stop = Math.max(0, from - DETECT_WINDOW_OVERLAP);
+    while (i > stop && !URL_END.test(text[i - 1])) i--;
+    if (i === from) return null;
+    const scheme = text.slice(i, from + 2).lastIndexOf("://", from - i - 1);
+    if (scheme >= 0) {
+      URL_USERINFO.lastIndex = i + scheme + 3;
+      return { userinfoEnd: URL_USERINFO.test(text) ? URL_USERINFO.lastIndex - 1 - from : -1 };
+    }
+    const encoded = text.slice(i, from + 8).search(/%3A%2F%2F/i);
+    return encoded >= 0 && encoded < from - i ? { userinfoEnd: -1 } : null;
   }
 
   // ---------- A phone keyboard's dot ----------
@@ -173,6 +313,7 @@
   // Wrapped values are short, so skip huge runs and cap how many get a second scan.
   const MAX_JOINED_TOKEN = 4096;
   const MAX_JOINED_RUNS = 300;
+  const MAX_WORD_TAIL_READS = 32;
   const isTokenCode = (code) =>
     (code >= 65 && code <= 90) ||
     (code >= 97 && code <= 122) ||
@@ -192,11 +333,34 @@
     return clean.charCodeAt(next) === 10 ? next + 1 : newline + 1;
   }
 
-  // YAML literal scalars indent every content line. Keep that indentation in the source map, but omit it from
-  // the joined reading so a wrapped value can still match its provider rule.
+  // A wrapped key's next line can start with an indent, a tab or an email's "> " (or "> > " in a reply to a
+  // reply). Returns where that line's own text starts, or `lineStart` when it has none.
+  const MAX_LINE_PREFIX = 64;
+  function linePrefixEnd(clean, lineStart) {
+    let at = lineStart;
+    while (at - lineStart < MAX_LINE_PREFIX) {
+      const code = clean.charCodeAt(at);
+      if (code !== 32 && code !== 9 && code !== 62) break;
+      at++;
+    }
+    return at;
+  }
+  // What may follow the last part of a wrapped key on its line: a closing quote, bracket or comma, or nothing.
+  // A part followed by "(", ":", "[" or "{" is code or a label, like "console.log(x)" or "region: eu".
+  const CODE_AFTER = /[([{:]/;
+  // A line that starts with a UUID, a date or a "name=value" is the person's own, not the rest of a key above it.
+  const NOT_KEY_REST = /^(?:[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}|\d{4}-\d\d-\d\d|[^=]+=[^=])/i;
+  const LINE_REST = /["'`]?[,;)\]}]*\.?[ \t]*(?:\r?\n|$)/y;
+  function restOfLineIsClosing(clean, at) {
+    LINE_REST.lastIndex = at;
+    return LINE_REST.test(clean);
+  }
+
+  // YAML literal and folded scalars indent every content line. Keep that indentation in the source map, but omit
+  // it from the joined reading so a wrapped value can still match its provider rule.
   function yamlLiteralBlockLines(clean) {
-    if (!clean.includes("\n") || !clean.includes(":") || !clean.includes("|")) return null;
-    const headerPattern = /:[ \t]*\|[+-]?[1-9]?[+-]?[ \t]*(?:#[^\r\n]*)?\r?$/m;
+    if (!clean.includes("\n") || !clean.includes(":") || !/[|>]/.test(clean)) return null;
+    const headerPattern = /:[ \t]*[|>][+-]?[1-9]?[+-]?[ \t]*(?:#[^\r\n]*)?\r?$/m;
     if (!headerPattern.test(clean)) return null;
 
     const lines = new Map();
@@ -237,7 +401,7 @@
       }
 
       if (!block && !blank) {
-        const header = /^([^:]+):[ \t]*\|([+-]?[1-9]?[+-]?)[ \t]*(?:#[^\r\n]*)?$/.exec(
+        const header = /^([^:]+):[ \t]*[|>]([+-]?[1-9]?[+-]?)[ \t]*(?:#[^\r\n]*)?$/.exec(
           clean.slice(firstText, contentEnd),
         );
         if (header) {
@@ -264,7 +428,8 @@
 
   // The start of a key whose own shape says what it is, so even a short first line of it is worth joining. An
   // email's quoted-printable "=" ending one of those lines is its soft break, not base64 padding.
-  const KEY_START = /^(?:AKIA|ASIA|gh[pousr]_|github_pat_|glpat-|sk-|[sr]k_(?:live|test)_|xox[abpors]-|AIza|hf_|npm_)/;
+  const KEY_START =
+    /^(?:AKIA|ASIA|gh[pousr]_|github_pat_|glpat-|sk-|[sr]k_(?:live|test)_|xox[abpors]-|AIza|hf_|npm_|GOCSPX-|ya29\.|dckr_(?:pat|oat)_|sbp_|lsv2_|pcsk_|ntn_|gsk_|CFPAT-|pscale_|nvapi-|figd_|bkua_|napi_|xkeysib-|sq0c[a-z]{2}-|dp\.(?:ct|pt|st|sa)\.)/;
   // Where the word before a line break ends: a shell's "\" carrying a line on, or a soft "=" after a key's start,
   // belongs to the break.
   function wordEnd(clean, lineStart, lineEnd) {
@@ -282,7 +447,7 @@
       if (before >= 0 && clean.charCodeAt(before) === 13) before--;
       if (before > 0 && clean.charCodeAt(before) === 92) before--;
       const afterBreakStart = afterBreak(clean, newline);
-      const after = yamlContentLine(yamlLines, afterBreakStart)?.contentStart ?? afterBreakStart;
+      const after = yamlContentLine(yamlLines, afterBreakStart)?.contentStart ?? linePrefixEnd(clean, afterBreakStart);
       if (
         before >= 0 &&
         after < clean.length &&
@@ -297,6 +462,8 @@
 
   // A short line under a wrapped value that reads as a word, like "Thanks" or "done.".
   const TAIL_WORD = /^[A-Z]?[a-z]+\.*$/;
+  // Kinds read from a label or a value's general shape rather than a provider's own prefix.
+  const LABEL_KINDS = new Set(["password", "service_token"]);
 
   // Keep the removed line breaks in the source positions so Cover it can replace the exact pasted span.
   function withoutTokenLineBreaks(clean, jsonBreaks, yamlLines) {
@@ -323,21 +490,35 @@
       const afterBreakStart = afterBreak(clean, newline);
       const nextYamlLine = yamlContentLine(yamlLines, afterBreakStart);
       const sameYamlBlock = currentYamlLine && nextYamlLine && currentYamlLine.block === nextYamlLine.block;
-      const rightStart = sameYamlBlock ? nextYamlLine.contentStart : afterBreakStart;
+      // An indented or "> "-quoted next line: its prefix stays out of the joined reading.
+      const prefixEnd = sameYamlBlock ? afterBreakStart : linePrefixEnd(clean, afterBreakStart);
+      const prefix = clean.slice(afterBreakStart, prefixEnd);
+      const rightStart = sameYamlBlock ? nextYamlLine.contentStart : prefixEnd;
       let rightEnd = rightStart;
       while (rightEnd < clean.length && isTokenCode(clean.charCodeAt(rightEnd))) rightEnd++;
       const leftLength = lineEnd - leftStart;
       const rightLength = rightEnd - rightStart;
+      // A key's next part under the same indent or quote is that whole line, and every later part sits under the
+      // same prefix too, so indented code like "foo\n    bar()" or a quoted "region: eu" never joins.
+      // A part of 8 or more followed by a space can be a key's rest too, like a split ID before its pair's next name.
+      const rightWhole =
+        rightLength > 0 &&
+        (restOfLineIsClosing(clean, rightEnd) || (rightLength >= 8 && /[ \t]/.test(clean[rightEnd] || "")));
       const sensitiveYamlWrap =
         sameYamlBlock && currentYamlLine.block.sensitive && lineEnd - currentStart >= 16 && leftLength >= 8;
-      const continuationAssignment = /^[A-Z][A-Z0-9_]{1,39}=/.test(clean.slice(rightStart, rightStart + 42));
+      // "B=2" or "X=1" on the next line is an assignment too, while a base64 value's last line can be just "Q==".
+      const continuationAssignment = /^[A-Z](?:[A-Z0-9_]{1,39}=|=[^=\s])/.test(
+        clean.slice(rightStart, rightStart + 42),
+      );
       const splitAssignmentLabel =
         sensitiveYamlWrap &&
         continuationAssignment &&
         (clean.charCodeAt(lineEnd - 1) === 95 || /^TWILIO_[A-Z0-9_]+$/.test(clean.slice(leftStart, lineEnd)));
       const assignment = continuationAssignment && !splitAssignmentLabel;
       // A wrap goes on from a whole line, but a short line ends it.
-      const continues = current && !current.tail && current.rightStart === leftStart && current.rightEnd === lineEnd;
+      const runGoesOn = current && !current.tail && current.rightStart === leftStart && current.rightEnd === lineEnd;
+      const continues = runGoesOn && current.prefix === prefix;
+      const prefixFits = (!prefix || rightWhole) && (!runGoesOn || continues);
       // A JSON string's \n right after its value's first few characters, like {"secret":"AK\nIA…"} or a connection
       // string's "postgres\n://…", splits that one value, since no space sits between the opening quote and the
       // break, nor right after it. Each line is walked back only as far as its own start.
@@ -345,10 +526,14 @@
       while (firstLine > lineStart && !/[\s"]/.test(clean[firstLine - 1])) firstLine--;
       const valueStart =
         fromJson && lineEnd > firstLine && clean.charCodeAt(firstLine - 1) === 34 && /[^\s"]/.test(clean[rightStart]);
+      // A line can end on a key's own start alone, like "ghp_" or "AKIA", with the rest of the key under it.
       const leftLong =
-        leftLength >= 16 || (leftLength >= 8 && (KEY_START.test(clean.slice(leftStart, lineEnd)) || sensitiveYamlWrap));
-      const eligible = (leftLong || continues || valueStart) && (rightLength > 0 || valueStart) && !assignment;
-      const nextLineStart = eligible && sameYamlBlock ? rightStart : afterBreakStart;
+        leftLength >= 16 ||
+        (leftLength >= 8 && sensitiveYamlWrap) ||
+        (leftLength >= 3 && KEY_START.test(clean.slice(leftStart, lineEnd)));
+      const eligible =
+        (leftLong || continues || valueStart) && (rightLength > 0 || valueStart) && !assignment && prefixFits;
+      const nextLineStart = eligible && (sameYamlBlock || prefix) ? rightStart : afterBreakStart;
       newline = nextLineStart - 1;
       // A next line under 8 characters is either a wrapped value's last bit or the next word, like the "Thanks"
       // under a key, so it joins only as a tail, which detect() keeps when the value needs it.
@@ -362,6 +547,14 @@
         rightEnd,
         rightLength,
         tail,
+        // Whether the next line's part could be the rest of a key: long enough, the whole of its line or closed by
+        // a quote or bracket, and not shaped like a UUID, a date or an assignment. A JSON value split near its
+        // start is one value, whatever its second line holds.
+        keyRest:
+          valueStart ||
+          (rightLength >= 8 &&
+            !CODE_AFTER.test(clean[rightEnd] || "") &&
+            !NOT_KEY_REST.test(clean.slice(rightStart, rightEnd))),
       };
 
       if (eligible) {
@@ -373,6 +566,7 @@
             rightEnd,
             size,
             tail,
+            prefix,
             breaks: joinedRuns < MAX_JOINED_RUNS && size <= MAX_JOINED_TOKEN ? [boundary] : null,
           };
         } else {
@@ -395,6 +589,7 @@
     const sourceEnd = [];
     const breaks = [];
     const tails = new Map(); // where a tail break is → where its short line ends, both in the joined text
+    const notKeyRest = new Set(); // breaks whose next line's part can't be the rest of a key
     const parts = [];
     let copiedThrough = 0;
     const copy = (from, to) => {
@@ -408,10 +603,11 @@
       copy(copiedThrough, boundary.separatorStart);
       breaks.push(sourceStart.length);
       if (boundary.tail) tails.set(sourceStart.length, sourceStart.length + boundary.rightLength);
+      if (!boundary.keyRest) notKeyRest.add(sourceStart.length);
       copiedThrough = boundary.newline + 1;
     }
     copy(copiedThrough, clean.length);
-    return { text: parts.join(""), sourceStart, sourceEnd, breaks, tails };
+    return { text: parts.join(""), sourceStart, sourceEnd, breaks, tails, notKeyRest };
   }
 
   // Returns a match the second reading found that the first reading missed, written the way the page actually
@@ -436,7 +632,148 @@
   // behind each individual match. Those only exist for matches that are still in the result, and only hold the
   // words shown on screen, since decide.js's whoAsks turns a reason into that wording. Nothing about a reason is
   // ever stored.
+  //
+  // The last answer: a pause while typing and then Send scan one draft twice, so detect() keeps its last answer and
+  // hands the same text a fresh copy of it without running a rule. It holds only while the rules are the same ones
+  // under the same names and the vault is unchanged (setVault makes a new kinds list each time), and an answer the
+  // time limit cut short is never kept. detect.forget() drops it, for a timing test that has to scan afresh.
+  let lastDetect = null;
+  const copyResults = (results) =>
+    results.map((r) => ({
+      ...r,
+      matches: [...r.matches],
+      ...(r.asks ? { asks: [...r.asks] } : {}),
+      ...(r.reasonOf ? { reasonOf: new Map(r.reasonOf) } : {}),
+    }));
+
+  // A window that cuts a value off at its end, or starts partway into one, can find a piece of it, like a card's
+  // first 10 digits read as a phone number. The window on the other side of that seam sees the whole value, so a
+  // window leaves what it found within SEAM_ZONE of a seam to its neighbour: `held` is what touches its end, which
+  // the caller keeps only if the next window can't finish; anything touching its start, `dropped`, is left out, since
+  // the window before already read it whole. A kind that needs its label in the text it reads, like a seed phrase's
+  // "seed phrase", is the exception detectFresh looks after (seamRescue). A value long enough to reach past the
+  // overlap stays, as does a private key, whose pieces detect() joins on its own.
+  const SEAM_ZONE = 1024;
+  const SEAM_VALUE_MAX = DETECT_WINDOW_OVERLAP - 2 * SEAM_ZONE;
+  function seamParts(results, windowText, trimStart, trimEnd) {
+    if (!trimStart && !trimEnd) return { kept: results, held: [], dropped: [] };
+    const length = windowText.length;
+    const atEnd = (m) =>
+      trimEnd &&
+      windowText.indexOf(m, Math.max(0, length - SEAM_ZONE - m.length + 1)) >= 0 &&
+      windowText.indexOf(m) >= length - DETECT_WINDOW_OVERLAP + SEAM_ZONE;
+    const atStart = (m) =>
+      trimStart &&
+      windowText.lastIndexOf(m, SEAM_ZONE - 1) >= 0 &&
+      windowText.lastIndexOf(m) + m.length <= DETECT_WINDOW_OVERLAP - SEAM_ZONE;
+    const kept = [];
+    const held = [];
+    const dropped = [];
+    const part = (result, matches) => {
+      if (matches.length === result.matches.length) return result;
+      const out = { ...result, matches };
+      if (result.reasonOf) {
+        const own = new Set(matches);
+        out.reasonOf = new Map([...result.reasonOf].filter(([m]) => own.has(m)));
+      }
+      return out;
+    };
+    for (const result of results) {
+      if (result.id === "private_key") {
+        kept.push(result);
+        continue;
+      }
+      const keep = [];
+      const hold = [];
+      const drop = [];
+      for (const m of result.matches) {
+        if (!m || m.length > SEAM_VALUE_MAX) keep.push(m);
+        else if (atEnd(m)) hold.push(m);
+        else if (atStart(m)) drop.push(m);
+        else keep.push(m);
+      }
+      if (keep.length) kept.push(part(result, keep));
+      if (hold.length) held.push(part(result, hold));
+      if (drop.length) dropped.push(part(result, drop));
+    }
+    return { kept, held, dropped };
+  }
+
+  // A kind that needs its label in the text it reads (patterns.js' `labelAnywhere`: a seed phrase, a backup-code
+  // file) can be found near a seam by the window that holds the label and missed by the window on the other side,
+  // which can't see it: a phrase near a window's end labelled at its start, or one right after a window's start
+  // labelled further on. Each window leaves such a value to the other, so neither would report it. `pieces` are what
+  // window `own` found of such kinds near its seam with window `other`; any `other` didn't report there too is read
+  // again by `other`, for those kinds alone, told that the label is there, and what it then finds over the same
+  // place is kept. `other` reads the value whole, so a piece of a longer list cut by the seam is kept only when the
+  // whole list is a phrase too. The label still counts only from a window that holds the value: one a window or
+  // more away from a column of codes or a word list says nothing about them, as in any large paste. `labelled` holds
+  // those kinds' ids; each window is { from, to, text, link, results }, `results` being all it found.
+  function seamRescue(pieces, own, other, labelled, scan) {
+    const lo = Math.max(own.from, other.from);
+    const hi = Math.min(own.to, other.to);
+    const placeOf = (match, win) => {
+      const at = win.text.indexOf(match, Math.max(0, lo - win.from - match.length + 1));
+      return at >= 0 && win.from + at < hi ? [win.from + at, win.from + at + match.length] : null;
+    };
+    const overlaps = (match, win, spans) => {
+      const at = win.text.indexOf(match, Math.max(0, spans[0][0] - win.from - match.length + 1));
+      if (at < 0) return false;
+      const a = win.from + at;
+      const b = a + match.length;
+      return spans.some(([s, e]) => a < e && b > s);
+    };
+    const missed = new Map(); // kind → where its values sit in the paste
+    for (const result of pieces) {
+      if (!labelled.has(result.id)) continue;
+      const theirs = other.results.find((r) => r.id === result.id);
+      for (const match of result.matches) {
+        const span = placeOf(match, own);
+        if (!span || (theirs && theirs.matches.some((m) => overlaps(m, other, [span])))) continue;
+        if (!missed.has(result.id)) missed.set(result.id, []);
+        missed.get(result.id).push(span);
+      }
+    }
+    if (!missed.size || scan.timedOut) return [];
+    const only = PATTERNS.filter((pattern) => missed.has(pattern.id));
+    const told = new Map(only.map((pattern) => [pattern, true]));
+    const found = [];
+    for (const result of detectWindow(other.text, scan, { told, only, link: other.link })) {
+      const spans = missed.get(result.id);
+      if (!spans) continue;
+      spans.sort((a, b) => a[0] - b[0]);
+      const matches = result.matches.filter((m) => m && overlaps(m, other, spans));
+      if (!matches.length) continue;
+      const out = { ...result, matches };
+      if (result.reasonOf) out.reasonOf = new Map([...result.reasonOf].filter(([m]) => matches.includes(m)));
+      found.push(out);
+    }
+    return found;
+  }
+
   function detect(text) {
+    const vault = vaultKinds();
+    const rules = [...PATTERNS, ...vault];
+    const kept = lastDetect;
+    if (
+      kept?.text === text &&
+      kept.vault === vault &&
+      kept.rules.length === rules.length &&
+      rules.every((rule, i) => rule === kept.rules[i] && rule.name === kept.names[i])
+    ) {
+      return copyResults(kept.results);
+    }
+    const results = detectFresh(text);
+    lastDetect = results.truncated
+      ? null
+      : { text, vault, rules, names: rules.map((rule) => rule.name), results: copyResults(results) };
+    return results;
+  }
+  detect.forget = () => {
+    lastDetect = null;
+  };
+
+  function detectFresh(text) {
     const scan = { deadline: Date.now() + DETECT_BACKSTOP_MS, charsLeft: DETECT_BUDGET_CHARS, timedOut: false };
     if (text.length <= DETECT_WINDOW_CHARS) return detectWindow(text, scan);
 
@@ -473,13 +810,31 @@
       }
     };
 
+    // A window that starts inside a link reads it as the paste read from its start would (linkAt), so a label or a
+    // value URL-encoded in a link that crosses a seam reads the same from either window. A kind that needs its label
+    // in the text it reads gets one more look at each seam (seamRescue).
+    const labelled = new Set(PATTERNS.filter((pattern) => pattern.labelAnywhere && pattern.find).map((p) => p.id));
     let from = 0;
+    let held = null; // what the last window found in its own last stretch, kept only if the next one can't finish
+    let last = null; // the window before, for seamRescue
     while (from < text.length) {
       let to = Math.min(from + DETECT_WINDOW_CHARS, text.length);
       if (to < text.length && text.charCodeAt(to - 1) >= 0xd800 && text.charCodeAt(to - 1) <= 0xdbff) to--;
       const windowText = text.slice(from, to);
-      merge(detectWindow(windowText, scan), windowText, from);
-      if (scan.timedOut || to === text.length) break;
+      const link = from > 0 ? linkAt(text, from) : null;
+      const results = detectWindow(windowText, scan, { link });
+      const win = { from, to, text: windowText, link, results };
+      if (held && scan.timedOut) merge(held.results, held.windowText, held.from);
+      const isLast = scan.timedOut || to === text.length;
+      const parts = seamParts(results, windowText, from > 0, !isLast);
+      merge(parts.kept, windowText, from);
+      if (last && labelled.size && !scan.timedOut) {
+        if (held) merge(seamRescue(held.results, last, win, labelled, scan), windowText, from);
+        merge(seamRescue(parts.dropped, win, last, labelled, scan), last.text, last.from);
+      }
+      held = parts.held.length ? { results: parts.held, windowText, from } : null;
+      if (isLast) break;
+      last = win;
       from = to - DETECT_WINDOW_OVERLAP;
       if (from > 0 && text.charCodeAt(from) >= 0xdc00 && text.charCodeAt(from) <= 0xdfff) from--;
     }
@@ -558,17 +913,22 @@
     return results;
   }
 
-  function detectWindow(text, scan) {
-    const { clean, start, end, jsonBreaks } = cleanText(text);
+  // A window of a large paste (detectFresh) can get `how`: `link` when it starts inside a link (linkAt); and `only`
+  // and `told` when seamRescue reads it again for those kinds alone, told their labels are there (a Map, kind → true).
+  function detectWindow(text, scan, how) {
+    const { link, only, told } = how || {};
+    const { clean, start, end, jsonBreaks } = cleanText(text, link);
     const yamlLines = yamlLiteralBlockLines(clean);
     const results = [];
-    const kinds = [...PATTERNS, ...vaultKinds()];
+    const kinds = only || [...PATTERNS, ...vaultKinds()];
     const why = [new Map(), new Map(), new Map()]; // one per reading: value → reason
     const read = (pattern, t, reasons) =>
       pattern.find
         ? pattern.id === "password"
           ? pattern.find(t, reasons)
-          : pattern.find(t)
+          : told && told.has(pattern)
+            ? pattern.find(t, undefined, told.get(pattern))
+            : pattern.find(t)
         : t.match(pattern.regex) || [];
     const { deadline } = scan;
     let charsLeft = scan.charsLeft;
@@ -592,7 +952,7 @@
     const first = kinds.map((pattern) => (withinBudget(clean.length) ? read(pattern, clean, why[0]) : []));
     const reading = withinBudget(clean.length) && secondReading(clean);
     const second = reading
-      ? PATTERNS.map((pattern) =>
+      ? (only || PATTERNS).map((pattern) =>
           pattern.find?.fromVault || !withinBudget(reading.text.length) ? [] : read(pattern, reading.text, why[1]),
         )
       : [];
@@ -607,6 +967,24 @@
           withinBudget(joinedReading.text.length) ? read(pattern, joinedReading.text, why[2]) : [],
         )
       : [];
+    // A word like "Thanks" on the line under a wrapped key is joined on as a possible last bit of it, which turns a
+    // key of fixed length into one too long for its rule. So each run that ends in such a word is read once more,
+    // stopping right before the word, and what that finds is a value of the joined reading too.
+    if (joinedReading) {
+      let snippets = 0;
+      for (const [last, tailEnd] of joinedReading.tails) {
+        if (snippets >= MAX_WORD_TAIL_READS) break;
+        if (!TAIL_WORD.test(joinedReading.text.slice(last, tailEnd))) continue;
+        let from = Math.max(joinedReading.text.lastIndexOf("\n", last - 1) + 1, last - MAX_JOINED_TOKEN - 256);
+        while (from < last && isTokenCode(joinedReading.text.charCodeAt(from - 1))) from++;
+        const before = joinedReading.text.slice(from, last);
+        snippets++;
+        for (const [i, pattern] of kinds.entries()) {
+          if (!withinBudget(before.length)) break;
+          for (const m of read(pattern, before, why[2])) if (!third[i].includes(m)) third[i].push(m);
+        }
+      }
+    }
     const counts = (pattern, m) => (!pattern.validate || pattern.validate(m)) && !(pattern.secret && isPlaceholder(m));
     // What the first reading found, by where it ends in the cleaned text.
     let firstEnds = null;
@@ -639,6 +1017,21 @@
       if (!withinBudget(before.length)) return false;
       return read(pattern, before, new Map()).some(
         (m) => m.length >= splitAt - at && before.endsWith(m) && counts(pattern, m),
+      );
+    };
+    // Whether the first reading found a valid value of this same kind from `at` (or before) up to the break, or,
+    // for a kind read from a label (a password, a service token), a provider's own kind found exactly there: the
+    // more specific kind keeps the value.
+    const sameKindEndsAt = (pattern, at, splitAt) => {
+      const from = joinedReading.sourceStart[at];
+      return firstEndingAt(joinedReading.sourceEnd[splitAt - 1]).some(
+        (found) =>
+          (found.pattern === pattern && found.at <= from) ||
+          (LABEL_KINDS.has(pattern.id) &&
+            found.at === from &&
+            found.pattern.secret &&
+            found.pattern.group === "credentials" &&
+            !LABEL_KINDS.has(found.pattern.id)),
       );
     };
     // Breaks are in the order they're written, so the first one after a place is a binary search away. A paste can
@@ -704,6 +1097,14 @@
         ) {
           length = last - at;
           if (!crossesBreak(at, at + length)) continue;
+        }
+        // A key this kind already found whole on the first line, ending right at the one break the match crosses,
+        // keeps the next line out unless that line reads as the rest of a key: "token: ghp_…" over "B=2", "2026", a
+        // UUID or a timestamp stays the token alone, so Cover it leaves that line and the fingerprint stays put.
+        const firstBreak = breakAfter(at);
+        if (breakAfter(at + length - 1) - firstBreak === 1) {
+          const splitAt = breaks[firstBreak];
+          if (joinedReading.notKeyRest.has(splitAt) && sameKindEndsAt(pattern, at, splitAt)) continue;
         }
         const cleanFrom = joinedReading.sourceStart[at];
         const cleanTo = joinedReading.sourceEnd[at + length - 1];
@@ -790,7 +1191,7 @@
     // `overlapChecks` counts candidates, never values, so the growth check can use the algorithm's work instead of
     // the clock, which is too noisy on a busy machine.
     const kept = [];
-    globalThis.Clotr.overlapChecks = 0;
+    if (!only) globalThis.Clotr.overlapChecks = 0; // a window read again adds its own
     const occurrenceCache = new Map();
     const spansOf = (value) => {
       if (occurrenceCache.has(value)) return occurrenceCache.get(value);
@@ -988,12 +1389,19 @@
     s.replace(/\\([nrtbf()\\]|[0-7]{1,3})/g, (_match, e) =>
       /[0-7]/.test(e[0]) ? String.fromCharCode(parseInt(e, 8)) : ESCAPES[e],
     );
-  function showText(content, cmap) {
+  // `wide`: the maps have two-byte codes, so a code none of them knows is skipped four hex digits at a time. A code
+  // a map does know moves on by its own width, so a simple font's one-byte map (<20> to <7E>) reads every byte.
+  function showText(content, cmap, wide = true) {
     const hex = (raw) => {
       const h = raw.replace(/\s+/g, "").toLowerCase();
       if (cmap.size) {
         let s = "";
-        for (let i = 0; i < h.length; i += 4) s += cmap.get(h.slice(i, i + 4)) ?? cmap.get(h.slice(i, i + 2)) ?? "";
+        for (let i = 0; i < h.length;) {
+          const two = cmap.get(h.slice(i, i + 4));
+          const one = two === undefined ? cmap.get(h.slice(i, i + 2)) : undefined;
+          s += two ?? one ?? "";
+          i += two !== undefined ? 4 : one !== undefined || !wide ? 2 : 4;
+        }
         if (s) return s;
       }
       let s = "";
@@ -1004,21 +1412,40 @@
     // looked at, so a hostile file can't make any character get visited more than a bounded number of times.
     let out = "";
     let inArray = false;
+    let flatUntil = 0;
     const n = content.length;
     for (let i = 0; i < n;) {
       const c = content[i];
       if (c === "(") {
+        // Balanced parentheses inside a string needn't be escaped, so the string ends at the ")" that closes its own
+        // "(". A file whose inner "(" never closes still ends at the first ")", as before, and so does every string
+        // that starts inside the window that one looked at, so no character is looked at by more than one such scan.
+        const nested = i >= flatUntil;
         let j = i + 1;
         let s = "";
-        while (j < n && j - i <= 4096 && content[j] !== ")") {
+        let depth = 0;
+        let first = -1; // the first unescaped ")" and the string up to it
+        let firstText = "";
+        while (j < n && j - i <= 4096 && !(content[j] === ")" && (depth === 0 || !nested))) {
           if (content[j] === "\\") {
             s += content.slice(j, j + 2);
             j += 2;
-          } else s += content[j++];
+            continue;
+          }
+          if (content[j] === "(") depth++;
+          else if (content[j] === ")") {
+            if (first < 0) [first, firstText] = [j, s];
+            depth--;
+          }
+          s += content[j++];
         }
         if (content[j] === ")") {
           out += pdfString(s);
           i = j + 1;
+        } else if (first >= 0) {
+          out += pdfString(firstText);
+          flatUntil = j;
+          i = first + 1;
         } else i = j; // unclosed: skip it
         continue;
       }
@@ -1051,16 +1478,28 @@
     const cmap = new Map();
     const budget = { left: MAX_CMAP_TOTAL };
     for (const s of streams) if (s.includes("begincmap")) readCMap(s, cmap, budget);
+    let wide = false;
+    for (const code of cmap.keys()) {
+      if (code.length > 2) {
+        wide = true;
+        break;
+      }
+    }
     return streams
       .filter((s) => !s.includes("begincmap") && /Tj|TJ/.test(s))
-      .map((s) => showText(s, cmap))
+      .map((s) => showText(s, cmap, wide))
       .join(" ; ");
   }
 
   // Turns Office XML (docx, xlsx, pptx, OpenDocument) into plain text in one linear pass. A hostile file can't
   // make this crawl; an earlier regex-based version took 54 seconds on 600 KB of "<a <a <a…".
   const XML_ENTITIES = { amp: "&", lt: "<", gt: ">", quot: '"', apos: "'" };
-  const BREAK_TAG = /^(?:\/(?:w:p|a:p|text:p|si|row|c)|w:br\/?|w:tab\/?)$/;
+  // A paragraph's or cell's end, and the line breaks and tabs inside one (Word's w:br, w:cr and w:tab, PowerPoint's
+  // a:br, OpenDocument's text:line-break and text:tab), with or without attributes, each start a new line;
+  // OpenDocument's text:s is a run of spaces. Dropping them glued the words on either side into one.
+  const BREAK_TAG =
+    /^(?:\/(?:w:p|a:p|text:p|text:h|si|row|c)|(?:w:br|w:cr|w:tab|a:br|text:tab|text:line-break)(?:\s[\s\S]*)?\/?)$/;
+  const SPACE_TAG = /^text:s(?:\s[\s\S]*)?\/?$/;
   function xmlToText(xml) {
     // Plain text gets copied in one slice per run and joined once at the end. Appending one character at a time
     // grew faster than the input on hostile "&aaaa…" text, which CI caught.
@@ -1076,7 +1515,11 @@
           return parts.join("");
         } // there are no more tags, so the rest of the file isn't document text
         if (i > run) parts.push(xml.slice(run, i));
-        if (close - i < 64 && BREAK_TAG.test(xml.slice(i + 1, close).trim())) parts.push("\n");
+        if (close - i < 64) {
+          const tag = xml.slice(i + 1, close).trim();
+          if (BREAK_TAG.test(tag)) parts.push("\n");
+          else if (SPACE_TAG.test(tag)) parts.push(" ");
+        }
         i = run = close + 1;
         continue;
       }
@@ -1299,49 +1742,318 @@
   // A pattern with its own `replace(match)` (Clean link) uses that instead, so "hiding" a link really means
   // cleaning it rather than blanking it out.
   // Findings can overlap, so merge their raw spans before replacing any text.
-  function replaceBySpan(text, replacements) {
-    const spans = [];
-    for (const { match, replacement } of replacements) {
-      if (!match) continue;
-      let from = 0;
-      let start = text.indexOf(match, from);
-      while (start >= 0) {
-        spans.push({ start, end: start + match.length, replacement, length: match.length });
-        from = start + 1;
-        start = text.indexOf(match, from);
+  // A saved word (the vault's) is only ever found standing as a word of its own, so a copy inside a longer word
+  // ("Ann" in "Annabelle") isn't one and stays. Its edges are read as detect() read them: next to anything but a
+  // letter or digit of any script (patterns.js vaultMatches), in the text as written or as cleaned (cleanText),
+  // where a JSON string's "\n" is a line break and a link's "%20" a space. Every other kind, a value in a saved
+  // format included, goes everywhere it appears (but for the short-value rule below), so nothing of a secret survives.
+  const wordChar = (ch) => Boolean(ch) && /[\p{L}\p{N}]/u.test(ch);
+  const insideWord = (match, before, after) =>
+    (wordChar(match[0]) && wordChar(before)) || (wordChar(match[match.length - 1]) && wordChar(after));
+  let cleanedRead = { text: null };
+  // The characters just before and after text.slice(start, end) in the cleaned text, or null if nothing was cleaned.
+  function cleanedAround(text, start, end) {
+    if (cleanedRead.text !== text) cleanedRead = { text, ...cleanText(text) };
+    const { clean, start: from } = cleanedRead;
+    if (!from) return null;
+    const firstAt = (at) => {
+      let low = 0;
+      let high = from.length;
+      while (low < high) {
+        const middle = (low + high) >> 1;
+        if (from[middle] < at) low = middle + 1;
+        else high = middle;
+      }
+      return low;
+    };
+    return { before: clean[firstAt(start) - 1], after: clean[firstAt(end)] };
+  }
+  // Whether the copy of `match` at `start` stands as a word, in the text as written or as cleaned.
+  function standsAsWord(text, match, start) {
+    const end = start + match.length;
+    if (!insideWord(match, text[start - 1], text[end])) return true;
+    const read = cleanedAround(text, start, end);
+    return Boolean(read) && !insideWord(match, read.before, read.after);
+  }
+  function wordStarts(text, match, whole) {
+    const starts = [];
+    for (let start = text.indexOf(match); start >= 0; start = text.indexOf(match, start + 1)) {
+      if (!whole || standsAsWord(text, match, start)) starts.push(start);
+    }
+    return starts;
+  }
+  // Whether `match`, found by `r`, is a saved word, covered only where it stands as one.
+  const isSavedWord = (r, match) => Boolean(r.find?.fromVault) && !isVaultFormat(match);
+
+  // Every copy of a value is hidden, except that a short one (under 16 characters) inside a longer number, like a
+  // card's "123" in order "#12345", is left alone when the value also stands on its own somewhere: that copy isn't
+  // the value. Only an ASCII digit beside a digit counts, as with the patterns' \d. A letter doesn't: Vietnamese,
+  // Chinese or Japanese text runs words straight into numbers ("số078-05-1120"), and the value is found there all
+  // the same. A long one (a token) is hidden wherever it is, and so is a value found nowhere else.
+  const SHORT_VALUE = 16;
+  const isDigit = (c) => c !== undefined && c >= "0" && c <= "9";
+
+  // A value can also be copied written another way: URL-encoded ("219%2D09%2D9999", or "%20219-09-9999" after a
+  // space) in a link, a form body or a logged request, or escaped in a JSON string ("2" for "2", '\"' for '"').
+  // Hide it reads the text once more with every such escape read as the character it stands for, wherever it is,
+  // and hides each copy found there too; `start` and `end` map each read character back to the text as written, so
+  // the whole escape goes and the rest stays exactly as it was. A form body writes a space as "+", so a value with
+  // a space is looked for that way as well. This reading only finds copies of values already found, never anything new.
+  const ESCAPED = /%[0-9a-f]{2}|\\[u"\\/nrt]/i;
+  const JSON_UNIT = /^\\u[0-9a-f]{4}$/i;
+  const JSON_ESCAPES = { '"': '"', "\\": "\\", "/": "/", n: "\n", r: "\r", t: "\t" };
+  // The character an escape at `i` stands for, and its length, or null.
+  function escapeAt(text, i) {
+    if (text[i] === "%") {
+      const decoded = percentDecoded(text, i);
+      return decoded === null ? null : { ch: decoded, length: 3 };
+    }
+    if (text[i] !== "\\") return null;
+    const unit = text.slice(i, i + 6);
+    if (JSON_UNIT.test(unit)) return { ch: String.fromCharCode(parseInt(unit.slice(2), 16)), length: 6 };
+    const ch = JSON_ESCAPES[text[i + 1]];
+    return ch === undefined ? null : { ch, length: 2 };
+  }
+  function unescapedRead(text, always) {
+    if (!always && !ESCAPED.test(text)) return null;
+    let clean = "";
+    const start = [];
+    const end = [];
+    for (let i = 0; i < text.length;) {
+      const escape = escapeAt(text, i);
+      const next = i + (escape ? escape.length : 1);
+      clean += escape ? escape.ch : text[i];
+      start.push(i);
+      end.push(next);
+      i = next;
+    }
+    return { clean, start, end };
+  }
+  const unescaped = (value) => {
+    const read = unescapedRead(value);
+    return read ? read.clean : value;
+  };
+  // The characters just before `start` and from `end` on, read through an escape that ends or starts there: the "0"
+  // of "%20" is a space, not a digit the value is glued to, while "%31" is a "1". A digit just before can end any
+  // escape: %XX, the same encoded again as %25XX (a link carried in a redirect= parameter), %uXXXX, a backslash's
+  // \uXXXX, \UXXXXXXXX, \xXX or octal \NNN (JavaScript, Python, C), CSS's \XXXXXX, quoted-printable's =XX (raw
+  // email, and a MIME "=?UTF-8?Q?...?=" subject) or an HTML &#NN with no ";". Each reads as the character it stands
+  // for, so only an escape for a digit glues a copy to it; one that reads as a space or a quote never makes Hide it
+  // skip a copy. Hide it fails closed: a backslash or "&#" escape it can't read for sure (a 4-digit CSS escape, an
+  // HTML reference that runs on into the copy) reads as no digit, so that copy is hidden too. A "%" or "=" escape
+  // always has two hex digits, so more digits after one ("50%2019", "a=2045") are plain digits.
+  const ESCAPE_TAIL = /(?:%(?:25)*(u?)|\\([uUxX]?)|(=)|&#[xX]?)([0-9a-f]+)$/i;
+  // What quoted-printable writes as =XX: a space, a tab or a mark, never a letter (so "id=41" stays a number), and a
+  // byte of a longer character right after another =XX.
+  const QP_MARK = /^[\t !-/:-@[-`{-~]$/;
+  const QP_BYTE_BEFORE = /=[0-9a-f]{2}$/i;
+  const UNKNOWN_ESCAPE = "";
+  function readBefore(text, start) {
+    const before = text[start - 1];
+    if (!isDigit(before)) return before;
+    const near = text.slice(Math.max(0, start - 32), start);
+    const tail = ESCAPE_TAIL.exec(near);
+    if (!tail) return before;
+    const [escape, percentU, letter, equals, body] = tail;
+    const hex = (digits) => String.fromCharCode(parseInt(digits, 16));
+    if (escape[0] === "%") {
+      const width = percentU ? 4 : 2;
+      return body.length === width ? hex(body) : before;
+    }
+    if (equals) {
+      if (body.length !== 2) return before;
+      const ch = hex(body);
+      if (QP_MARK.test(ch)) return ch;
+      return ch.charCodeAt(0) >= 0x80 && QP_BYTE_BEFORE.test(near.slice(0, -3)) ? ch : before;
+    }
+    if (escape[0] === "&") return UNKNOWN_ESCAPE; // the browser reads on into the copy's digits
+    if (letter) {
+      const width = { u: 4, U: 8, x: 2, X: 2 }[letter];
+      if (body.length === width) return hex(body);
+      return body.length > width ? before : UNKNOWN_ESCAPE;
+    }
+    // A bare backslash: octal \N to \NNN, or CSS's six hex digits; seven or more end in a plain digit either way.
+    if (body.length <= 3 && /^[0-7]+$/.test(body)) return String.fromCharCode(parseInt(body, 8));
+    if (body.length === 6) return hex(body);
+    return body.length > 6 ? before : UNKNOWN_ESCAPE;
+  }
+  function readAfter(text, end) {
+    const escape = escapeAt(text, end);
+    return escape ? escape.ch : text[end];
+  }
+
+  // Where each value starts in the text, overlapping copies included. A few values are each found with indexOf;
+  // many (a pasted list of contacts) are all found in one pass over the text (Aho-Corasick), since one indexOf
+  // pass per value took 18 seconds on 36,000 email addresses in 2 MB.
+  function startsOf(text, values) {
+    const found = new Map(values.filter(Boolean).map((s) => [s, []]));
+    if (found.size <= 32) {
+      for (const [s, list] of found) {
+        for (let at = text.indexOf(s); at >= 0; at = text.indexOf(s, at + 1)) list.push(at);
+      }
+      return found;
+    }
+    const words = [...found.keys()];
+    const lists = words.map((s) => found.get(s));
+    // A trie of every value, one node per prefix: edge maps node * 65536 + a UTF-16 code unit to the next node.
+    const edge = new Map();
+    const parent = [0];
+    const unit = [0];
+    const depth = [0];
+    const word = [-1]; // the value a node spells out in full, or -1
+    words.forEach((s, w) => {
+      let node = 0;
+      for (let i = 0; i < s.length; i++) {
+        const key = node * 65536 + s.charCodeAt(i);
+        let next = edge.get(key);
+        if (next === undefined) {
+          next = parent.length;
+          edge.set(key, next);
+          parent.push(node);
+          unit.push(s.charCodeAt(i));
+          depth.push(depth[node] + 1);
+          word.push(-1);
+        }
+        node = next;
+      }
+      word[node] = w;
+    });
+    // Each node's fallback (the longest proper suffix of its prefix that's also a prefix), shallowest nodes first,
+    // and the nearest node along the fallbacks that spells out a whole value (0 for none).
+    const byDepth = [];
+    for (let n = 1; n < parent.length; n++) {
+      if (!byDepth[depth[n]]) byDepth[depth[n]] = [];
+      byDepth[depth[n]].push(n);
+    }
+    const fail = new Int32Array(parent.length);
+    const out = new Int32Array(parent.length);
+    for (const level of byDepth) {
+      for (const n of level || []) {
+        if (parent[n]) {
+          let f = fail[parent[n]];
+          let next;
+          while ((next = edge.get(f * 65536 + unit[n])) === undefined && f) f = fail[f];
+          fail[n] = next ?? 0;
+        }
+        out[n] = word[fail[n]] >= 0 ? fail[n] : out[fail[n]];
       }
     }
+    let state = 0;
+    for (let i = 0; i < text.length; i++) {
+      const c = text.charCodeAt(i);
+      let next;
+      while ((next = edge.get(state * 65536 + c)) === undefined && state) state = fail[state];
+      state = next ?? 0;
+      for (let n = word[state] >= 0 ? state : out[state]; n; n = out[n]) lists[word[n]].push(i - depth[n] + 1);
+    }
+    return found;
+  }
+  function replaceBySpan(text, replacements) {
+    const spans = [];
+    const starts = startsOf(
+      text,
+      replacements.map((r) => r.match),
+    );
+    // The text read with its escapes read as characters, and each value as it reads there, plain and as a form
+    // body writes it ("+" for a space).
+    const plus = text.includes("+");
+    const read = unescapedRead(text, plus && replacements.some((r) => / |%20/.test(r.match)));
+    const readAs = new Map();
+    if (read) {
+      for (const { match } of replacements) {
+        if (!match || readAs.has(match)) continue;
+        const value = unescaped(match);
+        readAs.set(match, plus && value.includes(" ") ? [value, value.replace(/ /g, "+")] : [value]);
+      }
+    }
+    // Gathered with a loop: spreading one argument per value runs out of stack past about 125,000 values.
+    const readValues = [];
+    for (const list of readAs.values()) for (const value of list) readValues.push(value);
+    const readStarts = read ? startsOf(read.clean, readValues) : null;
+    for (const { match, replacement, clean, label, whole } of replacements) {
+      if (!match) continue;
+      const copies = [];
+      let at = starts.get(match).map((start) => ({ start, end: start + match.length }));
+      // A saved word goes only where it stands as a word, or everywhere if it stands as one nowhere: a found detail
+      // is never left showing.
+      if (whole) {
+        const standing = at.filter(({ start }) => standsAsWord(text, match, start));
+        if (standing.length) at = standing;
+      }
+      if (read) {
+        for (const value of readAs.get(match)) {
+          for (const k of readStarts.get(value)) {
+            const last = k + value.length - 1;
+            if (whole && insideWord(value, read.clean[k - 1], read.clean[last + 1])) continue;
+            at.push({ start: read.start[k], end: read.end[last] });
+          }
+        }
+      }
+      const value = read ? readAs.get(match)[0] : match;
+      const digitFirst = isDigit(value[0]);
+      const digitLast = isDigit(value[value.length - 1]);
+      for (const { start, end } of at) {
+        const glued = (digitFirst && isDigit(readBefore(text, start))) || (digitLast && isDigit(readAfter(text, end)));
+        copies.push({ start, end, glued });
+      }
+      const loose = match.length < SHORT_VALUE && copies.some((c) => !c.glued);
+      for (const { start, end, glued } of copies) {
+        if (!(loose && glued)) spans.push({ start, end, replacement, clean, label });
+      }
+    }
+    return replaceSpans(text, spans);
+  }
+
+  // Overlapping spans become one, replaced by the longest one's replacement. A link that gets cleaned rather than
+  // labeled (Clean link) is always the longest, so anything found inside it (a token, an email address in its
+  // query string) is hidden first and the link cleaned after: cleaning alone keeps every parameter but the
+  // trackers. When something only partly overlaps the link, the whole stretch gets the link's label.
+  function replaceSpans(text, spans) {
     spans.sort((a, b) => a.start - b.start || b.end - a.end);
     const merged = [];
     for (const span of spans) {
       const previous = merged[merged.length - 1];
       if (previous && span.start < previous.end) {
         previous.end = Math.max(previous.end, span.end);
-        if (span.length > previous.length) {
-          previous.replacement = span.replacement;
-          previous.length = span.length;
-        }
+        previous.inside.push(span);
+        if (span.end - span.start > previous.top.end - previous.top.start) previous.top = span;
       } else {
-        merged.push({ ...span });
+        merged.push({ start: span.start, end: span.end, top: span, inside: [span] });
       }
     }
     // One pass, since slicing the whole text again for each span took seconds on a log with a token on every line.
     const parts = [];
     let at = 0;
-    for (const span of merged) {
-      parts.push(text.slice(at, span.start), span.replacement);
-      at = span.end;
+    for (const { start, end, top, inside } of merged) {
+      let replacement = top.replacement;
+      if (top.clean && inside.length > 1) {
+        replacement =
+          start < top.start || end > top.end
+            ? top.label
+            : top.clean(
+                replaceSpans(
+                  text.slice(start, end),
+                  inside.filter((s) => s !== top).map((s) => ({ ...s, start: s.start - start, end: s.end - start })),
+                ),
+              );
+      }
+      parts.push(text.slice(at, start), replacement);
+      at = end;
     }
     parts.push(text.slice(at));
     return parts.join("");
   }
 
+  // A pattern's own replace (Clean link) rides along, with the label to fall back on, for replaceSpans above.
+  const cleaned = (r, match, label) =>
+    r.replace ? { match, replacement: r.replace(match), clean: r.replace, label } : { match, replacement: label };
+
   function redact(text, results) {
     const replacements = results
       .flatMap((r) =>
         r.matches.map((match) => ({
-          match,
-          replacement: r.replace ? r.replace(match) : `[REDACTED ${r.name.toUpperCase()}]`,
+          ...cleaned(r, match, `[REDACTED ${r.name.toUpperCase()}]`),
+          whole: isSavedWord(r, match),
         })),
       )
       .sort((a, b) => b.match.length - a.match.length);
@@ -1390,13 +2102,19 @@
     return { year: Number(year[1]), month };
   }
 
+  // A suite, unit or apartment part, even one lettered rather than numbered ("Suite B", "Unit Penthouse"). Words
+  // that also start town names ("Flat Rock", "Ste. Genevieve") count only before a short designator ("Flat 3B").
+  const UNIT_PART =
+    /^(?:#|(?:apt|apartment|suite|unit|piso|puerta|depto|dpto|departamento)\b|(?:flat|floor|fl|ste|room|rm)\.?\s+\S{1,3}$)/i;
+
   function townOf(match) {
     const parts = match.split(",").map((p) => p.trim());
     if (parts.length < 2) return null;
     // A flat or apartment number in front of the street adds its own comma-separated part, so the town isn't
     // always parts[1]: try each part after the street and keep the first one that's left holding just a name
-    // once its own trailing postcode, state or ZIP (if any) is stripped.
+    // once its own trailing postcode, state or ZIP (if any) is stripped, and isn't a suite or unit.
     for (const part of parts.slice(1)) {
+      if (UNIT_PART.test(part)) continue;
       const town = part
         .replace(/\s+(?:AB|BC|MB|NB|NL|NS|NT|NU|ON|PE|QC|SK|YT)?\s*[A-Z]\d[A-Z]\s?\d[A-Z]\d$/i, "") // Canadian postal code
         .replace(/\s+\(?Qu[ée]bec\)?$/i, "") // Quebec written as the province name
@@ -1435,10 +2153,10 @@
     const replacements = results
       .flatMap((r) =>
         r.matches.map((match) => ({
-          match,
-          replacement: r.replace
-            ? r.replace(match)
-            : (generalForm(r.id, match, locale) ?? `[REDACTED ${r.name.toUpperCase()}]`),
+          ...(r.replace
+            ? cleaned(r, match, `[REDACTED ${r.name.toUpperCase()}]`)
+            : { match, replacement: generalForm(r.id, match, locale) ?? `[REDACTED ${r.name.toUpperCase()}]` }),
+          whole: isSavedWord(r, match),
         })),
       )
       .sort((a, b) => b.match.length - a.match.length);
@@ -1553,6 +2271,8 @@
     detect,
     redact,
     generalize,
+    wordStarts,
+    isSavedWord,
     generalForms,
     BANDAGE_WORDS,
     BANDAGE_BORN_IN,

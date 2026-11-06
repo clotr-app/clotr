@@ -1,5 +1,5 @@
 // "What Clotr stores": shows the extension's stored records, read-only.
-// Nothing here writes to storage or leaves the page. The fingerprint salt is masked.
+// Nothing here writes to storage or leaves the page. The fingerprint salt and the PIN record are masked.
 "use strict";
 
 const $ = (id) => document.getElementById(id);
@@ -313,9 +313,10 @@ function renderOther(all) {
   ]);
 }
 
-// "Show the raw data": every stored record exactly as kept, with the fingerprint secret hidden.
+// "Show the raw data": every stored record exactly as kept, with the fingerprint secret hidden, and the PIN's record
+// too (a 4 to 8 digit PIN can be found again from its hash and salt).
 function renderRaw(all) {
-  const shown = { ...all, ...(all.salt ? { salt: "(hidden)" } : {}) };
+  const shown = { ...all, ...(all.salt ? { salt: "(hidden)" } : {}), ...(all.lock ? { lock: "(set)" } : {}) };
   $("raw").textContent = JSON.stringify(shown, null, 2);
 }
 
@@ -345,7 +346,9 @@ const WHY = {
     "Updates today's count after midnight, removes old history on schedule, and ends Tourniquet's 30 days after a scam on time.",
   ),
 };
-function renderReach() {
+// The sites the browser granted beyond the manifest's (sites you switched on or added, and Everywhere I type) are
+// read from its grants, so the list says what Clotr can reach right now, not just at install.
+function renderReach(granted = []) {
   const m = chrome.runtime.getManifest();
   $("policy").textContent = m.content_security_policy?.extension_pages || "";
   const row = (id, label, why) => {
@@ -353,7 +356,11 @@ function renderReach() {
     dt.dataset.permission = id;
     return [dt, el("dd", { textContent: why })];
   };
+  const host = (s) => s.replace(/^https:\/\/|\/\*$/g, "");
   const sites = m.host_permissions || [];
+  const { EVERYWHERE_ORIGIN } = globalThis.ClotrSites;
+  const everywhere = granted.includes(EVERYWHERE_ORIGIN);
+  const added = [...new Set(granted.filter((o) => !sites.includes(o) && o !== EVERYWHERE_ORIGIN).map(host))];
   $("permissions").replaceChildren(
     ...(m.permissions || []).flatMap((p) =>
       row(p, p, WHY[p] || msg("sj_pOther", "Used by Clotr's own features on this computer.")),
@@ -361,19 +368,41 @@ function renderReach() {
     ...row(
       "AI sites",
       msg("sj_aiSitesN", "$1 AI chat sites", sites.length),
-      msg(
-        "sj_aiSitesWhy",
-        "Reads what you type in the chat boxes of these AI chat sites, to warn you before you send: $1. Never any other site.",
-        sites.map((s) => s.replace(/^https:\/\/|\/\*$/g, "")).join(", "),
-      ),
+      everywhere || added.length
+        ? msg(
+            "sj_aiSitesWhyOnly",
+            "Reads what you type in the chat boxes of these AI chat sites, to warn you before you send: $1.",
+            sites.map(host).join(", "),
+          )
+        : msg(
+            "sj_aiSitesWhy",
+            "Reads what you type in the chat boxes of these AI chat sites, to warn you before you send: $1. Never any other site.",
+            sites.map(host).join(", "),
+          ),
     ),
     ...((m.optional_host_permissions || []).length
       ? row(
           "Sites you add",
           msg("sj_youAdd", "Sites you add"),
+          added.length
+            ? msg(
+                "sj_youAddOn",
+                "Sites you switched on or added yourself, each only after the browser asked you: $1.",
+                added.join(", "),
+              )
+            : msg(
+                "sj_youAddWhy",
+                "Only when you click Protect this site on an AI tool Clotr doesn't know yet, and only after the browser asks you.",
+              ),
+        )
+      : []),
+    ...(everywhere
+      ? row(
+          "Everywhere I type",
+          msg("popup_everywhere", "Everywhere I type"),
           msg(
-            "sj_youAddWhy",
-            "Only when you click Protect this site on an AI tool Clotr doesn't know yet, and only after the browser asks you.",
+            "sj_everywhereWhy",
+            "On, after the browser asked you, so Clotr can read pages on every website (https) too. There it only checks a box that looks like a chat, to warn you before you send. Switch it off in Settings.",
           ),
         )
       : []),
@@ -387,6 +416,7 @@ async function refresh() {
     chrome.permissions.getAll().catch(() => ({})),
   ]);
   render(all, origins);
+  renderReach(origins);
 }
 refresh();
 chrome.storage.onChanged.addListener((_changes, area) => {
