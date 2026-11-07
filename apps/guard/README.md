@@ -150,38 +150,36 @@ address or host name
 counts as a personal detail here. With the option on, Guard names it in a short line but lets the prompt, read or
 commit through, since telling an assistant about your own server is ordinary work.
 
-The prompt hook checks only the prompt field each tool sends to it. Claude Code also checks `mcp__` tool arguments and
-Cursor checks MCP arguments and shell commands. Those checks stop credentials and medium or high findings, asking you
-to decide where the tool supports a question. The Bash and shell hooks look for credentials in commands, common
-environment dumps and file readers that could print secret files. They use the same secret-file rules as reads and
-commits. They do not scan ordinary command words. They read commands the way common shells write them, so an unusual
-command can still get past them. Each shell check has limits. For globs it lists at most 8,192 folder
-entries or spends 1 second listing folders, and it looks up at most 250,000 paths or spends 2 seconds on them; past
-either, it judges the remaining paths by their names alone. A folder a reader such as `grep -r` reads in full is walked,
-up to 131,072 entries in all, within the path check's 5 seconds; a folder too big or too slow for that stops the command. If the path check runs past 5 seconds, or the whole check past 10
-seconds, Guard stops the command and its message says why. The check runs in a process of its own that Guard stops at
-the 10-second limit, so a slow drive or folder can't hold it past that. File-read hooks check Claude Code's `Read`, Cursor's Agent file
-reads, Gemini CLI's `read_file`, Windsurf Cascade's `pre_read_code` and Cline's `PreToolUse`. Binary files and folders pass without a message. Text saved as
-UTF-16, with or without a byte order mark, or in an older single-byte code page is checked like any other text. A
-larger text read checks the first 256 KiB and says the rest wasn't checked. The read hooks show only finding kinds. Secret
-files are denied in every tool with a reason for the assistant
-and no prompt to you. In Claude Code, ordinary files with credentials ask whether to allow the read. The other tools
-stop it, because a second read would come from the assistant rather than from you, so reading the same file again
-never lets it through. Claude Code also
-gets a `Bash` and `PowerShell` hook for plain commands that print secret files or dump the environment. Gemini CLI also loads `.env` files by default. After
-`setup gemini`, Clotr prints how to turn this off with `advanced.ignoreLocalEnv` in Gemini's `settings.json`; Clotr
-does not change that setting. Hook findings never include the full value in their
-message. On Windows, Clotr keeps its repeat record in `%LOCALAPPDATA%\Clotr\guard`; other systems use their per-user
-application data folder. The record is local plain state readable by the same computer account or its processes, and
-Guard does not sync it. It holds a random salt, salted fingerprints of the findings and the time of the first warning.
-Clotr does not save prompt text or file contents. If Clotr hits an internal error while checking a prompt, a file read
-or an MCP tool call, Guard lets it through with a visible note that says it went through unchecked. A shell command is
-stopped instead: when its check hits an internal error or doesn't finish in time, the message says which, and a hook
-that crashes once it has started stops it as a check that didn't finish. A check of a prompt, a file read or an MCP tool call that runs out
-of time, at Guard's own 10-second limit or the engine's, doesn't let it through either: a prompt is stopped, and a read
-or tool call is put to the person (or stopped, where the assistant can't ask), with a message saying part of it wasn't
-checked. Guard stops input it can't read, including malformed hook input and text over the size limit. Claude Code,
-Gemini CLI and Codex CLI give each check up to 15 seconds.
+The prompt hook checks the prompt each tool sends it. Claude Code also checks `mcp__` tool arguments, and Cursor checks
+MCP arguments and shell commands. Credentials and medium or high findings are stopped, or put to you where the tool can
+ask.
+
+Claude Code's `Bash` and `PowerShell` hooks and Cursor's shell hook look for credentials in commands, environment dumps
+and readers that would print a secret file, with the same secret-file rules as reads and commits. They read a command
+the way common shells write it, so an unusual one can still get past them. Past their listing and lookup limits they
+judge paths by name alone. A folder that a reader such as `grep -r` reads in full is walked up to 131,072 entries, and
+one too big or slow for that stops the command, as does a check that runs past 10 seconds.
+
+File-read hooks check Claude Code's `Read`, Cursor's Agent file reads, Gemini CLI's `read_file`, Windsurf Cascade's
+`pre_read_code` and Cline's `PreToolUse`. A secret file is denied in every tool, with a reason for the assistant. In
+Claude Code an ordinary file with credentials asks you first. The other tools stop it, and reading it again won't get it
+through. Binary files and folders pass. Text in UTF-16 or an older code page is checked like any other, and past 256 KiB
+only the start is checked, with a note saying so.
+
+Gemini CLI loads `.env` files by default. `setup gemini` prints how to turn that off with `advanced.ignoreLocalEnv` and
+leaves the choice to you.
+
+A message names the kind of finding and never shows its full value. Guard keeps its repeat record, a random salt,
+salted fingerprints of findings and the time of the first warning, in `%LOCALAPPDATA%\Clotr\guard` on Windows and the
+per-user app data folder elsewhere. The record is local plain state readable by the same computer account or its
+processes, and Guard doesn't sync it. Guard saves no prompt text or file contents.
+
+If Clotr hits an internal error while checking a prompt, a file read or an MCP tool call, Guard lets it through with a
+visible note that says it went through unchecked. A shell command is stopped instead: when its check hits an internal
+error or doesn't finish in time, the message says which, and a hook that crashes once it has started stops it as a check
+that didn't finish. A prompt check that runs out of time stops the prompt, and a read or tool call that does is put to
+you, or stopped where the assistant can't ask. Guard stops input it can't read, including malformed hook input and text
+over the size limit.
 
 ### Search results
 

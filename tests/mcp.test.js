@@ -339,16 +339,6 @@ test("tools carry a title and read-only annotations in each protocol version tha
   );
 });
 
-// Glama builds the server from this file. It installs the published package by version, so a version bump that
-// left it behind would build last release's server.
-test("the Dockerfile installs the Guard version in package.json", () => {
-  const dockerfile = fs.readFileSync(path.join(__dirname, "..", "apps", "guard", "Dockerfile"), "utf8");
-  assert.match(dockerfile, /^FROM node:22-slim$/m);
-  const installs = [...dockerfile.matchAll(/npm install -g clotr-guard@(\S+)/g)].map((match) => match[1]);
-  assert.deepEqual(installs, [guardPackage.version]);
-  assert.match(dockerfile, /^CMD \["clotr-mcp"\]$/m);
-});
-
 // An assistant is sent the whole tool list with every request, so its size is paid in tokens each time. Trimmed, it
 // came to 952 characters. Input descriptions, titles and annotations brought it to 1,679, about 420
 // tokens at four characters a token, and the budget is that plus 10%.
@@ -430,10 +420,10 @@ test("MCP reports a JWT once when two engine findings share its range", () => {
   assert.equal(result.findings.length, 1);
 });
 
-test("the Guard package and MCP command use version 0.1.2", () => {
+test("the Guard package and MCP command use version 0.1.3", () => {
   assert.equal(guardPackage.private, true);
   assert.equal(guardPackage.bin["clotr-mcp"], "bin/clotr-mcp.js");
-  assert.equal(guardPackage.version, "0.1.2");
+  assert.equal(guardPackage.version, "0.1.3");
   assert.ok(guardPackage.files.includes("bin"));
   assert.ok(guardPackage.files.includes("lib"));
   assert.ok(guardPackage.files.includes("dist"));

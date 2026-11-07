@@ -3290,8 +3290,14 @@ function stdinIsFile(from, cwd, budget) {
 // `lastIsSource` says whether cp's last word is copied too (see copySources).
 // `stdin`: the reader's input is redirected from a file or text, so rg given no folder reads that, not the working
 // folder (see stdinIsFile). `pattern`: the words are the shell's own, so grep or rg given none, with no `-e` or `-f`
-// either, only prints its usage (`grep -rn #TODO`, a comment after `grep -rn`).
-function recursiveReadTargets(reader, args, lastIsSource = () => true, { stdin = false, pattern = false } = {}) {
+// either, only prints its usage (`grep -rn #TODO`, a comment after `grep -rn`). `searched`, if given, has `pattern` set
+// to the word rg or findstr searches for, when one of its words is that (see searchPatternAt).
+function recursiveReadTargets(
+  reader,
+  args,
+  lastIsSource = () => true,
+  { stdin = false, pattern = false, searched = null } = {},
+) {
   const name = reader.toLowerCase();
   if (name === "grep") {
     const parsed = parseShellArgs(args, GREP_PARSE);
@@ -3388,6 +3394,7 @@ function recursiveReadTargets(reader, args, lastIsSource = () => true, { stdin =
         ) || unrestricted >= 1,
     };
     const given = parsed.has("e", "regexp", "f", "file");
+    if (searched && !given) searched.pattern = parsed.operands[0];
     if (pattern && !given && !parsed.operands.length) return [];
     const operands = given ? parsed.operands : parsed.operands.slice(1);
     // With no folder, rg reads its input when that's a pipe or redirected from a file or text (`stdin`), unless `-f -`
@@ -3398,6 +3405,7 @@ function recursiveReadTargets(reader, args, lastIsSource = () => true, { stdin =
   if (name === "findstr") {
     // findstr's switches start with `/` (or `-`): flags can share one switch (`/si`), and `/c:`, `/g:`, `/f:`, `/d:`
     // and `/a:` carry a value. Switches can also be joined (`/s/i`, `/s/c:text`), a value switch last, taking the rest.
+    // A doubled `/` is passed over (`//i` is `/i`: findstr ignores the `//`, and Git Bash hands it `/i`).
     // With /s each file name, wildcards and all, is looked for in every folder below.
     const flags = [];
     const values = {};
@@ -3405,7 +3413,7 @@ function recursiveReadTargets(reader, args, lastIsSource = () => true, { stdin =
     for (const arg of args) {
       const value = arg.replace(/^['"]|['"]$/g, "");
       const found = { flags: [], values: [] };
-      const switchAt = /[/-](?:([cgfda]):([^]*)|(offline|[belrsixvnmop]+)(?=\/|$))/iy;
+      const switchAt = /[/-]\/*(?:([cgfda]):([^]*)|(offline|[belrsixvnmop]+)(?=\/|$))/iy;
       let at = 0;
       while (at < value.length) {
         switchAt.lastIndex = at;
@@ -3420,6 +3428,7 @@ function recursiveReadTargets(reader, args, lastIsSource = () => true, { stdin =
         for (const [switchName, given] of found.values) values[switchName] = given;
       } else operands.push(value);
     }
+    if (searched && values.c === undefined && values.g === undefined) searched.pattern = operands[0];
     if (!flags.some((flag) => flag !== "offline" && flag.includes("s"))) return [];
     const files = values.c !== undefined || values.g !== undefined ? operands : operands.slice(1);
     // findstr reads `/d:"C:\proj"` as its own arguments are read, without the quotes, in each folder of a list too.
@@ -4475,6 +4484,14 @@ function inspectShell(tool, event, options = {}) {
     kind: tool === "cursor" ? "any" : event.tool_name === "Bash" ? "bash" : "powershell",
     // Bash's own paths for a glob are the ones Guard lists (see SOLE_JOIN_READER_CALL).
     joinable: tool === "claude" && event.tool_name === "Bash" && SOLE_JOIN_READER_CALL.test(command),
+    // What lets a search's pattern word be told from a file it reads (see patternMayBeFile): the command is one call,
+    // so nothing run first makes a file, and for rg no config file is named, in the hook's environment or the command.
+    oneCall: !/[;&|`(\r\n\u2028\u2029]/.test(command),
+    rgConfig: Boolean(process.env.RIPGREP_CONFIG_PATH) || /RIPGREP_CONFIG_PATH/i.test(command),
+    // The parameters a splat into Copy-Item names, when the command writes them just before (see splatLiteral).
+    splat: splatLiteral(command),
+    // Whether Copy-Item or copy may be another command there (see COPY_REDEFINED).
+    copyRedefined: COPY_REDEFINED.test(command),
     budget,
   };
   // Claude says which of its shells runs the command. Cursor runs the user's terminal: Bash's rules or PowerShell's,
@@ -5916,6 +5933,8 @@ const COPY_ITEM_SWITCHES = [
   "vb",
   "debug",
   "db",
+  "usetransaction",
+  "usetx",
 ];
 const COPY_ITEM_VALUES = [
   "path",
@@ -5958,8 +5977,16 @@ const COPY_ITEM_SOURCES = new Set(["path", "literalpath", "pspath", "lp"]);
 // values, see withGroupValues). A parameter is named by its name, an alias or a prefix of one name only, with its
 // value after it or a colon; one Guard doesn't know is taken as a switch, so the argument after it counts as given by
 // place. So is one written as cp's short options would be (`-pv`, `-iv`): in Cursor's terminal, a Bash `cp -pv a b`
-// read as PowerShell's. `recurse`: -Recurse is given.
-function copyItemArgs(words) {
+// read as PowerShell's. `recurse`: -Recurse is given. `full`: Copy-Item written in full, which is never Bash's cp, so
+// no parameter is taken as cp's options. There a splat (`@p`) isn't an argument by place: it names parameters, so
+// PowerShell binds the others the same way or refuses to run, and those it names are known from `splat` (see
+// splatLiteral). `unsure`: written in full, the words hold one this reading can't account for, so the copy is read as
+// Guard first read it. That's a word written as a parameter that doesn't plainly name one Copy-Item takes (PowerShell
+// ends a name at `.`, `[` or `(`, so `-Destination.x .env` copies .env, and takes `–`, `—` or `―` for `-`), a splat
+// the command doesn't set just before, or -Filter or -Include on paths that aren't plain words, as from a variable, a
+// group or the pipe, since the filter then picks files from folders Guard can't name.
+function copyItemArgs(words, { full = false, splat = null } = {}) {
+  const UNSURE = { sources: [], recurse: false, unsure: true };
   const args = [];
   // Whether the next word goes on the argument before it: past a comma, after a group's values too (`("a"), b`).
   let joined = false;
@@ -5968,49 +5995,124 @@ function copyItemArgs(words) {
     else args.push([word]);
     if (!word.depth) joined = Boolean(word.listed);
   }
+  const parameterName = (given) => {
+    const known = [...COPY_ITEM_SWITCHES, ...COPY_ITEM_VALUES];
+    const exact = known.find((name) => name === given);
+    const prefixed = known.filter((name) => name.startsWith(given));
+    return exact || (prefixed.length === 1 ? prefixed[0] : null);
+  };
   const named = (arg) => {
     const match = !arg[0].quoted && /^-([A-Za-z]+)(?::([\s\S]*))?$/.exec(arg[0].value);
     // A list's first word is a parameter only with its value after a colon: `-Path:a, b`.
     if (!match || (arg.length > 1 && match[2] === undefined)) return null;
-    const given = match[1].toLowerCase();
-    const known = [...COPY_ITEM_SWITCHES, ...COPY_ITEM_VALUES];
-    const exact = known.find((name) => name === given);
-    const prefixed = known.filter((name) => name.startsWith(given));
-    const name = exact || (prefixed.length === 1 ? prefixed[0] : null);
-    if (name && COPY_ITEM_VALUES.includes(name) && [...match[1]].every((letter) => CP_SHORT_OPTIONS.includes(letter))) {
+    const name = parameterName(match[1].toLowerCase());
+    if (
+      !full &&
+      name &&
+      COPY_ITEM_VALUES.includes(name) &&
+      [...match[1]].every((letter) => CP_SHORT_OPTIONS.includes(letter))
+    ) {
       return { name: null };
     }
     return { name, value: match[2] };
   };
+  // Whether a word written as a parameter plainly names one Copy-Item takes, with no quote or escape in its name.
+  const plainlyNamed = (arg) => {
+    const parameter = named(arg);
+    const nameEnd = /^-[A-Za-z]+/.exec(arg[0].value)?.[0].length;
+    return Boolean(parameter?.name) && !(arg[0].quotedAt >= 0 && arg[0].quotedAt <= nameEnd);
+  };
+  // A path given as it's written, with no variable, expression, group or escape in it.
+  const literal = (word) => !word.depth && !word.deep && !/[$@`(){}\u2026]/.test(word.value);
+  // Each source's word, a colon's value standing in for its parameter's (`-Path:a`).
   const sources = [];
   const placed = [];
   let destination = false;
   let recurse = false;
+  let filtered = false;
+  // Whether a splat names the paths it copies.
+  let splatSource = false;
   for (let k = 0; k < args.length; k += 1) {
+    const head = args[k][0];
     const parameter = named(args[k]);
-    const values = (arg) => arg.map((word) => word.value);
+    const splatted = full && args[k].length === 1 && !head.quoted && /^@(\w+)$/.exec(head.value);
+    if (splatted) {
+      // A key that names no one parameter Copy-Item takes stops it or can't be read, as can a splat set elsewhere.
+      if (!splat || splat.name !== splatted[1].toLowerCase()) return UNSURE;
+      const keys = splat.keys.map(parameterName);
+      if (keys.includes(null)) return UNSURE;
+      splatSource = keys.some((name) => COPY_ITEM_SOURCES.has(name)) || splatSource;
+      destination = keys.includes("destination") || destination;
+      recurse = keys.includes("recurse") || recurse;
+      filtered = keys.includes("filter") || keys.includes("include") || filtered;
+      continue;
+    }
+    if (full && !head.quoted && /^[-\u2013-\u2015@]/.test(head.value) && !plainlyNamed(args[k])) return UNSURE;
     if (!parameter) {
-      placed.push(values(args[k]));
+      placed.push(args[k]);
       continue;
     }
     const { name } = parameter;
     if (name === "recurse") recurse = true;
+    if (name === "filter" || name === "include") filtered = true;
     if (!name || COPY_ITEM_SWITCHES.includes(name)) continue;
     let value = [];
-    if (parameter.value !== undefined) value = [parameter.value, ...values(args[k].slice(1))];
+    // PowerShell takes the next argument for a value left empty after the colon: `-Path: a`.
+    const emptied = full && parameter.value === "" && args[k].length === 1;
+    if (parameter.value !== undefined && !emptied) value = [{ ...head, value: parameter.value }, ...args[k].slice(1)];
     else if (k + 1 < args.length) {
       k += 1;
-      value = values(args[k]);
+      value = args[k];
     }
     if (COPY_ITEM_SOURCES.has(name)) sources.push(...value);
     else if (name === "destination") destination = true;
   }
   // With the paths named, the first argument by place is the destination.
   if (destination) sources.push(...placed.flat());
-  else if (sources.length) sources.push(...placed.slice(1).flat());
+  else if (sources.length || splatSource) sources.push(...placed.slice(1).flat());
   else sources.push(...(placed.length < 2 ? placed : placed.slice(0, -1)).flat());
-  return { sources, recurse };
+  if (full && filtered && (splatSource || !sources.length || !sources.every(literal))) return UNSURE;
+  return { sources: sources.map((word) => word.value), recurse };
 }
+
+// One of a hashtable's lines: a key, bare or quoted, and a plain value (quoted text with no variable in it, a number,
+// $true, $false or $null).
+const SPLAT_PAIR =
+  /^\s*(?:(\w+)|'(\w+)'|"(\w+)")\s*=\s*(?:'[^'\r\n‘-‛]*'|"[^"$`\r\n“-„]*"|\$(?:true|false|null)|\d+)\s*$/i;
+
+// The keys of the hashtable a command writes into a variable it then splats into Copy-Item (see copyItemArgs), as
+// { name, keys } with the variable's name, or null. Only for a command that's that one assignment and then Copy-Item
+// with plain words, so nothing in between can change the variable and no quote or group can hide another command.
+function splatLiteral(command) {
+  const match = /^\s*\$(\w+)\s*=\s*@\{([^{}]*)\}[^\S\r\n]*(?:;|\r?\n)\s*Copy-Item[^\S\r\n]+[\w.\\/:@ \t-]*$/i.exec(
+    command,
+  );
+  if (!match) return null;
+  const keys = [];
+  // A `;` inside a quoted value splits it into lines that aren't pairs, so that hashtable isn't read.
+  for (const line of match[2].split(/;|\r?\n/)) {
+    if (!line.trim()) continue;
+    const pair = SPLAT_PAIR.exec(line);
+    if (!pair) return null;
+    keys.push((pair[1] || pair[2] || pair[3]).toLowerCase());
+  }
+  return { name: match[1].toLowerCase(), keys };
+}
+
+// Whether a command may make Copy-Item, copy, cp or cpi another command before running it, which Copy-Item's own
+// reading (see copyItemArgs) and a copy no shell runs (see copyCannotRun) can't account for: a function, filter or
+// alias, PowerShell's or Bash's, or code Guard can't read run in the shell's own scope (dot-sourcing,
+// Invoke-Expression, eval, a module, a command named by an expression). Blank space after a line break is spaces and
+// tabs only, so a long run of line breaks costs one pass.
+const COPY_REDEFINED = new RegExp(
+  [
+    String.raw`function|alias|executioncontext|scriptblock|invoke-expression|import-module|new-module|import-pssession`,
+    String.raw`(?:^|[^\w$-])(?:filter|workflow)\s`,
+    String.raw`\b(?:Copy-Item|copy|cp|cpi)[^\S\r\n]*\([^\S\r\n]*\)`,
+    String.raw`(?:^|[;&|{(\r\n\u2028\u2029])[^\S\r\n]*(?:(?:source|eval|iex|sal|nal|ipal|ipmo|nmo|ipsn|using)\b|\.\s|[.&][^\S\r\n]*[{($'"])`,
+  ].join("|"),
+  "i",
+);
 
 // The short options GNU's, BSD's or uutils' cp knows; `t` and `S` take a value, the rest of the word or the next word.
 const CP_SHORT_OPTIONS = "abcdfgiHlLnPpRrsSTtuvxXZ";
@@ -6040,6 +6142,90 @@ function cpRefuses(args) {
   return false;
 }
 
+// A word no shell expands, splits, joins or redirects: no glob, variable, list, quote, escape, group or separator.
+const SEARCH_PLAIN_WORD = /^[^*?[\]{}~$@%!`\u2026,;'"()<>|&^#\s\u2013-\u201f]+$/;
+// Where among these words ({ value, quoted }) is the one rg, findstr or Select-String searches for, which names no
+// file it reads, or -1: rg's or findstr's first operand when no `-e`, `-f`, `/c:` or `/g:` gives the patterns (see
+// recursiveReadTargets), and Select-String's `-Pattern` value, given by name before any `--`. Only where every word up
+// to it is plain (see SEARCH_PLAIN_WORD), so the shell passes it where it's read, and it starts with no `-` or `/`.
+// For rg and findstr, no word before it is quoted either: cmd keeps single quotes, so `'/i'` is the pattern there.
+// rg's config file (RIPGREP_CONFIG_PATH) can give it its patterns, so rg's word is a file it reads then; and Git Bash
+// hands a Windows program a word with a `/` as a path (`/i` as `I:/`, `-i/nv` as `-iC:/.../nv`, findstr's `/C:`), but
+// one starting `//` and then letters as a switch (`//i` as `/i`), so in a reading that may be Git Bash's (`gitBash`),
+// findstr may take that for its pattern and this word for a file after one. Select-String doesn't run in Git Bash.
+// Then the word is left out only where `mayBeFile(value, rg)` says no file could be at it.
+function searchPatternAt(reader, words, mayBeFile = () => true, gitBash = false) {
+  const plain = (word) => SEARCH_PLAIN_WORD.test(word.value) && !word.depth && !word.listed;
+  const unquoted = (word) => !word.quoted && !word.partQuoted;
+  let at = -1;
+  // `-Pattern:x` is the word itself.
+  let glued = false;
+  if (/^(?:select-string|sls)$/i.test(reader)) {
+    for (let k = 0; k < words.length && at < 0 && !words[k].value.startsWith("--"); k += 1) {
+      const named = !words[k].quoted && !words[k].partQuoted && /^-patt(?:ern|er|e)?(:|$)/i.exec(words[k].value);
+      const value = named ? words[k].value.slice(named[0].length) : "";
+      if (value) {
+        at = k;
+        glued = !/^[-/]/.test(value);
+      } else if (named && k + 1 < words.length) at = k + 1;
+    }
+  } else if (/^(?:rg|findstr)$/i.test(reader)) {
+    const searched = {};
+    recursiveReadTargets(
+      reader,
+      words.map((word) => word.value),
+      undefined,
+      { searched },
+    );
+    at = searched.pattern ? words.findIndex((word) => word.value === searched.pattern) : -1;
+    if (at >= 0 && !words.slice(0, at).every(unquoted)) return -1;
+  }
+  if (at < 0 || (!glued && /^[-/]/.test(words[at].value))) return -1;
+  if (!words.slice(0, at + 1).every(plain)) return -1;
+  const rg = /^rg$/i.test(reader);
+  const slashed =
+    gitBash &&
+    /^findstr$/i.test(reader) &&
+    words.slice(0, at).some((word) => word.value.includes("/") && !/^\/\/[a-z]+$/i.test(word.value));
+  return (rg || slashed) && mayBeFile(words[at].value, rg) ? -1 : at;
+}
+
+// Whether a file could be at this path, as a search's pattern word (see searchPatternAt): for rg, a config file is
+// named (see inspectShell); the command runs more than one call, or moves to another folder; the path has a `/` or `:`
+// or ends in a dot, which Windows or Git Bash open as another path; or one is there, or Guard can't look, on another
+// computer or with its lookups spent. Joined, not resolved, as the shell opens it.
+function patternMayBeFile(value, cwd, shellGlobs, rg) {
+  if (!shellGlobs || (rg && shellGlobs.rgConfig) || !shellGlobs.oneCall || !shellGlobs.staysInFolder) return true;
+  const { budget } = shellGlobs;
+  if (/[/:]|\.$/.test(value) || remoteLocation(value, cwd) || !budget || lookupsSpent(budget)) return true;
+  budget.lookups -= 1;
+  const target = path.isAbsolute(value) ? value : `${path.resolve(cwd)}${path.sep}${value}`;
+  try {
+    return fs.statSync(target, { throwIfNoEntry: false }) !== undefined;
+  } catch {
+    return true;
+  }
+}
+
+// Whether cmd's copy and PowerShell's Copy-Item (`copy`) refuse these words ({ value, quoted }) and copy nothing: more
+// than two, each of plain letters, digits, `_`, `.`, `-` and `\`, with no leading `-` (a parameter), no `/` (a switch),
+// `+` (a join), list, quote, variable or glob, and no `\` ending one. Prose starting with Copy reads so, as in a
+// here-string's `Copy .env.example to .env for local work.`
+function copyCannotRun(words) {
+  return (
+    words.length > 2 &&
+    words.every(
+      (word) =>
+        !word.quoted &&
+        !word.partQuoted &&
+        !word.depth &&
+        !word.listed &&
+        /^[\w.][\w.\\-]*$/.test(word.value) &&
+        !word.value.endsWith("\\"),
+    )
+  );
+}
+
 function secretInReaderWords(
   reader,
   words,
@@ -6065,11 +6251,45 @@ function secretInReaderWords(
   // GNU's and BSD's cp copy nothing when given a short option they don't know: in Cursor's terminal, a PowerShell
   // `cp a b -WhatIf` read as Bash's.
   if (command && command.dialect === "bash" && /^cp$/i.test(reader) && cpRefuses(plain)) return null;
+  // Copy-Item written in full where only its `copy` is matched (see SHELL_READER_AT): the words after `-Item` are
+  // Copy-Item's, read as PowerShell reads them in every shell's reading, so its destination is never a source. Not with
+  // a `+` in any word: cmd's copy joins the files around it, and `-Item` can be a file's name there. Only where it's
+  // PowerShell's own Copy-Item (see COPY_REDEFINED) and the reading accounts for every word (see copyItemArgs);
+  // otherwise it's read as the other copies are.
+  const item =
+    /^copy$/i.test(reader) &&
+    plainWords.length > 0 &&
+    !plainWords[0].quoted &&
+    !plainWords[0].partQuoted &&
+    /^-item$/i.test(plainWords[0].value) &&
+    !plainWords.some((word) => word.value.includes("+"));
+  const redefined = shellGlobs?.copyRedefined !== false;
+  const inFull = item && !redefined ? copyItemArgs(plainWords.slice(1), { full: true, splat: shellGlobs.splat }) : null;
+  const fullCopyItem = inFull && !inFull.unsure ? inFull : null;
+  // A copy no shell runs (see copyCannotRun) has only its first word read, as Guard first read a copy. Not cp, which
+  // outside Windows is cp in PowerShell too. Words read as Guard first read them run on past the reader's line, where
+  // the shell's end at it.
+  const copyWords = plainWords.filter((word) => !word.afterLine).slice(item ? 1 : 0);
+  const asCopyItem =
+    /^copy$/i.test(reader) && !redefined && copyCannotRun(copyWords)
+      ? { sources: [copyWords[0].value], recurse: false }
+      : fullCopyItem || copyItem;
+  // The word a search takes for its pattern on the reader's line, the same with the redirections left out, isn't a
+  // file it reads.
+  const mayBeFile = (value, rg) => patternMayBeFile(value, cwd, shellGlobs, rg);
+  const gitBash = command ? command.dialect === "bash" : shellGlobs?.kind !== "powershell";
+  const searchedAt = searchPatternAt(reader, words, mayBeFile, gitBash);
+  const searched =
+    searchedAt >= 0 &&
+    !words[searchedAt].afterLine &&
+    plainWords[searchPatternAt(reader, plainWords, mayBeFile, gitBash)] === words[searchedAt]
+      ? words[searchedAt]
+      : null;
   let operands;
   // A copy reads its sources, not the destination it writes, which stays its last word with an output redirection
   // after it (`cp a .env &>/dev/null`): a redirection, and its target when apart from it, aren't copy words. `2\>x` and
   // `"2>x"` are words cp copies.
-  if (copyItem) operands = copyItem.sources;
+  if (asCopyItem) operands = asCopyItem.sources;
   else if (/^(?:cp|copy)$/i.test(reader)) {
     const cp = /^cp$/i.test(reader);
     const lastIsSource = cp && ((last) => copyLastIsSource(last, cwd, shellGlobs));
@@ -6084,6 +6304,7 @@ function secretInReaderWords(
     let onlyOperands = false;
     for (const word of words) {
       const { value } = word;
+      if (word === searched) continue;
       if (onlyOperands || word.quoted || !value.startsWith("-")) operands.push(value);
       else if (value === "--") onlyOperands = true;
       else {
@@ -6115,8 +6336,8 @@ function secretInReaderWords(
   // `grep -r`, `rg`, `findstr /s`, `diff -r` and `cp -r` read every file under a folder they're given.
   const lastIsSource = (last) => copyLastIsSource(last, cwd, shellGlobs);
   const pattern = command !== null;
-  if (copyItem) {
-    const copied = copyItem.recurse ? copyItem.sources : [];
+  if (asCopyItem) {
+    const copied = asCopyItem.recurse ? asCopyItem.sources : [];
     return secretInReaderTargets(
       copied.map((operand) => ({ path: operand, filters: EMPTY_FILTERS })),
       reader,
@@ -6414,9 +6635,13 @@ function secretInParsedShell(command, cwd, shellGlobs, dialects = ["bash", "powe
       const end = Math.min(stops[nameEnd], limit);
       work.left -= end - nameEnd;
       if (work.left < 0) throw new ShellCheckTooLong();
-      const words = (command.slice(nameEnd, end).match(/"[^"]*"|'[^']*'|\S+/g) || []).map((value) => ({
+      const text = command.slice(nameEnd, end);
+      // Words past the reader's line aren't read as a copy no shell runs or a search's pattern (see secretInReaderWords).
+      const lineEnd = text.search(/[\r\n\u2028\u2029]/);
+      const words = [...text.matchAll(/"[^"]*"|'[^']*'|\S+/g)].map(({ 0: value, index }) => ({
         value: value.replace(/^['"]|['"]$/g, ""),
         quoted: /^['"]/.test(value),
+        afterLine: lineEnd >= 0 && index > lineEnd,
       }));
       const location = secretInReaderWords(reader, words, cwd, shellGlobs, top.unclosed);
       if (location) return location;
@@ -6628,12 +6853,41 @@ function firstReadingPass(command, cwd, shellGlobs, bash, joined, copyLast) {
     const copy = /^(?:cp|copy)$/i.test(match[1]);
     const cp = /^cp$/i.test(match[1]);
     const copyOptions = cp ? { shortValues: "tS" } : {};
-    const operands = copy
-      ? copySources(parseShellArgs(asRead, copyOptions), cp && lastIsSource).concat(
-          past ? copySources(parseShellArgs(withoutRedirections(args), copyOptions), cp && lastIsSource) : [],
-          shellJoined ? copySources(parseShellArgs(shellJoined, copyOptions), cp && lastIsSource) : [],
-        )
-      : asRead.concat(past ? args : [], shellJoined || []).filter((arg) => !arg.startsWith("-"));
+    // Copy-Item written in full, a copy no shell runs and a search's pattern are read as the shell's reading reads them
+    // (see secretInReaderWords), from the words on the reader's line.
+    const asWords = (list) =>
+      list.map((word) => ({ value: word.replace(/^(["'])([^]*)\1$/, "$2"), quoted: /^["']/.test(word) }));
+    const line = match[2].split(/[\r\n\u2028\u2029]/)[0].match(/"[^"]*"|'[^']*'|\S+/g) || [];
+    const fullCopyItem = copy && !cp && /^-item$/i.test(line[0] || "") && !match[2].includes("+");
+    const copyLine = asWords(fullCopyItem ? line.slice(1) : line);
+    const sources = (list) => {
+      const inFull =
+        fullCopyItem &&
+        !shellGlobs.copyRedefined &&
+        /^-item$/i.test(list[0] || "") &&
+        copyItemArgs(asWords(list.slice(1)), { full: true, splat: shellGlobs.splat });
+      return inFull && !inFull.unsure
+        ? inFull.sources
+        : copySources(parseShellArgs(list, copyOptions), cp && lastIsSource);
+    };
+    const unsearched = (list) => {
+      const mayBeFile = (value, rg) => patternMayBeFile(value, cwd, shellGlobs, rg);
+      const at = searchPatternAt(match[1], asWords(list), mayBeFile, shellGlobs.kind !== "powershell");
+      const onLine = at >= 0 && at < line.length && list.slice(0, at + 1).every((word, k) => word === line[k]);
+      return onLine ? list.filter((_, k) => k !== at) : list;
+    };
+    let operands;
+    if (copy && !cp && !shellGlobs.copyRedefined && copyCannotRun(copyLine)) operands = [copyLine[0].value];
+    else if (copy) {
+      operands = sources(asRead).concat(
+        past ? sources(withoutRedirections(args)) : [],
+        shellJoined ? sources(shellJoined) : [],
+      );
+    } else {
+      operands = unsearched(asRead)
+        .concat(past ? unsearched(args) : [], shellJoined || [])
+        .filter((arg) => !arg.startsWith("-"));
+    }
     // Each operand is read as written and as each path it opens (see opensAs).
     for (const arg of new Set(operands)) {
       if (secretOperandOpened(arg, cwd, shellGlobs)) return arg;
