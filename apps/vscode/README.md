@@ -4,7 +4,7 @@ I built Clotr for people who code with AI assistants in VS Code, Cursor, Windsur
 
 Clotr Guard, which you can set up from the extension, goes further: it checks your prompts before they're sent and stops supported assistants from reading secret files such as `.env`.
 
-![Clotr warning on an unsaved sample in Cursor](images/open-file-warning.png)
+![Clotr warning on an unsaved sample in Cursor](https://github.com/clotr-app/clotr/raw/HEAD/apps/vscode/images/open-file-warning.png)
 
 ## Install
 

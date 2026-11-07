@@ -164,7 +164,7 @@ test(
   { skip: !fs.existsSync(VSIX) },
   () => {
     const manifest = JSON.parse(readZipEntry(VSIX, "extension/package.json"));
-    assert.equal(manifest.version, "0.2.2");
+    assert.equal(manifest.version, "0.3.0");
     assert.equal(manifest.engines.vscode, "^1.57.0");
     assert.deepEqual(manifest.extensionKind, ["workspace"]);
     assert.equal(manifest.icon, "icon.png");
@@ -200,10 +200,10 @@ test(
 
 // Open VSX shows the version beside the README, and the engine build changes with every batch, so neither
 // number is typed into the README, where it would go stale.
-test("VS Code is 0.2.2 and its README leaves version numbers to the extension listing", () => {
+test("VS Code is 0.3.0 and its README leaves version numbers to the extension listing", () => {
   const editor = JSON.parse(fs.readFileSync(path.join(APP, "package.json"), "utf8"));
   const readme = fs.readFileSync(path.join(APP, "README.md"), "utf8");
-  assert.equal(editor.version, "0.2.2");
+  assert.equal(editor.version, "0.3.0");
   assert.doesNotMatch(readme, /^Version \d/m);
   assert.doesNotMatch(readme, /engine \d+\.\d+\.\d+/i);
 });
@@ -217,9 +217,12 @@ test("the VS Code README reads as a store page in the owner's voice and keeps bu
     "",
     "Clotr Guard, which you can set up from the extension, goes further: it checks your prompts before they're sent and stops supported assistants from reading secret files such as `.env`.",
     "",
-    "![Clotr warning on an unsaved sample in Cursor](images/open-file-warning.png)",
+    "![Clotr warning on an unsaved sample in Cursor](https://github.com/clotr-app/clotr/raw/HEAD/apps/vscode/images/open-file-warning.png)",
   ].join("\n");
   assert.ok(readme.startsWith(`${expectedOpening}\n\n## Install\n`), "README opening and screenshot match exactly");
+  // The packager points a relative link at the repository's root, which this folder isn't, so the listing would get a
+  // dead link. Every link here is a full one.
+  assert.doesNotMatch(readme, /\]\((?!https?:|#|mailto:)/);
   assert.match(readme, /no network calls/);
   assert.match(readme, /without showing its value/);
   assert.match(readme, /\.clotrignore/);
@@ -241,9 +244,10 @@ test("the VS Code README reads as a store page in the owner's voice and keeps bu
   assert.doesNotMatch(readme, /shows a masked preview|masked findings/);
   assert.doesNotMatch(readme, /Stable and preview|Guard setup is a preview/);
   assert.doesNotMatch(readme, /vsce|Extension Development Host|build\.js/);
-  for (const [, imagePath] of readme.matchAll(/!\[[^\]]*\]\(([^)]+)\)/g)) {
-    assert.ok(!/^https?:/i.test(imagePath), `README image ${imagePath} is local`);
-    assert.ok(fs.existsSync(path.resolve(APP, imagePath)), `README image ${imagePath} exists`);
+  const ownFolder = "https://github.com/clotr-app/clotr/raw/HEAD/apps/vscode/";
+  for (const [, link] of readme.matchAll(/!\[[^\]]*\]\(([^)]+)\)/g)) {
+    assert.ok(link.startsWith(ownFolder), `README image ${link} comes from this folder`);
+    assert.ok(fs.existsSync(path.resolve(APP, link.slice(ownFolder.length))), `README image ${link} exists`);
   }
   const screenshot = fs.readFileSync(path.join(APP, "images", "open-file-warning.png"));
   assert.equal(screenshot.subarray(1, 4).toString("latin1"), "PNG");
