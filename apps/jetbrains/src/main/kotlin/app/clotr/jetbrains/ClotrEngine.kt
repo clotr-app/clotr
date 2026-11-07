@@ -92,11 +92,12 @@ class ClotrEngine private constructor(private val context: Context) : AutoClosea
     @Synchronized
     fun fingerprintFor(type: String, value: String): String = fingerprintFn.execute(type, value).asString()
 
-    /** Runs a script in the guest, for tests that need the engine in a given state (a clock that runs fast, say). */
+    /**
+     * Runs a script in the guest, for tests that need the engine in a given state (a clock that runs fast, say) or
+     * need to read something from it, and gives back what the script gave, as text.
+     */
     @Synchronized
-    internal fun evalForTest(script: String) {
-        context.eval("js", script)
-    }
+    internal fun evalForTest(script: String): String = context.eval("js", script).toString()
 
     override fun close() = context.close()
 

@@ -15,7 +15,7 @@ test("JetBrains shows its release version and leaves the engine build to the pac
   const build = read("build.gradle.kts");
   const pluginVersion = build.match(/^version = "([^"]+)"/m)?.[1];
   const readme = read("README.md");
-  assert.equal(pluginVersion, "0.1.1");
+  assert.equal(pluginVersion, "0.1.2");
   assert.equal(readme.match(/^Version (\d+\.\d+\.\d+)\.$/m)?.[1], pluginVersion);
   assert.doesNotMatch(readme, /engine \d+\.\d+\.\d+/i);
   assert.match(build, /commandLine\("node", "tools\/engine-bundle\.js", "--out"/);
@@ -208,6 +208,13 @@ test("JetBrains checks credentials by default and keeps personal details opt-in"
   const preferences = read("src/main/kotlin/app/clotr/jetbrains/ClotrPreferences.kt");
   assert.match(inspection, /personalDetailsInFiles/);
   assert.match(preferences, /var personalDetailsInFiles = false/);
+  // Card and bank numbers are in the engine's personal group but stay on, so the setting and the README say so.
+  assert.match(inspection, /MONEY_KINDS = setOf\("credit_card", "card_code", "gift_card", "bank_account"\)/);
+  assert.match(
+    read("src/main/resources/messages/ClotrBundle.properties"),
+    /^settings\.personalDetails=Check personal details in open files \(card and bank numbers are checked with credentials\)$/m,
+  );
+  assert.match(read("README.md").replace(/\s+/g, " "), /card, card security code, gift card and bank numbers/);
 });
 
 test("JetBrains secret-file JSON matches the shared secret-file rules", () => {

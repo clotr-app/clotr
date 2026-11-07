@@ -1,10 +1,11 @@
 # Clotr for JetBrains IDEs
 
-Version 0.1.1.
+Version 0.1.2.
 
 After you install Clotr, it flags credentials in open files as you edit.
-Credential checks are on by default. Personal details in open files stay quiet until you turn on **Check personal details
-in open files**. Clotr doesn't set up Guard during installation. Secret files such as `.env`, private keys and `.npmrc`
+Credential checks are on by default, and card, card security code, gift card and bank numbers are checked with them.
+Other personal details in open files, like a medical record number or your IP address, stay quiet until you turn on
+**Check personal details in open files**. Clotr doesn't set up Guard during installation. Secret files such as `.env`, private keys and `.npmrc`
 stay silent in the editor. If Git doesn't ignore one, Clotr shows one project note with an option to add it to
 `.gitignore`.
 
