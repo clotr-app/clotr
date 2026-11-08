@@ -2,6 +2,17 @@
 
 What changed in each version of Clotr Guard and Clotr MCP, the MCP server that comes with it.
 
+## 0.1.3 (2026-11-08)
+
+This fixes the known issue in 0.1.2. Commands that only mention a secret file, like `Copy-Item .env.example .env` or
+`rg "credentials" README.md`, run again, and a command that reads one is still stopped.
+
+- A search's pattern isn't taken for a file it searches, in rg, Select-String and findstr, and that includes
+  `findstr //i` run from Git Bash.
+- Copy-Item's destination isn't taken for a file it copies, even with a splat set in the same command. Where Guard
+  can't tell which word is the destination, it reads the command the way 0.1.2 did.
+- The Dockerfile is gone from the repo. Install Guard from npm.
+
 ## 0.1.2 (2026-11-06)
 
 Known issue: Guard can stop a few harmless commands that only mention a secret file, like `Copy-Item .env.example .env` or `rg "credentials" README.md`. I'm fixing it in the next Guard release. Until then, run them in your own terminal.

@@ -74,7 +74,7 @@ function packGuard(tempRoot) {
   const packageRoot = path.resolve(__dirname, "../apps/guard");
   const result = npmRun(["pack", "--pack-destination", tempRoot], packageRoot, tempRoot);
   assert.equal(result.status, 0, `${result.stdout}\n${result.stderr}`);
-  const tarball = path.join(tempRoot, "clotr-guard-0.1.2.tgz");
+  const tarball = path.join(tempRoot, "clotr-guard-0.1.3.tgz");
   assert.equal(fs.existsSync(tarball), true, `${result.stdout}\n${result.stderr}`);
   return tarball;
 }
@@ -2582,7 +2582,7 @@ test("the Guard package reads nothing from outside its own folder, so a packed c
   }
   assert.deepEqual(outside, []);
   const pkg = JSON.parse(fs.readFileSync(path.join(root, "package.json"), "utf8"));
-  assert.equal(pkg.version, "0.1.2");
+  assert.equal(pkg.version, "0.1.3");
   assert.equal(pkg.bin["clotr-mcp"], "bin/clotr-mcp.js");
   assert.ok(pkg.files?.includes("dist"), "the engine bundle must ship in the package");
 });
@@ -2594,7 +2594,7 @@ test("Guard prints its package version beside the engine version from the bundle
   const engineVersion = header[1].split(".").slice(0, 3).join(".");
   const version = spawnSync(process.execPath, [script, "--version"], { encoding: "utf8" });
   assert.equal(version.status, 0, version.stderr);
-  assert.equal(version.stdout.trim(), `clotr-guard 0.1.2, engine ${engineVersion}`);
+  assert.equal(version.stdout.trim(), `clotr-guard 0.1.3, engine ${engineVersion}`);
 });
 
 test("the Guard npm package declares its public pages and includes the license", () => {

@@ -10,7 +10,7 @@ than the hook's 15 seconds, and Claude Code lets the prompt through unchecked wh
 warm the cache once:
 
 ```text
-npx -y clotr-guard@0.1.2 --version
+npx -y clotr-guard@0.1.3 --version
 ```
 
 To try it from a clone, start Claude Code with `claude --plugin-dir apps/guard/plugin`.
