@@ -164,7 +164,7 @@ test(
   { skip: !fs.existsSync(VSIX) },
   () => {
     const manifest = JSON.parse(readZipEntry(VSIX, "extension/package.json"));
-    assert.equal(manifest.version, "0.3.0");
+    assert.equal(manifest.version, "0.3.1");
     assert.equal(manifest.engines.vscode, "^1.57.0");
     assert.deepEqual(manifest.extensionKind, ["workspace"]);
     assert.equal(manifest.icon, "icon.png");
@@ -200,10 +200,10 @@ test(
 
 // Open VSX shows the version beside the README, and the engine build changes with every batch, so neither
 // number is typed into the README, where it would go stale.
-test("VS Code is 0.3.0 and its README leaves version numbers to the extension listing", () => {
+test("VS Code is 0.3.1 and its README leaves version numbers to the extension listing", () => {
   const editor = JSON.parse(fs.readFileSync(path.join(APP, "package.json"), "utf8"));
   const readme = fs.readFileSync(path.join(APP, "README.md"), "utf8");
-  assert.equal(editor.version, "0.3.0");
+  assert.equal(editor.version, "0.3.1");
   assert.doesNotMatch(readme, /^Version \d/m);
   assert.doesNotMatch(readme, /engine \d+\.\d+\.\d+/i);
 });

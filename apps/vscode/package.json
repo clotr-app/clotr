@@ -2,7 +2,7 @@
   "name": "clotr",
   "displayName": "%displayName%",
   "description": "%description%",
-  "version": "0.3.0",
+  "version": "0.3.1",
   "publisher": "clotr-app",
   "icon": "icon.png",
   "repository": { "type": "git", "url": "https://github.com/clotr-app/clotr" },
