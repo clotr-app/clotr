@@ -2,6 +2,12 @@
 
 What changed in each version of Clotr for VS Code, Cursor, Windsurf and VSCodium.
 
+## 0.3.1 (2026-11-08)
+
+- Guard is now 0.1.3, so a command that only names a secret file, like `Copy-Item .env.example .env`, runs again. It
+  still stops commands that read one.
+- After you update, say yes when Clotr asks to set Guard up again, so your assistants use the new one.
+
 ## 0.3.0 (2026-11-07)
 
 Known issue: Guard 0.1.2 can stop a harmless command that only names a secret file, such as
