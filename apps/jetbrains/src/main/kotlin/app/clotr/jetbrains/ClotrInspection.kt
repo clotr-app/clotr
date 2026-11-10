@@ -54,16 +54,18 @@ class ClotrInspection : LocalInspectionTool() {
                 val scan = service.engine.scan(text)
                 val findings = scan.findings.filter {
                     allowed(it.severity, prefs.minimumSeverity) && !service.isIgnored(it.fp) &&
-                        (prefs.personalDetailsInFiles || it.group != "personal")
+                        (prefs.personalDetailsInFiles || !waitsForPersonalDetails(it))
                 }
                 val ranges = scan.ranges
                     .filterNot { range -> ClotrIgnore.valueFingerprint(ignore.config.salt, range.value) in ignore.config.fingerprints }
                     .groupBy { it.fp }
                 // The engine lists a value once however often it's in the file, so each copy gets its own warning,
-                // and the count is of warnings shown.
+                // and the count is of warnings shown. A copy inside a longer word or number (a PIN inside an order
+                // number) isn't one. If no copy stands alone, the engine found the value joined to its neighbours
+                // (a bot token right after /bot in a URL), so every copy is.
                 val count = findings.distinctBy { it.fp }.sumOf { finding ->
-                    ranges[finding.fp].orEmpty().count { range ->
-                        if (range.end > text.length || range.start < 0) return@count false
+                    val copies = ranges[finding.fp].orEmpty().filter { it.start >= 0 && it.end <= text.length }
+                    copies.filter { standsAlone(text, it.start, it.end) }.ifEmpty { copies }.count { range ->
                         holder.registerProblem(
                             file,
                             ClotrBundle.message("inspection.message", finding.name),
@@ -99,6 +101,20 @@ class ClotrInspection : LocalInspectionTool() {
             "low" -> ProblemHighlightType.WEAK_WARNING
             else -> ProblemHighlightType.WEAK_WARNING
         }
+
+        // Card, card security code, gift card and bank numbers sit in the engine's personal group, but they're money,
+        // so they're checked like a credential, as Clotr Guard does.
+        private val MONEY_KINDS = setOf("credit_card", "card_code", "gift_card", "bank_account")
+
+        /** Whether a finding stays quiet until "Check personal details in open files" is on. */
+        fun waitsForPersonalDetails(finding: Finding): Boolean = finding.group == "personal" && finding.type !in MONEY_KINDS
+
+        /** Whether `text[start, end)` isn't part of a longer word or number: no letter, digit or `_` runs on past it. */
+        fun standsAlone(text: String, start: Int, end: Int): Boolean =
+            !(start > 0 && isWordChar(text[start - 1]) && isWordChar(text[start])) &&
+                !(end < text.length && isWordChar(text[end - 1]) && isWordChar(text[end]))
+
+        private fun isWordChar(char: Char) = char.isLetterOrDigit() || char == '_'
 
         fun skipped(file: VirtualFile, basePath: String?, patterns: List<String>): Boolean {
             if (!file.isInLocalFileSystem) return true

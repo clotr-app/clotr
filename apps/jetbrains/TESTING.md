@@ -2,7 +2,7 @@
 
 This batch is pending. It needs a real IntelliJ IDEA window and was not run during the headless check.
 
-1. Install the built `clotr-jetbrains-0.1.1.zip` into a disposable IntelliJ IDEA 2026.1.5 profile. Confirm the Plugins page shows Clotr, its version, and the `https://clotr.app` vendor link.
+1. Install the built `clotr-jetbrains-0.1.2.zip` into a disposable IntelliJ IDEA 2026.1.5 profile. Confirm the Plugins page shows Clotr, its version, and the `https://clotr.app` vendor link.
 2. Open a fresh test project. Confirm credential checks are on, personal detail checks are off, and Guard has made no changes to the project or assistant settings.
 3. Open a normal source file containing the made-up key `AKIA4HPQ7XZ2R6TWLJ3N`. Confirm Clotr marks it as a warning and shows only a masked preview. Confirm `.env` stays quiet and offers one project note only when Git does not ignore it.
 4. In Settings, enable personal detail checks and open a test file with made-up contact details. Confirm the warning appears, then turn the setting off and confirm it goes away.

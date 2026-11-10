@@ -17,6 +17,7 @@ import java.nio.file.Path
 import java.nio.file.LinkOption
 import java.io.IOException
 import javax.xml.parsers.DocumentBuilderFactory
+import kotlin.random.Random
 
 class ClotrInspectionTest : BasePlatformTestCase() {
     override fun setUp() {
@@ -402,20 +403,141 @@ class ClotrInspectionTest : BasePlatformTestCase() {
         assertEquals(2, project.getService(ClotrProjectService::class.java).findingCount())
     }
 
-    // The engine's own group decides what is a personal detail, not the kind's name: a card number is one too.
-    fun testCardAndBankNumbersStayOffWithPersonalDetails() {
+    // A found value can also sit inside a longer name or number. Only the copies that stand on their own get a
+    // warning, and each of those gets one. The values are made up for each run, and each text puts a copy inside a
+    // longer one first, where the first match in the text lands.
+    fun testAPasswordInsideALongerNameGetsNoWarningOfItsOwn() {
+        val letters = "abcdefghjkmnpqrstuvwxyzABCDEFGHJKMNPQRSTUVWXYZ"
+        val password = (1..6).map { letters.random() }.joinToString("") + Random.nextInt(100000, 1000000)
+        val once = "backup = ${password}Old\npassword = \"$password\"\nname = my$password\n"
+        assertEquals(copies(once, "\"$password\"", password), warned(once, "Password or Secret"))
+        val twice = once + "confirm = \"$password\"\n"
+        assertEquals(copies(twice, "\"$password\"", password), warned(twice, "Password or Secret"))
+    }
+
+    fun testAPinInsideALongerNumberGetsNoWarningOfItsOwn() {
+        val pin = ('1'..'9').shuffled().take(4).joinToString("")
+        val once = "order 1${pin}3\npin: $pin\nref ${pin}9\n"
+        assertEquals(copies(once, ": $pin\n", pin), warned(once, "Password or Secret"))
+        val twice = once + "again: $pin\n"
+        assertEquals(copies(twice, ": $pin\n", pin), warned(twice, "Password or Secret"))
+    }
+
+    // The longer internal IP is a value of its own, so it keeps its own warning.
+    fun testAnInternalIpInsideALongerOneGetsNoWarningOfItsOwn() {
+        val ip = "10.${Random.nextInt(1, 255)}.${Random.nextInt(1, 255)}.${Random.nextInt(10, 26)}"
+        val once = "cache ${ip}0\ndb $ip\nedge 1$ip\n"
+        assertEquals(copies(once, "${ip}0", "${ip}0") + copies(once, " $ip\n", ip), warned(once, "Internal IP Address"))
+        val twice = once + "replica $ip\n"
+        assertEquals(copies(twice, "${ip}0", "${ip}0") + copies(twice, " $ip\n", ip), warned(twice, "Internal IP Address"))
+    }
+
+    // The engine finds a bot token right after /bot in a URL, so a value with no copy standing alone keeps a warning on
+    // every copy.
+    fun testAValueTheEngineFoundJoinedToAWordKeepsItsWarnings() {
+        val chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789"
+        val token = "${Random.nextInt(100000000, 1000000000)}:AA" + (1..33).map { chars.random() }.joinToString("")
+        val text = "curl https://api.telegram.org/bot$token/getMe\ncurl https://api.telegram.org/bot$token/getUpdates\n"
+        val kind = project.getService(ClotrProjectService::class.java).engine.check(text).single().name
+        assertEquals(copies(text, "/bot$token/", token), warned(text, kind))
+    }
+
+    /** Where `value` sits in each copy of `around` in the text. */
+    private fun copies(text: String, around: String, value: String): List<Pair<Int, Int>> {
+        val found = mutableListOf<Pair<Int, Int>>()
+        var at = text.indexOf(around)
+        while (at >= 0) {
+            val start = at + around.indexOf(value)
+            found += start to start + value.length
+            at = text.indexOf(around, at + 1)
+        }
+        return found
+    }
+
+    /** Where the warnings for `kind` sit once the text is open, in order. */
+    private fun warned(text: String, kind: String): List<Pair<Int, Int>> {
+        myFixture.configureByText("Sample.txt", text)
+        return myFixture.doHighlighting().filter { it.description?.contains(kind) == true }
+            .map { it.startOffset to it.endOffset }.sortedWith(compareBy({ it.first }, { it.second }))
+    }
+
+    // Card, card security code, gift card and bank numbers sit in the engine's personal group, but they're money, so
+    // they warn with personal details off, as they did before. The rest of the group waits for the setting. The
+    // values are made up for each run.
+    fun testMoneyWarnsByDefaultAndOtherPersonalDetailsWaitForTheSetting() {
         val prefs = ClotrPreferences.getInstance()
         assertFalse(prefs.personalDetailsInFiles)
-        myFixture.configureByText("Billing.txt", "card 4111 1111 1111 1111")
-        assertTrue(myFixture.doHighlighting().none { it.description?.contains("Sensitive information found") == true })
+        val money = listOf(
+            "card ${madeUpCardNumber()}",
+            "the CVV is ${Random.nextInt(100, 1000)}",
+            "the gift card code is ${(1..3).joinToString("-") { giftCardBlock() }}",
+            "sort code ${digits(2)}-${digits(2)}-${digits(2)} account ${digits(8)}",
+        ).joinToString("\n", postfix = "\n")
+        assertEquals(listOf("Bank Account or Routing Number", "Card Security Code", "Credit Card Number", "Gift Card Code"), warnedKinds(money))
 
+        val personal = listOf(
+            "MRN: ${Random.nextInt(1000000, 10000000)}",
+            "my medicare card number is ${madeUpMedicareNumber()}",
+            "my home IP is ${Random.nextInt(100, 127)}.${Random.nextInt(100, 255)}.${Random.nextInt(100, 255)}.${Random.nextInt(100, 255)}",
+            "insurance member ID: ${letters(3)}${digits(9)}",
+            "driver's license number: ${letters(1)}${Random.nextInt(1000000, 10000000)}",
+            "my gamertag is ${letters(1)}${"aeiou".random()}${letters(1).lowercase()}${"aeiou".random()}${Random.nextInt(10, 100)}",
+            "mail me at ${letters(8).lowercase()}@example.com",
+            "My address is ${Random.nextInt(100, 10000)} Main Street, Springfield, IL 62704",
+        ).joinToString("\n", postfix = "\n")
+        assertEquals(emptyList<String>(), warnedKinds(personal))
         prefs.personalDetailsInFiles = true
+        prefs.minimumSeverity = "low"
         try {
-            myFixture.configureByText("Billing.txt", "card 4111 1111 1111 1111")
-            assertTrue(myFixture.doHighlighting().any { it.description?.contains("Credit Card") == true })
+            val expected = listOf(
+                "Driver's License Number", "Email Address", "Gamer Tag", "Insurance Member ID", "Medical Record Number",
+                "Medicare Number", "Street Address", "Your IP Address",
+            )
+            assertEquals(expected, warnedKinds(personal))
         } finally {
             prefs.personalDetailsInFiles = false
+            prefs.minimumSeverity = "medium"
         }
+    }
+
+    // The same split over every kind the engine groups as personal, including ones no made-up text reaches (a name
+    // you saved, a photo's location).
+    fun testOnlyTheFourMoneyKindsOfThePersonalGroupWarnWithPersonalDetailsOff() {
+        val engine = project.getService(ClotrProjectService::class.java).engine
+        val personal = engine.evalForTest("JSON.stringify(Clotr.PATTERNS.filter((p) => p.group === 'personal').map((p) => p.id))")
+            .removeSurrounding("[", "]").split(",").map { it.removeSurrounding("\"") }
+        assertEquals(26, personal.size)
+        val warned = personal.filterNot { ClotrInspection.waitsForPersonalDetails(Finding("", it, it, "high", "", "", "personal")) }
+        assertEquals(listOf("bank_account", "card_code", "credit_card", "gift_card"), warned.sorted())
+        assertFalse(ClotrInspection.waitsForPersonalDetails(Finding("", "aws_access_key", "", "high", "", "", "credentials")))
+    }
+
+    private fun digits(count: Int) = (1..count).joinToString("") { Random.nextInt(10).toString() }
+
+    private fun letters(count: Int) = (1..count).joinToString("") { "ABCDEFGHJKMNPQRSTUVWXYZ".random().toString() }
+
+    private fun giftCardBlock() = "${letters(1)}${Random.nextInt(2, 10)}${letters(1)}${Random.nextInt(2, 10)}"
+
+    /** A card number that passes the Luhn check, as a real one does. */
+    private fun madeUpCardNumber(): String {
+        val start = listOf(4) + List(14) { Random.nextInt(10) }
+        val sum = start.reversed().mapIndexed { i, digit -> if (i % 2 == 0) (digit * 2).let { if (it > 9) it - 9 else it } else digit }.sum()
+        return (start + (10 - sum % 10) % 10).joinToString("").chunked(4).joinToString(" ")
+    }
+
+    /** An Australian Medicare number: its 9th digit checks the first 8. */
+    private fun madeUpMedicareNumber(): String {
+        val start = listOf(Random.nextInt(2, 7)) + List(7) { Random.nextInt(10) }
+        val check = start.zip(listOf(1, 3, 7, 9, 1, 3, 7, 9)).sumOf { (digit, weight) -> digit * weight } % 10
+        val number = (start + check + Random.nextInt(10)).joinToString("")
+        return "${number.take(4)} ${number.substring(4, 9)} ${number.substring(9)}"
+    }
+
+    /** The kinds named in the warnings once the text is open, in order. */
+    private fun warnedKinds(text: String): List<String> {
+        myFixture.configureByText("Details.txt", text)
+        return myFixture.doHighlighting().mapNotNull { it.description }.filter { it.contains("Sensitive information found") }
+            .map { it.substringBefore("Sensitive information found").trim() }.sorted()
     }
 
     fun testOversizedFileIsMarkedUncheckedInsteadOfShowingAnAllClearStatus() {
