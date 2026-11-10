@@ -170,14 +170,16 @@ fn handle_info(file: &File) -> Result<BY_HANDLE_FILE_INFORMATION, String> {
 }
 
 fn rename_by_handle(file: &File, dest: &Path) -> Result<(), String> {
-    let wide: Vec<u16> = dest.as_os_str().encode_wide().collect();
+    // Windows reads FileName up to its ending zero, not just FileNameLength bytes, so the zero goes in the buffer
+    // too. Without it, a name that fills the buffer exactly gets whatever memory comes next tacked on.
+    let wide: Vec<u16> = dest.as_os_str().encode_wide().chain([0]).collect();
     let bytes = std::mem::offset_of!(FILE_RENAME_INFO, FileName) + wide.len() * 2;
     let mut storage = vec![0usize; bytes.div_ceil(std::mem::size_of::<usize>())];
     let info = storage.as_mut_ptr().cast::<FILE_RENAME_INFO>();
     unsafe {
         (*info).Anonymous.ReplaceIfExists = false;
         (*info).RootDirectory = HANDLE::default();
-        (*info).FileNameLength = (wide.len() * 2) as u32;
+        (*info).FileNameLength = ((wide.len() - 1) * 2) as u32;
         std::ptr::copy_nonoverlapping(wide.as_ptr(), (*info).FileName.as_mut_ptr(), wide.len());
         SetFileInformationByHandle(
             HANDLE(file.as_raw_handle() as *mut _),
@@ -255,6 +257,43 @@ mod tests {
 
         let _ = fs::remove_dir_all(&from_dir);
         let _ = fs::remove_dir_all(&to_dir);
+    }
+
+    // Whether the rename buffer ends right where the name does depends on the destination's length mod 4, so this
+    // pads its own folder through eight lengths in a row instead of relying on how long the temp folder's path is.
+    #[test]
+    fn a_move_keeps_its_exact_name_at_every_path_length() {
+        let from_dir = temp_dir("length-from");
+        let root = temp_dir("length-to");
+        let path = from_dir.join("passport.jpg");
+        let mut remainders = [0; 4];
+        for pad in 1..=8 {
+            let to_dir = root.join("p".repeat(pad));
+            fs::create_dir(&to_dir).unwrap();
+            let length = to_dir.join("passport.jpg").as_os_str().encode_wide().count();
+            remainders[length % 4] += 1;
+            fs::write(&path, b"not a real photo").unwrap();
+
+            let moved = move_into(&to_dir, &path, stamp(&path))
+                .unwrap_or_else(|e| panic!("a {length}-character destination didn't move: {e}"));
+            let names: Vec<_> = fs::read_dir(&to_dir).unwrap().map(|e| e.unwrap().file_name()).collect();
+            assert_eq!(
+                names,
+                ["passport.jpg"],
+                "a {length}-character destination keeps its exact name"
+            );
+            assert_eq!(moved.to, to_dir.join("passport.jpg"));
+            assert!(!path.exists(), "the file leaves its own place at {length} characters");
+
+            move_back(&moved).unwrap_or_else(|e| panic!("Undo didn't find a {length}-character destination: {e}"));
+            assert_eq!(fs::read(&path).unwrap(), b"not a real photo");
+            assert_eq!(fs::read_dir(&to_dir).unwrap().count(), 0, "Undo leaves nothing behind");
+            fs::remove_file(&path).unwrap();
+        }
+        assert_eq!(remainders, [2; 4], "every remainder of 4 is covered twice");
+
+        let _ = fs::remove_dir_all(&from_dir);
+        let _ = fs::remove_dir_all(&root);
     }
 
     #[test]

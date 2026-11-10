@@ -231,7 +231,7 @@ Rust crates the app is built from, for Windows (from Cargo.lock; build-time crat
 - tracing-core 0.1.36: MIT
 - trash 5.2.9: MIT
 - tray-icon 0.25.1: MIT OR Apache-2.0
-- typed-path 0.12.3: MIT OR Apache-2.0
+- typed-path 0.13.0: MIT OR Apache-2.0
 - typeid 1.0.3: MIT OR Apache-2.0
 - typenum 1.20.1: MIT OR Apache-2.0
 - unicode-ident 1.0.26: (MIT OR Apache-2.0) AND Unicode-3.0
@@ -282,7 +282,7 @@ Rust crates the app is built from, for Windows (from Cargo.lock; build-time crat
 - zerotrie 0.2.5: Unicode-3.0
 - zerovec 0.11.8: Unicode-3.0
 - zerovec-derive 0.11.6: Unicode-3.0
-- zip 9.0.4: MIT
+- zip 9.4.1: MIT
 - zlib-rs 0.6.8: Zlib
 - zmij 1.0.23: MIT
 - zopfli 0.8.3: Apache-2.0
