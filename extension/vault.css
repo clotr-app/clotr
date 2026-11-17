@@ -440,7 +440,8 @@ body.vault-page {
 .tq-offer a {
   font-weight: 700;
 }
-.pin-step.done {
+/* Only the computer's pinned line turns green: a phone's steps stay as they are. */
+.pin-step.done .on-computer {
   color: var(--good-ink);
   font-weight: 600;
 }

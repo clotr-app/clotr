@@ -344,13 +344,14 @@ if (new URLSearchParams(location.search).has("welcome")) {
     copiedTimer = setTimeout(() => (button.textContent = msg("vault_copyKey", "Copy")), 1500);
   });
   pinStepsForThisBrowser();
-  // Pinned yet? The browser can tell us (Chrome/Edge/Brave; older browsers keep the instructions).
+  // Pinned yet? The browser can tell us (Chrome/Edge/Brave; older browsers keep the instructions). Only the
+  // computer's words change: a phone has no toolbar, so its line stays whatever the browser says.
   const checkPinned = async () => {
     const settings = await chrome.action.getUserSettings?.().catch(() => null);
     if (!settings?.isOnToolbar) return false;
-    $("pin-step").replaceChildren(
-      msg("vt_pinned", "✓ Clotr is pinned. Its count shows on Clotr's icon in your toolbar."),
-    );
+    $("pin-step")
+      .querySelector(".on-computer")
+      .replaceChildren(msg("vt_pinned", "✓ Clotr is pinned. Its count shows on Clotr's icon in your toolbar."));
     $("pin-step").classList.add("done");
     return true;
   };
