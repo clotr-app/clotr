@@ -456,7 +456,8 @@ module.exports = async function (env) {
   }
   const stubPinned = (page, on) =>
     page.evaluateOnNewDocument((isOnToolbar) => {
-      chrome.action.getUserSettings = async () => ({ isOnToolbar });
+      // This runs in the tab's blank page too, which has no chrome.action. Only Clotr's pages need it.
+      if (globalThis.chrome?.action) chrome.action.getUserSettings = async () => ({ isOnToolbar });
     }, on);
   const pageShots = async (page, name) => {
     for (const theme of ["dark", "light"]) {
