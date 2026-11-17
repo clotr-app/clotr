@@ -1,9 +1,21 @@
-# Clotr
+<div align="center">
 
 [![Tests](https://github.com/clotr-app/clotr/actions/workflows/test.yml/badge.svg)](https://github.com/clotr-app/clotr/actions/workflows/test.yml)
 [![License](https://img.shields.io/badge/license-AGPL--3.0-lightgrey)](LICENSE)
 [![OpenSSF Scorecard](https://api.scorecard.dev/projects/github.com/clotr-app/clotr/badge)](https://scorecard.dev/viewer/?uri=github.com/clotr-app/clotr)
 [![OpenSSF Best Practices](https://www.bestpractices.dev/projects/15419/badge)](https://www.bestpractices.dev/projects/15419)
+
+</div>
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/brand/readme/clotr-header-dark.svg">
+  <img src="docs/brand/readme/clotr-header-light.svg" width="812" alt="Clotr. Catches passwords, keys and personal data before you paste them into AI tools. Free, runs on your device, in browsers, Windows, Android and code editors. Veteran owned.">
+</picture>
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/brand/readme/quote-dark.svg">
+  <img src="docs/brand/readme/quote-light.svg" width="812" alt="“Privacy shouldn’t require technical knowledge, expensive tools, or opting out of modern life. It should be the default.” u/monarch-03, on r/privacy">
+</picture>
 
 It's far too easy to overshare with AI, and it's going to get easier and easier to leak your private information. I was a mechanic in the Navy, and independently for over a decade, so I truthfully understand what a small leak means. Our privacy is no one's responsibility but our own, and large companies are never going to take an interest in protecting us (especially from AI).
 
@@ -11,29 +23,25 @@ So I started making my own privacy tools to cover my own mistakes. During my shi
 
 Clotr is my solution to my problem, ideally built for people who don't know any better and those who know too much. I've tried to build it so you could easily set it up for your grandmother. She can go about her regular internet use, and if there's an issue it gives her a clear and private way to tell you what's going on (because if you're reading this, you probably know what's going on. Hopefully).
 
-This readme is written by hand. Forgive its gaps. A reddit user also said this entire intro succinctly in less than 20 words, so:
-
-> Privacy shouldn’t require technical knowledge, expensive tools, or opting out of modern life. It should be the default.
->
-> u/monarch-03, on r/privacy
-
 Deciding how you present, and how others see you, is a basic human right. The internet, and AI especially, has made it harder than ever to manage what others can see about you. Cybersecurity and online privacy should be as simple as wearing sunglasses or choosing where you go in public.
 
-![Clotr's warning on a message with a made-up Social Security number, with the choices Clot this leak and Leave it alone](docs/store/shots/ai-chat.png)
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/brand/readme/catch-dark.png">
+  <img src="docs/brand/readme/catch-light.png" width="812" alt="VS Code with a Claude chat. A message pasting a made-up .env file was stopped before it was sent: Clotr found a database connection string in it.">
+</picture>
 
 ## Install
 
-The browser extension:
+<p align="center">
+<a href="https://clotr.app/extension.html"><picture><source media="(prefers-color-scheme: dark)" srcset="docs/brand/readme/install-browsers-dark.svg"><img src="docs/brand/readme/install-browsers-light.svg" width="260" alt="Clotr for browsers: Chrome, Edge, Firefox"></picture></a>
+<a href="https://apps.microsoft.com/detail/9P197J2PGJ8X"><picture><source media="(prefers-color-scheme: dark)" srcset="docs/brand/readme/install-windows-dark.svg"><img src="docs/brand/readme/install-windows-light.svg" width="260" alt="Clotr for Windows, Microsoft Store"></picture></a>
+<a href="#for-developers"><picture><source media="(prefers-color-scheme: dark)" srcset="docs/brand/readme/install-editors-dark.svg"><img src="docs/brand/readme/install-editors-light.svg" width="260" alt="Clotr for code editors: VS Code, JetBrains"></picture></a>
+</p>
 
-- [Chrome Web Store](https://chromewebstore.google.com/detail/gkgpgejhhmmhklaghdnbjbalkmpjnmab), which Brave installs from too
-- [Firefox Add-ons](https://addons.mozilla.org/firefox/addon/clotr-clot-your-data-leaks/)
-- [Microsoft Edge Add-ons](https://microsoftedge.microsoft.com/addons/detail/hbangnmofjeaieaeamlncpcfmhbclbkj)
-
-You can also get the zip from [Releases](https://github.com/clotr-app/clotr/releases), unzip it, and load the folder with Load unpacked on `chrome://extensions` once Developer mode is on.
-
-Clotr for Windows: [Microsoft Store](https://apps.microsoft.com/detail/9P197J2PGJ8X), or `winget install 9P197J2PGJ8X -s msstore`.
-
-For Clotr's developer tools, see [For developers](#for-developers) below.
+- **Browsers:** [Chrome Web Store](https://chromewebstore.google.com/detail/gkgpgejhhmmhklaghdnbjbalkmpjnmab) (Brave installs from it too) · [Firefox Add-ons](https://addons.mozilla.org/firefox/addon/clotr-clot-your-data-leaks/) · [Microsoft Edge Add-ons](https://microsoftedge.microsoft.com/addons/detail/hbangnmofjeaieaeamlncpcfmhbclbkj)
+- **Windows:** [Microsoft Store](https://apps.microsoft.com/detail/9P197J2PGJ8X), or `winget install 9P197J2PGJ8X -s msstore`
+- **From a zip:** download it from [Releases](https://github.com/clotr-app/clotr/releases), unzip it, and load the folder with Load unpacked on `chrome://extensions` once Developer mode is on
+- **Code editors and the command line:** see [For developers](#for-developers)
 
 ## What it does
 
@@ -54,7 +62,7 @@ Its source is in `apps/desktop`. Building it takes Windows 10 or 11, Node.js and
 ## For developers
 
 - The [VS Code extension](https://marketplace.visualstudio.com/items?itemName=clotr-app.clotr) is also on [Open VSX](https://open-vsx.org/extension/clotr-app/clotr) and flags credentials in open files; install with `code --install-extension clotr-app.clotr` or `codium --install-extension clotr-app.clotr` in VSCodium.
-- The [JetBrains plugin](https://plugins.jetbrains.com/plugin/35407-clotr) is on the JetBrains Marketplace at version 0.1.1. Its [README](https://github.com/clotr-app/clotr/tree/main/apps/jetbrains#readme) explains how to try it from a clone.
+- The [JetBrains plugin](https://plugins.jetbrains.com/plugin/35407-clotr) is on the JetBrains Marketplace. Its [README](https://github.com/clotr-app/clotr/tree/main/apps/jetbrains#readme) explains how to try it from a clone.
 - [Clotr Guard on npm](https://www.npmjs.com/package/clotr-guard) is a CLI with prompt hooks for Claude Code, Cursor, Gemini CLI, Codex CLI and Windsurf (and Cline on macOS and Linux), file-read hooks in Claude Code, Cursor, Gemini CLI and Windsurf, shell-command and MCP tool-call checks in Claude Code and Cursor, a Git pre-commit check and the `clotr-mcp` server. MCP checks text only when your assistant calls it. The server runs locally as a child process over stdio and makes no network calls. Install with `npm install -g clotr-guard`, then run `clotr-guard setup claude` or `clotr-guard setup git`.
 - The [`clotr-engine` package on npm](https://www.npmjs.com/package/clotr-engine) is Clotr's detection engine for scripts and tools; install with `npm install clotr-engine`.
 
