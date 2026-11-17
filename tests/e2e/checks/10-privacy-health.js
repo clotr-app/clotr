@@ -443,15 +443,22 @@ module.exports = async function (env) {
     );
     expect(/^(100%|none)$/.test(m.sizeAdjust), `${what} at ${width} px: text size adjust is ${m.sizeAdjust}`);
   }
-  async function openOnPhone(file, width) {
+  // `pinned`, when given, is what the browser answers when the page asks whether Clotr is on the toolbar.
+  async function openOnPhone(file, width, { pinned } = {}) {
     const page = await ctx.browser.newPage();
     page.on("pageerror", (err) => ctx.problems.push(`${file} error: ${err.message}`));
+    if (pinned !== undefined) await stubPinned(page, pinned);
     await page.setViewport(phone(width).viewport);
     await page.goto(`chrome-extension://${new URL(ctx.swTarget.url()).host}/${file}`);
     await page.evaluate(() => document.fonts.ready); // Clotr's own font is wider than the fallback, so this waits for it to load.
     await sleep(600);
     return page;
   }
+  const stubPinned = (page, on) =>
+    page.evaluateOnNewDocument((isOnToolbar) => {
+      // This runs in the tab's blank page too, which has no chrome.action. Only Clotr's pages need it.
+      if (globalThis.chrome?.action) chrome.action.getUserSettings = async () => ({ isOnToolbar });
+    }, on);
   const pageShots = async (page, name) => {
     for (const theme of ["dark", "light"]) {
       await page.emulateMediaFeatures([{ name: "prefers-color-scheme", value: theme }]);
@@ -617,7 +624,8 @@ module.exports = async function (env) {
             .map((el) => el.innerText)
             .join(" | "),
         );
-      const onPhone = await openOnPhone("vault.html?welcome=1", 360);
+      // Not pinned, whatever the browser under test would say, so both halves read the steps.
+      const onPhone = await openOnPhone("vault.html?welcome=1", 360, { pinned: false });
       try {
         const text = await read(onPhone);
         expect(!/puzzle piece|top-right/i.test(text), `on a phone: ${JSON.stringify(text)}`);
@@ -627,6 +635,7 @@ module.exports = async function (env) {
       }
       const onComputer = await ctx.browser.newPage();
       try {
+        await stubPinned(onComputer, false);
         await onComputer.setViewport({ width: 1040, height: 900 });
         await onComputer.goto(`chrome-extension://${new URL(ctx.swTarget.url()).host}/vault.html?welcome=1`);
         const text = await read(onComputer);
@@ -634,6 +643,48 @@ module.exports = async function (env) {
         expect(!/⋮/.test(text), `on a computer, phone words show: ${JSON.stringify(text)}`);
       } finally {
         await onComputer.close();
+      }
+    },
+  );
+
+  await check(
+    "MOB5E",
+    "Welcome page when the browser says Clotr is pinned: a phone keeps its own way to find Clotr (no toolbar), a computer gets the pinned line",
+    async () => {
+      const pinStep = (page) =>
+        page.evaluate(() => {
+          const step = document.getElementById("pin-step");
+          const phoneLine = step.querySelector(".on-phone");
+          return {
+            text: step.innerText,
+            phoneWeight: phoneLine ? getComputedStyle(phoneLine).fontWeight : "",
+            plainWeight: getComputedStyle(document.querySelector(".try-hint")).fontWeight,
+          };
+        });
+      const onPhone = await openOnPhone("vault.html?welcome=1", 360, { pinned: true });
+      try {
+        await sleep(1700); // one more turn of the pin poll
+        const { text, phoneWeight, plainWeight } = await pinStep(onPhone);
+        expect(/⋮/.test(text) && /Extensions/.test(text), `on a phone, no phone words: ${JSON.stringify(text)}`);
+        expect(!/toolbar|pinned/i.test(text), `on a phone, the computer's words: ${JSON.stringify(text)}`);
+        expect(phoneWeight === plainWeight, `on a phone, the steps look done (weight ${phoneWeight})`);
+      } finally {
+        await onPhone.close();
+      }
+      for (const pinned of [true, false]) {
+        const page = await ctx.browser.newPage();
+        try {
+          await stubPinned(page, pinned);
+          await page.setViewport({ width: 1040, height: 900 });
+          await page.goto(`chrome-extension://${new URL(ctx.swTarget.url()).host}/vault.html?welcome=1`);
+          await sleep(400);
+          const { text } = await pinStep(page);
+          if (pinned) expect(/✓ Clotr is pinned/.test(text), `on a computer, pinned: ${JSON.stringify(text)}`);
+          else expect(/puzzle piece/.test(text), `on a computer, not pinned: ${JSON.stringify(text)}`);
+          expect(!/⋮/.test(text), `on a computer, phone words show: ${JSON.stringify(text)}`);
+        } finally {
+          await page.close();
+        }
       }
     },
   );
