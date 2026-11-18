@@ -4,6 +4,9 @@
 const test = require("node:test");
 const assert = require("node:assert/strict");
 
+// In the counting child (tests/patterns-counted.test.js) the work meter loads before the engine, so it counts the
+// engine's steps. The mutator copies only the files it lists, so this file loads tests/work.js and not work-child.js.
+const work = process.env.CLOTR_WORK === "1" ? require("./work.js") : null;
 require("../extension/patterns.js");
 require("../extension/detector.js");
 require("../extension/decide.js");
@@ -17,22 +20,15 @@ function detect(text) {
 }
 
 // These growth checks catch real regressions: quadratic scans and backtracking patterns grow much faster than
-// the fourfold increase in input, while linear work stays near that increase.
-test("growth checks fail slow code: a quadratic function and a backtracking pattern", () => {
+// the fourfold increase in input, while linear work stays near that increase. The count growth check has its own
+// test file, tests/patterns-work.test.js.
+test("the clock growth check fails a backtracking pattern, and passes linear work", () => {
   const repeat = (u, n) => u.repeat(n);
-  // This repeats the old two-step sign-in key reader's mistake: each find makes its own pass over the whole text,
-  // so 4 times the text takes 16 times as long. That version took 19 seconds on 20,000 links.
-  const quadratic = (text) => {
-    let n = 0;
-    for (const m of text.matchAll(/\d+/g)) n += text.replace(/\d/g, "#").length & m.index;
-    return n;
-  };
-  const missed = /time grew too much/;
-  assert.throws(() => assertLinear(quadratic, repeat, ["7 Oak Dr. "], 700), missed);
-  // This repeats the old email pattern's mistake too: without an @, it tries every start position and runs to the
-  // end of the text from each one. That version took about 3 seconds on 20,000 characters of "a-a-a-…".
+  // This repeats the old email pattern's mistake: without an @, it tries every start position and runs to the end
+  // of the text from each one. That version took about 3 seconds on 20,000 characters of "a-a-a-…". It's one regex
+  // run whatever the length, so only a clock sees it.
   const email = /[\w.-]+@[\w-]+\.\w+/;
-  assert.throws(() => assertLinear((text) => email.test(text), repeat, ["a-"], 1400), missed);
+  assert.throws(() => assertLinear((text) => email.test(text), repeat, ["a-"], 1400), /time grew too much/);
   // The same kind of work passes when its time grows with the text: 400 passes over it, so 4 times the text takes
   // about 4 times as long.
   const linear = (t) => {
@@ -53,7 +49,12 @@ function expectNone(text) {
 // order, so a pause can't land on just one side of the comparison. Measured quadratic growth lands on both sides of
 // 16, so the limit sits at 10, well above linear growth and below quadratic; a unit fails only when it goes over on
 // three attempts running, which a pause on a busy machine doesn't do.
+// Run with CLOTR_WORK=1, 4 times the input may make at most WORK_GROWTH times the work instead.
 function assertLinear(fn, makeInput, units, n = 8000, runs = 3, limit = 10) {
+  if (work) {
+    work.assertWorkLinear(fn, makeInput, units, n, undefined, [__filename]);
+    return;
+  }
   for (const unit of units) {
     const smallInput = makeInput(unit, n);
     const bigInput = makeInput(unit, n * 4);
@@ -354,8 +355,9 @@ test("PEM headers and footers may have spaces after the dashes", () => {
   expectNothing("----- BEGIN RSA PRIVATE KEY ------\n" + "A".repeat(80));
 });
 
-// A key copied on Windows has CRLF line ends, and a header with no footer must stay linear on a long paste.
-test("private keys: a CRLF block is covered whole, and a lone header grows linearly", () => {
+// A key copied on Windows has CRLF line ends. A header with no footer on a long paste is counted in
+// tests/patterns-work.test.js.
+test("private keys: a CRLF block is covered whole", () => {
   const crlf =
     "-----BEGIN OPENSSH PRIVATE KEY-----\r\nb3BlbnNzaC1rZXktdjEAAAAA\r\nQm9keUxpbmVUd28==\r\n-----END OPENSSH PRIVATE KEY-----";
   const redacted = globalThis.Clotr.redact(
@@ -363,12 +365,6 @@ test("private keys: a CRLF block is covered whole, and a lone header grows linea
     globalThis.Clotr.detect(`key:\r\n${crlf}\r\nthanks`),
   );
   assert.equal(redacted, "key:\r\n[REDACTED PRIVATE KEY]\r\nthanks");
-  assertLinear(
-    (text) => globalThis.Clotr.detect(text),
-    (_, n) => `${["-----BEGIN", "RSA", "PRIVATE KEY-----"].join(" ")}\n${"A".repeat(n)}`,
-    ["lone header"],
-    2500,
-  );
 });
 
 test("a token too long to be wrapped stays on its original lines and scans linearly", () => {
@@ -1042,18 +1038,6 @@ test("two-step sign-in keys: talk about two-step sign-in, the documentation's ex
     assert.ok(!found.otp_secret && !found.password, `"${text}" → ${JSON.stringify(found)}`);
   }
   expectNothing("enable two-factor auth with a TOTP app like Authy or Google Authenticator");
-});
-
-// A paste of thousands of links or key-shaped words still reads in linear time. The first build blanked each link
-// with its own pass over the whole text, which took 19 seconds on 20,000 links.
-test("two-step sign-in keys: a paste full of links or key-shaped words grows linearly", () => {
-  const detectOnly = (text) => globalThis.Clotr.detect(text);
-  assertLinear(
-    detectOnly,
-    (u, n) => u.repeat(n),
-    ["otpauth://totp/x?secret=N4XQ2ZK7PLM3RTY5 ", "2fa setup key: ab3d cd4e ", "my 2fa secret key is "],
-    500,
-  );
 });
 
 test("fewer false alarms: placeholders and non-random look-alikes", () => {
@@ -3258,8 +3242,9 @@ test("Cover it reads a saved word's edges as detect() read them, and never leave
       [`Ann and {"note":"hi${bs}nAnn"}`, `${hidden} and {"note":"hi${bs}n${hidden}"}`],
       // "%20" in a link is a space.
       ["https://example.com/?to=hi%20Ann", `https://example.com/?to=hi%20${hidden}`],
-      // A longer word in any script holding it is still a different word.
-      ["Ann wrote to Annéa and 社員Ann", `${hidden} wrote to Annéa and 社員Ann`],
+      // A longer word holding it is still a different word, but Chinese or Japanese written straight up to it isn't
+      // part of it ("社員Ann" is "employee Ann").
+      ["Ann wrote to Annéa and 社員Ann", `${hidden} wrote to Annéa and 社員${hidden}`],
     ]) {
       const found = C.detect(text);
       assert.deepEqual(
@@ -3527,65 +3512,6 @@ test("detection grows with long drafts and big pastes (no quadratic patterns)", 
       4,
     );
     assert.ok(!grewMoreThan(a, b, 16), `${name} (${text.length} chars): time grew too much for 4× the text`);
-  }
-});
-
-// Text that looks machine-made but is the same every run, so a slow case stays slow.
-const madeUp = (alphabet, length, seed) => {
-  let out = "";
-  for (let i = 0, x = seed >>> 0; i < length; i++) {
-    x = (x * 1103515245 + 12345) >>> 0;
-    out += alphabet[(x >>> 8) % alphabet.length];
-  }
-  return out;
-};
-const HEX = "0123456789abcdef";
-const ALNUM = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
-
-// Each of these once took about ten times longer for four times the text. Every wrapped value, every value of a kind
-// and every key ID searched the whole text again, or every line break, so a paste a few hundred kilobytes long took
-// seconds where 1.4.1 took a fifth of one.
-test("many wrapped values, many values of one kind and many key pairs scan in linear time", () => {
-  const blocks = (unit, n, block) => Array.from({ length: n }, (_, i) => block(unit, i * 3)).join("");
-  const shapes = {
-    wraps: (unit, i) => `${unit}${madeUp(HEX, 10, i)}\n${madeUp(HEX, 6, i + 1)}\n${madeUp(HEX, 6, i + 2)}\nthanks\n`,
-    addresses: (unit, i) => `${unit}${(i >> 16) & 255}.${(i >> 8) & 255}.${i & 255}, `,
-    pairs: (unit, i) => `${unit}${madeUp("ABCDEFGHIJKLMNOPQRSTUVWXYZ234567", 16, i)} ${madeUp(ALNUM, 40, i + 1)} `,
-  };
-  for (const [name, unit, n] of [
-    ["wraps", "ghp_", 250],
-    ["addresses", "10.", 500],
-    ["pairs", "AKIA", 300],
-  ]) {
-    assertLinear(
-      (text) => globalThis.Clotr.detect(text),
-      (u, size) => blocks(u, size, shapes[name]),
-      [unit],
-      n,
-    );
-  }
-});
-
-// Every value under a TWILIO_ label looked for Twilio's SID and token pairs through the whole text again, so 256 KB
-// of such lines ran past detect()'s time limit and every kind after them went unchecked.
-test("many Twilio labels and pairs scan in linear time", () => {
-  const blocks = (unit, n, block) => Array.from({ length: n }, (_, i) => block(unit, i * 3)).join("");
-  const shapes = {
-    tokens: (unit, i) => `${unit}_TOKEN=${madeUp(ALNUM, 16, i)}\n`,
-    passwords: (unit, i) => `${unit}_PASSWORD=${madeUp(ALNUM, 16, i)}\n`,
-    pairs: (unit, i) => `${unit}_ACCOUNT_SID=AC${madeUp(HEX, 32, i)}\n${unit}_AUTH_TOKEN=${madeUp(HEX, 32, i + 1)}\n`,
-  };
-  for (const [name, n] of [
-    ["tokens", 250],
-    ["passwords", 250],
-    ["pairs", 80],
-  ]) {
-    const makeInput = (unit, size) => blocks(unit, size, shapes[name]);
-    assert.ok(
-      makeInput("TWILIO", n * 4).length <= globalThis.Clotr.DETECT_WINDOW_CHARS,
-      `${name} growth check should exercise one detector window`,
-    );
-    assertLinear((text) => globalThis.Clotr.detect(text), makeInput, ["TWILIO"], n);
   }
 });
 
@@ -4041,6 +3967,14 @@ test("a label before a huge run of spaces with no value grows linearly", () => {
 function assertGapGrowsInStep(name, make) {
   const smallText = make(4000);
   const bigText = make(16000);
+  if (work) {
+    // Counted: 4 times the gap may make at most WORK_GROWTH times the work.
+    const detectOnly = (text) => globalThis.Clotr.detect(text);
+    detectOnly(make(2000));
+    const shown = work.overLimit(work.workRatio(detectOnly, smallText, bigText, [__filename]), work.WORK_GROWTH);
+    assert.ok(!shown, `${name}: work grew too much for 4× the gap: ${shown}`);
+    return;
+  }
   const slow = grewEveryTime(
     () =>
       bestOfPair(
@@ -5294,6 +5228,63 @@ test("sign-in codes: the code before its label, who sent it and how, the text it
   expectOnly("482913 is my code", "password", "482913");
 });
 
+// A code in quotes before its name, like "'482913' is my verification code", was missed, since the closing quote
+// sat between the digits and "is". The closing quote has to match the opening one, and the match is the digits.
+test("sign-in codes: the code in quotes before its name", () => {
+  for (const text of [
+    "'482913' is my verification code",
+    "‘482913’ is your Google verification code",
+    '"482913" is my login code',
+    "“482913” is the code they sent me",
+    "'482913' - that's the code they sent me",
+  ]) {
+    expectOnly(text, "password", "482913");
+    assert.deepEqual(asksOf(text), ["login_code"], text);
+  }
+  expectOnly("482913 is my verification code", "password", "482913");
+  for (const text of [
+    "'2024' is my verification code",
+    "'482913' is my locker code",
+    "'4821' is my favourite number",
+    "'482913\" is my code",
+    "‘482913” is my code",
+    "482913' is my code",
+    "port '8080' is my code",
+    "5 '482913' is my code",
+  ]) {
+    expectNone(text);
+  }
+  const quoted = "“482913” is the code they sent me";
+  const hidden = globalThis.Clotr.redact(quoted, globalThis.Clotr.detect(quoted));
+  assert.equal(hidden, "“[REDACTED PASSWORD OR SECRET]” is the code they sent me");
+});
+
+// A code in quotes before its name used to take the name with it, so a second code told after that name was missed,
+// as in "'482913' is my verification code: 551234". Both codes are found, and Hide it covers both.
+test("sign-in codes: a second code after the name of a quoted one", () => {
+  for (const [text, codes] of [
+    ["'482913' is my verification code: 551234", ["482913", "551234"]],
+    ['"482913" was the verification code, 551234 is the new one', ["482913", "551234"]],
+    ["‘482913’ was the Google verification code; 551234", ["482913", "551234"]],
+    ["'482913' is my verification code, and 551234", ["482913", "551234"]],
+    ["'482913' is my verification code\n551234", ["482913", "551234"]],
+    ['x"873003" that’s my one-time code.  $  port code  aroom  ”  "63271  is  port \ndoor  ', ["873003", "63271"]],
+    [
+      "x‘793633’ \nwas\tthe Google verification code texted”515092 \n'' ”401 port  – \nx  958336732''",
+      ["793633", "515092"],
+    ],
+    [
+      "port ''1518' that’s your verification code\t'6389’  ‘918`  don't\t“\"53,  port ’  your \nthat’s ",
+      ["1518", "6389"],
+    ],
+  ]) {
+    const found = detect(text);
+    for (const code of codes) assert.ok((found.password || []).includes(code), `${JSON.stringify(text)} → ${code}`);
+    const hidden = globalThis.Clotr.redact(text, globalThis.Clotr.detect(text));
+    for (const code of codes) assert.ok(!hidden.includes(code), `${JSON.stringify(text)} hides ${code}`);
+  }
+});
+
 test("Spanish sign-in codes: 'me mandó', 'me ha llegado', a one-time key, the code before its label", () => {
   for (const text of [
     "Mi banco me mandó un código por SMS: 482913",
@@ -5491,19 +5482,6 @@ test("Spanish birth dates: nacido/nacida, nacimiento:, and year-month-day", () =
   // A birthplace on its own, and a date that isn't a birth date, should both stay quiet.
   expectNone("lugar de nacimiento: Madrid");
   expectNone("la reunión es el 14/03/2027");
-});
-
-// A huge paste of digits has to stay linear to read. The old code re-checked the whole run for a list marker like
-// "1." or "2)" every time a new digit was added, so 40,000 digits took about a second and froze the chat page.
-//
-// Both sizes are measured after warm-up, in alternating order, using the best of three samples. Four times the
-// input may take several times longer, but a quadratic regression (about 16×) must fail.
-test("reading a long run of digits grows in step with its length (no freeze on a huge paste)", () => {
-  let n = 0;
-  // Each call uses fresh text, since detect() caches its last result.
-  const read = (digits) => () => globalThis.Clotr.detect("1".repeat(digits) + "x" + n++);
-  const [small, big] = bestOfPair(read(1000), read(4000), 4, 3);
-  assert.ok(!grewMoreThan(small, big, 16), "4× the digits took too much longer to read");
 });
 
 // Every pattern is meant to stay fast (the ReDoS fuzz above), but a slip, or a kind a team adds at run time,
@@ -5809,6 +5787,173 @@ test("an API key, secret key or access token after its name is reported as a ser
   expectOnly(`API_KEY=${FAKE.github}`, "github_token");
 });
 
+test("camelCase setting labels use the name table in YAML, JSON and XML", () => {
+  const password = "Walnut" + "7!brook";
+  const key = "R8mQ" + "2xV7" + "pT4z" + "K9nB" + "6cY5" + "dL3g";
+  expectOnly(`dbPassword: ${password}`, "password", password);
+  expectOnly(`"apiKey": "${key}"`, "service_token", key);
+  expectOnly(`<dbPassword>${password}</dbPassword>`, "password", password);
+});
+
+test("camelCase YAML, JSON and XML labels leave angle-bracket placeholders quiet", () => {
+  expectNone("dbPassword: <password>");
+  expectNone('"apiKey": "<key>"');
+  expectNone("<dbPassword><password></dbPassword>");
+  const names = ["dbPassword", "adminPassword", "passwordRef", "clientSecret", "accessToken", "apiKey", "secretKey"];
+  const placeholders = ["<password>", "<PASSWORD>", "<key>", "<Key>", "<secret>", "<your-password>", "<REPLACE_ME>"];
+  for (const name of names) {
+    for (const value of [...placeholders, "<db password>", "<your-api-key>", "<insert token here>"]) {
+      expectNone(`${name}: ${value}`);
+      expectNone(`config:\n  ${name}: ${value}`);
+      expectNone(`auth:\n  ${name}: "${value}"`);
+      expectNone(`{"app": {"${name}": "${value}"}}`);
+    }
+    for (const value of placeholders) expectNone(`<config>\n  <${name}>${value}</${name}>\n</config>`);
+  }
+});
+
+test("a real password beside a camelCase placeholder is still found", () => {
+  const password = "Walnut" + "7!brook";
+  expectOnly(`dbPassword: <password>\nadminPassword: ${password}`, "password", password);
+  expectOnly(`{"passwordRef": "<password>", "dbPassword": "${password}"}`, "password", password);
+});
+
+test("public and object-reference camelCase labels stay quiet", () => {
+  const key = "R8mQ" + "2xV7" + "pT4z" + "K9nB" + "6cY5" + "dL3g";
+  for (const name of ["publishableKey", "siteKey", "publicKey"]) expectNone(`${name}: ${key}`);
+  expectNone("accessTokenExpiresIn: 3600");
+  for (const [name, value] of [
+    ["existingSecret", "my-release-auth"],
+    ["imagePullSecret", "registry-credentials"],
+    ["tlsSecret", "wildcard-example-tls"],
+  ]) {
+    expectNone(`${name}: ${value}`);
+  }
+});
+
+test("camelCase cluster object names stay quiet without hiding password-like values", () => {
+  const password = "Walnut" + "7!brook";
+  for (const [name, value] of [
+    ["clientSecret", "oauth-client-secret"],
+    ["accessToken", "user-access-token"],
+    ["dbPassword", "change-me-later"],
+    ["adminPassword", "admin-password"],
+    ["passwordSecret", "db-password-secret"],
+  ]) {
+    expectNone(`${name}: ${value}`);
+  }
+  expectOnly(`clientSecret: ${password}`, "password", password);
+  expectOnly(`accessToken: ${password}`, "password", password);
+});
+
+// No password or service token: other kinds, like a path, are left to their own tests.
+function expectNoSecret(text) {
+  const found = detect(text);
+  assert.ok(!found.password && !found.service_token, `"${text}" → ${JSON.stringify(found)}`);
+}
+
+test("a camelCase name holds a secret's word only where a hump starts it", () => {
+  for (const line of [
+    "bypassCache: 3600",
+    "bypassCache: production-only",
+    "compassHeading: 270",
+    "hockeyTeam: maple-leafs-roster",
+    "monkeyPatch: enabled-for-tests",
+    "whiskeyBrand: single-malt-reserve",
+    "donkeyKong: barrel-level-one",
+  ]) {
+    expectNoSecret(line);
+  }
+});
+
+test("a camelCase name with words after its access token or client secret reads like its snake_case twin", () => {
+  for (const line of [
+    "accessTokenTtl: 3600",
+    "accessTokenLifetime: 86400",
+    "accessTokenExpiry: 3600",
+    "accessTokenExpiresAt: 1735689600",
+    "accessTokenCookieName: access-token-cookie",
+    "accessTokenHeader: X-Access-Token",
+    "accessTokenEndpoint: /oauth/token",
+    "accessTokenUrl: /etc/app/conf/settings.yml",
+    "clientSecretName: payments-client-secret",
+  ]) {
+    expectNoSecret(line);
+  }
+});
+
+test("a camelCase key name's path, alias or joined words isn't a password", () => {
+  for (const line of [
+    "privateKey: ./certs/server-private.pem",
+    "privateKey: keys/signing-private-key.pem",
+    "privateKey: /home/deploy/.ssh/id_ed25519",
+    "encryptionKey: alias/app-data-encryption-key",
+    "signingKey: release-signing-key-name",
+    "storageKey: app-settings-local-v2",
+    "stripeKeyRef: copper-meadow-falcon",
+    "accessTokenKey: app:authToken",
+    "stripeKeyRef: process.settings.openaiApiKeyV2x",
+    "nextToken: page-two-cursor",
+    "pageToken: second-page",
+    "continuationToken: after-item-200",
+  ]) {
+    expectNoSecret(line);
+  }
+});
+
+test("a random key under a camelCase key name with a role word is a service token", () => {
+  // The camelCase twin of stripe_key_ref: <key>, which is found.
+  const key = "Zq7fAkE9" + "mAdE4uP2" + "xK8vN3tR6wB1";
+  assert.deepEqual(detect(`stripeKeyRef: ${key}`).service_token, [key]);
+});
+
+test("a sentence, a type or a handler after a camelCase name isn't a secret", () => {
+  for (const line of [
+    "dbPassword: set this in the dashboard first",
+    "adminPassword: ask the team lead for it",
+    "userPassword: see the vault entry for staging",
+    "accessToken: the token you got from the login call",
+    "apiKey: paste your key from the settings page",
+    "accessToken: string | null",
+    "onKeyPress: handleKeyPressEvent",
+    'dbPassword: "use the one from the vault"',
+    '{"dbPassword": "use the one from the vault"}',
+    '{"apiKey": "paste your key here please"}',
+  ]) {
+    expectNoSecret(line);
+  }
+});
+
+test("a snake_case site_key in a setter call or an HCL default is still read", () => {
+  const recaptcha = "6LcZr8qW" + "AAAAAN3vT6yKp2Lx" + "B9cHd4FsJ7gEa5U";
+  const key = "Zr8qWm3N" + "vT6yKp2LxB9cHd4F" + "sJ7gEa5U";
+  expectOnly(`config.set("site_key", "${recaptcha}")`, "service_token", recaptcha);
+  expectOnly(`variable "site_key" {\n  default = "${recaptcha}"\n}`, "service_token", recaptcha);
+  expectOnly(`config.set("website_key", "${key}")`, "service_token", key);
+  expectOnly(`config.set("parasite_key", "${key}")`, "service_token", key);
+  expectOnly('config.set("site_key", "copper-meadow-falcon-lane")', "password", "copper-meadow-falcon-lane");
+});
+
+test("config with camelCase names takes about as long as the same config in snake_case", () => {
+  const words = ["copper", "meadow", "falcon", "river", "harbor", "lantern"];
+  const names = ["dbPassword", "apiKey", "clientSecret", "accessToken", "cacheKey", "sessionKey", "refreshTokenTtl"];
+  const lines = [];
+  for (let i = 0; i < 4000; i++) {
+    const name = names[i % names.length];
+    const value = i % 3 ? `${words[i % 6]}-${words[(i * 7) % 6]}-${i}` : String(i * 37);
+    lines.push(i % 2 ? `${name}: ${value}` : `  "${name}": "${value}",`);
+  }
+  const camel = lines.join("\n");
+  const snake = camel.replace(/([a-z])([A-Z])/g, (_m, a, b) => `${a}_${b.toLowerCase()}`);
+  const [twin, own] = bestOfPair(
+    () => detect(snake),
+    () => detect(camel),
+    1,
+    5,
+  );
+  assert.ok(own.wall <= 1.25 * twin.wall, `camelCase ${own.wall.toFixed(0)} ms, snake_case ${twin.wall.toFixed(0)} ms`);
+});
+
 test("Cyrillic and Greek look-alike letters in secret labels cannot hide their values", () => {
   const key = "a8F3kL9mQ2xR7vT4pZ1nB6cY";
   expectCovered("passw\u043erd: hunter2", "password");
@@ -6037,21 +6182,6 @@ test("passwords with punctuation, wrapped and escaped keys, and the other passwo
     ],
     250,
     3,
-  );
-});
-
-test("Cover it grows linearly when the same secret is on every line of a long log", () => {
-  const token = "ghp_" + "Ab3dE5fG7hJ9kL1mN3pQ5rS7tU9vW1xY3zA5";
-  const coverOnly = ({ text, results }) => globalThis.Clotr.redact(text, results);
-  const makeInput = (unit, n) => {
-    const text = unit.repeat(n);
-    return { text, results: globalThis.Clotr.detect(text) };
-  };
-  assertLinear(
-    coverOnly,
-    makeInput,
-    [`GET /api/items Authorization: token ${token} 200\n`, "-----BEGIN PRIVATE KEY-----\n"],
-    500,
   );
 });
 

@@ -598,7 +598,7 @@ class ClotrInspectionTest : BasePlatformTestCase() {
         try {
             val result = withProgress(project, "test") { ClipboardChecker.check(engine, "key=AKIA4HPQ7XZ2R6TWLJ3N") }
             assertEquals(1, result.findings.size)
-            assertTrue(result.findings.single().preview.contains("AKIA…3N"))
+            assertTrue(result.findings.single().preview.contains("AK…3N"))
             assertTrue(result.cleaned.contains("[REDACTED AWS ACCESS KEY]"))
             assertFalse(result.cleaned.contains("AKIA4HPQ7XZ2R6TWLJ3N"))
         } finally {

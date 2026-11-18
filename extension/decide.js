@@ -10,17 +10,41 @@
 
   // ---------- Showing a value ----------
 
-  // I never show a full secret back on screen. A short value becomes all dots. A longer one keeps its first four
-  // characters and its last two, with dots in between.
-  function mask(value) {
+  // I never show a full secret back on screen. A short value becomes all dots. A password, or a kind that works
+  // like one, is eight dots at any length, so not even its length shows. A gift card code is in that set since it
+  // works like cash, a private key since its first characters are a fixed header, and a connection string since it
+  // often holds a password. Any other value keeps at most a quarter
+  // of itself, and never more than two characters at each end, which is still enough to tell two values apart.
+  // `kind` is the finding's kind id. Without one, or with anything that isn't a string (like map's index), I use
+  // the rule for any other value. Anything but a string for `value` throws, since a long enough array would come
+  // back with its first and last items whole.
+  const PASSWORD_KINDS = new Set([
+    "password",
+    "backup_codes",
+    "crypto_secret",
+    "otp_secret",
+    "card_code",
+    "gift_card",
+    "private_key",
+    "connection_string",
+  ]);
+
+  function mask(value, kind) {
+    if (typeof value !== "string") throw new TypeError("mask takes one string");
     if (value.length <= 8) return "•".repeat(value.length);
-    return `${value.slice(0, 4)}…${value.slice(-2)}`;
+    if (typeof kind === "string" && PASSWORD_KINDS.has(kind)) return "•".repeat(8);
+    const shown = Math.min(4, Math.floor(value.length / 4));
+    const head = Math.ceil(shown / 2);
+    return `${value.slice(0, head)}…${value.slice(value.length - (shown - head))}`;
   }
 
   // Each kind gets one line. With more than a few values, I show a count plus a couple of masked examples
   // instead of listing every one.
   function describeValues(r) {
-    const shown = r.matches.slice(0, 3).map(mask).join(", ");
+    const shown = r.matches
+      .slice(0, 3)
+      .map((m) => mask(m, r.id))
+      .join(", ");
     return r.matches.length > 3 ? `×${r.matches.length}: ${shown}, …` : shown;
   }
 
@@ -121,7 +145,7 @@
   // message. `source` is "typed" for what you wrote, or "copied" for something a host caught on the clipboard
   // before you pasted it.
   function noticeWords(results, { everyday = false, source = "typed" } = {}) {
-    const items = results.flatMap((r) => r.matches.map((m) => `${r.name} (${mask(m)})`));
+    const items = results.flatMap((r) => r.matches.map((m) => `${r.name} (${mask(m, r.id)})`));
     if (source === "copied") {
       return {
         lead: msg("noticeCopiedContains", "What you copied contains "),
@@ -355,6 +379,22 @@
       // written here, so a tampered or future value just falls back to the original scheme.
       if (e.scheme === 2) out.scheme = 2;
       if (e.kind === "word") out.words = Math.min(4, Math.max(1, Number(e.words) || 1));
+      // A name saved with an apostrophe has a second fingerprint, of its form without one (detector.js wordEntry).
+      if (e.kind === "word" && /^[0-9a-f]{16}$/.test(e.joined)) out.joined = e.joined;
+      // A word written only in a script without spaces keeps its count of letters and its head (detector.js
+      // wordEntry): both, or neither.
+      if (
+        e.kind === "word" &&
+        Number.isInteger(e.closed) &&
+        e.closed >= 2 &&
+        e.closed <= 64 &&
+        Number.isInteger(e.head) &&
+        e.head >= 0 &&
+        e.head < 4096
+      ) {
+        out.closed = e.closed;
+        out.head = e.head;
+      }
       if (e.kind === "value") out.mode = VAULT_MODES.has(e.mode) ? e.mode : "protect";
     }
     if (e.learned) out.learned = true;

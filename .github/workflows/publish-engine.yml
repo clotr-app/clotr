@@ -1,0 +1,63 @@
+# Publishes clotr-engine to npm with provenance, a signed record of which commit and which workflow run built the
+# package. It runs only when someone starts it from the Actions tab on one of the engine's own tags (engine-v1.6.1 for
+# engine 1.6.1), never on a push, a pull request or a schedule, so the engine goes out on its own, without a Guard tag.
+name: Publish clotr-engine
+
+on:
+  workflow_dispatch:
+
+# Read-only by default, as every workflow here is. Only the publish job gets an ID token.
+permissions:
+  contents: read
+
+jobs:
+  publish:
+    # npm signs provenance only on GitHub's own runners.
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    # Only someone with write access can start this, the first step stops it unless it was started on an engine-v
+    # tag. npm takes the package through the trusted publisher on npmjs.com when one is set up for this workflow and
+    # environment, and otherwise with the NPM_TOKEN secret. Nobody approves the run once it starts.
+    environment:
+      name: npm
+      url: https://www.npmjs.com/package/clotr-engine
+    permissions:
+      contents: read
+      id-token: write # the identity npm signs the provenance with, and trusted publishing's sign-in
+    steps:
+      - name: Only from one of the engine's tags
+        run: |
+          case "$GITHUB_REF" in
+            refs/tags/engine-v*) ;;
+            *) echo "Start this from one of the engine's tags (engine-v...), not $GITHUB_REF"; exit 1 ;;
+          esac
+      # Pinned to the same commits as the release workflow, so a moved tag can't change what runs.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      # Node 24 comes with npm 11, which can sign in through a trusted publisher as well as sign provenance.
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 24
+          package-manager-cache: false
+          registry-url: https://registry.npmjs.org
+      - run: npm ci
+      - run: npm test
+      - name: The engine's version is the tag's
+        run: |
+          engine="engine-v$(node -p "require('./apps/engine/package.json').version")"
+          test "$engine" = "$GITHUB_REF_NAME" || { echo "tag $GITHUB_REF_NAME but the engine says $engine"; exit 1; }
+      # prepack builds the bundle and runs the engine's own tests, which check that the source keeps "private": true,
+      # so a dry-run pack runs them here first, while the flag is on.
+      - name: Build and test clotr-engine
+        working-directory: apps/engine
+        run: npm pack --dry-run
+      - name: Let npm publish this copy
+        working-directory: apps/engine
+        run: npm pkg delete private
+      # Its scripts already ran above, so the publish skips them.
+      - name: Publish with provenance
+        working-directory: apps/engine
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: npm publish --provenance --access public --ignore-scripts

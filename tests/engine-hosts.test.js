@@ -362,9 +362,21 @@ test("10 KB of everyday prose scans inside a time limit set against the machine'
 
 test("Guard keeps one engine for the whole process", () => {
   assert.equal(guardEngine.engineContext(), guardEngine.engineContext());
+  // Counted, whatever the machine's load: the 20 checks make no new engine context.
+  const createContext = vm.createContext;
+  let made = 0;
+  vm.createContext = (...args) => {
+    made++;
+    return createContext(...args);
+  };
   const started = performance.now();
-  for (let i = 0; i < 20; i++) guardEngine.check(`a short prompt number ${i}`);
+  try {
+    for (let i = 0; i < 20; i++) guardEngine.check(`a short prompt number ${i}`);
+  } finally {
+    vm.createContext = createContext;
+  }
   const each = (performance.now() - started) / 20;
+  assert.equal(made, 0, `the engine was loaded ${made} more times`);
   // Loading the engine costs tens of milliseconds; a warm check of a short prompt costs well under one.
   assert.ok(each < 15, `each check took ${each.toFixed(1)} ms; the engine is being loaded again`);
 });

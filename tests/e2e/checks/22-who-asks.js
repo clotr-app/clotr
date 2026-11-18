@@ -29,12 +29,12 @@ module.exports = async function (env) {
       id: "gift_card",
       text: "the gift card code is 7KQ2-9PMX-4RT8",
       value: "7KQ2-9PMX-4RT8",
-      name: "Gift Card Code (7KQ2…T8)",
+      name: "Gift Card Code (••••••••)",
       q: "Who asks for the numbers on a gift card?",
       a: "Scammers do. No real business or government agency will ever tell you to pay them with a gift card.",
       es: {
         text: "el código de la tarjeta regalo es 7KQ2-9PMX-4RT8",
-        name: "Código de tarjeta regalo (7KQ2…T8)",
+        name: "Código de tarjeta regalo (••••••••)",
         q: "¿Quién pide los números de una tarjeta regalo?",
         a: "Los estafadores. Ninguna empresa ni organismo público de verdad te pedirá que le pagues con una tarjeta regalo.",
       },
@@ -57,12 +57,12 @@ module.exports = async function (env) {
       id: "remote_code",
       text: "my AnyDesk code is 123 456 789",
       value: "123 456 789",
-      name: "Remote-Access Code (123 …89)",
+      name: "Remote-Access Code (••••••••)",
       q: "Who asks for a code to get into your computer?",
       a: "Fake tech support. Real tech companies don't call or message you about a problem with your computer.",
       es: {
         text: "el código de AnyDesk es 123 456 789",
-        name: "Código de acceso remoto (123 …89)",
+        name: "Código de acceso remoto (••••••••)",
         q: "¿Quién pide un código para entrar en tu ordenador?",
         a: "El falso soporte técnico. Las empresas de tecnología de verdad no te llaman ni te escriben por un problema en tu ordenador.",
       },
@@ -71,12 +71,12 @@ module.exports = async function (env) {
       id: "recovery_codes",
       text: "backup codes are 1234 5678, 2345 6789",
       value: "1234 5678, 2345 6789",
-      name: "Backup Codes (1234…89)",
+      name: "Backup Codes (••••••••)",
       q: "Who asks for your backup codes?",
       a: "Only someone trying to get into your account without you. They're its spare keys.",
       es: {
         text: "mis códigos de respaldo son 1234 5678, 2345 6789",
-        name: "Códigos de respaldo (1234…89)",
+        name: "Códigos de respaldo (••••••••)",
         q: "¿Quién pide tus códigos de respaldo?",
         a: "Solo alguien que quiere entrar en tu cuenta sin ti. Son sus llaves de repuesto.",
       },
@@ -295,7 +295,7 @@ module.exports = async function (env) {
         }, 3000);
         expect(mix, `no line for the code beside a password: ${(await readNotice(page))?.text}`);
         expect(
-          mix.text.includes("Password or Secret (Fluf…3!)") && mix.text.includes("Password or Secret (••••••)"),
+          mix.text.includes("Password or Secret (••••••••)") && mix.text.includes("Password or Secret (••••••)"),
           `the mix isn't named by its kind: ${mix.text}`,
         );
       }),

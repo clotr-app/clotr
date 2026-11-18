@@ -1,0 +1,54 @@
+# Everyday messages in Spanish that people send to AI tools, heavy on numbers: dates and hours, prices with dots and
+# decimal commas, populations, recipes, football scores, trains, orders and invoices. None contains personal data
+# or a secret, so every detection here is a false alarm. Messages are separated by lines of "---".
+# The ratchet in tests/engine-prose-numbers.test.js fails on any warning here.
+---
+La reunión es el 14/11/2025 a las 15:30 en la sala 305. Escríbeme un mensaje corto para el equipo.
+---
+Para la paella: 400 g de arroz, 1 kg de pollo, 250 g de judías, 1,2 l de caldo, 20 minutos a fuego medio. ¿Puedo usar arroz largo?
+---
+El Real Madrid ganó 3-1 al Barcelona el 26/10/2025 ante 78.297 espectadores. Resúmeme el partido.
+---
+El alquiler es de 1.250,50 € al mes más 85,00 € de comunidad. ¿Cuánto es al año?
+---
+La población de España era de 48.619.695 habitantes en 2024. ¿Cuántos viven en Madrid?
+---
+Mi pedido número 2025-11-004512 no ha llegado. ¿Cómo reclamo a la tienda?
+---
+El número de pedido 837.140.668 sigue en preparación. Redacta un mensaje al vendedor.
+---
+Mi número de seguimiento 910-8833885 no se actualiza desde el 28/10/2025. ¿Es normal?
+---
+La factura n.º 5756-435743 de 1.234,56 € vence el 15/12. Escribe un correo pidiendo un aplazamiento.
+---
+El AVE 03061 sale de Madrid a las 07:30 y llega a Barcelona a las 10:15, coche 6, plaza 12A. ¿Cuánto dura el viaje?
+---
+2026-03-15 10:30 a 2026-03-15 12:00 hay una charla en línea. Escribe un recordatorio.
+---
+Ventas del trimestre: enero 1.245.300 €, febrero 1.389.150 €, marzo 1.402.880 €. Calcula el crecimiento.
+---
+Corrí 10 km en 52:30, a 5:15 el kilómetro. ¿Qué tiempo haría en una media maratón?
+---
+Los códigos postales 28001, 28002, 28003 y 28004 son del centro de Madrid, ¿verdad?
+---
+La Liga: 1. Real Madrid 30 partidos 72 puntos, 2. Barcelona 30 partidos 68 puntos, 3. Atlético 30 partidos 61 puntos. ¿Quién gana?
+---
+Los números de la primitiva fueron 05 12 18 23 29 33. ¿Qué probabilidad hay de acertar?
+---
+El presupuesto es de 712.345.678 € para cinco años. ¿Cuánto es por año?
+---
+Mi localizador de reserva es 7340915826 para dos noches. Escribe un correo para cambiar la fecha.
+---
+Horario: lunes a viernes de 9:00 a 14:00 y de 17:00 a 20:30. Tradúcelo al inglés.
+---
+Los exámenes son el 10/01/2026, el 12/01/2026 y el 15/01/2026. Hazme un plan de estudio.
+---
+El coche tiene 85.300 km, es de 2019 y piden 14.900 €. ¿Es caro?
+---
+La hipoteca es de 220.000 € a 25 años al 3,1 %. ¿Cuánto pago al mes?
+---
+Pagué 1.299,99 € por el portátil en 12 cuotas de 108,33 €. ¿Me salió caro?
+---
+El libro (978-84-376-0494-7) está agotado. ¿Conoces otra edición?
+---
+Mi número de cliente 0038 5512 7790 no aparece en la web. ¿Cómo lo soluciono?

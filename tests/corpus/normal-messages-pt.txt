@@ -1,0 +1,80 @@
+# Everyday messages in Portuguese that people send to AI tools. None contains personal data or a secret, so every
+# detection here is a false alarm. Messages are separated by lines of "---". Heavy on numbers on purpose: dates and
+# hours, prices in reais and euros, populations, recipes, football scores, postal codes, orders and invoices.
+# The ratchet in tests/engine-prose-numbers.test.js fails on any warning here.
+---
+A reunião será no dia 05/12/2025 às 15h00, na sala 304 do 3º andar. Escreve um convite curto para a equipe.
+---
+Receita: 2 xícaras de farinha, 3 ovos, 1 xícara de açúcar, 200 ml de leite, forno a 180 graus por 40 minutos. Posso usar adoçante?
+---
+O Flamengo venceu o Palmeiras por 2 a 1 no dia 09/11/2025, com 62.345 torcedores no Maracanã. Resume o jogo pra mim.
+---
+O apartamento custa R$ 2.350,00 por mês, mais R$ 480,00 de condomínio. Quanto dá por ano?
+---
+Paguei R$ 1.299,90 no celular em 12x de R$ 108,33 sem juros. Foi um bom negócio?
+---
+A população do Brasil é de 203.062.512 pessoas segundo o censo de 2022. Quantas vivem em São Paulo?
+---
+Meu pedido 1400-2025-887321 foi entregue em 04/11/2025 mas veio errado. Como peço a troca?
+---
+Horário: segunda a sexta das 08h00 às 17h30, sábados das 08h00 às 12h00. Traduz para o inglês.
+---
+O placar foi 3 x 1, gols aos 12, 45 e 78 minutos, público de 45.210. Quem fez os gols?
+---
+Datas das provas: 10/11/2025, 17/11/2025, 24/11/2025 e 01/12/2025. Monta um cronograma de estudos.
+---
+CEP 01310-100, Avenida Paulista — qual o melhor caminho de metrô até lá saindo da Sé?
+---
+Os CEPs 01310-100, 04538-132 e 22041-001 ficam em SP e RJ, certo?
+---
+Preço: R$ 123.456.789,00 à vista pela fazenda. Quanto seria o ITBI de 3 %?
+---
+Linhas 681, 646, 943 e 145 passam lá. Qual é a mais rápida no horário de pico?
+---
+Meu código de rastreio 54 75 60 85 97 não atualiza há uma semana. É normal nos Correios?
+---
+A nota fiscal 930-694-1790 veio com o valor errado. Como peço a correção?
+---
+O maratonista completou em 2h05min36s, ritmo de 2:58 por km, 42.195 metros. Explica como isso é possível.
+---
+Taxa Selic em 10,50% a.a., IPCA de 4,62% em 12 meses, PIB de R$ 10,9 trilhões. Explica em linguagem simples.
+---
+Classificação: 1º Flamengo 38 jogos 70 pts, 2º Palmeiras 38 jogos 68 pts, 3º Atlético 38 jogos 64 pts. Quem vai à Libertadores?
+---
+Fiz 5 km em 28:30 e 10 km em 59:10. Qual seria meu tempo numa meia maratona?
+---
+A conta de luz veio R$ 312,47 para 285 kWh. Quanto custa cada kWh?
+---
+O voo TP 1023 sai de Lisboa a 14/03/2026 às 10h35 e chega ao Porto às 11h30. Preciso chegar com quanta antecedência?
+---
+Comprei 3 kg de carne por R$ 129,90 e 2 kg de frango por R$ 37,80. Quanto paguei no total?
+---
+Meu salário é R$ 4.850,00 bruto. Quanto fica líquido depois do INSS e do IR em 2026?
+---
+O aluguel em Lisboa subiu de 950 € em 2021 para 1.400 € em 2025. Isso dá quantos por cento?
+---
+Meu protocolo de atendimento é 2025110412345, mas ninguém me respondeu. Escreve uma reclamação.
+---
+A encomenda nº 357-823-4463 ficou retida na alfândega. O que eu faço?
+---
+O Brasileirão 2025 terá 380 jogos entre 13/04 e 07/12. Quantos jogos por rodada?
+---
+O carro tem 85.300 km e é de 2019, pedem R$ 74.900,00. Está caro?
+---
+O financiamento é de R$ 350.000,00 em 360 meses a 9,5% ao ano. Qual a parcela?
+---
+Minha fatura nº 299-2044339 do cartão veio com uma cobrança que não reconheço. Como contesto?
+---
+Os ingressos custam R$ 180,00 (inteira) e R$ 90,00 (meia). Para 2 adultos e 3 estudantes, quanto dá?
+---
+Quantas calorias tem 150 g de arroz, 100 g de feijão e 120 g de frango grelhado?
+---
+O prédio tem 32 andares, 4 apartamentos por andar e 128 vagas de garagem. Escreve um anúncio.
+---
+Ganhamos de 98 a 87 no basquete ontem, com 24 pontos do nosso pivô. Escreve um post para o Instagram.
+---
+O curso vai de 03/02/2026 a 30/06/2026, terças e quintas das 19h00 às 22h00. Quantas aulas são?
+---
+A cidade tem 12.325.232 habitantes e 1.521 km². Qual a densidade?
+---
+Quero dividir R$ 1.250,00 entre 4 amigos, sendo que um pagou R$ 400,00 adiantado. Quanto cada um deve?

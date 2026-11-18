@@ -120,7 +120,7 @@
       {
         "id": "2025-05-10:1",
         "title": "My medicare number is 1EG4-TE5-MK73, what does it cover?",
-        "shownTitle": "My medicare number is 1EG4…73, what does it cover?",
+        "shownTitle": "My medicare number is 1E…3, what does it cover?",
         "date": "2025-05-10",
         "link": "https://myactivity.google.com/product/gemini",
         "kinds": { "medicare_id": 1 },
@@ -129,7 +129,7 @@
       {
         "id": "2025-05-10:2",
         "title": "Write to me at jamie.rivera@example.com please, draft a short email to my landlord",
-        "shownTitle": "Write to me at jami…om please, draft a short email to my landlord",
+        "shownTitle": "Write to me at ja…om please, draft a short email to my landlord",
         "date": "2025-05-10",
         "link": "https://myactivity.google.com/product/gemini",
         "kinds": { "email": 1 },
@@ -138,7 +138,7 @@
       {
         "id": "2025-08-30:3",
         "title": "is passport number X12345678 still valid?",
-        "shownTitle": "is passport number X123…78 still valid?",
+        "shownTitle": "is passport number X…8 still valid?",
         "date": "2025-08-30",
         "link": "https://myactivity.google.com/product/gemini",
         "kinds": { "passport": 1 },
@@ -168,7 +168,7 @@
       {
         "id": "2025-06-11",
         "title": "My AWS key is AKIA4HPQ7XZ2R6TWLJ3N, is this still valid?",
-        "shownTitle": "My AWS key is AKIA…3N, is this still valid?",
+        "shownTitle": "My AWS key is AK…3N, is this still valid?",
         "date": "2025-06-11",
         "link": "https://account.microsoft.com/privacy/activity-history",
         "kinds": { "aws_access_key": 1, "credit_card": 1 },
@@ -177,7 +177,7 @@
       {
         "id": "2025-09-02",
         "title": "Email me a draft, my number is 219-09-9999 for the background check",
-        "shownTitle": "Email me a draft, my number is 219-…99 for the background check",
+        "shownTitle": "Email me a draft, my number is 2…9 for the background check",
         "date": "2025-09-02",
         "link": "https://account.microsoft.com/privacy/activity-history",
         "kinds": { "us_ssn": 1 },

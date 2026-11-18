@@ -124,7 +124,7 @@ test("the Node 14-compatible VS Code engine still finds a credential", () => {
 test("the VSIX engine matches the extension engine across the shared fixture corpus", () => {
   assert.equal(
     build().version,
-    JSON.parse(fs.readFileSync(path.join(ROOT, "extension/manifest.json"), "utf8")).version,
+    JSON.parse(fs.readFileSync(path.join(ROOT, "apps/engine/package.json"), "utf8")).version,
   );
   const packageRoot = fs.mkdtempSync(path.join(os.tmpdir(), "clotr-vscode-engine-parity-"));
   try {

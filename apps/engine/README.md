@@ -20,6 +20,9 @@ console.log(redact(text, results));
 values it matched, and `redact` takes those results and puts a placeholder in place of each value. The exact types are
 in [`index.d.ts`](https://github.com/clotr-app/clotr/blob/main/apps/engine/index.d.ts).
 
-It runs on your device and makes no network calls. It's the same engine the Clotr browser extension and Clotr Guard
-use, licensed under the AGPL-3.0-or-later, and the source is at
+How a message moves through the engine, and how to change a rule safely, is in
+[`docs/how-it-works.md`](https://github.com/clotr-app/clotr/blob/main/apps/engine/docs/how-it-works.md).
+
+It runs on your device and makes no network calls. The Clotr browser extension and Clotr Guard are built on it, and
+each moves to a new engine version in its own release. It's licensed under the AGPL-3.0-or-later, and the source is at
 [github.com/clotr-app/clotr](https://github.com/clotr-app/clotr).

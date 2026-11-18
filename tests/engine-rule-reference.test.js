@@ -10,12 +10,12 @@ require("../extension/patterns.js");
 
 const ROOT = path.join(__dirname, "..");
 const SPEC = path.join(ROOT, "docs", "engine", "rule-reference.md");
-const manifest = JSON.parse(fs.readFileSync(path.join(ROOT, "extension", "manifest.json"), "utf8"));
+const engine = JSON.parse(fs.readFileSync(path.join(ROOT, "apps", "engine", "package.json"), "utf8"));
 
 test("every engine rule has a versioned example, limit and severity rationale", () => {
   assert.ok(fs.existsSync(SPEC), "missing docs/engine/rule-reference.md");
   const text = fs.readFileSync(SPEC, "utf8");
-  assert.match(text, new RegExp(`^Engine version: ${manifest.version.replaceAll(".", "\\.")}\\s*$`, "m"));
+  assert.match(text, new RegExp(`^Engine version: ${engine.version.replaceAll(".", "\\.")}\\s*$`, "m"));
   assert.match(text, /^\| Kind \| What it detects \| Example \| Known limits \| Severity \| Why \|$/m);
 
   const rows = new Map(

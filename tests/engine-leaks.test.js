@@ -162,6 +162,51 @@ test("a key with Markdown-escaped underscores is found as its own kind and cover
   }
 });
 
+test("a GitHub app token whose last dotted part starts with an escaped underscore is found", () => {
+  const escape = (s) => s.replace(/_/g, `${BS}_`);
+  for (const value of [
+    "ghs_8_UzI1NiJ9.x5larmbx._M52we0R",
+    "ghs_41_eyJ0eXAiOiJKV1QifQ.Qm9vR3pLx7Tn._Vb4kWq9ZpL2m",
+    "ghs_20261101_c3ViIjoiOTk5In0.Hq8sTz3Kw1Lp._dR7mXv2Nq5Ye_Jt",
+    "ghs_7_Nk2Rb9Qx.u4WzYp7Ls0Ke.__Fp3Ty8Gm1Hd",
+  ]) {
+    for (const text of [escape(value).replace(`${BS}_`, "_").replace(`${BS}_`, "_"), escape(value)]) {
+      assert.ok(kindsOf(text).includes("github_token"), `${text} → ${kindsOf(text)}`);
+      expectGone(text, value);
+    }
+  }
+});
+
+test("a token with an escaped underscore right after a dash is found as its own kind", () => {
+  const escape = (s) => s.replace(/_/g, `${BS}_`);
+  const cases = {
+    jwt: [
+      "eyJUzI1NiJ9.eyJo-_5WaMR.kif5KflujeLU5VVC",
+      "eyJoSn9qpK2.eyJrztUx-_LjOMw2.0GdtWRW41ZayKJTX",
+      "eyJf8cuNb2y.eyJTh0rG-_kFqYrPX.YZ6aBPIpARRZNxdh0",
+      "eyJmrBibfpS.eyJe7Mg4-_lAnoYxqR.x9eLjp1jqF5FPcxT1O",
+      // a signature that starts with "-_", and a "--_" inside a part
+      "eyJmrBibfpS.eyJe7Mg4lAnoYxqR.-_x9eLjp1jqF5FPcxT1O",
+      "eyJmrBibfpS.eyJe7Mg4--_lAnoYxqR.x9eLjp1jqF5FPcxT1O",
+    ],
+    atlassian_token: [
+      "ATATT3xFfG-DXNhX-_2soeRniJBxJITVjb0S2jUcm6ygnRsCUufrMH-1td0FmvG7lRt6kNnPTqdPYaz33hDLkXdF622H-GQh8JKbDlWXnYtJzewHKWbXAfTnUVKRDVCYqill86B-ult_RziUyqM5lEfip3Nl=F4b5EcMK",
+      "ATATT3xxZaATrzx9k-_1TAPgoqpeo4qIjNpbTqWXPUHh8rgzxTddI3VAlYGIHHvsrVNd5TF2W8NPk8PtSyRgtgrqQ-IvBIecWrmjVaakT55mY2QCZY68BZXK3S7s9wcp3TwlmiF4uBoRyt6g3MHN4xQU1wrrMzzvNJFPVdeDUm=4LCPwenj",
+      "ATATT3xHybnmTHkiw-_aC9xxOMp5Zd8pdqgfrsRQDK0eUAG8xk8xsz8opIxWpe4cCpHJ9ZbD5bn8wwXNsDB0Z1oQJFkjoE-RQFLGR0Ge4DrqZAIMryoNdOvBQTXaaEC3Fg6xLDO5wV7SFWoebdohBi2u1WdIhTdxeZy7eYayi477Hks=ScI0REIz",
+      "ATATT3xKAuS3N7XNa-_MYsdtpr5vTtGlQbB7fxyctkC6JAXXGWdjwhA0BlBWUEIU8k2Z2EwbbSx4TlLneiBTT0OLjxzn0JyGpwI-jZ3lN1R3p0uB39vSKJMV3VrORnkZbZQP6sUHpzesATe93yKpcd975A7How2oWS7nrsMVr7mYa33tgK8n=ceIp44Pw",
+    ],
+    github_token: ["ghs_9_uDQjlaFgbW.Ng5D-_q0Gn6v.wTVYWa0H5O"],
+  };
+  for (const [kind, values] of Object.entries(cases)) {
+    for (const value of values) {
+      for (const text of [escape(value), `Here is the token ${escape(value)} for staging`]) {
+        assert.ok(kindsOf(text).includes(kind), `${kind}: ${text} → ${kindsOf(text)}`);
+        expectGone(text, value);
+      }
+    }
+  }
+});
+
 // ---------- Wrapped onto indented, quoted and YAML-folded lines ----------
 
 const wrapAt = (value, width) => value.match(new RegExp(`.{1,${width}}`, "g"));
