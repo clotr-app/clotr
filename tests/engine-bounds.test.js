@@ -373,9 +373,9 @@ test("a label a window or more away from a word list or a column of codes doesn'
 });
 
 // The seam check for labelled kinds (detector.js' seamRescue) must cost next to nothing: a 1 MB paste of prose with
-// one emoji in it (so it isn't plain ASCII and has to be cleaned) and a seed label at its end takes about as long and
-// as much memory as with those kinds' labels unmarked, which turns the check off, the way a large paste was read
-// before it.
+// one emoji in it (so it isn't plain ASCII and has to be cleaned) and a seed label at its end does about as much work
+// and takes as much memory as with those kinds' labels unmarked, which turns the check off, the way a large paste was
+// read before it.
 test("a 1 MB paste with an emoji and a label costs about what it did before the seam check for labels", () => {
   const paste = String.raw`
     const line = "The weather was mild today, so we walked to the market and bought apples, bread and some cheese ok.\n";
@@ -410,30 +410,35 @@ test("a 1 MB paste with an emoji and a label costs about what it did before the 
     withLabels.rss <= without.rss * 1.15 + 15,
     `${Math.round(withLabels.rss)} MB with the seam check, ${Math.round(without.rss)} MB without`,
   );
-  // Time, best of alternating runs in one process, measured again before calling it slow.
-  const timing = run(String.raw`
+  // Work, counted (tests/work.js) in a process of its own: steps, characters read and regex runs may each grow by a
+  // tenth at most.
+  const counted = run(String.raw`
+    const { work } = require("./tests/work.js");
     require("./extension/patterns.js");
     require("./extension/detector.js");
-    const { bestOfPair, grewEveryTime } = require("./tests/timing.js");
     const { PATTERNS, detect } = globalThis.Clotr;
     ${paste}
     const labelled = PATTERNS.filter((pattern) => pattern.labelAnywhere);
     const labels = labelled.map((pattern) => pattern.labelAnywhere);
+    const fresh = () => {
+      detect.forget();
+      detect(text);
+    };
     const without = () => {
       for (const pattern of labelled) delete pattern.labelAnywhere;
       try {
-        detect(text);
+        fresh();
       } finally {
         labelled.forEach((pattern, i) => (pattern.labelAnywhere = labels[i]));
       }
     };
-    const slow = grewEveryTime(
-      () => bestOfPair(without, () => detect(text), 1, 3),
-      (base, now) => now.wall > base.wall * 1.1,
-    );
-    process.stdout.write(JSON.stringify(slow && { base: slow[0].wall, now: slow[1].wall }));
+    detect("The first call in a process counts differently.");
+    const base = work(without);
+    const now = work(fresh);
+    const over = Object.keys(now).filter((count) => now[count] > base[count] * 1.1);
+    process.stdout.write(JSON.stringify(over.length ? { base, now } : null));
   `);
-  assert.equal(timing, null, `with the seam check: ${JSON.stringify(timing)} ms`);
+  assert.equal(counted, null, `with the seam check: ${JSON.stringify(counted)}`);
 });
 
 test("a value next to a window's end is kept when the window after it can't finish", () => {

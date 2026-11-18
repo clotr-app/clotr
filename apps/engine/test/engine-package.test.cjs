@@ -8,7 +8,6 @@ const nodeProcess = require("node:process");
 const { spawnSync } = require("node:child_process");
 
 const PACKAGE = path.dirname(require.resolve("../package.json"));
-const ROOT = path.join(PACKAGE, "..", "..");
 
 function runNode(source, args = []) {
   const result = spawnSync(nodeProcess.execPath, [...args, source], {
@@ -41,11 +40,10 @@ process.stdout.write(JSON.stringify({ before, after, exports: Object.keys(api).s
   }
 });
 
-test("clotr-engine matches the extension version and declares its result shape", () => {
+test("clotr-engine has its own version and declares its result shape", () => {
   const pkg = JSON.parse(fs.readFileSync(path.join(PACKAGE, "package.json"), "utf8"));
-  const manifest = JSON.parse(fs.readFileSync(path.join(ROOT, "extension", "manifest.json"), "utf8"));
   assert.equal(pkg.name, "clotr-engine");
-  assert.equal(pkg.version, manifest.version.split(".").slice(0, 3).join("."));
+  assert.match(pkg.version, /^\d+\.\d+\.\d+$/);
   assert.equal(pkg.private, true);
   assert.equal(pkg.exports["."].import, "./index.mjs");
   assert.equal(pkg.exports["."].require, "./index.cjs");

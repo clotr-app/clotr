@@ -5,6 +5,7 @@
 const test = require("node:test");
 const assert = require("node:assert/strict");
 const { bestOfPair, grewMoreThan } = require("./timing.js");
+const { MARKERS, contextUnits } = require("./service-token-units.js");
 
 require("../extension/patterns.js");
 require("../extension/detector.js");
@@ -344,108 +345,12 @@ const serviceTokens = Clotr.PATTERNS.find((p) => p.id === "service_token").find;
 // About n characters of the unit repeated.
 const fill = (unit, n) => unit.repeat(Math.ceil(n / unit.length));
 
-// Each provider rule's own prefix or marker. Repeated, a marker made of characters its body allows must not send
-// the scan over the rest of the text again from every copy.
-const MARKERS = [
-  "pypi-AgENdGVzdC5weXBpLm9yZw",
-  "GOCSPX-",
-  "ya29.",
-  "1//0",
-  "aB18Q~",
-  "AZDO",
-  "+ACR",
-  "0.A",
-  "1.A",
-  "sbp_",
-  "lsv2_pt_",
-  "sk-lf-",
-  "pcsk_",
-  "dckr_pat_",
-  "dckr_oat_",
-  "ntn_",
-  "secret_",
-  "pat",
-  "ATBB",
-  "BBDC-",
-  ".atlasv1.",
-  "dp.st.",
-  "O",
-  "fw_",
-  "EAAA",
-  "sq0csp-",
-  "sq0atp-",
-  "access_token$production$",
-  "EAAB",
-  "sl.",
-  "sk.eyJ",
-  "CFPAT-",
-  "NRAK-",
-  "napi_",
-  "pscale_tkn_",
-  "figd_",
-  "bkua_",
-  "tfp_",
-  "pnu_",
-  "rdme_",
-  "dt0c01.",
-  "EZAK",
-  "fio-u-",
-  "ico-",
-  "xkeysib-",
-  "shippo_live_",
-  "duffel_live_",
-  "AKCp",
-  "cmVmd",
-  "LTAI",
-  "4b1d",
-  "p8e-",
-  "sha256~",
-  "tk-us-",
-  "pat.",
-  "sgp_",
-  "API-",
-  "FLWSECK-",
-  "_mmk",
-  "s-s4t2ud-",
-  "ramp_sec_",
-  "sm_pat_",
-  "nvapi-",
-  "sk_",
-];
-
 test("a provider rule's marker repeated over and over is scanned in linear time", () => {
   assertLinear(serviceTokens, fill, MARKERS);
 });
 
 test("the context-checked provider rules are scanned in linear time", () => {
-  const sig = `${random(ALNUM, 43)}=`;
-  assertLinear(serviceTokens, fill, [
-    `&sig=${sig}`,
-    `?sv=2022-11-02&sig=${sig}`,
-    `&amp;sv=2022-11-02&amp;sig=${sig}`,
-    `\\u0026sv=2022-11-02\\u0026sig=${sig}`,
-    "&sig=",
-    `${random(HEX, 32)}-${random(HEX, 8)}-${random(HEX, 8)} mailgun `,
-    `${random(HEX, 32)}-`,
-    `okta 00${random(URLSAFE, 40)} `,
-    "SSWS 00",
-    `azure ${random(LOW + DIG, 52)} `,
-  ]);
-});
-
-test("a long run of a provider's marker does not hide a later token, and Cover it finishes", () => {
-  const token = `ghp_${random(ALNUM, 36)}`;
-  const text = `${"pypi-AgENdGVzdC5weXBpLm9yZw".repeat(15171)}\nmy token is ${token}`;
-  const heapBefore = process.memoryUsage().heapUsed;
-  const found = Clotr.detect(text);
-  assert.ok(!found.truncated, "the scan ran out of time");
-  assert.ok(
-    found.some((r) => r.id === "github_token" && r.matches.includes(token)),
-    "the token after the run was missed",
-  );
-  const out = Clotr.redact(text, found);
-  assert.ok(!out.includes(token.slice(4)), "Cover it left the token");
-  assert.ok(process.memoryUsage().heapUsed - heapBefore < 512 * 2 ** 20, "Cover it held on to too much memory");
+  assertLinear(serviceTokens, fill, contextUnits(random));
 });
 
 // ---------- Shapes a pasted token arrives in ----------

@@ -4,7 +4,22 @@
 (() => {
   "use strict";
 
-  const { PATTERNS, numberRuns, isPlaceholder, addressCore, vaultKinds, isVaultFormat, ASK_REASONS } = globalThis.Clotr;
+  const {
+    PATTERNS,
+    numberRuns,
+    isPlaceholder,
+    addressCore,
+    vaultKinds,
+    isVaultFormat,
+    isClosedLetter,
+    closedLength,
+    closedHead,
+    vaultCutShort,
+    setScanDeadline,
+    setVaultSource,
+    utf8At,
+    ASK_REASONS,
+  } = globalThis.Clotr;
 
   const SEVERITY_RANK = { high: 3, medium: 2, low: 1 };
 
@@ -41,10 +56,11 @@
   // Invisible characters, exotic spaces and dashes, and full-width or other-script digits could hide a leak, so
   // the patterns run against a cleaned copy instead. `start` and `end` map each cleaned character back to the
   // original text, so a match is reported, and redacted, the way the person actually typed it. I leave
-  // look-alike letters from other alphabets alone, since mapping them would mangle real Russian or Greek text.
+  // look-alike letters from other alphabets alone, since mapping them would mangle real Russian or Greek text. A
+  // keycap emoji like 4\ufe0f\u20e3 is its digit with an invisible mark and a keycap frame (U+20E3) after it, so the frame goes too.
   const INVISIBLE =
     // eslint-disable-next-line no-misleading-character-class -- each invisible mark is matched on its own, on purpose
-    /[\u00ad\u034f\u061c\u115f\u1160\u17b4\u17b5\u180b-\u180f\u200b-\u200f\u202a-\u202e\u2060-\u206f\u3164\ufe00-\ufe0f\ufeff\uffa0]/;
+    /[\u00ad\u034f\u061c\u115f\u1160\u17b4\u17b5\u180b-\u180f\u200b-\u200f\u202a-\u202e\u2060-\u206f\u20e3\u3164\ufe00-\ufe0f\ufeff\uffa0]/;
   const SPACE = /[\u00a0\u1680\u2000-\u200a\u202f\u205f\u3000]/;
   const DASH = /[\u2010-\u2015\u2212\u2e3a\u2e3b\ufe58\ufe63\uff0d]/;
   // A phone keyboard types curly quotes and apostrophes, so "driver’s license" matches "driver's license" either way.
@@ -106,9 +122,15 @@
   // written, and the "@" it would become, or a space from %20, would end the user name or password early.
   const URL_USERINFO = /[^\s@/?#:]{1,256}:[^\s@/]{1,512}@/y;
   // Markdown escapes "_" as "\_", which would break every key with an underscore in it, so a "\_" right after a
-  // letter or digit reads as "_".
+  // letter or digit reads as "_". So does one after a run of "." and "-" that follows a letter or digit, since a
+  // token like a JWT can hold "_" beside them ("a.\_b", "a-\_b"). After a space or other mark it stays as written.
   const isWordCode = (code) =>
     (code >= 48 && code <= 57) || (code >= 65 && code <= 90) || (code >= 97 && code <= 122) || code === 95;
+  function escapesWordUnderscore(text, i) {
+    let j = i - 1;
+    while (j > 0 && (text.charCodeAt(j) === 45 || text.charCodeAt(j) === 46)) j--;
+    return isWordCode(text.charCodeAt(j));
+  }
 
   // `link` is for a window of a large paste that starts inside a link (linkAt): the window reads it as the paste
   // read from its start would, though it never sees the link's "://".
@@ -207,7 +229,7 @@
       } else if (decoded !== null) {
         out = decoded;
         next = i + width;
-      } else if (ch === "\\" && text.charCodeAt(i + 1) === 95 && i > 0 && isWordCode(text.charCodeAt(i - 1))) {
+      } else if (ch === "\\" && text.charCodeAt(i + 1) === 95 && i > 0 && escapesWordUnderscore(text, i)) {
         out = ""; // Markdown's "\_"; the "_" itself is read next
       } else if (ch === "+" && i < plusUntil) {
         out = " "; // a form's space, between numbers
@@ -610,6 +632,152 @@
     return { text: parts.join(""), sourceStart, sourceEnd, breaks, tails, notKeyRest };
   }
 
+  // ---------- A key typed in pieces ----------
+  // A key read out or retyped in groups ("AKIA 4HPQ 7XZ2 …"), spelled one character at a time, or split into quoted
+  // pieces that code joins back up ("sk-…" + "…", Python's "…" "…" over two lines, a shell's "…" \ "…"). Pieces join
+  // only when, together, they are exactly one provider's key, so a key's prefix in prose ("sk-learn is …") stays
+  // prose. Groups typed by hand are all one size but a shorter last one, which keeps the word after the key out, and
+  // a piece that starts a key of its own is that key, not the rest of this one: a run stops before it, so in "old key
+  // AKIA… new key AKIA 4HPQ …" or "AKIA keys are … mine is AKIA 4HPQ …" the key typed in groups starts a run of its own.
+  const KEY_PREFIXES = KEY_START.source.slice(4, -1);
+  const NOT_A_KEY_START = `(?!(?:${KEY_PREFIXES}))`;
+  const SPACED_KEY_RE = new RegExp(
+    `(?<![\\w.-])(?:${KEY_PREFIXES})[\\w.-]*(?:[ \\t]{1,3}${NOT_A_KEY_START}[\\w.-]+){1,48}`,
+    "g",
+  );
+  const QUOTED_PIECES_RE = new RegExp(
+    `(?<![\\w.-])(?:${KEY_PREFIXES})[\\w.-]*(?:["'\`][ \\t]*(?:\\+[ \\t]*)?(?:\\\\?\\r?\\n[ \\t]*(?:\\+[ \\t]*)?)?["'\`]${NOT_A_KEY_START}[\\w.-]+){1,16}`,
+    "g",
+  );
+  // One character at a time the run can't stop at a prefix, which is spelled out too, so a run is cut where each
+  // prefix starts inside it instead: "step 2 A K I A …", or two keys spelled out one after the other.
+  const SPELLED_KEY_RE = /(?<![\w.-])(?:[\w.-][ \t]){15,119}[\w.-]\.?(?![\w.-])/g;
+  const KEY_PREFIX_ANYWHERE = new RegExp(KEY_PREFIXES, "g");
+  const PIECE_RE = /[\w.-]+/g;
+  // How many characters one window checks against every kind of key, and how many ways of ending each run it tries.
+  // Only text that could be a key costs any of it, so a report that says "ASIA" or "sk-learn" on every line doesn't
+  // use it up. A key spelled out has no group size to stop at, so its last few pieces each get a try.
+  const MAX_PIECED_CHARS = 32768;
+  const SPACED_ENDINGS = 4;
+  const keyLikePiece = (piece) => piece.length >= 8 && /\d/.test(piece) && /[A-Za-z]/.test(piece);
+  function piecedKeys(clean) {
+    const kinds = [];
+    for (const [index, pattern] of PATTERNS.entries()) {
+      if (!pattern.secret || pattern.group !== "credentials" || LABEL_KINDS.has(pattern.id)) continue;
+      kinds.push({ index, pattern });
+    }
+    // Which kind the text is, exactly and whole, or null. A key's random part mixes at least two of capitals, small
+    // letters and digits, which words in capitals ("ASIA ZONE WIDE SALE DATA") or in small letters don't. An AWS key
+    // id's 16 are capitals and the digits 2 to 7 (base32), so a year ("ASIA 2025 TOUR DATE LIST") isn't one.
+    let checked = 0;
+    const keyKind = (joined) => {
+      const lead = KEY_START.exec(joined);
+      if (!lead) return null;
+      const body = joined.slice(lead[0].length);
+      if ([/[A-Z]/, /[a-z]/, /\d/].filter((re) => re.test(body)).length < 2) return null;
+      if (/^A[KS]IA$/.test(lead[0]) && !/^[A-Z2-7]{16}$/.test(body)) return null;
+      if (checked >= MAX_PIECED_CHARS || isPlaceholder(joined)) return null;
+      checked += joined.length;
+      for (const kind of kinds) {
+        const { pattern } = kind;
+        const found = pattern.find ? pattern.find(joined) : joined.match(pattern.regex) || [];
+        if (found.includes(joined) && (!pattern.validate || pattern.validate(joined))) return kind;
+      }
+      return null;
+    };
+    const found = [];
+    // Reads pieces `from` to `to` of a run, from the first, and says whether it found a key there. The run's pieces
+    // are joined once, and `offs` says where each starts in that text, so any stretch of them is a slice of it, and
+    // `mixes` says how many of capitals, small letters and digits a stretch holds without reading it. A stretch
+    // that mixes fewer than two holds no key, and neither does any shorter one inside it, so that check comes first.
+    const readPieces = (run, from, to, shape) => {
+      const { pieces, offs, text, mixes } = run;
+      const count = to - from;
+      if (count < 2) return false;
+      const start = offs[from];
+      const lead = KEY_START.exec(text.slice(start, offs[to]));
+      if (!lead) return false;
+      const bodyStart = start + lead[0].length;
+      if (mixes(bodyStart, offs[to]) < 2) return false;
+      // Hand-typed groups: the longest run of same-size groups after the first piece, and one shorter after it.
+      let longest = count;
+      if (shape === "spaced") {
+        const size = pieces[from + 1].text.length;
+        let k = 2;
+        while (k < count && pieces[from + k].text.length === size) k++;
+        longest = k < count && pieces[from + k].text.replace(/\.+$/, "").length <= size ? k + 1 : k;
+      }
+      const shortest = shape === "quoted" ? 2 : Math.max(2, longest - SPACED_ENDINGS + 1);
+      for (let k = longest; k >= shortest; k--) {
+        const last = pieces[from + k - 1];
+        const end = offs[from + k];
+        for (const dots of [0, (/\.+$/.exec(last.text) || [""])[0].length]) {
+          if (dots && dots === last.text.length) continue;
+          if (mixes(bodyStart, end - dots) < 2) continue;
+          const key = text.slice(start, end - dots);
+          const kind = keyKind(key);
+          if (!kind) continue;
+          const rest = pieces.slice(from + 1, from + k);
+          if (rest.some((piece) => KEY_START.test(piece.text))) continue;
+          // A whole key already in the first piece takes only key-like pieces after it, not the next word.
+          if (keyKind(pieces[from].text) === kind && !rest.every((piece) => keyLikePiece(piece.text))) continue;
+          found.push({ index: kind.index, match: key, from: pieces[from].at, to: last.at + last.text.length - dots });
+          return true;
+        }
+      }
+      return false;
+    };
+    const readRun = (m, shape) => {
+      const pieces = [];
+      const offs = [0];
+      let text = "";
+      for (const p of m[0].matchAll(PIECE_RE)) {
+        pieces.push({ text: p[0], at: m.index + p.index });
+        text += p[0];
+        offs.push(text.length);
+      }
+      // How many capitals, small letters and digits come before each place in the joined text.
+      const upper = new Int32Array(text.length + 1);
+      const lower = new Int32Array(text.length + 1);
+      const digit = new Int32Array(text.length + 1);
+      for (let i = 0; i < text.length; i++) {
+        const c = text.charCodeAt(i);
+        upper[i + 1] = upper[i] + (c >= 65 && c <= 90 ? 1 : 0);
+        lower[i + 1] = lower[i] + (c >= 97 && c <= 122 ? 1 : 0);
+        digit[i + 1] = digit[i] + (c >= 48 && c <= 57 ? 1 : 0);
+      }
+      const mixes = (a, b) => (b <= a ? 0 : (upper[b] > upper[a]) + (lower[b] > lower[a]) + (digit[b] > digit[a]));
+      const run = { pieces, offs, text, mixes };
+      if (shape !== "spelled") {
+        readPieces(run, 0, pieces.length, shape);
+        return;
+      }
+      // Spelled out, each piece is one character, so where a prefix starts in the joined text is that piece. Each
+      // prefix is read up to the next one, and if that isn't a key, on to the end of the run.
+      const starts = [];
+      KEY_PREFIX_ANYWHERE.lastIndex = 0;
+      for (let p = KEY_PREFIX_ANYWHERE.exec(text); p; p = KEY_PREFIX_ANYWHERE.exec(text)) {
+        if (p.index < pieces.length - 1) starts.push(p.index);
+        KEY_PREFIX_ANYWHERE.lastIndex = p.index + 1;
+      }
+      for (let i = 0; i < starts.length; i++) {
+        const next = i + 1 < starts.length ? starts[i + 1] : pieces.length;
+        if (readPieces(run, starts[i], next, shape)) continue;
+        if (next < pieces.length) readPieces(run, starts[i], pieces.length, shape);
+      }
+    };
+    const readAll = (re, shape) => {
+      for (const m of clean.matchAll(re)) {
+        if (checked >= MAX_PIECED_CHARS) break;
+        readRun(m, shape);
+      }
+    };
+    readAll(SPACED_KEY_RE, "spaced");
+    if (/["'`]/.test(clean)) readAll(QUOTED_PIECES_RE, "quoted");
+    readAll(SPELLED_KEY_RE, "spelled");
+    return found;
+  }
+
   // Returns a match the second reading found that the first reading missed, written the way the page actually
   // had it, or null if there's nothing new. I skip anything the first reading already caught with its trailing
   // dot still on ("7 Willow Dr." reads the same as "7 Willow Dr"), anything that starts with the next sentence's
@@ -773,8 +941,19 @@
     lastDetect = null;
   };
 
+  // The vault's words stop at the same deadline as the rest of the scan (patterns.js setScanDeadline).
   function detectFresh(text) {
     const scan = { deadline: Date.now() + DETECT_BACKSTOP_MS, charsLeft: DETECT_BUDGET_CHARS, timedOut: false };
+    setScanDeadline(scan.deadline);
+    try {
+      return detectAll(text, scan);
+    } finally {
+      setScanDeadline(Infinity);
+      setVaultSource(null);
+    }
+  }
+
+  function detectAll(text, scan) {
     if (text.length <= DETECT_WINDOW_CHARS) return detectWindow(text, scan);
 
     // Keep every rule's input bounded, and share one budget across the whole paste. The overlap preserves values
@@ -918,6 +1097,10 @@
   function detectWindow(text, scan, how) {
     const { link, only, told } = how || {};
     const { clean, start, end, jsonBreaks } = cleanText(text, link);
+    // The vault reads its words in the text as written too, before cleaning folds what UTF-8 read as Windows-1252
+    // shows (patterns.js unescapedView).
+    setVaultSource(start ? { text, clean, start } : null);
+    vaultCutShort(); // from here on: whether the vault left part of this window unread
     const yamlLines = yamlLiteralBlockLines(clean);
     const results = [];
     const kinds = only || [...PATTERNS, ...vaultKinds()];
@@ -985,6 +1168,19 @@
         }
       }
     }
+    // A key typed in pieces, by kind: { match: the key joined up, value: the pieces as written, from, to }.
+    const pieced = new Map();
+    if (withinBudget(clean.length)) {
+      for (const key of piecedKeys(clean)) {
+        const rawFrom = start ? start[key.from] : key.from;
+        const rawTo = end ? end[key.to - 1] : key.to;
+        const list = pieced.get(key.index) || [];
+        list.push({ match: key.match, value: text.slice(rawFrom, rawTo), from: key.from, to: key.to });
+        pieced.set(key.index, list);
+      }
+    }
+    // The vault stopped looking up runs in this window before it was done (patterns.js RUN_LOOKUPS_PER_CHAR).
+    if (vaultCutShort()) scan.truncated = true;
     const counts = (pattern, m) => (!pattern.validate || pattern.validate(m)) && !(pattern.secret && isPlaceholder(m));
     // What the first reading found, by where it ends in the cleaned text.
     let firstEnds = null;
@@ -1142,6 +1338,12 @@
           wrappedRaw.add(mapped.value);
           if (why[2].has(m)) why[0].set(mapped.value, why[2].get(m));
         }
+      }
+      for (const mapped of pieced.get(i) || []) {
+        wrapped.push(mapped);
+        joinedSpans.push(mapped);
+        raw.add(mapped.value);
+        wrappedRaw.add(mapped.value);
       }
       // Only a value inside a wrapped one can be covered by it. Checking that first, against the few wrapped values,
       // keeps a paste of thousands of addresses from searching the whole text once for each.
@@ -1609,8 +1811,66 @@
 
   // Normalizes a value so the same detail matches no matter how it's written: "(555) 555-5636" and "five five
   // five…" become the same phone number, and "Bob@Gmail.com" matches "bob at gmail dot com".
+  // Lowercase letters that taking marks off (NFD) leaves as they are, since their mark is part of the letter, with
+  // what people type for them on a keyboard without them.
+  // Arabic and Persian too: the Persian keyboard's yeh and kaf (ی, ک) are the Arabic ones (ي, ك), a final teh
+  // marbuta (ة) is often typed as heh (ه), and tatweel (ـ) only stretches a word. Alef maksura (ى) stays apart, since
+  // "على" ("on") would otherwise match every saved "علي".
+  const PLAIN_LETTER = {
+    ł: "l",
+    đ: "d",
+    ð: "d",
+    ø: "o",
+    ß: "ss",
+    æ: "ae",
+    œ: "oe",
+    ı: "i",
+    ħ: "h",
+    þ: "th",
+    ŧ: "t",
+    "\u06cc": "\u064a",
+    "\u06a9": "\u0643",
+    "\u0629": "\u0647",
+    "\u0640": "",
+  };
+  const plainLetters = (s) => s.replace(/[łđðøßæœıħþŧ\u06cc\u06a9\u0629\u0640]/g, (c) => PLAIN_LETTER[c]);
+  // A hyphen between two words of a saved phrase reads as a space ("Jean-Luc" = "Jean Luc").
+  const HYPHEN_JOIN = /(?<=[\p{L}\p{N}\p{M}])-(?=[\p{L}\p{N}])/gu;
+  // An apostrophe inside a name, or a mark typed for one, reads as nothing ("Ta'Shawn" = "Ta`Shawn" = "TaShawn"), as
+  // a username, an email or a form that won't take one writes it. Not before a contraction's ending ("she'll",
+  // "can't", "I'd"), so "She'll" is never a saved "Shell", and not after a word's first letter (or "qu"), as French
+  // and Italian elide a word and English shortens one ("J'ai", "J'AI", "qu'il", "l'acqua", "y'all", "o'clock"), so
+  // "J'ai" is never a saved "Jai". Those read as "'" whichever mark was typed. A name of that shape ("O'Brien",
+  // "D'Angelo") keeps it the same way, in any case, and is also saved without it (`all`, wordEntry's `joined`).
+  const APOSTROPHE_JOIN = /(?<=[\p{L}\p{M}])['\u2019\u02bc`\u00b4](?=\p{L})/gu;
+  const CONTRACTION_END = /^(?:ll|re|ve|d|m|t|s)(?![\p{L}\p{M}])/iu;
+  const ELIDED = /(?<![\p{L}\p{N}\p{M}])(?:\p{L}|[Qq][Uu])\p{M}*$/u;
+  const joinApostrophes = (s, all = false) =>
+    s.replace(APOSTROPHE_JOIN, (_mark, at) => {
+      if (CONTRACTION_END.test(s.slice(at + 1, at + 4))) return "'";
+      return !all && ELIDED.test(s.slice(Math.max(0, at - 8), at)) ? "'" : "";
+    });
+  // Half-width katakana (ﾔﾏﾀﾞ, as bank transfers and older systems write names) read as the full-width letters.
+  const fullWidthKana = (s) => s.replace(/[\uff61-\uff9f]+/g, (run) => run.normalize("NFKC"));
+  // Between two letters of a script written without spaces, a space or a katakana middle dot is no break in a saved
+  // word: Chinese, Japanese and Korean names are written with and without one ("\u5c71\u7530 \u592a\u90ce" = "\u5c71\u7530\u592a\u90ce", "\u30b8\u30e7\u30f3\u30fb\u30b9\u30df\u30b9"
+  // = "\u30b8\u30e7\u30f3\u30b9\u30df\u30b9", "\uae40 \ubbfc\uc218" = "\uae40\ubbfc\uc218").
+  const CLOSED_GAP = /[ \u30fb]+/g;
+  const charEndingAt = (s, at) => (/[\udc00-\udfff]/.test(s[at - 1] || "") ? s.slice(at - 2, at) : s[at - 1]);
+  const closedJoin = (s) =>
+    s.replace(CLOSED_GAP, (gap, at) =>
+      isClosedLetter(charEndingAt(s, at)) && isClosedLetter(s.slice(at + gap.length, at + gap.length + 2)) ? "" : gap,
+    );
+
+  // Letters of the scripts written without spaces that cleanText leaves exactly as they are (all but their digits
+  // and the Hangul and Khmer fillers it drops), so a stretch of only these needs no cleaning. The vault looks up
+  // every stretch of such text by fingerprint, and cleaning each one again was most of that work.
+  const CLEAN_ALREADY =
+    /^(?:(?!\p{Nd}|\u115f|\u1160|\u3164|\uffa0|\u17b4|\u17b5)[\p{Script=Han}\p{Script=Hiragana}\p{Script=Katakana}\p{Script=Hangul}\p{Script=Thai}\p{Script=Lao}\p{Script=Khmer}\p{Script=Myanmar}])+$/u;
+
   function normalize(patternId, raw) {
-    const match = cleanText(raw).clean; // invisible characters and look-alike digits don't change a fingerprint
+    // invisible characters and look-alike digits don't change a fingerprint
+    const match = CLEAN_ALREADY.test(raw) ? raw : cleanText(raw).clean;
     if (patternId === "phone_number" || patternId === "us_ssn" || patternId === "credit_card") {
       // I drop a bracketed trunk 0, since "+44 (0)20…" and "+44 20…" are the same number dialed from abroad.
       const m = patternId === "phone_number" ? match.replace(/\(\s*0\s*\)/g, "") : match;
@@ -1623,10 +1883,16 @@
       return `${patternId}:${d}`;
     }
     if (patternId === "email") {
+      // Spaces in front of a separator are taken only from the start of their run: a replacement that fails from
+      // the start of a run fails from anywhere inside it too, and trying every space again made a long run
+      // quadratic. A separator right after an earlier replacement's spaces still starts one of its own.
       const e = match
         .toLowerCase()
-        .replace(/\s*[([{<]\s*at\s*[)\]}>]\s*|\s+(?:at|arroba)\s+|\s*@\s*/g, "@")
-        .replace(/\s*[([{<]\s*(?:dot|punto)\s*[)\]}>]\s*|\s+(?:dot|punto)\s+|\s*\.\s*/g, ".")
+        .replace(/(?:(?<!\s)\s+)?[([{<]\s*at\s*[)\]}>]\s*|(?<!\s)\s+(?:at|arroba)\s+|(?:(?<!\s)\s+)?@\s*/g, "@")
+        .replace(
+          /(?:(?<!\s)\s+)?[([{<]\s*(?:dot|punto)\s*[)\]}>]\s*|(?<!\s)\s+(?:dot|punto)\s+|(?:(?<!\s)\s+)?\.\s*/g,
+          ".",
+        )
         .replace(/\s+/g, "");
       // "janedoe at yahoo" is janedoe@yahoo.com, and "bob at gmial dot com" is bob@gmail.com.
       const full = /@[a-z0-9-]+$/.test(e) ? `${e}.com` : e;
@@ -1640,14 +1906,29 @@
     }
     // A gamer tag is the same in any case ("xXSniperXx" = "xxsniperxx"), with any spacing in a Riot name.
     if (patternId === "gamer_tag") return `gamer_tag:${match.toLowerCase().replace(/\s+/g, " ").trim()}`;
-    // Your words match with or without accents ("José García" = "Jose Garcia"). Entries saved before 0.9.67
-    // kept the accents, and "watch_list_accented" reproduces that form so they still match as typed.
-    const words = () => match.toLowerCase().replace(/\s+/g, " ").trim();
-    if (patternId === "watch_list") return `watch_list:${words().normalize("NFD").replace(/\p{M}/gu, "")}`;
+    // Your words match with or without accents ("José García" = "Jose Garcia"), with or without the letters that
+    // keep their mark inside them ("Łukasz" = "Lukasz", "Weiß" = "WEISS"), in either width of katakana and either
+    // keyboard's Arabic letters (PLAIN_LETTER). Entries saved before 0.9.67 kept
+    // the accents, and "watch_list_accented" reproduces that form so they still match as typed; entries saved
+    // before those letters were folded kept them, and "watch_list_marks" reproduces that form.
+    const words = (m = match) => m.toLowerCase().replace(/\s+/g, " ").trim();
+    const unmarked = (s = words()) => s.normalize("NFD").replace(/\p{M}/gu, "");
+    // Today's form; the half-width kana are widened before marks come off, so "ﾀﾞ" loses its mark as "ダ" does.
+    const plain = (m) => plainLetters(unmarked(fullWidthKana(words(m))));
+    // A hyphen between two words reads as a space ("Jean-Luc" = "Jean Luc"), an apostrophe inside a word as nothing
+    // ("O'Brien" = "OBrien"), and a space or a middle dot between two letters of a script written without spaces as
+    // nothing ("山田 太郎" = "山田太郎").
+    if (patternId === "watch_list" || patternId === "watch_list_joined") {
+      const joined = joinApostrophes(match, patternId === "watch_list_joined");
+      return `watch_list:${closedJoin(plain(joined).replace(HYPHEN_JOIN, " "))}`;
+    }
+    // The form saved before those: hyphens, apostrophes, spaces and middle dots as typed.
+    if (patternId === "watch_list_spaced") return `watch_list:${plain()}`;
+    if (patternId === "watch_list_marks") return `watch_list:${unmarked()}`;
     if (patternId === "watch_list_accented") return `watch_list:${words()}`;
     // The same person or employer however it's typed, for history repeats and the reply check.
     if (patternId === "my_name" || patternId === "family_name" || patternId === "employer") {
-      return `${patternId}:${words().normalize("NFD").replace(/\p{M}/gu, "")}`;
+      return `${patternId}:${plain()}`;
     }
     // Addresses too match with or without accents ("Calle Alcalá 45" = "calle alcala 45"). Entries saved before
     // 0.9.68 kept the accents, and "street_address_accented" reproduces that form.
@@ -1669,39 +1950,95 @@
     0x5b9cca4f, 0x682e6ff3, 0x748f82ee, 0x78a5636f, 0x84c87814, 0x8cc70208, 0x90befffa, 0xa4506ceb, 0xbef9a3f7,
     0xc67178f2,
   ]);
+  const SHA_START = new Int32Array([
+    0x6a09e667, 0xbb67ae85, 0x3c6ef372, 0xa54ff53a, 0x510e527f, 0x9b05688c, 0x1f83d9ab, 0x5be0cd19,
+  ]);
+  // The vault's words are looked up by fingerprint for every stretch of text that could be one, so this runs a
+  // great many times on short strings: it encodes UTF-8 itself (a lone surrogate as U+FFFD, as TextEncoder does)
+  // into one reused buffer, and works in 32-bit integers, with nothing allocated per call but the answer.
+  const HEX = Array.from({ length: 256 }, (_, i) => i.toString(16).padStart(2, "0"));
+  const SHA_KEEP = 1 << 16; // a buffer up to this size is kept for the next call; a bigger one is let go
+  let shaBuffer = new Uint8Array(1024);
+  const shaW = new Int32Array(64);
+  const shaH = new Int32Array(8);
   function sha256(str) {
-    const bytes = new TextEncoder().encode(str);
-    const len = Math.ceil((bytes.length + 9) / 64) * 64;
-    const msg = new Uint8Array(len);
-    msg.set(bytes);
-    msg[bytes.length] = 0x80;
-    const view = new DataView(msg.buffer);
-    view.setUint32(len - 8, Math.floor(bytes.length / 0x20000000));
-    view.setUint32(len - 4, (bytes.length * 8) >>> 0);
-    const h = new Uint32Array([
-      0x6a09e667, 0xbb67ae85, 0x3c6ef372, 0xa54ff53a, 0x510e527f, 0x9b05688c, 0x1f83d9ab, 0x5be0cd19,
-    ]);
-    const w = new Uint32Array(64);
-    const rotr = (x, n) => (x >>> n) | (x << (32 - n));
-    for (let off = 0; off < len; off += 64) {
-      for (let i = 0; i < 16; i++) w[i] = view.getUint32(off + i * 4);
-      for (let i = 16; i < 64; i++) {
-        const s0 = rotr(w[i - 15], 7) ^ rotr(w[i - 15], 18) ^ (w[i - 15] >>> 3);
-        const s1 = rotr(w[i - 2], 17) ^ rotr(w[i - 2], 19) ^ (w[i - 2] >>> 10);
-        w[i] = w[i - 16] + s0 + w[i - 7] + s1;
+    const need = Math.ceil((str.length * 3 + 9) / 64) * 64;
+    let bytes = shaBuffer;
+    if (need > bytes.length) {
+      bytes = new Uint8Array(need);
+      if (need <= SHA_KEEP) shaBuffer = bytes;
+    }
+    let n = 0;
+    for (let i = 0; i < str.length; i++) {
+      let c = str.charCodeAt(i);
+      if (c < 0x80) bytes[n++] = c;
+      else if (c < 0x800) {
+        bytes[n++] = 0xc0 | (c >> 6);
+        bytes[n++] = 0x80 | (c & 63);
+      } else {
+        if (c >= 0xd800 && c <= 0xdfff) {
+          const next = str.charCodeAt(i + 1);
+          if (c <= 0xdbff && next >= 0xdc00 && next <= 0xdfff) {
+            c = 0x10000 + ((c - 0xd800) << 10) + (next - 0xdc00);
+            i++;
+            bytes[n++] = 0xf0 | (c >> 18);
+            bytes[n++] = 0x80 | ((c >> 12) & 63);
+            bytes[n++] = 0x80 | ((c >> 6) & 63);
+            bytes[n++] = 0x80 | (c & 63);
+            continue;
+          }
+          c = 0xfffd;
+        }
+        bytes[n++] = 0xe0 | (c >> 12);
+        bytes[n++] = 0x80 | ((c >> 6) & 63);
+        bytes[n++] = 0x80 | (c & 63);
       }
-      let [a, b, c, d, e, f, g, hh] = h;
+    }
+    const len = Math.ceil((n + 9) / 64) * 64;
+    bytes.fill(0, n, len);
+    bytes[n] = 0x80;
+    const high = Math.floor(n / 0x20000000);
+    const low = (n * 8) >>> 0;
+    for (let i = 0; i < 4; i++) {
+      bytes[len - 8 + i] = (high >>> (24 - 8 * i)) & 255;
+      bytes[len - 4 + i] = (low >>> (24 - 8 * i)) & 255;
+    }
+    const w = shaW;
+    const h = shaH;
+    h.set(SHA_START);
+    for (let off = 0; off < len; off += 64) {
+      for (let i = 0; i < 16; i++) {
+        const p = off + i * 4;
+        w[i] = (bytes[p] << 24) | (bytes[p + 1] << 16) | (bytes[p + 2] << 8) | bytes[p + 3];
+      }
+      for (let i = 16; i < 64; i++) {
+        const x = w[i - 15];
+        const y = w[i - 2];
+        const s0 = ((x >>> 7) | (x << 25)) ^ ((x >>> 18) | (x << 14)) ^ (x >>> 3);
+        const s1 = ((y >>> 17) | (y << 15)) ^ ((y >>> 19) | (y << 13)) ^ (y >>> 10);
+        w[i] = (w[i - 16] + s0 + w[i - 7] + s1) | 0;
+      }
+      let a = h[0];
+      let b = h[1];
+      let c = h[2];
+      let d = h[3];
+      let e = h[4];
+      let f = h[5];
+      let g = h[6];
+      let hh = h[7];
       for (let i = 0; i < 64; i++) {
-        const t1 = hh + (rotr(e, 6) ^ rotr(e, 11) ^ rotr(e, 25)) + ((e & f) ^ (~e & g)) + K[i] + w[i];
-        const t2 = (rotr(a, 2) ^ rotr(a, 13) ^ rotr(a, 22)) + ((a & b) ^ (a & c) ^ (b & c));
+        const s1 = ((e >>> 6) | (e << 26)) ^ ((e >>> 11) | (e << 21)) ^ ((e >>> 25) | (e << 7));
+        const t1 = (hh + s1 + ((e & f) ^ (~e & g)) + K[i] + w[i]) | 0;
+        const s0 = ((a >>> 2) | (a << 30)) ^ ((a >>> 13) | (a << 19)) ^ ((a >>> 22) | (a << 10));
+        const t2 = (s0 + ((a & b) ^ (a & c) ^ (b & c))) | 0;
         hh = g;
         g = f;
         f = e;
-        e = (d + t1) >>> 0;
+        e = (d + t1) | 0;
         d = c;
         c = b;
         b = a;
-        a = (t1 + t2) >>> 0;
+        a = (t1 + t2) | 0;
       }
       h[0] += a;
       h[1] += b;
@@ -1712,7 +2049,12 @@
       h[6] += g;
       h[7] += hh;
     }
-    return Array.from(h, (x) => x.toString(16).padStart(8, "0")).join("");
+    let out = "";
+    for (let i = 0; i < 8; i++) {
+      const x = h[i];
+      out += HEX[(x >>> 24) & 255] + HEX[(x >>> 16) & 255] + HEX[(x >>> 8) & 255] + HEX[x & 255];
+    }
+    return out;
   }
 
   // 16 hex chars of SHA-256(salt + normalized value). Every text span gets checked against the watch-list words
@@ -1738,6 +2080,23 @@
   const fingerprintFor = (scheme, salt, patternId, match) =>
     scheme === 2 ? fingerprintStrong(salt, patternId, match) : fingerprint(salt, patternId, match);
 
+  // A word or phrase to save in the vault (the vault page, a team's words): its fingerprint, its count of words
+  // between spaces and, for one written only in a script without spaces, its count of letters (patterns.js
+  // closedLength) and the few bits of its head (closedHead), so detect() looks for it inside such text only in
+  // stretches that long that start that way. Never the phrase.
+  function wordEntry(salt, type, phrase) {
+    // Its words are counted at hyphens too, as its fingerprint reads one as a space.
+    const words = phrase.trim().split(/\s+|(?<=[\p{L}\p{N}\p{M}])-(?=[\p{L}\p{N}])/u).length;
+    const entry = { kind: "word", type, fp: fingerprint(salt, "watch_list", phrase), words };
+    // A name like O'Brien keeps its apostrophe as an elision does, so its form without one ("OBrien", a username's
+    // "obrien") is a second fingerprint.
+    const joined = fingerprint(salt, "watch_list_joined", phrase);
+    if (joined !== entry.fp) entry.joined = joined;
+    const closed = closedLength(phrase);
+    if (closed) Object.assign(entry, { closed, head: closedHead(salt, phrase) });
+    return entry;
+  }
+
   // The Hide it option replaces every found item with a label naming its kind, like "[REDACTED PHONE NUMBER]".
   // A pattern with its own `replace(match)` (Clean link) uses that instead, so "hiding" a link really means
   // cleaning it rather than blanking it out.
@@ -1747,13 +2106,50 @@
   // letter or digit of any script (patterns.js vaultMatches), in the text as written or as cleaned (cleanText),
   // where a JSON string's "\n" is a line break and a link's "%20" a space. Every other kind, a value in a saved
   // format included, goes everywhere it appears (but for the short-value rule below), so nothing of a secret survives.
-  const wordChar = (ch) => Boolean(ch) && /[\p{L}\p{N}]/u.test(ch);
-  const insideWord = (match, before, after) =>
-    (wordChar(match[0]) && wordChar(before)) || (wordChar(match[match.length - 1]) && wordChar(after));
+  // A mark written on the letter before it (an accent typed on its own, a Devanagari or Thai vowel sign) is part of
+  // that word too. In a script written without spaces (Chinese, Japanese, Thai, Korean with its particles), a saved
+  // word stands as one beside any letter, just as patterns.js looks for it anywhere in a run of those letters, and a
+  // word in any other script stands as one beside their letters ("我叫Ann。").
+  // A digit beside a letter is a word's edge too, as patterns.js reads a joined word's pieces ("smith1990").
+  // A single ASCII character is read by its code, the rest by Unicode property: Hide it reads two edges for every
+  // copy of a saved word, and a long paste can hold thousands.
+  const asciiCode = (ch) => (ch && ch.length === 1 && ch.charCodeAt(0) < 128 ? ch.charCodeAt(0) : -1);
+  const isAsciiDigit = (code) => code >= 48 && code <= 57;
+  const isAsciiHex = (code) => isAsciiDigit(code) || (code >= 65 && code <= 70) || (code >= 97 && code <= 102);
+  const isAsciiWord = (code) => isAsciiDigit(code) || (code >= 65 && code <= 90) || (code >= 97 && code <= 122);
+  const wordChar = (ch) => {
+    const code = asciiCode(ch);
+    return code >= 0 ? isAsciiWord(code) : Boolean(ch) && /[\p{L}\p{N}\p{M}]/u.test(ch);
+  };
+  const isNumber = (ch) => {
+    const code = asciiCode(ch);
+    return code >= 0 ? isAsciiDigit(code) : /\p{N}/u.test(ch);
+  };
+  // No ASCII character belongs to a script written without spaces.
+  const isClosedEdge = (ch) => asciiCode(ch) < 0 && isClosedLetter(ch);
+  const edgeInside = (edge, beside) =>
+    wordChar(edge) &&
+    !isClosedEdge(edge) &&
+    wordChar(beside) &&
+    !isClosedEdge(beside) &&
+    isNumber(edge) === isNumber(beside);
+  const insideWord = (match, before, after) => edgeInside(match[0], before) || edgeInside(lastLetter(match), after);
+  // The last letter of `match` with any marks on it stepped over, so a Thai or Devanagari word ending in a vowel sign
+  // is read by its letter.
+  const lastLetter = (match) => {
+    let i = match.length - 1;
+    if (match.charCodeAt(i) < 0x300) return match[i]; // no mark comes before U+0300
+    while (i > 0 && /\p{M}/u.test(match[i])) i--;
+    return match[i];
+  };
+  // The last text cleanedAround read and its cleaned form: one text, kept until a different one comes in.
   let cleanedRead = { text: null };
   // The characters just before and after text.slice(start, end) in the cleaned text, or null if nothing was cleaned.
   function cleanedAround(text, start, end) {
     if (cleanedRead.text !== text) cleanedRead = { text, ...cleanText(text) };
+    // A host hands in a new copy of the same text each call, and === reads two copies letter by letter. Keeping
+    // this copy makes the next look in it a quick same-object check rather than one more read of the whole text.
+    else cleanedRead.text = text;
     const { clean, start: from } = cleanedRead;
     if (!from) return null;
     const firstAt = (at) => {
@@ -1768,12 +2164,73 @@
     };
     return { before: clean[firstAt(start) - 1], after: clean[firstAt(end)] };
   }
-  // Whether the copy of `match` at `start` stands as a word, in the text as written or as cleaned.
+  // The character just before `start`, read through an escape that ends there as patterns.js reads the text: a
+  // written "\n", "\r" or "\t" (a log line, a string in code) or "%20" is a space, "\u00e9" is "é", and a link's
+  // percent escapes are read as UTF-8 ("%C3%A9" is "é", "%C2%A0" a no-break space, "%E3%80%82" "。"), bytes that
+  // make no character standing for a letter, as they stay hex digits there. A mark with no letter before it (after
+  // a space) belongs to no word.
+  const ESCAPED_BEFORE = /(?:\\u([0-9a-fA-F]{4})|\\[nrt]|((?:%[0-9a-fA-F]{2}){1,4}))$/;
+  function charBefore(text, start) {
+    // Every escape ESCAPED_BEFORE reads ends in a hex digit or n, r or t, so any other ASCII character is itself.
+    const code = text.charCodeAt(start - 1);
+    if (code < 128 && !isAsciiHex(code) && code !== 110 && code !== 114 && code !== 116) return text[start - 1];
+    let at = start;
+    let ch;
+    for (;;) {
+      ch = escapedBefore(text, at);
+      if (!ch || !/^\p{M}$/u.test(ch.char)) break;
+      at -= ch.length;
+    }
+    if (at === start || !ch) return ch?.char;
+    return wordChar(ch.char) ? ch.char : " ";
+  }
+  // The character ending at `at` as { char, length } (how many characters it's written with), or undefined at the
+  // start of the text.
+  function escapedBefore(text, at) {
+    if (at <= 0) return undefined;
+    const m = ESCAPED_BEFORE.exec(text.slice(Math.max(0, at - 12), at));
+    if (!m) {
+      const pair = at >= 2 && /^[\ud800-\udbff][\udc00-\udfff]$/.test(text.slice(at - 2, at));
+      return pair ? { char: text.slice(at - 2, at), length: 2 } : { char: text[at - 1], length: 1 };
+    }
+    if (!m[2]) return { char: m[1] ? String.fromCharCode(parseInt(m[1], 16)) : " ", length: m[0].length };
+    // The last character of the run of percent escapes: its last byte and the continuation bytes before it.
+    const bytes = m[2].match(/%../g).map((b) => parseInt(b.slice(1), 16));
+    let first = bytes.length - 1;
+    while (first > 0 && bytes.length - first < 4 && bytes[first] >= 0x80 && bytes[first] < 0xc0) first--;
+    // Read by arithmetic (patterns.js utf8At), not by catching what decodeURIComponent throws: bytes that make no
+    // one character stay as written.
+    const ch = utf8At(bytes, first);
+    if (ch && first + ch.size === bytes.length) return { char: ch.char, length: ch.size * 3 };
+    return { char: "a", length: 3 };
+  }
+  // Whether the copy of `match` at `start` stands as a word, in the text as written or as cleaned. An escape just
+  // before it is read only through charBefore, since cleaning keeps it as written ("%A9" would end in a digit).
+  // An edge that is a plain letter or digit outside any escape reads the same in the cleaned text, so a copy inside a
+  // longer word there ("Annabelle") is settled without cleaning the whole text.
   function standsAsWord(text, match, start) {
     const end = start + match.length;
-    if (!insideWord(match, text[start - 1], text[end])) return true;
+    const before = charBefore(text, start);
+    const atStart = edgeInside(match[0], before);
+    const atEnd = edgeInside(lastLetter(match), text[end]);
+    if (!atStart && !atEnd) return true;
+    const escaped = before !== text[start - 1] && before !== text.slice(start - 2, start);
+    if ((atEnd && keptByCleaning(text, end)) || (atStart && (escaped || keptByCleaning(text, start - 1)))) return false;
     const read = cleanedAround(text, start, end);
-    return Boolean(read) && !insideWord(match, read.before, read.after);
+    return Boolean(read) && !insideWord(match, escaped ? before : read.before, read.after);
+  }
+  // Whether cleanText leaves text[at] as it is, at the same place: an ASCII letter or digit that no escape reaches.
+  // Cleaning reads only "%" and "\" escapes as more than one character ("%41", "%2541", "\n", "\r\n"), written in hex
+  // digits, n and r after them, so one reaches `at` only through a run of those back to its "%" or "\". A run longer
+  // than a few characters isn't followed, and the edge is read the long way.
+  function keptByCleaning(text, at) {
+    if (!isAsciiWord(text.charCodeAt(at))) return false;
+    for (let i = at; i >= Math.max(0, at - 8); i--) {
+      const code = text.charCodeAt(i);
+      if (code === 37 || code === 92) return false; // "%" or "\\"
+      if (!isAsciiHex(code) && code !== 110 && code !== 114) return true; // n, r
+    }
+    return at <= 8;
   }
   function wordStarts(text, match, whole) {
     const starts = [];
@@ -1984,7 +2441,9 @@
         for (const value of readAs.get(match)) {
           for (const k of readStarts.get(value)) {
             const last = k + value.length - 1;
-            if (whole && insideWord(value, read.clean[k - 1], read.clean[last + 1])) continue;
+            // Its left edge is read as standsAsWord reads it, so a letter written as percent escapes ("Jos%C3%A9Ann")
+            // still makes a longer word, where this reading sees only the escape's last hex digit.
+            if (whole && insideWord(value, charBefore(text, read.start[k]), read.clean[last + 1])) continue;
             at.push({ start: read.start[k], end: read.end[last] });
           }
         }
@@ -2291,5 +2750,6 @@
     fingerprint,
     fingerprintStrong,
     fingerprintFor,
+    wordEntry,
   };
 })();

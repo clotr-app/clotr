@@ -1,0 +1,84 @@
+# Everyday messages in French that people send to AI tools. None contains personal data or a secret, so every
+# detection here is a false alarm. Messages are separated by lines of "---". Heavy on numbers on purpose: dates and
+# hours, prices with spaces and decimal commas, populations, recipes, sports scores, trains, orders and invoices.
+# The ratchet in tests/engine-prose-numbers.test.js fails on any warning here.
+---
+Peux-tu m'aider à organiser l'anniversaire de ma fille ? C'est le samedi 14 mars 2026 à 15 h 30, on sera 25 et le budget est de 350 €.
+---
+Pour 4 personnes : 500 g de farine, 3 œufs, 50 cl de lait, 1 pincée de sel. Cuisson 25 min à 200 °C. Je peux remplacer le lait par du lait d'avoine ?
+---
+Le PSG a battu l'OM 2 à 0 le 22/09/2025, score à la mi-temps 1-0. Tu peux me résumer le match en trois phrases ?
+---
+Résultats du week-end : Lyon 3-1 Nantes, Lille 2-2 Rennes, Nice 0-1 Lens, Brest 4-0 Metz. Qui est premier maintenant ?
+---
+Le loyer est de 1 250,50 € par mois, charges comprises, pour 62 m². C'est raisonnable pour Lyon ?
+---
+Le TGV 6123 Paris–Marseille du 15.06.2026 part à 14:07, voie 12, voiture 08, place 64. Combien de temps dure le trajet ?
+---
+Le devis du plombier est de 2 345,80 € TTC, contre 1 980,00 € pour l'autre. Lequel choisir si le premier inclut la pièce ?
+---
+La population de la France était de 68 373 433 habitants au 1er janvier 2024. Ça a augmenté de combien depuis 2000 ?
+---
+Le budget total du projet est de 2 450 000 € répartis sur 2025-2027. Fais-moi un tableau par année.
+---
+Ma commande n° 2025-11-004512 expédiée le 03/11/2025 n'est toujours pas arrivée. Comment je relance le vendeur ?
+---
+La facture FR-2025-0001234 de 1 234,56 € est à régler avant le 15/12. Rédige un mail poli pour demander un délai.
+---
+Mon numéro de suivi 910-8833885 ne donne rien sur le site du transporteur depuis le 28/10/2025, c'est normal ?
+---
+Ma commande n° 837.140.668 est bloquée « en préparation » depuis 6 jours. Que dire au service client ?
+---
+Le marathon de Paris 2026 : départ 08 h 15, arrivée prévue vers 12 h 45, dossard 12 345. Quel rythme au kilomètre pour finir en 4 h 30 ?
+---
+Le Tour de France 2025 : 3 338,8 km en 21 étapes. Ça fait combien de km par jour en moyenne ?
+---
+Mon vol AF 1234 part de Paris-CDG le 12/04/2026 à 07h45 et arrive à Lisbonne à 09h10. Je dois être à l'aéroport à quelle heure ?
+---
+Les horaires du bus : 06 45, 07 15, 07 45, 08 15, 08 45. Si je rate celui de 07 15, j'arrive à 8 h 30 ?
+---
+Il a gagné 6-4 3-6 7-5 en finale, c'était serré. Explique-moi comment marche le tie-break.
+---
+Mesures du canapé : 220 x 95 x 85 cm, 48,5 kg. Il passera dans un couloir de 90 cm ?
+---
+Les codes postaux 75001 75002 75003 75004 75005 sont dans le centre de Paris, c'est bien ça ?
+---
+Le colis part de 75008 Paris vers 69002 Lyon puis 13001 Marseille. Combien de jours en Colissimo ?
+---
+Le match se joue le 12/03 à 20 h 45 au Parc des Princes, 47 929 places. Il reste des billets ?
+---
+Pour 6 : 1,2 kg d'agneau, 3 gousses d'ail, 25 cl de vin, 180 °C pendant 1 h 30, puis 220 °C 10 min. Je peux le préparer la veille ?
+---
+Budget : 712 345 678 € sur cinq ans pour le plan vélo de la région. C'est beaucoup par habitant ?
+---
+Le roman (978-2-07-036024-8) est en rupture de stock. Tu connais une autre édition ?
+---
+Mon salaire brut est de 3 200 € par mois, soit 38 400 € par an. Combien en net en 2026 ?
+---
+J'ai couru 10,5 km en 58:42, soit 5:35 au km. C'est un bon temps pour une débutante ?
+---
+Le train de 7 h 12 arrive à 9 h 47, celui de 17 h 52 à 19 h 30. Lequel prendre pour un rendez-vous à 10 h ?
+---
+Sur Leboncoin le vélo est à 450 €, neuf il coûte 1 299,99 €. Ça vaut le coup ?
+---
+Rappel : réunion du 06/11 à 14:00, puis 13/11 à 14:00 et 20/11 à 14:00. Fais-moi un message pour l'équipe.
+---
+En 2023 l'entreprise a vendu 1 234 567 unités, en 2024 1 456 789. Calcule la croissance en pourcentage.
+---
+Le prix du m² à Bordeaux est passé de 4 120 € en 2019 à 4 870 € en 2024. Ça fait +18 % ?
+---
+Facture n° 5756-435743 réglée hier par virement, mais le fournisseur dit ne rien avoir reçu. Que faire ?
+---
+Mon billet de train n° 2157239274 a été annulé, comment demander le remboursement ?
+---
+Les vacances scolaires zone A : du 18/10/2025 au 03/11/2025, puis du 20/12/2025 au 05/01/2026. Propose-moi un planning.
+---
+Le chauffage consomme 12 500 kWh par an à 0,2516 € le kWh. Combien ça coûte par mois ?
+---
+Ligue 1, 10e journée : 1. PSG 25 pts, 2. Marseille 22 pts, 3. Monaco 20 pts. Qui joue ce soir ?
+---
+La ville compte 516 092 habitants et 41 325 entreprises. Rédige une phrase d'intro pour un exposé.
+---
+Le séminaire a lieu du 14 au 16 mai, salle 304, bâtiment 2, 3e étage. Écris l'invitation.
+---
+Mon crédit immo : 220 000 € sur 20 ans à 3,45 %. Quelle mensualité ?

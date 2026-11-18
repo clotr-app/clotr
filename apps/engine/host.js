@@ -123,7 +123,7 @@
       severity: r.severity,
       group: r.group,
       response: C.respFor(r, m, here),
-      preview: C.mask(m),
+      preview: C.mask(m, r.id),
       fp: s.salt ? C.fingerprint(s.salt, r.id, m) : "",
       scheme: 2,
     }));
@@ -136,7 +136,7 @@
       if (findings[i].response === "log") return;
       const last = results[results.length - 1];
       if (last?.kind === r) last.matches.push(m);
-      else results.push({ kind: r, name: r.name, matches: [m] });
+      else results.push({ kind: r, id: r.id, name: r.name, matches: [m] });
     });
     return {
       findings,
@@ -147,14 +147,15 @@
   }
 
   // Hide it: the text with the chosen details (ids from check() on this same text) swapped for a label naming their
-  // kind, or a share link cleaned, as the extension does (the kind's own replace). An id that isn't there changes
+  // kind, or a share link cleaned, as the extension does (the kind's own replace). A saved word keeps its kind's
+  // find, so it's hidden only where it stands as a word, never inside a longer one. An id that isn't there changes
   // nothing.
   function redact(text, findingIds = []) {
     if (typeof text !== "string") return "";
     const chosen = new Set(Array.isArray(findingIds) ? findingIds : []);
     const picked = (recentChecks.get(text) || found(text))
       .filter((f) => chosen.has(f.id))
-      .map(({ r, m }) => ({ name: r.name, replace: r.replace, matches: [m] }));
+      .map(({ r, m }) => ({ name: r.name, replace: r.replace, find: r.find, matches: [m] }));
     return C.redact(text, picked);
   }
 

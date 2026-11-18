@@ -1,0 +1,80 @@
+# Everyday messages in German that people send to AI tools. None contains personal data or a secret, so every
+# detection here is a false alarm. Messages are separated by lines of "---". Heavy on numbers on purpose: dates and
+# hours, prices with dots and decimal commas, populations, recipes, sports tables, trains, orders and invoices.
+# The ratchet in tests/engine-prose-numbers.test.js fails on any warning here.
+---
+Die Besprechung ist am 03.11.2025 um 14:30 Uhr in Raum 2.14. Schreib bitte eine kurze Einladung ans Team.
+---
+Für den Kuchen: 200 g Butter, 150 g Zucker, 4 Eier, 300 g Mehl, 1 Päckchen Backpulver. Bei 175 °C 45 Min. backen. Geht das auch mit Dinkelmehl?
+---
+Bayern München hat am 18.10.2025 mit 4:2 gegen Dortmund gewonnen, 75.000 Zuschauer. Fass das Spiel kurz zusammen.
+---
+Die Rechnung Nr. 2025-10-0471 über 1.234,56 € ist bis zum 30.11.2025 fällig. Kann ich in Raten zahlen?
+---
+Der ICE 1027 von Hamburg nach München fährt um 08:12 ab Gleis 7, Wagen 21, Platz 115. Wann bin ich da?
+---
+Die Einwohnerzahl Deutschlands lag 2023 bei 84 482 267. Wie viel davon in Bayern?
+---
+Bestellnummer 302-4471882-1190245, bitte bis 10.11.2025 zurücksenden. Wie schreibe ich die Rücksendung?
+---
+Die Saison 2024/25: 25 Siege, 7 Unentschieden, 2 Niederlagen, Tordifferenz 72:32. War das ein Rekord?
+---
+Am 24.12.2025 und 31.12.2025 haben wir von 08.00 bis 12.00 Uhr geöffnet. Formuliere das für unser Schaufenster.
+---
+Kontoauszug vom 01.10.2025 bis 31.10.2025: Eingänge 3.250,00 €, Ausgänge 2.987,45 €. Wie viel bleibt übrig?
+---
+Ich brauche einen Zeitplan: 06.11. 14:00, 13.11. 14:00, 20.11. 14:00, 27.11. 14:00. Mach eine Tabelle daraus.
+---
+Das Auto kostet 23.392,41 € inkl. MwSt., das Leasing 289,00 € im Monat über 36 Monate. Was ist günstiger?
+---
+Im Jahr 2028 sollen 610.692.216 Fahrgäste mit der Bahn fahren. Ist das realistisch?
+---
+Meine Bestellnummer 715-3425577 ist noch nicht angekommen. Was soll ich dem Händler schreiben?
+---
+Rechnungsnummer 3489635250 wurde doppelt abgebucht. Hilf mir bei einer Reklamation.
+---
+Meine Sendungsnummer 8602-907878 hängt seit Tagen im Paketzentrum fest. Ist das normal?
+---
+Rezept: 1 kg Mehl, 0,5 l Wasser, 42 g Hefe, 20 g Salz, 2 EL Öl – 230 °C, 25–30 Min. Wie lange muss der Teig gehen?
+---
+Der Läufer schaffte 10.000 m in 26:11,00 und 5.000 m in 12:35,36. Wie schnell ist das pro Runde?
+---
+Die Bundesliga-Tabelle: 1. Bayern 34 25 7 2 92:32 82, 2. Leverkusen 34 22 8 4 70:38 74. Wer steigt ab?
+---
+Die PLZ 10115 10117 10119 10178 10179 gehören zu Berlin-Mitte, oder?
+---
+Spielplan: Sa 15:30 Bayern – Köln, Sa 18:30 BVB – S04, So 15:30 HSV – SVW. Welche Spiele laufen im Free-TV?
+---
+Die Lottozahlen waren 18 15 46 3 31 35. Wie hoch ist die Chance auf sechs Richtige?
+---
+Die Wohnung hat 78,5 m² und kostet 1.180 € warm. Ist das in Leipzig teuer?
+---
+Am 22.04.2026 07 Uhr 45 geht der Flug, Check-in ab 05:45. Wann muss ich los?
+---
+Unser Umsatz 2024: Q1 1.245.300 €, Q2 1.389.150 €, Q3 1.402.880 €, Q4 1.610.020 €. Mach mir ein Diagramm.
+---
+Das Haus kostet 485.000 € plus 6,5 % Grunderwerbsteuer und 2 % Notar. Was zahle ich insgesamt?
+---
+Abfahrt 07.42 Uhr, Ankunft 09.17 Uhr, Umstieg in Fulda 08.31 Uhr. Reicht die Umsteigezeit?
+---
+Kosten: 412.345.678 € für das Projekt, verteilt auf 2025–2030. Wie viel ist das pro Jahr?
+---
+Der Kühlschrank verbraucht 145 kWh pro Jahr bei 0,32 € je kWh. Was kostet das im Monat?
+---
+Die Klausuren sind am 10.02.2026, 12.02.2026 und 17.02.2026. Erstell mir einen Lernplan.
+---
+Mein Gehalt: 4.150,00 € brutto, Steuerklasse 1. Was bleibt netto übrig?
+---
+Die Strecke Berlin–Hamburg ist 289 km lang, mit dem Auto 3 Std. 10 Min. Wie viel Sprit brauche ich bei 6,8 l/100 km?
+---
+Bestellung Nr. 393-7509292 kam beschädigt an. Schreib eine Beschwerde auf Deutsch.
+---
+Mein Aktenzeichen beim Amt ist 730 818 321, aber die schreiben nicht zurück. Wie formuliere ich eine Erinnerung?
+---
+Der Halbmarathon: 21,0975 km in 1:52:30. Welche Pace war das?
+---
+Öffnungszeiten: Mo–Fr 08:00–18:00, Sa 09:00–13:00. Übersetze das ins Englische.
+---
+Wir erwarten 1.250 Gäste am 05.09.2026 ab 18:00 Uhr. Wie viele Getränke brauchen wir?
+---
+Das Spiel endete 3:2 (1:0), Tore in der 12., 45. und 78. Minute. Schreib einen kurzen Spielbericht.

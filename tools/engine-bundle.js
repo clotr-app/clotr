@@ -2,7 +2,7 @@
 // sandboxes, the desktop's web view), so the apps find exactly what the extension finds and decide and say the same.
 // It is the extension's own files, byte for byte, in the content scripts' order, between what a bare engine lacks
 // (apps/engine/host-shim.js) and the app's way in (apps/engine/host.js, ClotrHost); no page, no browser call.
-// A header names the Clotr version and each part's SHA-256. Each app's build writes it; it is never edited by hand
+// A header names the engine's version and each part's SHA-256. Each app's build writes it; it is never edited by hand
 // or committed (dist/ is ignored). A bundle written here that falls behind the files fails npm test
 // (tests/engine-host.test.js), naming this command.
 // Usage: node tools/engine-bundle.js               → apps/engine/dist/clotr-engine.js, and Clotr for Windows'
@@ -114,7 +114,8 @@ const sha256 = (text) => crypto.createHash("sha256").update(text, "utf8").digest
 // The bundle's text and its parts ({ path, sha256, bytes }). A part must end with a new line, and a script part with
 // a semicolon, so no two parts can run together as one statement.
 function build(opts = {}) {
-  const { version } = JSON.parse(fs.readFileSync(path.join(ROOT, "extension", "manifest.json"), "utf8"));
+  // The engine's own number, which can move apart from the extension's.
+  const { version } = JSON.parse(fs.readFileSync(path.join(ROOT, "apps", "engine", "package.json"), "utf8"));
   const list = parts(opts).map((rel) => {
     const text = fs.readFileSync(path.join(ROOT, rel), "utf8");
     if (!text.endsWith("\n")) throw new Error(`${rel} doesn't end with a new line`);

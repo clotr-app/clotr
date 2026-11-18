@@ -18,7 +18,31 @@ const PATTERNS = Object.freeze(
   clotr.PATTERNS.map(({ id, group, name, severity }) => Object.freeze({ id, group, name, severity })),
 );
 
-function detect(text) {
+// A String object (new String(...)), from this realm or another, is read as the text String() gives for it, so its
+// own toString or Symbol.toPrimitive counts. If that throws, the text it holds is used. Anything else
+// that isn't a string gives undefined. The brand check runs none of the object's own code, so a faked toStringTag
+// can't pass. It does look up String, String.prototype.valueOf and Function.prototype.call each time, so a caller who
+// replaced one of them gets their version run.
+function asText(value) {
+  if (typeof value === "string") return value;
+  if (typeof value !== "object" || value === null) return undefined;
+  let held;
+  try {
+    held = String.prototype.valueOf.call(value);
+  } catch {
+    return undefined;
+  }
+  try {
+    return String(value);
+  } catch {
+    return held;
+  }
+}
+
+function detect(input) {
+  // Callers' own code can hand over anything; only text has anything to find, so the rest gives [].
+  const text = asText(input);
+  if (text === undefined) return [];
   const found = clotr.detect(text);
   const results = found.map(({ id, group, name, severity, matches, asks }) => ({
     id,

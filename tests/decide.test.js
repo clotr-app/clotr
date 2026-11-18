@@ -44,28 +44,28 @@ test("loads with no page, no storage and no browser: patterns, detector and deci
     context,
   );
   assert.equal(out.resp, "block");
-  assert.equal(out.mask, "555-…36");
+  assert.equal(out.mask, "55…6");
   assert.deepEqual(JSON.parse(JSON.stringify(out.words)), {
     lead: "Your message contains ",
-    items: ["Phone Number (555-…36)"],
+    items: ["Phone Number (55…6)"],
     tail: ". If you send it, this AI gets it.",
   });
 });
 
-test("mask: 8 characters or fewer are all dots; longer shows the first four, an ellipsis and the last two", () => {
+test("mask: 8 characters or fewer are all dots; longer shows at most a quarter, split around an ellipsis", () => {
   assert.equal(C.mask(""), "");
   assert.equal(C.mask("1234"), "••••");
   assert.equal(C.mask("12345678"), "••••••••");
-  assert.equal(C.mask("123456789"), "1234…89");
-  assert.equal(C.mask("AKIA4HPQ7XZ2R6TWLJ3N"), "AKIA…3N");
+  assert.equal(C.mask("123456789"), "1…9");
+  assert.equal(C.mask("AKIA4HPQ7XZ2R6TWLJ3N"), "AK…3N");
 });
 
 test("describeValues: up to three masked values; more get a count and the first three", () => {
-  assert.equal(C.describeValues(found("phone_number", [PHONE])), "555-…36");
-  assert.equal(C.describeValues(found("email", ["a@b.co", "jo@example.org"])), "••••••, jo@e…rg");
+  assert.equal(C.describeValues(found("phone_number", [PHONE])), "55…6");
+  assert.equal(C.describeValues(found("email", ["a@b.co", "jo@example.org"])), "••••••, jo…g");
   assert.equal(
     C.describeValues(found("phone_number", ["111-555-0001", "222-555-0002", "333-555-0003", "444-555-0004"])),
-    "×4: 111-…01, 222-…02, 333-…03, …",
+    "×4: 11…1, 22…2, 33…3, …",
   );
 });
 
@@ -191,7 +191,7 @@ function withSpanish(fn) {
 
 test("noticeWords: the warning's sentence for an AI, for people (email and chat apps) and for copied text", () => {
   const results = [found("phone_number", [PHONE]), found("email", ["jo@example.org", "a@b.co"])];
-  const items = ["Phone Number (555-…36)", "Email Address (jo@e…rg)", "Email Address (••••••)"];
+  const items = ["Phone Number (55…6)", "Email Address (jo…g)", "Email Address (••••••)"];
   assert.deepEqual(C.noticeWords(results), {
     lead: "Your message contains ",
     items,
@@ -222,7 +222,7 @@ test("noticeWords: the warning's sentence for an AI, for people (email and chat 
 test("noticeWords: the same sentence in Spanish, from the same messages", () => {
   withSpanish((es) => {
     const results = [found("phone_number", [PHONE], { name: "Número de teléfono" })];
-    const items = ["Número de teléfono (555-…36)"];
+    const items = ["Número de teléfono (55…6)"];
     assert.deepEqual(C.noticeWords(results), {
       lead: es.noticeContains.message,
       items,

@@ -177,7 +177,7 @@ test("Gemini finds values in the prompt and keeps each finding with its record",
   );
   assert.equal(got.chats.length, 1);
   assert.deepEqual(Object.keys(got.chats[0].kinds), ["aws_access_key", "vin"]);
-  assert.equal(got.chats[0].title, "My VIN is 1HGC…52 and key is AKIA…3N");
+  assert.equal(got.chats[0].title, "My VIN is 1H…52 and key is AK…3N");
 });
 
 test("Gemini titles are short excerpts with every detected value masked", async () => {
@@ -185,7 +185,7 @@ test("Gemini titles are short excerpts with every detected value masked", async 
   const got = await C.readExport(syntheticGemini([{ title: prompt }]), { salt: "s" });
   assert.equal(got.chats.length, 1);
   assert.ok(got.chats[0].title.length <= 90);
-  assert.match(got.chats[0].title, /AKIA…3N/);
+  assert.match(got.chats[0].title, /AK…3N/);
   assert.ok(!got.chats[0].title.includes("AKIA4HPQ7XZ2R6TWLJ3N"));
   assert.ok(!got.chats[0].title.endsWith("block"));
 });

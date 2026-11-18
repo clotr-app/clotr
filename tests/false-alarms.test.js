@@ -7,9 +7,10 @@
 const test = require("node:test");
 const assert = require("node:assert/strict");
 
+// The work meter counts steps only in code loaded after it, so it comes before the engine.
+const { assertWorkLinear } = require("./work.js");
 require("../extension/patterns.js");
 require("../extension/detector.js");
-const { bestOfPair, grewMoreThan } = require("./timing.js");
 
 // Calls the extension's own detect() and reshapes the result to { kind: [matched text, ...] }.
 function detect(text) {
@@ -521,13 +522,11 @@ test("a word or range describing a password isn't the password", () => {
 
 // ---------- Speed ----------
 
-// Repeating the same hostile text thousands of times should take about 4 times as long when there's 4 times
-// as much of it, never 16 times, since no rule here reads the text again for each thing it finds. Takes the
-// best of 3 runs (see tests/timing.js).
+// Repeating the same hostile text thousands of times should make about 4 times the work when there's 4 times
+// as much of it, never 16 times, since no rule here reads the text again for each thing it finds. Counted
+// (tests/work.js), 4 times the text may make at most WORK_GROWTH times the work.
 test("these rules grow linearly on hostile text", () => {
-  let runs = 0; // each run gets its own text, so no kept answer hides the work
-  const detectFresh = (text) => globalThis.Clotr.detect(text + " ".repeat(++runs % 7));
-  for (const unit of [
+  const units = [
     "DL ",
     "DL# 1234 ",
     "DL 12345678 ",
@@ -538,14 +537,13 @@ test("these rules grow linearly on hostile text", () => {
     "819-6824017-3062417 ",
     "iban: es16 3435 ",
     "DE89 3704 0044 0532 0130 00 ",
-  ]) {
-    const small = unit.repeat(250);
-    const big = unit.repeat(1000);
-    const [a, b] = bestOfPair(
-      () => detectFresh(small),
-      () => detectFresh(big),
-      4,
-    );
-    assert.ok(!grewMoreThan(a, b, 16), `${JSON.stringify(unit)}: time grew too much for 4× the text`);
-  }
+  ];
+  assertWorkLinear(
+    (text) => globalThis.Clotr.detect(text),
+    (unit, n) => unit.repeat(n),
+    units,
+    250,
+    undefined,
+    [__filename],
+  );
 });

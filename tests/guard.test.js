@@ -123,12 +123,12 @@ test("guard engine bundle is current and check returns only masked findings", ()
   assert.equal(serialized.includes(CARD_NUMBER), false);
 });
 
-test("Guard's engine agrees with a small public fixture and registry-token cases for the current extension version", () => {
+test("Guard's engine agrees with a small public fixture and registry-token cases for the current engine version", () => {
   const source = fs.readFileSync(ENGINE_PATH, "utf8");
   const version = /^\/\/ Clotr engine (\d+(?:\.\d+){2,3}):/m.exec(source)?.[1];
   assert.equal(
     version,
-    JSON.parse(fs.readFileSync(path.join(__dirname, "../extension/manifest.json"), "utf8")).version,
+    JSON.parse(fs.readFileSync(path.join(__dirname, "../apps/engine/package.json"), "utf8")).version,
   );
 
   const serviceTokens = makeSecrets()
@@ -1401,7 +1401,7 @@ test("a staged diff over the Git buffer limit does not skip the other staged fil
     assert.equal(result.status, 1, result.stderr);
     assert.match(result.stderr, /"large\.js".*first 256 KiB.*rest.*wasn't checked/i);
     assert.match(result.stderr, /"large\.js".*split the change or keep large generated files out of the repository/i);
-    assert.match(result.stderr, /"credential\.js":1.*AKIA/);
+    assert.match(result.stderr, /"credential\.js":1.*AK…3N/);
   } finally {
     fs.rmSync(dir, { recursive: true, force: true });
   }
@@ -1425,7 +1425,7 @@ test("Git setup chains an existing pre-commit hook and restores it on removal", 
     const blocked = spawnSync("git", ["commit", "-m", "A made-up credential"], { cwd: dir, encoding: "utf8" });
     assert.notEqual(blocked.status, 0);
     assert.match(blocked.stderr, /"credential\.js":1/);
-    assert.match(blocked.stderr, /AKIA…3N/);
+    assert.match(blocked.stderr, /AK…3N/);
     assert.equal(fs.existsSync(marker), false);
     git(dir, ["reset", "-q"]);
     fs.rmSync(path.join(dir, "credential.js"));
@@ -2760,10 +2760,10 @@ test("the npm publish workflow runs only by hand, from a Guard tag, and publishe
   const release = path.join(repo, ".github", "workflows", "release.yml");
   if (fs.existsSync(release)) assert.match(fs.readFileSync(release, "utf8"), /tags: \["v\*"\]/);
   // The private repository never publishes, so no workflow of its own may run npm publish, and the public one only
-  // from this workflow.
+  // from Guard's and the engine's own workflows.
   const workflows = path.join(repo, ".github", "workflows");
   for (const file of fs.readdirSync(workflows)) {
-    if (!privateCheckout && file === "publish-guard.yml") continue;
+    if (!privateCheckout && ["publish-guard.yml", "publish-engine.yml"].includes(file)) continue;
     assert.doesNotMatch(fs.readFileSync(path.join(workflows, file), "utf8"), /npm publish/, file);
   }
 });
@@ -3084,7 +3084,7 @@ test("Guard does not let project path patterns silence reads or staged files", (
     const fixtureRead = inspectRead("claude", { tool_name: "Read", tool_input: { file_path: fixturePath } });
     assert.equal(fixtureRead.action, "block");
     assert.equal(fixtureRead.skipped, undefined);
-    assert.equal(fixtureRead.findings[0].masked, "AKIA…8R");
+    assert.equal(fixtureRead.findings[0].masked, "AK…8R");
 
     fs.writeFileSync(path.join(root, ".env"), `KEY=${AWS_KEY}`);
     const secretRead = inspectRead(

@@ -82,7 +82,7 @@ module.exports = async function (env) {
         TYPED_VALUES.add(KEY);
         await page.type("#try", `my key ${KEY}`);
         const shown = await waitFor(() => page.evaluate(() => document.querySelector(".try-notice")?.innerText), 3000);
-        expect(shown?.includes("AWS Access Key (AKIA…3N)") && !shown.includes(KEY), `practice warning: ${shown}`);
+        expect(shown?.includes("AWS Access Key (AK…3N)") && !shown.includes(KEY), `practice warning: ${shown}`);
         await shot(page, "welcome.png");
         await page.click(".try-notice .btn");
         const after = await page.$eval("#try", (t) => t.value);

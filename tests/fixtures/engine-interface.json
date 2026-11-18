@@ -1,0 +1,236 @@
+{
+  "about": "The engine's interface as last agreed: what tests/engine-interface.test.js expects to find, and what apps/engine/docs/interface.md describes. A change here is the decision to change the interface, so change all three together.",
+  "package": {
+    "exports": [
+      "detect",
+      "redact",
+      "PATTERNS"
+    ],
+    "rule": [
+      "id",
+      "group",
+      "name",
+      "severity"
+    ],
+    "result": [
+      "id",
+      "group",
+      "name",
+      "severity",
+      "matches",
+      "asks"
+    ],
+    "results": [
+      "truncated"
+    ]
+  },
+  "host": {
+    "methods": [
+      "init",
+      "check",
+      "redact",
+      "fingerprintFor",
+      "eventsFor",
+      "clean",
+      "call"
+    ],
+    "init": [
+      "locale",
+      "salt",
+      "vault"
+    ],
+    "check": [
+      "findings",
+      "words",
+      "holds",
+      "truncated"
+    ],
+    "finding": [
+      "id",
+      "type",
+      "name",
+      "severity",
+      "group",
+      "response",
+      "preview",
+      "fp",
+      "scheme"
+    ],
+    "words": [
+      "lead",
+      "items",
+      "tail"
+    ],
+    "event": [
+      "t",
+      "site",
+      "type",
+      "name",
+      "severity",
+      "action",
+      "fp",
+      "scheme"
+    ],
+    "call": [
+      "result",
+      "error"
+    ]
+  },
+  "clotr": {
+    "setBy": {
+      "apps/engine/host-shim.js": [
+        "useLocale"
+      ],
+      "extension/patterns.js": [
+        "PATTERNS",
+        "ASK_REASONS",
+        "askLabels",
+        "numberRuns",
+        "isPlaceholder",
+        "setVault",
+        "vaultKinds",
+        "isVaultFormat",
+        "isClosedLetter",
+        "closedLength",
+        "closedHead",
+        "vaultCutShort",
+        "setScanDeadline",
+        "setVaultSource",
+        "utf8At",
+        "addressCore",
+        "msg",
+        "cleanableParamsOf",
+        "cleanShareLink",
+        "findShareLinks",
+        "sha256Bytes"
+      ],
+      "extension/detector.js": [
+        "SEVERITY_RANK",
+        "DETECT_BUDGET_CHARS",
+        "DETECT_BACKSTOP_MS",
+        "DETECT_WINDOW_CHARS",
+        "DETECT_WINDOW_OVERLAP",
+        "DETECT_PRIVATE_KEY_FALLBACK_CHARS",
+        "detect",
+        "redact",
+        "generalize",
+        "wordStarts",
+        "isSavedWord",
+        "generalForms",
+        "BANDAGE_WORDS",
+        "BANDAGE_BORN_IN",
+        "readBandageLabels",
+        "bandageKindOf",
+        "RESPONSES",
+        "defaultResponse",
+        "responseFor",
+        "stricter",
+        "normalize",
+        "cleanText",
+        "findPdfStreams",
+        "pdfPageText",
+        "xmlToText",
+        "sha256",
+        "fingerprint",
+        "fingerprintStrong",
+        "fingerprintFor",
+        "wordEntry",
+        "overlapChecks"
+      ],
+      "extension/decide.js": [
+        "mask",
+        "describeValues",
+        "responseOf",
+        "vaultMode",
+        "splitOwnIds",
+        "respFor",
+        "noticeWords",
+        "WHO_ASKS",
+        "whoAsksFor",
+        "whoAsks",
+        "asShown",
+        "VAULT_MODES",
+        "vaultKey",
+        "dedupeVault",
+        "cleanVaultEntry",
+        "cleanEvent"
+      ],
+      "extension/backup.js": [
+        "Backup"
+      ],
+      "extension/commands.js": [
+        "commandTrick",
+        "commandShapes"
+      ],
+      "extension/ask-someone.js": [
+        "askSomeoneNoteForScamSigns",
+        "askSomeoneNoteForCommand",
+        "askSomeoneNoteForShare"
+      ]
+    },
+    "readByApps": [
+      "PATTERNS",
+      "msg",
+      "detect",
+      "DETECT_WINDOW_CHARS",
+      "DETECT_WINDOW_OVERLAP",
+      "redact",
+      "generalForms",
+      "fingerprint",
+      "mask",
+      "responseOf",
+      "splitOwnIds",
+      "noticeWords",
+      "Backup",
+      "commandTrick",
+      "askSomeoneNoteForScamSigns",
+      "askSomeoneNoteForCommand",
+      "askSomeoneNoteForShare"
+    ],
+    "rule": [
+      "id",
+      "group",
+      "name",
+      "severity",
+      "find",
+      "secret",
+      "regex",
+      "validate",
+      "labelAnywhere",
+      "bandage",
+      "picture",
+      "start",
+      "replace"
+    ],
+    "resultAdds": [
+      "matches",
+      "asks",
+      "reasonOf"
+    ],
+    "results": [
+      "truncated"
+    ],
+    "noticeWords": [
+      "lead",
+      "items",
+      "tail"
+    ],
+    "generalForms": [
+      "id",
+      "general"
+    ],
+    "commandTrick": [
+      "shape"
+    ],
+    "Backup": [
+      "FORMAT",
+      "KEYS",
+      "ITERATIONS",
+      "MAX_FILE_BYTES",
+      "pick",
+      "seal",
+      "open",
+      "clean"
+    ]
+  }
+}
