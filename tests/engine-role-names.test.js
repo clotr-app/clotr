@@ -79,8 +79,8 @@ test("a role-word name holding a pointer, code or nothing stays as it was", () =
     ['<input type="password" ref={passwordRef} />', "quiet"],
     ["passwordRef.current.focus();", "quiet"],
     ["const tokenRef = React.createRef();", "quiet"],
-    // Live and the trunk flag the ARN's last part; a later round takes that false alarm.
-    ["secretArn: arn:aws:secretsmanager:us-east-1:123456789012:secret:prod/db-AbCdEf", 'password=["prod/db-AbCdEf"]'],
+    // A Secrets Manager ARN's "secret:" is its resource type, so the ARN is quiet.
+    ["secretArn: arn:aws:secretsmanager:us-east-1:123456789012:secret:prod/db-AbCdEf", "quiet"],
     ["const passwordValue = event.target.value;", "quiet"],
     ["passwordValue: string;", "quiet"],
     ["apiKeyRef: process.env.API_KEY_REF,", "quiet"],
@@ -94,20 +94,14 @@ test("a role-word name holding a pointer, code or nothing stays as it was", () =
     ['const secretValue = "";', "quiet"],
     ["keyRef: mainKey", "quiet"],
     ["secretArn: !GetAtt DbSecret.Arn", "quiet"],
-    [
-      "<secretArn>arn:aws:secretsmanager:us-east-1:123456789012:secret:prod/db-AbCdEf</secretArn>",
-      'password=["prod/db-AbCdEf</secretArn>"]',
-    ],
-    // The "secret:" label inside the ARN still reads what follows it, as on live.
-    ["app.secret.arn=arn:aws:secretsmanager:us-east-1:123456789012:secret:prod-AbCdEf", 'password=["prod-AbCdEf"]'],
+    ["<secretArn>arn:aws:secretsmanager:us-east-1:123456789012:secret:prod/db-AbCdEf</secretArn>", "quiet"],
+    // The "secret:" inside the ARN is its resource type, so nothing in it is read.
+    ["app.secret.arn=arn:aws:secretsmanager:us-east-1:123456789012:secret:prod-AbCdEf", "quiet"],
     ["db.password.ref=prod-db-password", "quiet"],
     ["spring.datasource.password.value=${DB_PASSWORD}", "quiet"],
     ["apiKeyRef: vault/prod/db", "quiet"],
     ["<passwordRef>vault/prod/db</passwordRef>", "quiet"],
-    [
-      "<secretArn>arn:aws:secretsmanager:us-east-1:123456789012:secret:prod</secretArn>",
-      'password=["prod</secretArn>"]',
-    ],
+    ["<secretArn>arn:aws:secretsmanager:us-east-1:123456789012:secret:prod</secretArn>", "quiet"],
   ];
   for (const [text, want] of rows) assert.equal(read(text), want, text);
 });
