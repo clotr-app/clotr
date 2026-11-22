@@ -1,6 +1,6 @@
 # Engine rule reference
 
-Engine version: 1.6.2
+Engine version: 1.6.3
 
 This table describes every built-in rule in `extension/patterns.js`. Vault and team rules are made from details the
 person or organization chose to save, so their matches depend on those settings. Examples are invented shapes, not

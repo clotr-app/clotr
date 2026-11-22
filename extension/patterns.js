@@ -6304,8 +6304,10 @@
   // the labels inside it, as before: "secret:" in app.secret.arn=arn:aws:…:secret:….
   const ROLE_VALUE_AHEAD = String.raw`(?=["']?\]?\s*[:=][^\S\n]*["']?[^\s"',;:/]+(?:[\s"',;]|$))`;
   // After the secret's name, a dotted role word (nameRoleWords) still names it: db.password.ref=….
+  // SecretString, the Secrets Manager field, counts only before a quoted value or after ? or & in a query, so a
+  // CloudFormation function on the next line or a variable in an SDK call (SecretString=creds_json) isn't a value.
   const LABELLED_SECRET = new RegExp(
-    String.raw`\b(?:[A-Za-z0-9]{1,30}[_-]){0,4}(?:password|passwd|pwd|pass|pw|passcode|passphrase|pin|secret|client_secret|token(?:\sde\sacceso)?|access_token|auth_token|api[_ -]?key|secret[ -]key|contrase(?:ñ|n)a|clave(?:\s(?:de\s)?api)?|pgpass(?:word)?|sshpass)(?:_[A-Za-z0-9]+)*(?:\.(?:${nameRoleAlternatives()})${ROLE_VALUE_AHEAD})?["']?\]?\s*(?:\??:\s*(?:string|str)\s*=[^\S\n]*|:[^\S\n]*\r?\n(?:>[^\S\n]?){1,3}(?=["']?[^\s"',;]+["']?[^\S\n]*(?:\r?\n|$))|:\s*|=[^\S\n]*)["']?([^\s"',;]+)`,
+    String.raw`\b(?:[A-Za-z0-9]{1,30}[_-]){0,4}(?:password|passwd|pwd|pass|pw|passcode|passphrase|pin|secret(?:(?<=[?&]secret)string(?==\S)|string(?=["\x27]?[^\S\n]*[:=][^\S\n]*["\x27])|string(?=[^\S\n]*(?:=|:\s)))?|client_secret|token(?:\sde\sacceso)?|access_token|auth_token|api[_ -]?key|secret[ -]key|contrase(?:ñ|n)a|clave(?:\s(?:de\s)?api)?|pgpass(?:word)?|sshpass)(?:_[A-Za-z0-9]+)*(?:\.(?:${nameRoleAlternatives()})${ROLE_VALUE_AHEAD})?["']?\]?\s*(?:\??:\s*(?:string|str)\s*=[^\S\n]*|:[^\S\n]*\r?\n(?:>[^\S\n]?){1,3}(?=["']?[^\s"',;]+["']?[^\S\n]*(?:\r?\n|$))|:\s*|=[^\S\n]*)["']?([^\s"',;]+)`,
     "gi",
   );
   // An HTTP auth header from a pasted curl command or code, like "Authorization: Bearer …".
@@ -6982,6 +6984,91 @@
   const HCL_DEFAULT = /\bvariable\s+"([\w-]{1,60})"\s*\{[^{}]{0,300}?\bdefault\s*=\s*"([^"\n]{4,256})"/g;
   const YAML_BLOCK =
     /(?:^|\n)([^\S\n]*)([\w.-]{1,60})[^\S\n]*:[^\S\n]*[|>][+-]?\d?[^\S\n]*\r?\n([^\S\n]+)([^\s#][^\n]{3,255})/g;
+  // A YAML name with nothing after its ":" can hold its value one level under it: a CloudFormation parameter's
+  // Default:, a Helm value:, a text: or a list item. These are the keys read under such a name. Any other key under
+  // it (Type:, description:, secretKeyRef:) describes the secret or says where it's kept, and isn't read.
+  const UNDER_NAME_KEYS = [
+    { key: "value", reads: /^value$/i },
+    { key: "default", reads: /^default$/i },
+    { key: "text", reads: /^text$/i },
+    { key: "list item", reads: /^-$/ },
+  ];
+  const UNDER_NAME = /(?:^|\n)([^\S\r\n]*)([\w.-]{1,60})[^\S\r\n]*:[^\S\r\n]*(?:#[^\r\n]*)?(?=\r?\n)/g;
+  const UNDER_NAME_LINE = /^([^\S\r\n]*)(?:(-)[^\S\r\n]+|([\w.-]{1,60})[^\S\r\n]*:[^\S\r\n]+)([^\r\n]*)$/;
+  // A name is read only when its own line would be: "password:" and "db_password:", but not a bare "key:".
+  const UNDER_NAME_LABELS = [LABELLED_SECRET, LABELLED_API_KEY].map((re) => new RegExp(`^(?:${re.source})$`, "i"));
+  // Lines read under one name, so a long block costs each name only a few lines.
+  const UNDER_NAME_LINES = 40;
+  // The value that starts a line's rest, read as a label's value is: its first run, then as far as wholeValue takes it.
+  function valueAt(text, restAt) {
+    const at = restAt + (QUOTE_CLOSE[text[restAt]] ? 1 : 0);
+    const first = /^[^\s"',;]+/.exec(text.slice(at, at + 256));
+    return first ? { value: wholeValue(text, at, first[0]), at } : null;
+  }
+  // A camelCase or PascalCase name (DbPassword, PasswordHint) read as its snake_case twin, so the about checks see
+  // its words.
+  const snakeTwin = (name) =>
+    /[a-z0-9][A-Z]/.test(name) ? name.split(NAME_SPLIT).filter(Boolean).join("_").toLowerCase() : name;
+  // The keyed lines one level under a name line `m`: only lines at the first line's depth under it, up to the first
+  // line back at the name's depth or less. Each gives the line's start and its parsed key and rest.
+  function linesUnderName(text, m) {
+    const lines = [];
+    let lineStart = text.indexOf("\n", m.index + m[0].length) + 1;
+    let depth = null;
+    for (let n = 0; lineStart > 0 && n < UNDER_NAME_LINES; n++) {
+      const lineEnd = text.indexOf("\n", lineStart);
+      const line = text.slice(lineStart, lineEnd < 0 ? text.length : lineEnd).replace(/\r$/, "");
+      const indent = /^[^\S\r\n]*/.exec(line)[0].length;
+      if (line.trim()) {
+        if (indent <= m[1].length || (depth !== null && indent < depth)) break;
+        if (depth === null) depth = indent;
+        const child = indent === depth && UNDER_NAME_LINE.exec(line);
+        if (child) {
+          lines.push({ key: child[2] || child[3], rest: child[4], restAt: lineStart + line.length - child[4].length });
+        }
+      }
+      lineStart = lineEnd < 0 ? 0 : lineEnd + 1;
+    }
+    return lines;
+  }
+  // What a name says about the value under it, as its role words say on its own line: "points" for a name that says
+  // where a secret is kept (password_ref, secret_arn, existing_secret), else "holds".
+  function underNameRole(name) {
+    const named = SECRET_WORD_AT_END.exec(name);
+    if (/^existing_/i.test(name) || (named && nameRole(named[1]) === "points")) return "points";
+    return "holds";
+  }
+  // Whether a snake_case name is a lookup's, as its own line's labels read it: a page token, or a cache, sort or bucket
+  // key that the password label doesn't read either, and that isn't holding a cloud key or a primary key's hex.
+  function underNameLookup(name, value) {
+    const nameLabel = `${name}:`;
+    if (LOOKUP_TOKEN_LABEL.test(nameLabel)) return true;
+    if (!LOOKUP_KEY_LABEL.test(nameLabel) || SECRET_LABEL_AT_START.test(`${nameLabel} x`)) return false;
+    const cloudKey = /^[A-Za-z0-9+/]{40,88}={0,2}$/.test(value) && keyLike(value);
+    const primary = /\bprimary[ _.-]key\b/i.test(nameLabel) && ((hexKey(value) && !isPlaceholder(value)) || cloudKey);
+    return !primary && !(/(?:storage|s3)[ _.-]key\b/i.test(nameLabel) && cloudKey);
+  }
+  // The settings one level under a name with nothing after its ":", each as the record of the name and the value under
+  // it. Only the keys in UNDER_NAME_KEYS are read, and not one whose value is a key of its own (`- name: x`). A
+  // camelCase or PascalCase name's record keeps it as camelName, so readSettingsByName can give it the camelCase
+  // reader's checks too.
+  function settingsUnderName(text) {
+    const records = [];
+    for (const m of text.matchAll(UNDER_NAME)) {
+      const name = snakeTwin(m[2]);
+      if (!readName(name, PAIR).kind || !UNDER_NAME_LABELS.some((re) => re.test(`${name}: Qz7wPq`))) continue;
+      const from = m.index + (m[0].startsWith("\n") ? 1 : 0);
+      for (const line of linesUnderName(text, m)) {
+        const read = UNDER_NAME_KEYS.some((row) => row.reads.test(line.key));
+        if (!read || /^[\w.-]{1,60}:(?:\s|$)/.test(line.rest)) continue;
+        const found = valueAt(text, line.restAt);
+        if (!found) continue;
+        const record = settingRecord(text, { name, ...found, from, shape: "yaml-under", labelPart: `${name}: ` });
+        records.push(name === m[2] ? record : { ...record, camelName: m[2] });
+      }
+    }
+    return records;
+  }
   const settingKind = ({ name }) => readName(name, PAIR).kind;
   // These structural finders see a camelCase label in common config markup. The name table alone decides what it says.
   const CAMEL_YAML_SETTING = /(?:^|\n)[^\S\r\n]*([a-z][A-Za-z0-9]{1,59})[^\S\r\n]*:[^\S\r\n]*([^\r\n]{4,256})/g;
@@ -7023,27 +7110,61 @@
       if (!VALUE_ROWS.some((r) => r.role === role && r.shape.test(readAs))) readings.set(key, reading);
       return reading;
     };
-    const pushCamel = (shape, name, value, at, from, role = CAMEL_PAIR) => {
-      if (!camelSecretName(name)) return;
-      if (role === CAMEL_XML_PAIR && /[/:.]/.test(value)) return;
-      const reading = camelReading(name, role, value);
-      if (!reading.kind || reading.about || reading.storageKey) return;
+    // The camelCase reader's checks on a value under a camelCase name, the same on the name's own line and one level
+    // under it. Gives the name's reading, or null when the value isn't read.
+    const camelValueReading = (name, value, at, role = CAMEL_PAIR, asKind) => {
+      if (!camelSecretName(name)) return null;
+      if (role === CAMEL_XML_PAIR && /[/:.]/.test(value)) return null;
+      const named = camelReading(name, role, value);
+      if (!named.kind || named.about || named.storageKey) return null;
+      const reading = asKind ? { ...named, kind: asKind } : named;
       // A token's storage key holding a stored name (accessTokenKey: app:authToken), as its twin's label reads it.
       const readAs = name.split(NAME_SPLIT).filter(Boolean).join("_");
-      if (storageKeyName({ storageKey: STORAGE_KEY_NAME.test(readAs) }, value.trim())) return;
+      if (storageKeyName({ storageKey: STORAGE_KEY_NAME.test(readAs) }, value.trim())) return null;
       // A key name's path, like privateKey: ./certs/server.pem, names the file the key is in.
-      if (reading.kind === "key" && looksLikePath({ value }) && !twinIsSecretLabel(name)) return;
+      if (reading.kind === "key" && looksLikePath({ value }) && !twinIsSecretLabel(name)) return null;
       // A quoted sentence is a message or a hint, as the snake_case label reader reads one ("use the one from the vault").
       const first = /^[^\s"',;]+/.exec(value);
       if (role === CAMEL_PAIR && first && /^[^\S\r\n]+\S/.test(value.slice(first[0].length))) {
-        if (wholeValue(text, at, first[0]) === first[0]) return;
+        if (wholeValue(text, at, first[0]) === first[0]) return null;
       }
-      if (camelValueNamesSomething(value) || camelPasswordLacksShape(reading.kind, value)) return;
-      if (!camelValueCouldBeRead(text, name, reading.kind, value, at)) return;
+      // A value right after a quote or an XML tag's ">" is a plain string, where YAML reads no alias.
+      const quoted = /["'>]/.test(text[at - 1] || "");
+      if (camelValueNamesSomething(value) || camelPasswordLacksShape(reading.kind, value, quoted)) return null;
+      if (!camelValueCouldBeRead(text, name, reading.kind, value, at)) return null;
+      return reading;
+    };
+    const pushCamel = (shape, name, value, at, from, role = CAMEL_PAIR) => {
+      const reading = camelValueReading(name, value, at, role);
+      if (!reading) return;
       const record = settingRecord(text, { name, value, at, shape, from, labelPart: text.slice(from, at) });
       if (labelledNotSecret(record)) return;
       out.push({ kind: reading.kind, value, record, camel: true });
     };
+    // A value under a camelCase or PascalCase name is read only when the camelCase reader would read it on the name's
+    // own line, with the name's reading or, where its snake_case twin is a password's name (apiSecret), as a password.
+    // Live reads a PascalCase name's own line (DbPassword:) only through its labels, so under one the value also needs a
+    // password's shape: a digit and a password's mark, or a random key in mixed case. A KMS key id or a commit hash
+    // under SecretKmsKey or SourceToken is neither.
+    const underCamelReads = (name, value, at, kind) => {
+      const camel = name[0].toLowerCase() + name.slice(1);
+      const kinds = kind === "password" ? [undefined, kind] : [undefined];
+      if (!kinds.some((k) => camelValueReading(camel, value, at, CAMEL_PAIR, k))) return false;
+      return camel === name || pascalPasswordShape(value);
+    };
+    // A value one level under its name is judged by the checks its snake_case twin's own line uses: a lookup name
+    // (next_token, s3_key) stays a lookup, and the value is read only when it's shaped like a password or a key under
+    // the name's role (roleNameValueReads). A path, a link or joined words under the name say where the secret is kept
+    // as often as they hold it, and under a name that points at a secret (password_ref, existing_secret) so does a
+    // capitalised name with a number. Under a camelCase or PascalCase name (SecretKmsKey, PasswordRef, clientSecret)
+    // the camelCase reader's checks for that name's own line have to read the value too.
+    for (const record of settingsUnderName(text)) {
+      const { name, value, camelName } = record;
+      if (!roleNameValueReads(value, underNameRole(name)) || underNameLookup(name, value)) continue;
+      const kind = settingKind(record);
+      if (camelName && !underCamelReads(camelName, value, record.at, kind)) continue;
+      if (kind && !labelledNotSecret(record)) out.push({ kind, value, record });
+    }
     for (const m of text.matchAll(CAMEL_YAML_SETTING)) {
       const name = m[1];
       if (!camelSecretName(name)) continue;
@@ -7255,6 +7376,64 @@
       String.raw`|(?=["'“‘]?\d)(?<!\d[-./\s])${NOT_A_NUMBER_OF}${SIGN_IN_VALUE}(?:${CLOSING_QUOTE}(?=${NAMED_AFTER})|${NAMED_AFTER})`,
     "giu",
   );
+  // A second code in the same sentence as a login code, typed the same way, as in "the old one was 561902 but the
+  // new login code: 447215". It needs its own reason to be a code: a code word or a code-like word right before it
+  // ("code", "the one was", "now it's", "or", "send"). A place in a list is no reason, since "482913, 551234 and
+  // 640318 are the invoice numbers" lists plain numbers after a code. A plain label and a colon, like "customer:
+  // 551234" or "price: 1250", is no reason either, so those stay quiet. It has to end like a code too, so "the price
+  // is 1250" or "551234 is my zip" stays quiet. A number named as something else, like "order 551234", "room 4829"
+  // or one after a currency sign, stays quiet.
+  const OTHER_CODE_BODY = String.raw`(?<![\p{L}\d]|\d[-./\s])(?!(?:19|20)\d\d(?!\d))(\d{4,8}|\d{3}[\s-]\d{3})(?![\p{L}\d-]|\s\d)`;
+  const OTHER_CODE_END = String.raw`(?=["'”’]?\s*(?:$|[\n.,;:!?)]|(?:and|or|but|so|then|when|now|instead|too|also|by|via)(?![\p{L}])))`;
+  const OTHER_CODE = new RegExp(
+    String.raw`(?<=(?<![\p{L}])(?:code|(?:code|one|that|this)\s+(?:is|was)|now,?\s+it(?:['’]?s|\s+is)|or|and|then|maybe|now|send|sent|enter|type|try|use)\s*[:=,]?\s*["'“‘]?)` +
+      OTHER_CODE_BODY +
+      OTHER_CODE_END,
+    "giu",
+  );
+  // Words that name a number as something else, read in the three words before it.
+  const NAMED_NUMBER = new RegExp(
+    String.raw`(?<![\p{L}])(?:order|tracking|ticket|case|room|invoice|account|acct|number|no|zip|postal|area|phone|call|ext|extension|port|error|status|exit|version|model|item|product|sku|ref|reference|booking|confirmation|reservation|flight|seat|gate|door|apt|apartment|unit|suite|page|line|step|id|serial|promo|coupon|gift)(?![\p{L}])[^\p{L}\d]*(?:\p{L}+['’]?\p{L}*[^\p{L}\d]+){0,2}["'“‘]?$|[$€£¥₹#+]\s*["'“‘]?$`,
+    "iu",
+  );
+  // After "and", "or", "then" or "send", a number counts as a code only when nothing but more numbers joined by a
+  // comma, "and" or "or" follows it, up to the end of the sentence or to the found code's name ("send 318274, my").
+  // So "482913 and 551234 too, for the parking" and "send 2500 by Friday" stay quiet. After any word, numbers named
+  // right after, as in "551234 and 640318 are the order numbers", stay quiet.
+  const JOINED = /(?<![\p{L}])(?:and|or|then|send)\s*[:=,]?\s*["'“‘]?$/iu;
+  // A space inside a number counts only before another digit or dash, so the spaces before a comma are read one
+  // way and a long run of short numbers stays fast.
+  const MORE_NUMBERS = String.raw`(?:\s*(?:[,;/&]|and|or)\s*["'“‘]?\d[\d-]*(?:\s+[\d-]+)*)*["'”’]?\s*`;
+  const ONLY_NUMBERS_AFTER = new RegExp(String.raw`^${MORE_NUMBERS}[,;:]?\s*(?:my|the|your|our)?\s*$`, "iu");
+  const NAMED_AFTER_LIST = new RegExp(
+    String.raw`^${MORE_NUMBERS}(?:are|were|is|was)\s+(?![^.!?\n]*(?:code|pin|otp))`,
+    "iu",
+  );
+  // The same shape: as many digits, grouped the same way.
+  const codeShape = (code) => code.replace(/\d/g, "0").replace(/\s/g, " ");
+  // Other codes in the sentence around a login code found at [start, end), at most 80 characters away.
+  function otherCodes(text, start, end, code) {
+    const from = Math.max(0, start - 80);
+    const before = text.slice(from, start);
+    const stop = before.search(/[\n.!?][^\n.!?]*$/);
+    const left = stop < 0 ? from : from + stop + 1;
+    const after = text.slice(end, end + 80).search(/[\n.!?]/);
+    const right = after < 0 ? Math.min(text.length, end + 80) : end + after;
+    const sentence = text.slice(left, right);
+    const codes = [];
+    for (const m of sentence.matchAll(OTHER_CODE)) {
+      const at = left + m.index;
+      if (m[1] === code || codeShape(m[1]) !== codeShape(code)) continue;
+      if (NAMED_NUMBER.test(text.slice(Math.max(left, at - 40), at))) continue;
+      const rest = text.slice(at + m[1].length, right);
+      if (NAMED_AFTER_LIST.test(rest)) continue;
+      // Before the login code, the words after it run up to the code's own name, as in "send 318274, my".
+      const words = at < start ? text.slice(at + m[1].length, start) : rest;
+      if (JOINED.test(text.slice(Math.max(left, at - 12), at)) && !ONLY_NUMBERS_AFTER.test(words)) continue;
+      codes.push(m[1]);
+    }
+    return codes;
+  }
   // Spanish, matching the same kinds of phrases: "el código de verificación es 482913", "me mandaron un
   // código por SMS: 552019", and the code coming before its name, as in "482913 es mi código".
   const ES_SENT = String.raw`(?:(?:mand|envi|pas)(?:aron|[oó]|aste)|dieron|di[oó]|pidieron|pidi[oó]|lleg[oó]|(?:ha|han)\s+(?:mandado|enviado|pasado|dado|pedido|llegado)|acaban?\s+de\s+(?:mandar|enviar|pasar|llegar)|est[aá]n?\s+pidiendo|piden|pide)`;
@@ -7355,9 +7534,19 @@
   );
   // Two-factor backup codes and recovery keys, as in "backup codes are 1234 5678, 2345 6789". Reads
   // everything after the label as one list of codes, and requires a digit somewhere in it, so a sentence
-  // like "…is lost" doesn't count as a code.
+  // like "…is lost" doesn't count as a code. Another backup or recovery label starts its own list, as in
+  // "two-factor code 902731, backup code: 158364", so the list ends before it. A plain word before "code",
+  // as in "first code …, second code …", stays inside the list.
   const RECOVERY_LABEL = String.raw`(?:backup|recovery|2fa|two[- ]factor|mfa)\s+(?:codes?|keys?)|(?:c[oó]digos?|claves?)\s+de\s+(?:respaldo|recuperaci[oó]n)`;
-  const RECOVERY_CODES = new RegExp(
+  const RECOVERY_HEAD = String.raw`(?<![\p{L}])(?:${RECOVERY_LABEL})(?![\p{L}])(?:\s+(?:are|is|was|were|es|son|era|eran))?\s*`;
+  const RECOVERY_LIST = String.raw`((?:(?!(?:${RECOVERY_LABEL})(?![\p{L}]))[A-Za-z0-9]{3,8}(?:-[A-Za-z0-9]{3,8}){0,7}(?:\s*[,;]\s*|\s+|$)){1,16})`;
+  const RECOVERY_CODES = new RegExp(String.raw`${RECOVERY_HEAD}(?::\s*)?${RECOVERY_LIST}`, "giu");
+  // A label with a comma or semicolon right after it, as in "backup codes 4821, recovery codes, 9027". It opens a
+  // list only where it follows another list or label.
+  const RECOVERY_MARKED = new RegExp(String.raw`${RECOVERY_HEAD}[,;]\s*${RECOVERY_LIST}`, "giu");
+  const AFTER_LABEL = new RegExp(String.raw`(?:${RECOVERY_LABEL})[\s,;:]*$`, "iu");
+  // The same label and list with no stop at a later label, so a list runs on through it.
+  const RECOVERY_RUN = new RegExp(
     String.raw`(?<![\p{L}])(?:${RECOVERY_LABEL})(?![\p{L}])(?:\s+(?:are|is|was|were|es|son|era|eran))?\s*(?::\s*)?((?:[A-Za-z0-9]{3,8}(?:-[A-Za-z0-9]{3,8}){0,7}(?:\s*[,;]\s*|\s+|$)){1,16})`,
     "giu",
   );
@@ -7525,6 +7714,158 @@
   // Chinese, Japanese and Korean go on with no space, so a value's word also ends where their letters or
   // punctuation start: "我的密码是…，为什么", "パスワードは…です".
   const WORD_END = /[\s，。、：；！？「」『』\p{Script=Han}\p{Script=Hiragana}\p{Script=Katakana}\p{Script=Hangul}]/u;
+  // A label written as inline code in a sentence ("Set `secret: true` on it.") has the code's closing backticks, and
+  // maybe the sentence's last mark, right after its value. When the backticks before the value on its line leave a
+  // span of that width open, that run closes it, so the value and the match are read without it, and `closing` keeps
+  // what was cut. Inline code is short, so only the last 200 characters before the value are looked at, which keeps
+  // a long line quick.
+  const INLINE_CODE_LOOKBACK = 200;
+  function closeInlineCode(text, m, at) {
+    const value = m[1];
+    let end = value.length;
+    while (end > 0 && ".:!?)".includes(value[end - 1])) end--;
+    let start = end;
+    while (start > 0 && value[start - 1] === "`") start--;
+    if (start === end || start === 0) return m;
+    if (inlineCodeRunsBefore(text, at, end - start) % 2 === 0) return m;
+    return Object.assign(cutValueEnd(m, value.length - start), { closing: value.slice(start) });
+  }
+
+  // Words and a number, or camelCase words, with nothing code writes in them. A setting word ("true", "auto") has
+  // no digit or hump, and a name in code ("hashedPassword", "secretKeyRef", "SecretStr") has a code word in it.
+  const INLINE_CODE_WORD =
+    /^(?:password|passwd|pwd|pass|token|key|ref|input|field|value|hash|hashed|str|string|bytes|name|id|data|arn|type)$/i;
+  // A short word and a short number name a hash, a version or a host ("md5", "kv2", "rc1", "ec2", "sha256"), as do
+  // a few longer ones ("oauth2", "http2", "base64").
+  const INLINE_CODE_NUMBER = /^(?:\p{L}{1,3}|oauth|https?|base|argon|pbkdf|bcrypt)[-_.]?\d{1,3}$/iu;
+  // A camelCase name that ends in Secret names one ("clientSecret", "jwtSecret"), unless a word like "my" or "top"
+  // makes it a phrase. Under a password's name the same shape is the password ("ourSecret").
+  const inlineSecretName = (value) =>
+    /\p{Ll}Secrets?$/u.test(value) && !/^(?:my|top|big|super|ultra|very|deep|dark|little)Secret$/.test(value);
+  // The shape's reading under a setting's name: "password" under a password's own name, "points" under its .ref or
+  // .arn, "other" under the rest. Under .ref or .arn the shapes read as they do under the password's own name, but a
+  // camelCase name that starts like code ("useMemo", "configMap") says where the secret is.
+  const INLINE_CODE_START =
+    /^(?:use|get|set|is|has|fetch|read|load|make|create|init|handle|on|to|from|with|config)\p{Lu}/u;
+  function inlinePasswordShape(value, under = "other") {
+    if (!/^[\p{L}\p{N}._-]+$/u.test(value)) return false;
+    if (/\p{L}[-_.]?\d+$/u.test(value)) return !INLINE_CODE_NUMBER.test(value);
+    if (!/^\p{Ll}+(?:\p{Lu}\p{Ll}+)+$/u.test(value)) return false;
+    if (/\p{Ll}Secrets?$/u.test(value) && under !== "other") return true;
+    if (inlineSecretName(value) || (under === "points" && INLINE_CODE_START.test(value))) return false;
+    return !value.split(/(?=\p{Lu})/u).some((word) => INLINE_CODE_WORD.test(word));
+  }
+
+  // The label's match with its last `cut` characters left off, from the value and from the whole match.
+  function cutValueEnd(m, cut) {
+    return Object.assign([m[0].slice(0, -cut), m[1].slice(0, -cut)], { index: m.index });
+  }
+
+  // A label written inside an XML or HTML element ("<note>password: …</note>") has the element's closing tag right
+  // after its value. When the label sits inside an element of that name, the value ends at that tag. A closing tag
+  // with no element of its name open before the label stays in the value.
+  const CLOSING_TAG = /<\/([A-Za-z_][\w.:-]*)>/;
+  function closeElement(text, m) {
+    const tag = CLOSING_TAG.exec(m[1]);
+    if (!tag || tag.index === 0 || !insideElement(text, m.index, tag[1])) return m;
+    return cutValueEnd(m, m[1].length - tag.index);
+  }
+
+  // Whether an element of this name is still open at `at`, counting its opening and closing tags in the last
+  // INLINE_CODE_LOOKBACK characters. A self-closing tag (<note/>) opens nothing.
+  function insideElement(text, at, name) {
+    const tags = new RegExp(String.raw`<(/?)${name.replace(/\./g, "\\.")}(?:\s[^<>]*)?>`, "g");
+    let depth = 0;
+    for (const tag of text.slice(Math.max(0, at - INLINE_CODE_LOOKBACK), at).matchAll(tags)) {
+      if (tag[1]) depth = Math.max(0, depth - 1);
+      else if (!tag[0].endsWith("/>")) depth++;
+    }
+    return depth > 0;
+  }
+
+  // In an ARN, the word after the account number is the resource's type, not a label: the "secret:" in
+  // "arn:aws:secretsmanager:us-east-1:123456789012:secret:prod/db-AbCdEf" names a Secrets Manager secret, and what
+  // follows is its name. The partition, service and region are read as AWS writes them, and the region or account
+  // can be empty. In an ARN the name follows its type's ":" with no space, so "secret: …" after one is still a label.
+  const ARN_HEAD = /\barn:aws[a-z-]*:[a-z0-9-]+:[a-z0-9-]*:(?:\d{12})?:$/;
+  function labelInArn(text, m) {
+    const written = m[0].slice(0, m[0].length - m[1].length);
+    return written.endsWith(":") && ARN_HEAD.test(text.slice(Math.max(0, m.index - 80), m.index));
+  }
+
+  // Each match of a label pattern in `source`, in order, leaving out an ARN's resource type. That match's value is the
+  // ARN's name and whatever is joined to it. When the value holds a character a secret's name can't, something is
+  // joined to the name, so the scan looks inside the value for a label that starts anywhere, even mid-word:
+  // "…:secret:prod-AbCdEf&password=…" or "…:secret:prod-AbCdEfpassword=…" gives the "password=…" after the name.
+  // A value a name can hold ("…:secret:app/api_key=v2-AbCdEf") is the name alone and stays quiet.
+  function* labelMatches(text, source, re) {
+    const pattern = new RegExp(re.source, re.flags);
+    const anywhere = new RegExp(re.source.replace(/^\\b/, ""), re.flags);
+    let skipped = null;
+    for (let m; (m = pattern.exec(source));) {
+      while (m && labelInArn(text, m)) {
+        skipped = m;
+        m = labelInValue(source, anywhere, m);
+      }
+      if (!m) continue;
+      if (skipped && escapedInArnRun(text, skipped, m)) m.arn = skipped;
+      skipped = null;
+      yield m;
+      pattern.lastIndex = m.index + m[0].length;
+    }
+  }
+
+  // A Secrets Manager name holds only letters, digits and /_+=.@-
+  const NOT_IN_SECRET_NAME = /[^\w/+=.@-]/;
+  // The first label match that starts inside `m`'s value, or null.
+  function labelInValue(source, anywhere, m) {
+    if (!NOT_IN_SECRET_NAME.test(m[1])) return null;
+    const end = m.index + m[0].length;
+    anywhere.lastIndex = end - m[1].length;
+    const next = anywhere.exec(source);
+    return next && next.index < end ? next : null;
+  }
+
+  // Whether label match `m`, after a skipped ARN, has a value ending in the backslash that opens escaped text
+  // ('"SecretString":"{\"password\":…') inside the run wholeValue reads from the ARN's name. A reader that finds
+  // nothing under that label then reads the ARN's run as a value.
+  function escapedInArnRun(text, arn, m) {
+    if (!m[1].endsWith("\\")) return false;
+    const at = arn.index + arn[0].length - arn[1].length;
+    return m.index + m[0].length < at + wholeValue(text, at, arn[1]).length;
+  }
+
+  // Reads a label's value without the closing marks of the inline code or element the label was written in. When the
+  // value without the element's tag reads as nothing, it's read with the tag on, so a value that was found
+  // only with its tag ("<note>pin: 12</note>") is still found. `count` is how many values the reader has found so far.
+  // A value another kind already reported with its tag on (`owned`) keeps the tag too, so the two kinds agree on it.
+  function readClosed(text, labelMatch, at, read, count, owned = () => false) {
+    const inCode = closeInlineCode(text, labelMatch, at);
+    const m = closeElement(text, inCode);
+    if (m === inCode || owned(inCode[1])) {
+      read(inCode);
+      return;
+    }
+    const before = count();
+    read(m);
+    if (count() === before) read(inCode);
+  }
+
+  // Counts the runs of exactly `width` backticks on the value's line, up to INLINE_CODE_LOOKBACK characters back.
+  function inlineCodeRunsBefore(text, at, width) {
+    let runs = 0;
+    let run = 0;
+    for (let i = at - 1; i >= Math.max(0, at - INLINE_CODE_LOOKBACK) && text[i] !== "\n"; i--) {
+      if (text[i] === "`") {
+        run++;
+        continue;
+      }
+      if (run === width) runs++;
+      run = 0;
+    }
+    return run === width ? runs + 1 : runs;
+  }
+
   function wholeValue(text, at, value) {
     const open = text[at - 1];
     const close = QUOTE_CLOSE[open];
@@ -7536,7 +7877,8 @@
           continue;
         }
         const end = escaped ? text[i] === "\\" && text[i + 1] === close : text[i] === close;
-        if (!end || !/^(?:$|[\s,;.:!?)\]}>])/u.test(text.slice(i + (escaped ? 2 : 1), i + (escaped ? 3 : 2)))) continue;
+        const after = text.slice(i + (escaped ? 2 : 1), i + (escaped ? 3 : 2));
+        if (!end || !/^(?:$|[\s,;.:!?)\]}>`])/u.test(after)) continue;
         const inner = text.slice(at, i);
         if (!/\s/.test(inner)) return inner.length > value.length ? inner : value;
         const words = inner.toLowerCase().split(/\s+/);
@@ -7769,10 +8111,16 @@
   });
   const CONFUSABLE_LABEL_CHARS = new RegExp(`[${Object.keys(CONFUSABLE_LABELS).join("")}]`, "g");
   const CONFUSABLE_LABEL_CHAR = new RegExp(`[${Object.keys(CONFUSABLE_LABELS).join("")}]`);
-  function forConfusableLabelMatches(source, re, visit, hasConfusableLabel = CONFUSABLE_LABEL_CHAR.test(source)) {
+  function forConfusableLabelMatches(
+    source,
+    re,
+    visit,
+    hasConfusableLabel = CONFUSABLE_LABEL_CHAR.test(source),
+    matches = (_text, folded, pattern) => folded.matchAll(pattern),
+  ) {
     if (!hasConfusableLabel) return;
     const folded = source.replace(CONFUSABLE_LABEL_CHARS, (ch) => CONFUSABLE_LABELS[ch]);
-    for (const m of folded.matchAll(re)) {
+    for (const m of matches(source, folded, re)) {
       const at = m.index + m[0].length - m[1].length;
       if (!CONFUSABLE_LABEL_CHAR.test(source.slice(m.index, at))) continue;
       const original = Array.from(m);
@@ -7830,9 +8178,22 @@
     /^[a-z]+(?:[-_.][a-z]+)+$/.test(v) && !v.split(/[-_.]/).some((w) => SECRET_WORD_AT_END.exec(w)?.index === 0);
   // Whether a value reads under a dotted role word: as it reads under any role word, or under .value as joined words.
   const dottedValueReads = (role, v) => roleNameValueReads(v, role) || (role === "holds" && joinedPassphrase(v));
+  // An unquoted SecretString value that names the secret rather than holds it: a file the CLI reads (file://…), a key
+  // on the next line (Fn::Sub:, Ref:), a date or a time from a log, or a word with no digit, like a variable in an SDK
+  // call (creds_json) or a type, less the brackets that close the call.
+  const secretStringNotValue = (text, m, at, v) =>
+    /secretstring/i.test(m[0].slice(0, at - m.index)) &&
+    !QUOTE_CLOSE[text[at - 1]] &&
+    !/[?&]/.test(text[m.index - 1] || "") &&
+    (/^[a-z][a-z0-9+.-]*:\/\//i.test(v) ||
+      /:$/.test(v) ||
+      /^\d{1,4}([-/.:])\d{1,2}(?:\1\d{1,4})?(?:T[\d:.]+Z?)?$/.test(v) ||
+      plainName(v.replace(/[)\]}]+$/, "")));
   // Reads settings with a password-like label, as in "password: …" or "token = …", including a scheme's credential.
   function readLabelledSettings({
     text,
+    foundCount,
+    theirs,
     inTwilio,
     labelTwilio,
     labelHasConfusableLabel,
@@ -7840,6 +8201,7 @@
     addWhole,
     passphraseAt,
     valueStart,
+    dropClosing,
   }) {
     // Qt's PASS result lines can look like `PASS : TestCipher::testRoundTrip(QByteArray, 42)`. Neutralize only
     // that label at the same length, so a password later on the line (including a test argument) still gets checked.
@@ -7847,11 +8209,44 @@
       /^[\t ]*(?:>[\t ]*)?PASS(?=\s*:\s*Test[\w.$]*::test[\w$]*\()/gm,
       (match) => `${match.slice(0, -4)}    `,
     );
-    const labelledSecret = (m) => {
+    const labelledSecret = (labelMatch) => {
+      const before = foundCount();
+      readClosed(text, labelMatch, valueStart(labelMatch), readSecret, foundCount, (v) => theirs.has(v));
+      if (foundCount() === before) readWithClosing(labelMatch);
+      // A label after an ARN's name whose escaped value reads nothing leaves the ARN's run to read.
+      if (labelMatch.arn && foundCount() === before) labelledSecret(labelMatch.arn);
+    };
+    // A password in inline code that is words and a number ("jordan-4417") or camelCase words ("myMonkey"), and
+    // reads as nothing without its closing backticks, is judged with them on, as it was before inline code was
+    // read, and found without them.
+    const readWithClosing = (labelMatch) => {
+      const inCode = closeInlineCode(text, labelMatch, valueStart(labelMatch));
+      const under = inCode.closing && inlineUnder(labelName(labelMatch[0]));
+      if (!under || !inlinePasswordShape(inCode[1], under)) return;
+      const before = foundCount();
+      readSecret(labelMatch);
+      dropClosing(before, inCode.closing);
+    };
+    // How a setting's name reads the shape (inlinePasswordShape): "password" when its last word, less any role
+    // words joined with "_" or "-" (db_password, DB_PASSWORD, password_ref), is a password's, or before a dotted
+    // .value (db.password.value); "points" under a password's dotted .ref or .arn; "other" for any other plain name.
+    // Under any other dotted role word (token.value, secret.ref) the shapes are code names ("useState",
+    // "staging2"), so they aren't read this way.
+    const inlineUnder = (name) => {
+      const dotted = DOTTED_ROLE_NAME.exec(name);
+      const words = (dotted ? name.slice(0, dotted.index) : name).split(/[._-]+|(?<=\p{Ll})(?=\p{Lu})/u);
+      while (!dotted && words.length > 1 && NAME_ROLE_WORDS.has(words[words.length - 1].toLowerCase())) words.pop();
+      const password = PASSWORD_WORDS.has(words.pop().toLowerCase());
+      if (!dotted) return password ? "password" : "other";
+      if (!password) return null;
+      return nameRole(dotted[0]) === "holds" ? "password" : "points";
+    };
+    const readSecret = (m) => {
       const at = valueStart(m);
       if (inTwilio(at, at + m[1].length)) return;
       if (isProviderCredentialLabel(m[0], labelTwilio, m[1], at)) return;
       const whole = wholeValue(text, at, m[1]);
+      if (secretStringNotValue(text, m, at, whole)) return;
       const setting = { name: labelName(m[0]), from: m.index, labelPart: m[0].slice(0, m[0].length - m[1].length) };
       // Under a dotted role word (db.password.ref=…) the value reads under it. Under .value, small words joined like
       // a passphrase read too, as db.password=… reads them. Under .ref, .reference or .arn they name where the secret
@@ -7889,8 +8284,8 @@
       }
       if (!addWhole(m, true)) passphraseAt(at);
     };
-    for (const m of labelledSecretText.matchAll(LABELLED_SECRET)) labelledSecret(m);
-    forConfusableLabelMatches(text, LABELLED_SECRET, labelledSecret, labelHasConfusableLabel);
+    for (const m of labelMatches(text, labelledSecretText, LABELLED_SECRET)) labelledSecret(m);
+    forConfusableLabelMatches(text, LABELLED_SECRET, labelledSecret, labelHasConfusableLabel, labelMatches);
   }
 
   // Reads the credential in an Authorization header.
@@ -7977,20 +8372,110 @@
     for (const cell of csvPasswords(text)) add(cell, true);
   }
 
+  // A list of only joining words, like "and" or "and the" between two labels, holds no code.
+  const JOINING_WORDS = /^(?:(?:and|the|my|our|your)\s*)+$/i;
+  const SPANISH_RECOVERY = /c[oó]digos?\s+de\s+(?:respaldo|recuperaci[oó]n)/i;
+  // A list holds a code-like word when it opens with a digit, has a number of 6 or more digits or two numbers
+  // in a row, or a word mixes a digit with letters or groups joined by "-", as in "kq7m-x4rt". A first word of
+  // 6 or more characters that ends the list or a comma is a code of letters. Words like "not working since
+  // 2024", or a short number and then two or more words, as in "2024 was when it stopped", hold none. Nor does
+  // a lone short number whose list stops at a short word that starts a sentence, as in "2024 is when I printed
+  // them", where `after` is the text right after the list.
+  function codeLike(codes, after = "") {
+    const words = codes.split(/[\s,;]+/);
+    const rest = words.slice(1);
+    const sentence =
+      /^\d{1,4}$/.test(words[0]) &&
+      (rest.length >= 2
+        ? rest.every((w) => /^[A-Za-z]+$/.test(w))
+        : rest.length === 0 && /^\s+[A-Za-z]{1,2}\s+[A-Za-z]/.test(after));
+    if ((/\d/.test(words[0]) && !sentence) || /\d{6}/.test(codes) || /^[^\s,;]{6,}\s*(?:[,;]|$)/.test(codes)) {
+      return true;
+    }
+    if (words.some((w, k) => /^\d+$/.test(w) && /^\d+$/.test(words[k + 1] || ""))) return true;
+    return words.some((w) => (/\d/.test(w) && /[A-Za-z]/.test(w)) || /\w-\w/.test(w));
+  }
+  // A list with no code-like word counts only where a run of words from the first label, read as one list
+  // through any later label, holds a digit and 8 or more characters. That run stops at a short word like "is"
+  // or at a colon, so "backup codes and two-factor codes: not working since 2024" holds no code.
+  function recoveryRuns(text) {
+    return [...text.matchAll(RECOVERY_RUN)]
+      .map((m) => ({ codes: trimTrailing(m[1], /[\s,;]/), from: m.index + m[0].length - m[1].length }))
+      .filter((run) => /\d/.test(run.codes) && run.codes.length >= 8);
+  }
+  // After labels joined by "and" and then a colon or "is", a lone number of up to 4 digits and one word, as in
+  // "backup codes and recovery codes: 2024, when I printed them", is a sentence. So is the number before a word
+  // the list stops short of, after a space or a comma, as in "2024 unfortunately", "2003, remaining" or "2000
+  // más", and a year that ends the text. Any other lone number alone stays a code. After a "código" label, a
+  // number and a word that are 8 or more characters together, as in "<code>, for", is one code, as on its own.
+  function joinedSentence(chain, list, after) {
+    const earlier = chain.slice(0, chain.indexOf(list));
+    if (!earlier.every((other) => JOINING_WORDS.test(other.codes))) return false;
+    if (!/(?:\s(?:is|es)|:)\s*$/i.test(list.head)) return false;
+    if (/^\d{1,4}[\s,;]+[A-Za-z]+$/.test(list.codes)) {
+      return !(SPANISH_RECOVERY.test(list.head) && list.codes.length >= 8);
+    }
+    if (!/^\d{1,4}$/.test(list.codes) || list !== chain[chain.length - 1]) return false;
+    return /^(?:\s+|,\s*)\p{L}{3}/u.test(after) || (/^(?:19|20)\d\d$/.test(list.codes) && /^\s*[.!?]?\s*$/.test(after));
+  }
+  const overlaps = (run, list) => run.from < list.from + list.codes.length && list.from < run.from + run.codes.length;
+
   // Reads codes told after their label, like a remote-access or door code, then session cookies and recovery codes.
   function readCodes({ text, found, add, because }) {
     for (const m of text.matchAll(REMOTE_CODE)) because(add(m[1], false), "remote_code");
-    for (const m of text.matchAll(LOGIN_CODE)) because(add(matched(m), false), "login_code");
+    for (const m of text.matchAll(LOGIN_CODE)) {
+      const code = matched(m);
+      because(add(code, false), "login_code");
+      for (const other of otherCodes(text, m.index, m.index + m[0].length, code)) {
+        because(add(other, false), "login_code");
+      }
+    }
     for (const m of text.matchAll(SESSION_COOKIE)) {
       const v = m[2];
       if (/\d/.test(v) && /[A-Za-z]/.test(v)) add(v, true); // random-looking, not "sessionid=0000000000000000"
     }
-    for (const m of text.matchAll(RECOVERY_CODES)) {
-      const codes = trimTrailing(m[1], /[\s,;]/);
-      if (/\d/.test(codes) && codes.length >= 8) {
-        found.push(codes);
-        because(codes, "recovery_codes");
+    // Lists right beside each other, as in "recovery code 4829 and backup code 5512", are read as one: they count
+    // when together they hold a digit and 8 or more characters, or when a run through them does, and then each
+    // list is found on its own.
+    const toList = (m) => {
+      const from = m.index + m[0].length - m[1].length;
+      const head = text.slice(m.index, from);
+      return { codes: trimTrailing(m[1], /[\s,;]/), from, start: m.index, end: m.index + m[0].length, head };
+    };
+    const lists = [...text.matchAll(RECOVERY_CODES)].map(toList);
+    const starts = new Set(lists.map((list) => list.start));
+    const ends = new Set(lists.map((list) => list.end));
+    for (const m of text.matchAll(RECOVERY_MARKED)) {
+      if (starts.has(m.index)) continue;
+      if (!ends.has(m.index) && !AFTER_LABEL.test(text.slice(Math.max(0, m.index - 80), m.index))) continue;
+      const list = toList(m);
+      // Only joining words, as in "mfa codes, and backup codes", hold no code and join nothing.
+      if (JOINING_WORDS.test(list.codes)) continue;
+      lists.push(list);
+      ends.add(list.end);
+    }
+    lists.sort((a, b) => a.start - b.start);
+    let runs;
+    const beside = (a, b) => /^[\s,;]*(?:(?:and|or|y|e)\s+)?$/i.test(text.slice(a.end, b.start));
+    for (let i = 0; i < lists.length;) {
+      let j = i;
+      while (j + 1 < lists.length && beside(lists[j], lists[j + 1])) j++;
+      const chain = lists.slice(i, j + 1);
+      const all = chain.map((list) => list.codes).join(" ");
+      const inRun = (list) => (runs = runs || recoveryRuns(text)).some((run) => overlaps(run, list));
+      if ((/\d/.test(all) && all.length >= 8) || chain.some(inRun)) {
+        for (const list of chain) {
+          if (JOINING_WORDS.test(list.codes)) continue;
+          // Only the last list of a chain can end a sentence; an earlier one is followed by the next label.
+          const at = list.from + list.codes.length;
+          const after = list === chain[chain.length - 1] ? text.slice(at, at + 40) : "";
+          if (!codeLike(list.codes, after) && !inRun(list)) continue;
+          if (list !== chain[0] && joinedSentence(chain, list, after)) continue;
+          found.push(list.codes);
+          because(list.codes, "recovery_codes");
+        }
       }
+      i = j + 1;
     }
     for (const m of text.matchAll(CODE_TOLD_ES)) {
       because(add(m[1], false), REMOTE_LABEL.test(m[0]) ? "remote_code" : "home_code");
@@ -8082,6 +8567,8 @@
     };
     readLabelledSettings({
       text,
+      foundCount: () => found.length,
+      theirs,
       inTwilio,
       labelTwilio,
       labelHasConfusableLabel,
@@ -8089,6 +8576,13 @@
       addWhole,
       passphraseAt,
       valueStart,
+      // Takes the inline code's closing marks off each value found since `from`.
+      dropClosing: (from, closing) => {
+        for (let i = from; i < found.length; i++) {
+          if (found[i].endsWith(closing)) found[i] = found[i].slice(0, -closing.length);
+          else found[i] = found[i].replace(/`+$/, "");
+        }
+      },
     });
     readHeaders({ text, add });
     readToldSecrets({ text, labelHasConfusableLabel, add, addWhole, valueStart, told, because });
@@ -8562,7 +9056,11 @@
   ) {
     const found = [...text.matchAll(SERVICE_TOKEN_RE)].map((m) => m[0]);
     const awsKeys = new Set(findAwsAccessKeys(text));
-    const labelledApiKey = (m) => {
+    const labelledApiKey = (labelMatch) => {
+      const at = labelMatch.index + labelMatch[0].length - labelMatch[1].length;
+      readClosed(text, labelMatch, at, readApiKey, () => found.length);
+    };
+    const readApiKey = (m) => {
       const at = m.index + m[0].length - m[1].length;
       // A provider label only takes this path when its value matches that provider's own token shape.
       if (isProviderCredentialLabel(m[0], inTwilio, m[1], at)) return;
@@ -8619,8 +9117,14 @@
         if (!takenByItsOwnRule(hex)) found.push(hex);
         return;
       }
-      const value = secretValue(raw, true, 16);
-      if (value && (!publicKey || value.length <= 128) && keyLike(value) && !awsKeys.has(value)) found.push(value);
+      // A key in inline code is judged with the code's closing backticks still on, as it was before inline code was
+      // read, so they count toward its length. The key is found without them.
+      const closing = m.closing || "";
+      const value = secretValue(raw, true, closing ? 4 : 16);
+      const judged = closing ? secretValue(raw + closing, true, 16) : value;
+      if (value && judged && (!publicKey || judged.length <= 128) && keyLike(judged) && !awsKeys.has(value)) {
+        found.push(value);
+      }
     };
     for (const m of text.matchAll(LABELLED_API_KEY)) labelledApiKey(m);
     forConfusableLabelMatches(text, LABELLED_API_KEY, labelledApiKey, hasConfusableLabel);
@@ -8731,13 +9235,59 @@
   const PASSWORD_MARK = /[!#%^&*?~]/;
   // Whether a camelCase password, secret or token setting (dbPassword, passwordRef, clientSecret, accessToken) holds
   // something without a real password's shape. Only a value with a digit and a password's mark, or a random key, is
-  // read there. Anything else is most often a name (pg-creds-v2, vault:secret/data/db1, orders-db-2024).
-  function camelPasswordLacksShape(kind, value) {
+  // read there. Anything else is most often a name (pg-creds-v2, vault:secret/data/db1, orders-db-2024). A version
+  // range or a hash's digest is a name too, and the marks that join a name's parts (camelMarkText) don't count.
+  // `quoted` is whether the value sits in quotes or right after an XML tag's ">", where YAML can't read an alias.
+  function camelPasswordLacksShape(kind, value, quoted = false) {
     if (kind !== "password") return false;
-    // In a link (ref+awssecrets://prod/db1#password) the "#" starts the part of the link after it.
-    const marked = PASSWORD_MARK.test(/:\/\//.test(value) ? value.replace(/#[^#]*$/, "") : value);
-    return !(/\d/.test(value) && marked) && !camelRandomKey(value);
+    if (VERSION_RANGE.test(value) || HASH_DIGEST.test(value)) return true;
+    return lacksPasswordShape(value, quoted);
   }
+  const lacksPasswordShape = (value, quoted) =>
+    !(/\d/.test(value) && PASSWORD_MARK.test(camelMarkText(value, quoted))) && !camelRandomKey(value);
+  // A version range: ^2.3.1, ~1.4.0, >=3.2.0 <4.0.0, ^0.9.2 || ^1.0.0.
+  const VERSION_RANGE = /^(?:(?:[~^]|[<>]=?|=)?v?\d+(?:\.(?:\d+|[xX*])){1,3}(?:-[\w.]+)?(?:\s*\|\|\s*|\s+|$))+$/;
+  // A hash's digest, alone or after an image's name: sha256: and 64 hex, app@sha256:…
+  const HASH_DIGEST = /^(?:[\w./:-]+@)?(?:sha\d{1,3}|md5):[0-9a-f]{32,128}$/i;
+  // The part of a value whose marks count. These marks join a name's parts rather than a password's: in a link,
+  // what follows "#", and a query after its host (camelLinkMarkText); an encoded "/" in a lowercase name
+  // (secret%2Fdb-2); "~/" at the start of a path to a dotfile, a folder or a file with an extension (~/.pgpass2,
+  // ~/secrets/client2.json); and "*" before a YAML alias's name (*db_password_1, camelAliasName). A "#" between
+  // two words still counts: welcome#pass_1 and dogs-rule#password1 are weak passwords, and a Secret's name and key
+  // (db-secret#password2) have the same shape, so both are found, as on 1.6.2.
+  function camelMarkText(value, quoted) {
+    if (/:\/\//.test(value)) return camelLinkMarkText(value);
+    const v = value
+      .replace(/^[a-z0-9]+(?:(?:[-_.]|%2[Ff])[a-z0-9]+)+$/, (name) => name.replace(/%2F/gi, "/"))
+      .replace(/^~\/(?=\.|[\w.-]+\/|[\w-]+\.\w)/, "/");
+    if (camelAliasName(v, quoted)) return v.slice(1);
+    return v;
+  }
+  // Whether a value starting with "*" reads as a YAML alias's name. Bare, any name with two parts or more does
+  // (*defaults_2). In quotes YAML reads no alias, and JSON and XML have none, so there a "*" value is the password
+  // itself (*secret-123, *super_secret_1).
+  function camelAliasName(value, quoted) {
+    return !quoted && /^\*[A-Za-z][A-Za-z0-9]*(?:[_.-][A-Za-z0-9]+)+$/.test(value);
+  }
+  // A link's part whose marks count: what precedes "#", without the query after the host when no parameter there is
+  // named for a secret and each parameter holds a name or a version (queryNamesSomething: vault://kv/db?version=3,
+  // ?rev=4&env=prod). A value like hunter-42 under any parameter or Maple47!qz keeps the query, and its "?" counts.
+  function camelLinkMarkText(value) {
+    const v = value.replace(/#[^#]*$/, "");
+    const host = v.indexOf("/", v.lastIndexOf("@") + 1 || v.indexOf("://") + 3);
+    if (host < 0 || /[?&;][\w.-]*(?:pass|pwd|secret|token|key|auth)[\w.-]*=/i.test(v)) return v;
+    const query = /\?(.*)$/.exec(v.slice(host));
+    if (!query || !query[1].split(/[&;]/).every(queryNamesSomething)) return v;
+    return v.slice(0, host + query.index);
+  }
+  // Whether a query's parameter holds a name or a version rather than a password: a number or a version (2, v2,
+  // 1.4.0) or words with no digit (prod, us-east). Words and numbers mixed (prod-2, hunter-42) read as a password
+  // under any parameter.
+  const queryNamesSomething = (param) =>
+    /^(?:v?\d+(?:\.\d+)*|[A-Za-z]+(?:[-_.][A-Za-z]+)*)?$/.test(param.slice(param.indexOf("=") + 1));
+  const pascalPasswordShape = (value) =>
+    (/\d/.test(value) && PASSWORD_MARK.test(value)) ||
+    (camelRandomKey(value) && /[a-z]/.test(value) && /[A-Z]/.test(value));
   // A random key's shape: an unbroken run of 16 or more letters, digits and base64 marks that keyLike takes, where
   // letters and digits swap places at least three times. A name with a version or a year (my-release-postgresql-0,
   // keycloak-admin-1, myapp2024production) swaps once or twice.
