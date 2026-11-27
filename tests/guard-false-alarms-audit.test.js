@@ -299,3 +299,222 @@ test("prose starting with Copy in a here-string isn't read as a copy of the file
     assertBlocked(root, command, "Cursor");
   }
 });
+
+// A wildcard that starts with a letter is looked up in its folder, like `*.json` is, so it's stopped only when a file
+// it matches there is a secret file. `config*` could name `.kube/config` by its last part, but this folder has none.
+function plainProject(t) {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "clotr-plain-"));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  fs.mkdirSync(path.join(root, "src"));
+  for (const name of ["package.json", "tsconfig.json", "config.json", "notes.txt", "src/config.ts", "src/server.js"]) {
+    fs.writeFileSync(path.join(root, name), "{}\n");
+  }
+  return root;
+}
+
+const LETTER_WILDCARDS = [
+  ["cat config*", "Bash"],
+  ["cat src/config.*", "Bash"],
+  ["grep -n foo c*.json", "Bash"],
+  ["cat p*", "Bash"],
+  ["Get-Content c*.json", "PowerShell"],
+  ["type c*.json", "Cursor"],
+];
+
+test("a letter-led wildcard runs in a folder with no secret file", (t) => {
+  const root = plainProject(t);
+  for (const [command, toolName] of LETTER_WILDCARDS) assertAllowed(root, command, toolName);
+  assertAllowed(root, "cat *.json", "Bash");
+});
+
+test("a letter-led wildcard is stopped where it matches a secret file", (t) => {
+  const root = plainProject(t);
+  fs.writeFileSync(path.join(root, "config"), "token: made-up\n");
+  fs.writeFileSync(path.join(root, "credentials.json"), "{}\n");
+  fs.writeFileSync(path.join(root, "prod.pem"), "made-up\n");
+  fs.writeFileSync(path.join(root, ".env"), "SAMPLE=placeholder\n");
+  fs.mkdirSync(path.join(root, "src", ".kube"));
+  fs.writeFileSync(path.join(root, "src", ".kube", "config"), "token: made-up\n");
+  fs.writeFileSync(path.join(root, "src", "config.pem"), "made-up\n");
+  // The same six forms, each matching a secret file here.
+  const kube = path.join(root, "src", ".kube");
+  assertBlocked(kube, "cat config*", "Bash");
+  assertBlocked(root, "cat src/config.*", "Bash");
+  assertBlocked(root, "grep -n foo c*.json", "Bash");
+  assertBlocked(root, "cat p*", "Bash");
+  assertBlocked(root, "Get-Content c*.json", "PowerShell");
+  assertBlocked(root, "type c*.json", "Cursor");
+  assertBlocked(root, "cat c*", "Bash");
+  assertBlocked(root, "cat .e*", "Bash");
+  assertBlocked(root, "cat .e*", "PowerShell");
+});
+
+// A commit message is text git stores, so a reader's name in it runs nothing. Each form of the message switch, in
+// each shell's quotes.
+const COMMIT_MESSAGES = [
+  ["Bash", 'git commit -m "config: read PORT once; type .env values as strings"'],
+  ["Bash", 'git commit -m "refactor: split the loader (source .env once at start)"'],
+  ["Bash", "git commit -m 'docs: say why `cat .env` is stopped'"],
+  ["Bash", "git commit -m 'docs: copy the example first; cat .env is stopped'"],
+  ["Bash", 'git commit --message "docs: setup; cat .env stays out"'],
+  ["Bash", 'git commit --message="docs: setup; cat .env stays out"'],
+  ["Bash", 'git commit -m"docs: setup; cat .env stays out"'],
+  ["Bash", 'git commit -am "docs: setup; cat .env stays out"'],
+  ["Bash", 'git add -A && git commit -m "fix: one; head .env" -m "and two (tail .env)" && git push'],
+  ["Bash", 'git -C src commit -m "docs: setup; cat .env stays out"'],
+  ["PowerShell", 'git commit -m "docs: setup; gc .env stays out"'],
+  ["PowerShell", "git commit -m 'docs: say why `cat .env` is stopped'"],
+  ["PowerShell", "git commit -m 'it''s fine; gc .env is stopped'"],
+  ["Cursor", 'git commit -m "config: read PORT once; type .env values as strings"'],
+  ["Cursor", 'git commit -m "docs: setup ^& type .env" ^& echo done'],
+];
+
+test("a reader's name in a git commit message isn't read as a command", (t) => {
+  const root = project(t);
+  for (const [toolName, command] of COMMIT_MESSAGES) assertAllowed(root, command, toolName);
+});
+
+test("$( ) and backticks in a double-quoted commit message still stop when they read a secret file", (t) => {
+  const root = project(t);
+  for (const toolName of ["Bash", "Cursor"]) {
+    assertBlocked(root, 'git commit -m "notes: $(cat .env)"', toolName);
+    assertBlocked(root, 'git commit -m "notes: `cat .env`"', toolName);
+    assertBlocked(root, 'git commit -m "notes; $(echo x; cat .env)"', toolName);
+    assertBlocked(root, 'git commit --message="notes ${x:-$(cat .env)}"', toolName);
+  }
+  assertBlocked(root, 'git commit -m "notes: $(Get-Content .env)"', "PowerShell");
+  // An unquoted message switch keeps its `$( )` too, and so does a word outside the message.
+  assertBlocked(root, "git commit -m $(cat .env)", "Bash");
+  assertBlocked(root, 'git commit -m "fine"; cat .env', "Bash");
+  assertBlocked(root, 'git commit -m "fine" && type .env', "Cursor");
+});
+
+test("the same text in a single-quoted commit message runs, as the shell runs nothing there", (t) => {
+  const root = project(t);
+  assertAllowed(root, "git commit -m 'notes: $(cat .env)'", "Bash");
+  assertAllowed(root, "git commit -m 'notes: `cat .env`'", "Bash");
+  assertAllowed(root, "git commit -m 'notes: $(cat .env)'", "PowerShell");
+});
+
+// The message form `-m "$(cat <<'EOF'` … `EOF` ⏎ `)"`: the end word is quoted, so the shell expands nothing in the
+// body, and `cat` with no file prints only the body. A reader's name in it runs nothing.
+const HEREDOC_BODY = "config: read PORT once; type .env values as strings\n\nNote-by: a made-up trailer\n";
+const HEREDOC_MESSAGES = [
+  ["the quoted end word 'EOF'", `git commit -m "$(cat <<'EOF'\n${HEREDOC_BODY}EOF\n)"`],
+  ['the quoted end word "EOF"', `git commit -m "$(cat <<"EOF"\n${HEREDOC_BODY}EOF\n)"`],
+  ["<<-'EOF' with a tab before the end word", `git commit -m "$(cat <<-'EOF'\n\t${HEREDOC_BODY}\tEOF\n)"`],
+  ["another quoted end word 'MSG'", `git commit -m "$(cat <<'MSG'\n${HEREDOC_BODY}MSG\n)"`],
+  ["--message=", `git commit --message="$(cat <<'EOF'\n${HEREDOC_BODY}EOF\n)"`],
+  ["a second -m beside it", `git commit -m "$(cat <<'EOF'\n${HEREDOC_BODY}EOF\n)" -m "and head .env once"`],
+];
+
+for (const [name, command] of HEREDOC_MESSAGES) {
+  test(`a commit message from cat and a quoted here-document runs: ${name}`, (t) => {
+    assertAllowed(project(t), command, "Bash");
+  });
+}
+
+// Anything else in the `$( )` is read as it was: a file for cat, another command, an unquoted end word, or another
+// program.
+const HEREDOC_STOPS = [
+  ["an unquoted end word with $(cat .env)", 'git commit -m "$(cat <<EOF\nnotes: $(cat .env)\nEOF\n)"'],
+  ["an unquoted end word with a backtick reader", 'git commit -m "$(cat <<EOF\nnotes: `cat .env`\nEOF\n)"'],
+  ["cat given a file", `git commit -m "$(cat .env <<'EOF'\nnotes\nEOF\n)"`],
+  ["another command after the end word", `git commit -m "$(cat <<'EOF'\nnotes\nEOF\n; cat .env)"`],
+  ["a second line before )", `git commit -m "$(cat <<'EOF'\nnotes\nEOF\ncat .env\n)"`],
+  ["a body with no end word before )", `git commit -m "$(cat <<'EOF'\nnotes\ncat .env\n)"`],
+  ["sh in place of cat", `git commit -m "$(sh <<'EOF'\ncat .env\nEOF\n)"`],
+  ["bash in place of cat", `git commit -m "$(bash <<'EOF'\ncat .env\nEOF\n)"`],
+  ["a $( ) outside the message", `git commit -m "$(cat <<'EOF'\nnotes\nEOF\n)" $(cat .env)`],
+];
+
+for (const [name, command] of HEREDOC_STOPS) {
+  test(`a commit message's here-document still stops when it reads a secret file: ${name}`, (t) => {
+    assertBlocked(project(t), command, "Bash");
+  });
+}
+
+// In cmd a line break ends the command, so where cmd could run it, a here-document's body is read as it was.
+test("a quoted here-document's body is read as before where cmd could run the command", (t) => {
+  assertBlocked(project(t), `git commit -m "$(cat <<'EOF'\nit's done\ntype .env\nEOF\n)"`, "Cursor");
+});
+
+// In cmd a quote ends where its line ends, so each later line of a quoted message is a command of its own there.
+// Cursor's terminal can be cmd, so a reader on a later line is read as a command for Cursor.
+const CURSOR_LATER_LINES = [
+  ["double quotes", 'git commit -m "tidy\ntype .env\nmore"'],
+  ["double quotes and a ^ on the first line", 'git commit -m "tidy ^ up\ntype .env\nmore"'],
+  ["single quotes", "git commit -m 'tidy\ntype .env\nmore'"],
+];
+
+for (const [name, command] of CURSOR_LATER_LINES) {
+  test(`a reader on a later line of a Cursor commit message is stopped: ${name}`, (t) => {
+    assertBlocked(project(t), command, "Cursor");
+  });
+}
+
+test("a reader on a later line of a Cursor commit message is stopped with CRLF line ends", (t) => {
+  assertBlocked(project(t), 'git commit -m "tidy\r\ntype .env\r\nmore"', "Cursor");
+});
+
+// A lone \r is the Enter key in a terminal, so it ends a line there too.
+const CURSOR_LATER_LINES_CR = [
+  ["double quotes", 'git commit -m "tidy\rtype .env\rmore"'],
+  ["single quotes", "git commit -m 'tidy\rtype .env\rmore'"],
+  ["double quotes and a ^ on the first line", 'git commit -m "tidy ^ up\rtype .env\rmore"'],
+];
+
+for (const [name, command] of CURSOR_LATER_LINES_CR) {
+  test(`a reader on a later line of a Cursor commit message is stopped with lone CR line ends: ${name}`, (t) => {
+    assertBlocked(project(t), command, "Cursor");
+  });
+}
+
+test("Bash and PowerShell still read a commit message over several lines as text", (t) => {
+  const root = project(t);
+  for (const toolName of ["Bash", "PowerShell"]) {
+    assertAllowed(root, 'git commit -m "tidy\ntype .env\nmore"', toolName);
+    assertAllowed(root, "git commit -m 'tidy\ntype .env\nmore'", toolName);
+  }
+});
+
+test("a Cursor commit message over several lines still runs when only its first line names a reader", (t) => {
+  const root = project(t);
+  assertAllowed(root, 'git commit -m "config: type .env values as strings\n\nMore words here."', "Cursor");
+  assertAllowed(root, 'git commit -m "fix: tidy the loader\nand the tests"', "Cursor");
+});
+
+test("a commit message from a quoted here-document that names no reader still runs", (t) => {
+  assertAllowed(
+    project(t),
+    `git commit -m "$(cat <<'EOF'\nfix: tidy the loader\n\nNo reader named here.\nEOF\n)"`,
+    "Bash",
+  );
+});
+
+test("other commands keep reading inside quotes", (t) => {
+  const root = project(t);
+  // A file git commit reads its message from is what it is today, and so is git tag's message.
+  assertAllowed(root, "git commit -F msg.txt", "Bash");
+  assertBlocked(root, 'git tag -m "release; cat .env" v1', "Bash");
+  assertBlocked(root, 'bash -c "git status; cat .env"', "Bash");
+  assertBlocked(root, 'git commit -- "a; cat .env"', "Bash");
+});
+
+// In Bash a here-document inside `$( )` also ends at a line that starts with its end word and goes on with `)`. A
+// command after that line runs, so a body line that starts with the end word but isn't just the end word keeps the
+// whole command read as it was.
+const HEREDOC_EARLY_ENDS = [
+  ["a line EOF) before a reader", `git commit -m "$(cat <<'EOF'\nhi\nEOF)"; cat .env; echo "$(cat <<'EOF'\nEOF\n)"`],
+  ["a line EOF ) before a reader", `git commit -m "$(cat <<'EOF'\nhi\nEOF )"; cat .env; echo "$(cat <<'EOF'\nEOF\n)"`],
+  [
+    "<<-'EOF' with a tab, then EOF) before a reader",
+    `git commit -m "$(cat <<-'EOF'\n\thi\n\tEOF)"; cat .env; echo "$(cat <<-'EOF'\n\tEOF\n)"`,
+  ],
+];
+
+for (const [name, command] of HEREDOC_EARLY_ENDS) {
+  test(`a here-document that ends early on its end word still stops a reader after it: ${name}`, (t) => {
+    assertBlocked(project(t), command, "Bash");
+  });
+}

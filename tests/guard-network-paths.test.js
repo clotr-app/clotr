@@ -129,12 +129,12 @@ test("is_secret_file answers at once for an ordinary file on another computer, a
     "\\\\attacker.example\\s\\notes.md",
     "//attacker.example/s/readme.txt",
   ]) {
-    const started = Date.now();
-    const result = untouched(value, () => callTool("is_secret_file", { path: value }));
-    const elapsed = Date.now() - started;
-    assert.deepEqual(result, { is_secret_file: false }, value);
-    // Well under a millisecond by name; a lookup of a host that doesn't answer took about 21 seconds.
-    assert.ok(elapsed < 1000, `${value} took ${elapsed} ms`);
+    // untouched fails on any lookup, the call that took about 21 seconds for a host that doesn't answer.
+    assert.deepEqual(
+      untouched(value, () => callTool("is_secret_file", { path: value })),
+      { is_secret_file: false },
+      value,
+    );
   }
 });
 
@@ -153,13 +153,11 @@ const VOLUME_PATHS = ["/Volumes/attacker.example/notes.md", "/volumes/./attacker
 
 test("is_secret_file judges a /net automount path and a /Volumes path by name, without the disk", () => {
   for (const value of [...AUTOMOUNT_PATHS, ...VOLUME_PATHS]) {
-    const started = Date.now();
     assert.deepEqual(
       untouched(value, () => callTool("is_secret_file", { path: value })),
       { is_secret_file: false },
       value,
     );
-    assert.ok(Date.now() - started < 1000, value);
     assert.deepEqual(
       untouched(value, () => callTool("is_secret_file", { path: value.replace("notes.md", ".env") })),
       { is_secret_file: true },

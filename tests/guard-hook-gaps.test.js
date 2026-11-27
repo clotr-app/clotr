@@ -17,6 +17,14 @@ if (!fs.existsSync(path.join(GUARD_DIR, "dist", "clotr-engine.js"))) {
   assert.strictEqual(built.status, 0, built.stderr);
 }
 const guard = require("../apps/guard/bin/clotr-guard.js");
+const { countingLookups } = require("./guard-lookups.js");
+const {
+  quotedSeparatorShell,
+  blankSpaceCommands,
+  dottedOperandCommands,
+  quotedRunCommands,
+} = require("./guard-shell.js");
+const { DEADLINE_PRELOAD, recordLongTimers, readLongTimers, assertDeadlineKept } = require("./guard-stand-in-clock.js");
 // Tests that aren't about the search check's time limit give it time to finish on a busy machine.
 const inspectRead = (tool, event, options) => guard.inspectRead(tool, event, { searchWalkMaxMs: 10000, ...options });
 
@@ -410,73 +418,520 @@ test("check reads a UTF-16 file the way it reads UTF-16 on stdin", (t) => {
   assert.equal(binary.status, 2, "bytes that aren't text can't be checked");
 });
 
+const AWS_LINE = `aws_access_key_id = ${["AKIA", "4HPQ7XZ2", "R6TWLJ3N"].join("")}`;
+
+// A file that isn't clean text was answered "couldn't check" with exit 2, so a script that stops only on exit 1 let a
+// key in it through.
+test("check reports a key in a file with stray control bytes, and can't check only a file where none is found", (t) => {
+  const root = tempDir(t);
+  const script = path.join(GUARD_DIR, "bin", "clotr-guard.js");
+  const run = (...args) => spawnSync(process.execPath, [script, "check", ...args], { cwd: root, encoding: "utf8" });
+  const line = Buffer.from(`${AWS_LINE}\n`);
+  const sqlite = Buffer.alloc(4096);
+  Buffer.from("SQLite format 3\0").copy(sqlite, 0);
+  sqlite.writeUInt16BE(4096, 16);
+  line.copy(sqlite, 2048);
+  const shapes = {
+    "UTF-8 text with a stray NUL": Buffer.concat([Buffer.from("notes\n"), Buffer.from([0]), line]),
+    "a database page holding a key": sqlite,
+    "single-byte text with control bytes": Buffer.concat([line, Buffer.from([1, 2, 0xe9, 0x0a])]),
+  };
+  for (const [shape, bytes] of Object.entries(shapes)) {
+    fs.writeFileSync(path.join(root, "blob.dat"), bytes);
+    const json = run("--json", "blob.dat");
+    assert.equal(json.status, 1, `${shape}: ${json.stderr}`);
+    assert.deepEqual(
+      JSON.parse(json.stdout).findings.map((finding) => finding.kind),
+      ["aws_access_key"],
+      shape,
+    );
+    const plain = run("blob.dat");
+    assert.equal(plain.status, 1, shape);
+    assert.match(plain.stdout, /aws_access_key/, shape);
+    assert.doesNotMatch(plain.stdout, /R6TWLJ3N/, shape);
+  }
+  fs.writeFileSync(path.join(root, "blob.dat"), Buffer.concat([Buffer.from("notes\n"), Buffer.from([0, 1, 2])]));
+  const clean = run("blob.dat");
+  assert.equal(clean.status, 2, "a file that isn't text, with nothing found, isn't called clean");
+  assert.equal(clean.stdout, "");
+  assert.match(clean.stderr, /couldn't check/);
+});
+
+// Read as UTF-8, a compressed or compiled file is mostly broken and control characters, where loose patterns turn up
+// findings that aren't there.
+test("check says it can't check a file of mostly binary bytes, instead of listing findings that aren't there", (t) => {
+  const root = tempDir(t);
+  const script = path.join(GUARD_DIR, "bin", "clotr-guard.js");
+  // The same bytes every run: a small linear congruential generator.
+  let seed = 12345;
+  const noise = Buffer.alloc(1024 * 1024 - 64);
+  for (let i = 0; i < noise.length; i++) {
+    seed = (Math.imul(seed, 1103515245) + 12345) >>> 0;
+    noise[i] = seed >>> 24;
+  }
+  for (const [name, bytes] of Object.entries({
+    "noise.bin": noise,
+    "noise-and-key.bin": Buffer.concat([noise.subarray(0, 4096), Buffer.from(`\n${AWS_LINE}\n`), noise.subarray(4096)]),
+    "zeros.bin": Buffer.alloc(4096),
+  })) {
+    fs.writeFileSync(path.join(root, name), bytes);
+    const out = spawnSync(process.execPath, [script, "check", name], { cwd: root, encoding: "utf8" });
+    assert.equal(out.status, 2, `${name}: ${out.stdout}`);
+    assert.equal(out.stdout, "", name);
+    assert.match(out.stderr, /couldn't check/, name);
+  }
+});
+
+// Windows PowerShell 5.1's `>` writes UTF-16, and `cmd /c echo ... >>`, Node or Python then add UTF-8 lines, which a
+// UTF-16 reading turns into other letters.
+function utf16WithUtf8Line(line) {
+  const u16 = (text) => Buffer.from(text, "utf16le");
+  return {
+    "UTF-16LE with a mark, then a UTF-8 line": Buffer.concat([
+      Buffer.from([0xff, 0xfe]),
+      u16("log start\r\n"),
+      Buffer.from(`${line}\n\n`),
+    ]),
+    "UTF-16LE without a mark, then a UTF-8 line": Buffer.concat([
+      u16("log start one\r\nlog start two\r\nlog start three, a longer line of notes\r\n"),
+      Buffer.from(`${line}\n`),
+    ]),
+    "a mark, then UTF-8": Buffer.concat([Buffer.from([0xff, 0xfe]), Buffer.from(`${line}\n`)]),
+    "UTF-16BE with a mark, then a UTF-8 line": Buffer.concat([
+      Buffer.from([0xfe, 0xff]),
+      Buffer.from(u16("log start\r\n")).swap16(),
+      Buffer.from(`${line}\n\n`),
+    ]),
+  };
+}
+
+test("check, the read hook and the commit check find a key in a UTF-8 line added to a UTF-16 file", (t) => {
+  const script = path.join(GUARD_DIR, "bin", "clotr-guard.js");
+  for (const [shape, bytes] of Object.entries(utf16WithUtf8Line(AWS_LINE))) {
+    const root = commitRepo(t);
+    const file = path.join(root, "log.txt");
+    fs.writeFileSync(file, bytes);
+    const out = spawnSync(process.execPath, [script, "check", "--json", file], { cwd: root, encoding: "utf8" });
+    assert.equal(out.status, 1, `${shape}: ${out.stderr}`);
+    assert.deepEqual(
+      JSON.parse(out.stdout).findings.map((finding) => finding.kind),
+      ["aws_access_key"],
+      shape,
+    );
+    const read = inspectRead("claude", { tool_name: "Read", tool_input: { file_path: file } }, { cwd: root });
+    assert.equal(read.action, "block", shape);
+    git(root, ["add", "log.txt"]);
+    assert.deepEqual(
+      guard.checkStaged({ cwd: root }).issues.map((issue) => issue.kind),
+      ["aws_access_key"],
+      shape,
+    );
+  }
+  // A UTF-16 file alone, its letters all beside a zero byte, has no other reading to add.
+  const root = tempDir(t);
+  const file = path.join(root, "notes.txt");
+  fs.writeFileSync(
+    file,
+    Buffer.concat([Buffer.from([0xff, 0xfe]), Buffer.from("plain notes, é and ü\r\n", "utf16le")]),
+  );
+  const out = spawnSync(process.execPath, [script, "check", "--json", file], { cwd: root, encoding: "utf8" });
+  assert.equal(out.status, 0, out.stderr);
+  assert.equal(
+    inspectRead("claude", { tool_name: "Read", tool_input: { file_path: file } }, { cwd: root }).action,
+    "allow",
+  );
+});
+
+// A UTF-8 line with an odd number of bytes leaves a UTF-16 file a byte past its last whole letter. Such a file was
+// read as its UTF-8 line alone, so a key in the UTF-16 part passed, and check called the file clean.
+function utf16WithOddLine(line, after) {
+  const u16 = (text) => Buffer.from(text, "utf16le");
+  return {
+    "UTF-16LE with a mark": Buffer.concat([Buffer.from([0xff, 0xfe]), u16(`${line}\r\n`), Buffer.from(after)]),
+    "UTF-16LE without a mark": Buffer.concat([
+      u16(`REGION=eu-west-1\r\nDEBUG=false\r\n${line}\r\n`),
+      Buffer.from(after),
+    ]),
+    "UTF-16BE with a mark": Buffer.concat([Buffer.from([0xfe, 0xff]), u16(`${line}\r\n`).swap16(), Buffer.from(after)]),
+  };
+}
+
+test("check, the read hook and the commit check find a key in a UTF-16 file with an odd-length UTF-8 line after it", (t) => {
+  const script = path.join(GUARD_DIR, "bin", "clotr-guard.js");
+  const check = (root, file) =>
+    spawnSync(process.execPath, [script, "check", "--json", file], { cwd: root, encoding: "utf8" });
+  for (const after of ["REGION=us-east-1\n", "NAME=café\n"]) {
+    for (const [shape, bytes] of Object.entries(utf16WithOddLine(AWS_LINE, after))) {
+      const name = `${shape}, then ${JSON.stringify(after)}`;
+      assert.equal(bytes.length % 2, 1, name);
+      const root = commitRepo(t);
+      const file = path.join(root, "notes.txt");
+      fs.writeFileSync(file, bytes);
+      const out = check(root, file);
+      assert.equal(out.status, 1, `${name}: ${out.stderr}`);
+      assert.deepEqual(
+        JSON.parse(out.stdout).findings.map((finding) => finding.kind),
+        ["aws_access_key"],
+        name,
+      );
+      const read = inspectRead("claude", { tool_name: "Read", tool_input: { file_path: file } }, { cwd: root });
+      assert.equal(read.action, "block", name);
+      git(root, ["add", "notes.txt"]);
+      assert.deepEqual(
+        guard.checkStaged({ cwd: root }).issues.map((issue) => issue.kind),
+        ["aws_access_key"],
+        name,
+      );
+    }
+  }
+  const root = tempDir(t);
+  const file = path.join(root, "both.env");
+  const stripe = ["sk_", "live_", "Rf8Wq2Lx", "7Nd4Tz9K", "p3Vb6Hm1"].join("");
+  fs.writeFileSync(
+    file,
+    Buffer.concat([
+      Buffer.from([0xff, 0xfe]),
+      Buffer.from(`${AWS_LINE}\r\n`, "utf16le"),
+      Buffer.from(`STRIPE_KEY=${stripe}\n`),
+    ]),
+  );
+  const both = check(root, file);
+  assert.equal(both.status, 1, both.stderr);
+  assert.deepEqual(
+    JSON.parse(both.stdout)
+      .findings.map((finding) => finding.kind)
+      .sort(),
+    ["aws_access_key", "stripe_secret_key"],
+  );
+  // Clean only when both parts were read: a rest that isn't UTF-8 leaves the file not checked in full.
+  const shapes = {
+    "a clean UTF-16 file and a clean UTF-8 line": [Buffer.from("LOG=info\n"), 0],
+    "a clean UTF-16 file and bytes that aren't text": [Buffer.from([0x41, 0x01, 0xc3]), 2],
+  };
+  for (const [shape, [rest, status]] of Object.entries(shapes)) {
+    fs.writeFileSync(
+      file,
+      Buffer.concat([Buffer.from([0xff, 0xfe]), Buffer.from("REGION=us-east-1\r\n", "utf16le"), rest]),
+    );
+    const out = check(root, file);
+    assert.equal(out.status, status, `${shape}: ${out.stdout}${out.stderr}`);
+    assert.equal(JSON.parse(out.stdout || '{"findings":[]}').findings.length, 0, shape);
+  }
+  fs.writeFileSync(
+    file,
+    Buffer.concat([Buffer.from([0xff, 0xfe]), Buffer.from(`${AWS_LINE}\r\n`, "utf16le"), Buffer.from([0x41, 1, 0xc3])]),
+  );
+  const keyAndBytes = check(root, file);
+  assert.equal(keyAndBytes.status, 1, keyAndBytes.stderr);
+  assert.deepEqual(
+    JSON.parse(keyAndBytes.stdout).findings.map((finding) => finding.kind),
+    ["aws_access_key"],
+  );
+  // UTF-16 added after the odd line, as PowerShell 5.1's `>>` adds it, is a byte out of step with the file's own.
+  const u16 = (text) => Buffer.from(text, "utf16le");
+  const later = (rest) =>
+    Buffer.concat([Buffer.from([0xff, 0xfe]), u16("REGION=us-east-1\r\n"), Buffer.from("LOG=info\n"), u16(rest)]);
+  fs.writeFileSync(file, later(`${AWS_LINE}\r\n`));
+  const shifted = check(root, file);
+  assert.equal(shifted.status, 1, shifted.stderr);
+  assert.deepEqual(
+    JSON.parse(shifted.stdout).findings.map((finding) => finding.kind),
+    ["aws_access_key"],
+  );
+  assert.equal(
+    inspectRead("claude", { tool_name: "Read", tool_input: { file_path: file } }, { cwd: root }).action,
+    "block",
+  );
+  fs.writeFileSync(file, later("DEBUG=false\r\n"));
+  assert.equal(check(root, file).status, 2, "UTF-16 out of step isn't read in full");
+});
+
+// The engine reads a word just before a zero byte or a control byte as a value, so a file with a stray zero byte in
+// ordinary text got a made-up finding where check had said it couldn't check the file.
+test("check reads zero and control bytes in a file that isn't clean text as spaces", (t) => {
+  const root = tempDir(t);
+  const script = path.join(GUARD_DIR, "bin", "clotr-guard.js");
+  const file = path.join(root, "app.log");
+  const ordinary = "build finished, 42 files changed\n".repeat(40);
+  for (const line of [
+    "Go to the login / signup page and click next. The login form has username / password fields.",
+    "I changed my password. Thanks for the tip about the password manager!",
+  ]) {
+    for (const stray of [[0], [1, 0], [0x1b, 0], [0x7f, 0], [0xff, 0], [0, 0xc2, 0x85]]) {
+      const name = `${line.slice(0, 20)} + ${stray.join(",")}`;
+      fs.writeFileSync(
+        file,
+        Buffer.concat([Buffer.from(`${ordinary}${line}`), Buffer.from(stray), Buffer.from(`\n${ordinary}`)]),
+      );
+      const out = spawnSync(process.execPath, [script, "check", file], { cwd: root, encoding: "utf8" });
+      assert.equal(out.status, 2, `${name}: ${out.stdout}`);
+      assert.equal(out.stdout, "", name);
+      assert.match(out.stderr, /couldn't check/, name);
+    }
+  }
+  fs.writeFileSync(file, Buffer.concat([Buffer.from(ordinary), Buffer.from(AWS_LINE), Buffer.from([0, 0x0a])]));
+  const key = spawnSync(process.execPath, [script, "check", file], { cwd: root, encoding: "utf8" });
+  assert.equal(key.status, 1, key.stderr);
+  assert.match(key.stdout, /aws_access_key/);
+});
+
+// Hindi in UTF-16 without a byte order mark isn't mostly ASCII, so it isn't read as UTF-16, and read loosely as UTF-8 its
+// digits come out a space apart, which the engine took for phone numbers in ordinary messages.
+test("check finds nothing in ordinary messages saved as UTF-16 without a byte order mark", (t) => {
+  const root = tempDir(t);
+  const script = path.join(GUARD_DIR, "bin", "clotr-guard.js");
+  const file = path.join(root, "messages.txt");
+  for (const language of ["", "-ar", "-de", "-es", "-es-numbers", "-fr", "-hi", "-ja", "-pt", "-zh"]) {
+    const name = `normal-messages${language}.txt`;
+    const text = fs
+      .readFileSync(path.join(__dirname, "corpus", name), "utf8")
+      .split(/\r?\n/)
+      .filter((line) => line && !line.startsWith("#") && line !== "---")
+      .join("\r\n");
+    for (const order of ["little", "big"]) {
+      const bytes = Buffer.from(text, "utf16le");
+      fs.writeFileSync(file, order === "big" ? bytes.swap16() : bytes);
+      const out = spawnSync(process.execPath, [script, "check", "--json", file], { cwd: root, encoding: "utf8" });
+      assert.notEqual(out.status, 1, `${name}, ${order}-endian: ${out.stdout}`);
+    }
+  }
+});
+
+// Windows PowerShell 5.1's `>>` adds UTF-16 without a byte order mark to a UTF-8 log. A few such lines, read loosely as
+// UTF-8, came out as digits a space apart, which the engine took for a phone number that isn't in the file.
+test("check lists only what's in a UTF-8 log with a few UTF-16 lines PowerShell added to it", (t) => {
+  const root = tempDir(t);
+  const script = path.join(GUARD_DIR, "bin", "clotr-guard.js");
+  const findings = (bytes) => {
+    fs.writeFileSync(path.join(root, "build.log"), bytes);
+    const out = spawnSync(process.execPath, [script, "check", "--json", "build.log"], { cwd: root, encoding: "utf8" });
+    const listed = JSON.parse(out.stdout || '{"findings":[]}').findings;
+    return { status: out.status, listed: listed.map((finding) => `${finding.kind} ${finding.masked}`) };
+  };
+  const steps = (lines) =>
+    Array.from(
+      { length: lines },
+      (_, i) =>
+        `[${String(i % 24).padStart(2, "0")}:${String(i % 60).padStart(2, "0")}] step ${i}: module ${i % 17}, ok\n`,
+    ).join("");
+  const log = (lines, from = 0) =>
+    Array.from(
+      { length: lines },
+      (_, i) => `2026-11-10 10:${String((i + from) % 60).padStart(2, "0")}:00 INFO build step ${i + from} finished\n`,
+    ).join("");
+  const key16 = `AWS_ACCESS_KEY_ID=${["AKIA", "Q7ZD2MXK", "P4WT9RLB"].join("")}\r\n`;
+  // Each shape's parts, true for one PowerShell added in UTF-16, and what check lists in it.
+  const shapes = {
+    "two ipconfig lines": [
+      [
+        [false, steps(300)],
+        [
+          true,
+          "   IPv4 Address. . . . . . . . . . . : 192.168.1.23\r\n   Subnet Mask . . . . . . . . . . . : 255.255.255.0\r\n",
+        ],
+      ],
+      ["internal_ip 19…3"],
+    ],
+    "a test summary, a duration and a date": [
+      [
+        [false, steps(150)],
+        [true, "Tests: 412 passed, 0 failed\r\nDuration: 00:01:23.4567\r\nDone at 2026-11-10 10:42\r\n"],
+      ],
+      [],
+    ],
+    "two deploy lines between UTF-8 runs": [
+      [
+        [false, steps(120)],
+        [true, "Deploy 2026-11-10 10:42:17 start\r\n"],
+        [false, steps(80)],
+        [true, "Deploy 2026-11-10 10:44:03 end\r\n"],
+      ],
+      [],
+    ],
+    "two log lines": [
+      [
+        [false, log(60)],
+        [true, log(2, 500)],
+        [false, log(20, 900)],
+      ],
+      [],
+    ],
+    "a key in UTF-8 after the UTF-16": [
+      [
+        [false, log(60)],
+        [true, log(2, 500)],
+        [false, `${AWS_LINE}\n${log(20, 900)}`],
+      ],
+      ["aws_access_key AK…3N"],
+    ],
+    "a key in UTF-8 before the UTF-16": [
+      [
+        [false, `${AWS_LINE}\n${log(60)}`],
+        [true, log(2, 500)],
+        [false, log(20, 900)],
+      ],
+      ["aws_access_key AK…3N"],
+    ],
+    "a key in the UTF-16": [
+      [
+        [false, log(60)],
+        [true, `${key16}${log(2, 500)}`],
+        [false, log(20, 900)],
+      ],
+      ["aws_access_key AK…LB"],
+    ],
+  };
+  for (const [shape, [parts, listed]] of Object.entries(shapes)) {
+    const asUtf8 = findings(Buffer.from(parts.map(([, text]) => text).join("")));
+    assert.deepEqual(asUtf8.listed, listed, `${shape}, all in UTF-8`);
+    const mixed = findings(Buffer.concat(parts.map(([wide, text]) => Buffer.from(text, wide ? "utf16le" : "utf8"))));
+    assert.deepEqual(mixed.listed, listed, shape);
+    assert.equal(mixed.status, listed.length ? 1 : 2, shape);
+  }
+});
+
+// A character whose low byte is zero, like the box-drawing line ─ or the ideographic space, reads a byte out of step as
+// an ASCII letter, so a clean UTF-16 file with a run of them was taken for one a UTF-8 line had knocked out of step.
+test("check passes clean UTF-16 files with box-drawing lines or runs of ideographic spaces", (t) => {
+  const root = tempDir(t);
+  const script = path.join(GUARD_DIR, "bin", "clotr-guard.js");
+  const file = path.join(root, "notes.txt");
+  const le = (text) => Buffer.concat([Buffer.from([0xff, 0xfe]), Buffer.from(text, "utf16le")]);
+  const be = (text) => Buffer.concat([Buffer.from([0xfe, 0xff]), Buffer.from(text, "utf16le").swap16()]);
+  const minutes = "議事録\r\n　　　　　出席者　田中　佐藤\r\n本文です　　　　以上\r\n";
+  const shapes = {
+    "a table PowerShell saved": le(
+      "┏━━━━━━━━┳━━━━━━━━━━┓\r\n┃ Name   ┃ Value    ┃\r\n┡━━━━━━━━╇━━━━━━━━━━┩\r\n│ mode   │ dev      │\r\n" +
+        "│ region │ eu-west  │\r\n└────────┴──────────┘\r\n",
+    ),
+    "a rule under a heading": le("Results\r\n────────────────────\r\nall checks passed\r\n"),
+    "Japanese notes lined up with ideographic spaces": le(
+      "会議メモ\r\n日時　　　　１１月１０日\r\n場所　　　　会議室Ａ\r\n出席者　　　田中、佐藤\r\n",
+    ),
+    "Chinese notes lined up the same way": le("项目说明\r\n名称　　　　测试环境\r\n负责人　　　王伟\r\n"),
+    "Japanese minutes, little-endian": le(minutes),
+    "Japanese minutes, big-endian": be(minutes),
+    "20 ideographic spaces": le(`見出し${"　".repeat(20)}終わり\r\n`),
+    "a box around Japanese": le("┌────────────┐\r\n│ メモ       │\r\n└────────────┘\r\n"),
+    "an ASCII table with a box rule": le("Name      Value\r\n──────────────────\r\nmode      dev\r\n"),
+    "a run of 一": le("数字一一一一一です\r\n"),
+  };
+  for (const [shape, bytes] of Object.entries(shapes)) {
+    fs.writeFileSync(file, bytes);
+    const out = spawnSync(process.execPath, [script, "check", file], { cwd: root, encoding: "utf8" });
+    assert.equal(out.status, 0, `${shape}: ${out.stdout}${out.stderr}`);
+  }
+  // UTF-16 a UTF-8 line knocked out of step is still read for its letters, after a rule too.
+  fs.writeFileSync(
+    file,
+    Buffer.concat([
+      le("Results\r\n────────────────────\r\n"),
+      Buffer.from("LOG=info\n"),
+      Buffer.from(`${AWS_LINE}\r\n`, "utf16le"),
+    ]),
+  );
+  const out = spawnSync(process.execPath, [script, "check", "--json", file], { cwd: root, encoding: "utf8" });
+  assert.equal(out.status, 1, out.stderr);
+  assert.deepEqual(
+    JSON.parse(out.stdout).findings.map((finding) => finding.kind),
+    ["aws_access_key"],
+  );
+});
+
+// A UTF-16 letter outside ASCII reads as UTF-8 as a broken byte, an ASCII letter or a tab, so a second UTF-8 reading of
+// a Japanese or Hindi file gave the engine about half again as much text, all of it made of nothing.
+test("the second reading of a UTF-16 file in another script adds next to nothing", () => {
+  const corpus = (name) =>
+    fs
+      .readFileSync(path.join(__dirname, "corpus", name), "utf8")
+      .split(/\r?\n/)
+      .filter((line) => line && !line.startsWith("#") && line !== "---")
+      .join("\r\n");
+  for (const language of ["ja", "zh", "hi", "ar"]) {
+    const name = `normal-messages-${language}.txt`;
+    const text = corpus(name);
+    const read = guard.decodeText(Buffer.concat([Buffer.from([0xff, 0xfe]), Buffer.from(text, "utf16le")]), false);
+    assert.ok(read.startsWith(text), name);
+    const added = read.slice(text.length).replace(/\s/g, "").length;
+    assert.ok(added * 20 <= text.length, `${name}: ${added} characters added to ${text.length}`);
+  }
+});
+
+test("the read hook's second reading of a UTF-16 file stays linear on 300 KB of zero bytes and letters", (t) => {
+  const { bestOfPair, grewMoreThan, grewEveryTime } = require("./timing.js");
+  const dir = tempDir(t);
+  const shapes = {
+    "letter, zero, zero": [0x61, 0, 0],
+    "zero, letter, zero": [0, 0x61, 0],
+    "a mark's bytes": [0xff, 0xfe, 0],
+    "UTF-8 beside UTF-16": [0x61, 0, 0x62, 0x63, 0xe9, 0],
+  };
+  for (const [name, unit] of Object.entries(shapes)) {
+    const make = (n, file) => {
+      const body = Buffer.alloc(n);
+      for (let i = 0; i < n; i++) body[i] = unit[i % unit.length];
+      fs.writeFileSync(file, Buffer.concat([Buffer.from([0xff, 0xfe]), body]));
+      return () => inspectRead("claude", { tool_name: "Read", tool_input: { file_path: file } }, { cwd: dir });
+    };
+    const small = make(30_000, path.join(dir, "small.txt"));
+    const big = make(300_000, path.join(dir, "big.txt"));
+    const grew = grewEveryTime(
+      () => bestOfPair(small, big),
+      (s, b) => grewMoreThan(s, b, 30),
+    );
+    assert.equal(grew, null, `${name}: ${grew && grew.map((x) => x.wall.toFixed(1)).join(" -> ")} ms`);
+  }
+});
+
+// Blank space before a reader, long runs of dots, spaces or colons, and long quoted runs were slow shapes for a regex,
+// whose backtracking inside one run no count sees (their counts are in tests/guard-work.test.js), so they're timed as
+// growth, each measured again before it's called slow: 4 times the input may take at most 10 times as long, where
+// backtracking took 16 or more, unless `times` and `limit` say otherwise. `commandOf(size)` has a run of about `size`
+// characters, and `action` is its answer, "block" stopped for .env and "stop" for any file.
+const SHELL_TIME_GROWTH = 10;
+function assertShellTimeLinear(root, label, commandOf, toolName, size, { action = "block", times = 4, limit } = {}) {
+  const { bestOfPair, grewMoreThan, grewEveryTime } = require("./timing.js");
+  const shell = quotedSeparatorShell(root);
+  const check = (command) => () => shell(command, toolName);
+  const small = check(commandOf(size / times));
+  const big = check(commandOf(size));
+  const outcome = big();
+  assert.equal(outcome.action, action === "stop" ? "block" : action, label);
+  if (action === "block") {
+    assert.equal(outcome.location, ".env", `${label} is stopped for .env, not for running out of time`);
+  }
+  const grew = grewEveryTime(
+    () => bestOfPair(small, big, times),
+    (s, b) => grewMoreThan(s, b, limit ?? SHELL_TIME_GROWTH),
+  );
+  assert.equal(grew, null, `${label}: ${grew && grew.map((x) => x.wall.toFixed(1)).join(" -> ")} ms`);
+}
+
 test("a long run of blank space before a shell reader is checked quickly", (t) => {
   const root = tempDir(t);
   fs.writeFileSync(path.join(root, ".env"), "SAMPLE=placeholder\n");
-  // Wrapper words (`time`, `sudo`) split across lines, each a new place a reader could start.
-  for (const [blank, size] of [
-    [" ", 150_000],
-    ["\n", 150_000],
-    ["\t ", 150_000],
-    ["time\n", 300_000],
-    ["sudo \n", 300_000],
-    ["cmd /c\n", 300_000],
-  ]) {
-    const command = `echo start;${blank.repeat(size / blank.length)}; cat .env`;
-    const started = Date.now();
-    const outcome = guard.inspectShell("claude", { tool_name: "Bash", tool_input: { command, cwd: root } });
-    const elapsed = Date.now() - started;
-    assert.equal(outcome.action, "block", JSON.stringify(blank));
-    // Seconds, not milliseconds, so a busy machine can't fail it; the old pattern took far longer on this input.
-    assert.ok(elapsed < 3000, `${JSON.stringify(blank)} took ${elapsed} ms`);
-  }
-  // Blank space inside one quoted operand, which each path check reads.
-  for (const [command, toolName] of [
-    [`cat "a${"\n".repeat(300_000)}b" .env`, "Bash"],
-    [`cat 'a${" ".repeat(300_000)}' .env`, "Bash"],
-    [`grep SAMPLE "a${"\t".repeat(300_000)}b" .env`, "Bash"],
-    [`Get-Content -LiteralPath "a${"\n".repeat(300_000)}b"; Get-Content .env`, "PowerShell"],
-  ]) {
-    const started = Date.now();
-    const outcome = guard.inspectShell("claude", { tool_name: toolName, tool_input: { command, cwd: root } });
-    const elapsed = Date.now() - started;
-    assert.equal(outcome.action, "block", `${toolName} quoted blank space`);
-    assert.ok(elapsed < 3000, `${toolName} quoted blank space took ${elapsed} ms`);
+  for (const [label, commandOf, toolName, size] of blankSpaceCommands()) {
+    assertShellTimeLinear(root, label, commandOf, toolName, size);
   }
 });
 
 test("an operand with a long run of dots, spaces or colons is read quickly, wherever the run sits", (t) => {
   const root = tempDir(t);
   fs.writeFileSync(path.join(root, ".env"), "SAMPLE=placeholder\n");
-  const run = (text) => text.repeat(Math.ceil(300_000 / text.length));
-  // Each part of a path loses its stream and its last dots and spaces, as Windows reads it; a run with more after it
-  // is the slow shape for a pattern anchored at the part's end.
-  const operands = [
-    `"a${run(" ")}b"`,
-    `"a${run(".")}b"`,
-    `"a${run(". ")}b"`,
-    `"${run(" ")}b"`,
-    `"${run(".")}b"`,
-    `"a${run(" ")}b/c"`,
-    `"a${run(":")}\nb"`,
-    `'//?/C:/a${run(".")}x'`,
-    `'//./C:/a${run(" ")}x/y'`,
-    `'//fileserver.example/share/a${run(".")}x'`,
-  ];
-  const commands = [
-    ...operands.map((operand) => [`cat ${operand} .env`, "Bash"]),
-    [`Get-Content -LiteralPath "a${run(" ")}b"; Get-Content .env`, "PowerShell"],
-    [`Get-Content -LiteralPath "a${run(".")}b"; Get-Content .env`, "PowerShell"],
-  ];
-  for (const [command, toolName] of commands) {
-    const label = `${toolName} ${JSON.stringify(command.slice(0, 24))}…`;
-    const started = Date.now();
-    const outcome = guard.inspectShell("claude", { tool_name: toolName, tool_input: { command, cwd: root } });
-    const elapsed = Date.now() - started;
-    assert.equal(outcome.action, "block", label);
-    assert.equal(outcome.location, ".env", `${label} is stopped for .env, not for running out of time`);
-    // The shell check's deadline is 5 s; this stays well inside it on a busy computer.
-    assert.ok(elapsed < 2500, `${label} took ${elapsed} ms`);
+  for (const [label, commandOf, toolName] of dottedOperandCommands()) {
+    assertShellTimeLinear(root, label, commandOf, toolName, 300_000);
+  }
+});
+
+// Timed at 8,000 and 64,000 characters, both under the 64 KB where a commit message's content check moves to a worker
+// (about 7 ms to 210 ms), which a pair across it would read as growth. Under it a backtracking pattern costs little
+// beside the rest, so the pair is 8 times the input with a limit of 16, the staged check's clock growth before it was
+// counted, where linear work measured 3.3 and a planted quadratic scan 37 and up.
+test("a long quoted run is checked in linear time", (t) => {
+  const root = tempDir(t);
+  fs.writeFileSync(path.join(root, ".env"), "SAMPLE=placeholder\n");
+  for (const [label, commandOf, toolName, action] of quotedRunCommands()) {
+    assertShellTimeLinear(root, label, commandOf, toolName, 64_000, { action, times: 8, limit: 16 });
   }
 });
 
@@ -579,19 +1034,6 @@ test("the shell check knows close variants of the forms it already stops", (t) =
     assert.equal(shell(command).action, "allow", command);
   }
 });
-
-// A shell check run three ways: Claude's Bash tool, its PowerShell tool, and Cursor, whose terminal could be either.
-// `shellReading` "new" or "first" runs only the shell's own reading of the command or only Guard's first one.
-function quotedSeparatorShell(root, shellReading) {
-  return (command, toolName) =>
-    toolName === "Cursor"
-      ? guard.inspectShell("cursor", { command, cwd: root }, { cwd: root, shellReading })
-      : guard.inspectShell(
-          "claude",
-          { tool_name: toolName, tool_input: { command, cwd: root } },
-          { cwd: root, shellReading },
-        );
-}
 
 // Commands that read .env however their words are quoted, by the tool that runs them. Each list is a test's below;
 // the last test runs them all again.
@@ -914,8 +1356,9 @@ test("every command is also read as Guard first read it, so none it stopped goes
     ...NESTED_QUOTING_BLOCKS,
     ...carryOnBlocks(),
     ...paramQuoteAndFilterBlocks(),
-    // Ones Guard first stopped that the shell's own reading lets through. The sudo line reads .env; the rest don't, and
-    // are stopped as they were before: the reader's words ran over a line break, into a comment, or past a quoted `|`.
+    // Ones Guard first stopped. The sudo line reads .env, and the shell's own reading now stops it too, past sudo's
+    // options. The rest don't read it, and are stopped as they were before: the reader's words ran over a line break,
+    // into a comment, or past a quoted `|`.
     ["gc README.md\nWrite-Output .env", "PowerShell"],
     ["gc README.md # mentions .env", "PowerShell"],
     ["cat README.md\nsudo -u root cat .env", "Bash"],
@@ -935,7 +1378,6 @@ test("every command is also read as Guard first read it, so none it stopped goes
   for (const [command, toolName] of [
     ["gc README.md\nWrite-Output .env", "PowerShell"],
     ["gc README.md # mentions .env", "PowerShell"],
-    ["cat README.md\nsudo -u root cat .env", "Bash"],
   ]) {
     assert.equal(first(command, toolName).action, "block", `first: ${toolName} ${JSON.stringify(command)}`);
     assert.equal(
@@ -944,6 +1386,9 @@ test("every command is also read as Guard first read it, so none it stopped goes
       `new: ${JSON.stringify(command)}`,
     );
   }
+  const sudo = "cat README.md\nsudo -u root cat .env";
+  assert.equal(first(sudo, "Bash").action, "block", "first: sudo -u");
+  assert.equal(quotedSeparatorShell(root, "new")(sudo, "Bash").action, "block", "new: sudo -u");
 });
 
 test("the first reading has its own walk budget and doesn't join a glob a Windows program expands itself", (t) => {
@@ -1359,8 +1804,10 @@ test("a joined glob stays in the first call's own words and never climbs out of 
   ]) {
     assert.equal(shell(command, "Bash").action, "block", command);
   }
-  // `id_e*` itself could match a secret key's name, so the joined glob is judged by that too (base's reading).
-  assert.equal(shell('cat "id_e"* ; echo done', "Bash").action, "block");
+  // `id_e*` could match a secret key's name, but it's looked up in its folder: here it matches only the notes, and in
+  // `other` it matches the key.
+  assert.equal(shell('cat "id_e"* ; echo done', "Bash").action, "allow");
+  assert.equal(quotedSeparatorShell(path.join(root, "other"))('cat "id_e"* ; echo done', "Bash").action, "block");
   assert.equal(shell('cat "READ"* ; echo done', "Bash").action, "allow");
   // A file bigger than any link file can be isn't opened to look, since that downloads a file kept only in the cloud.
   fs.writeFileSync(path.join(work, "zbig.bin"), Buffer.concat([marker, Buffer.alloc(80000, 0x41)]));
@@ -1687,100 +2134,6 @@ test("a separator outside quotes still ends a reader's files", (t) => {
     const outcome = shell(command, toolName);
     assert.equal(outcome.action, "block", `${toolName} ${JSON.stringify(command)}`);
     assert.equal(outcome.location, ".env", `${toolName} ${JSON.stringify(command)} is stopped for .env`);
-  }
-});
-
-test("a 300,000-character quoted run is read in linear time", (t) => {
-  const root = tempDir(t);
-  fs.writeFileSync(path.join(root, ".env"), "SAMPLE=placeholder\n");
-  const shell = quotedSeparatorShell(root);
-  const run = (text) => text.repeat(Math.ceil(300_000 / text.length));
-  for (const [command, toolName, action] of [
-    [`cat "${run("a|;&)")}" .env`, "Bash", "block"],
-    [`cat '${run("a|;&)`")}' .env`, "Bash", "block"],
-    [`cat $'${run("a|\\x2e")}' .env`, "Bash", "block"],
-    [`cat ${run("a\\|")} .env`, "Bash", "block"],
-    [`cat "${run("$(")}" .env`, "Bash", "block"],
-    [`echo "${run("; cat '")}" ; cat .env`, "Bash", "block"],
-    [`cat > notes.md <<EOF\n${run("More of it's here\n")}EOF\ncat .env`, "Bash", "block"],
-    [`Get-Content "${run("a;|&)")}", .env`, "PowerShell", "block"],
-    [`Get-Content '${run("a'';")}', .env`, "PowerShell", "block"],
-    [`Get-Content ${run("a`;")} .env`, "PowerShell", "block"],
-    [`Get-Content ${run("{")} .env`, "PowerShell", "block"],
-    [`cat "${run("a|;&^")}" .env`, "Cursor", "block"],
-    [`git commit -m "${run("fix: a|b; c&d ")}"`, "Bash", "allow"],
-    [`grep -E '${run("a|b")}' src`, "Bash", "allow"],
-    // Many readers inside quotes or a here-document, each read from its own name.
-    [`git commit -m "${run("fix (cat a) ")}"`, "Bash", "allow"],
-    [`git commit -m "${run("fix (gc a) ")}"`, "PowerShell", "allow"],
-    [`cat <<EOF\n${run("cat a\n")}EOF\ncat .env`, "Bash", "block"],
-    [`git commit -F - <<EOF\n${run("Type it's here\n")}EOF`, "Cursor", "allow"],
-    [`echo "${run("$(cat a) ")}"`, "Bash", "allow"],
-    [`echo '${run("(cat ")}'`, "Bash", "allow"],
-    [`echo '${run(";cat $(")}'`, "Bash", "allow"],
-    [`echo '${run(";cat <<EOF\n")}'`, "Bash", "allow"],
-    [`echo '${run(";cat {")}'`, "PowerShell", "allow"],
-    [`echo '${run(';gc @"\n')}'`, "PowerShell", "allow"],
-    // Here-document and here-string bodies full of $(…), and many switches with a quoted value in Cursor.
-    [`cat <<EOF\n${run("v=$(echo a) it's\n")}EOF`, "Bash", "allow"],
-    [`cat <<EOF\n${run("$(")}\nEOF\ncat .env`, "Bash", "block"],
-    [`@"\n${run("v=$(echo a)\n")}"@ | Out-File notes.txt`, "PowerShell", "allow"],
-    [`grep ${run("--include='*.js' ")} '^x .*' src`, "Cursor", "allow"],
-    // Lists over many lines, raw arguments after --%, groups, wrapper words and redirections before a command.
-    [`gc a,${run(",\n")}.env`, "PowerShell", "block"],
-    [`gc a${run(", #c\n")}.env`, "PowerShell", "block"],
-    [`gc a${run(",<#c#>\n")}.env`, "PowerShell", "block"],
-    [`findstr --% ${run("x #y ")}.env`, "PowerShell", "block"],
-    [`findstr --% "${run("a|;#")}" .env`, "PowerShell", "block"],
-    [`echo ${run("x --% y #")}`, "PowerShell", "allow"],
-    [`gc ${run("('a',")} .env`, "PowerShell", "block"],
-    [`gc ${run("('a') ")} .env`, "PowerShell", "block"],
-    [`gc ${"(".repeat(100_000)}'a'${")".repeat(100_000)}, .env`, "PowerShell", "block"],
-    [`Write-Output ${"@(".repeat(100_000)}'a'${")".repeat(100_000)}`, "PowerShell", "allow"],
-    [`${run('"sudo" ')}cat .env`, "Bash", "block"],
-    [`${run("2>/dev/null ")}cat .env`, "Bash", "block"],
-    [`echo "${run("${x:-'$(echo a)'}")}"`, "Bash", "allow"],
-    [`cmd /c"${run("type a ")}" .env`, "PowerShell", "block"],
-    [`echo "${run("${x[a${x[")}"`, "Bash", "allow"],
-    [`${run("<<< x ")}cat .env`, "Bash", "block"],
-    [`cmd ${run("/d")}/c type .env`, "PowerShell", "block"],
-    [`cp ${run("(a)")} (Join-Path x '.env')`, "PowerShell", "allow"],
-    // Quotes inside "${x:-…}", a filter's -InputObject, cmd switches with values, and Bash's `"a"*` as Guard first read
-    // it.
-    [`echo "${run("${x:-'a'}")}"`, "Bash", "allow"],
-    [`cat "\${x:-'${run("$(echo a)")}'}" .env`, "Bash", "block"],
-    [`echo "\${x:-'${run("${y:-")}'}"; cat .env`, "Bash", "block"],
-    [`cat "\${x:-'${run('}" ')}'}" .env`, "Cursor", "block"],
-    [`gc (select ${run("-InputObject a ")}'.env')`, "PowerShell", "block"],
-    [`gc (${run("('select', ")}'.env')`, "PowerShell", "block"],
-    [`cmd ${run("/v:on")}/c type .env`, "PowerShell", "block"],
-    // cmd's `if` and `for` nested many times over, and a here-document marker with many `(`.
-    [`cmd /c ${run("if cmd /c ")}type .env`, "PowerShell", "stop"],
-    [`${run("cmd /c if ")}type .env`, "PowerShell", "stop"],
-    [`cmd /c "${run("for /f %i in (a) do ")}type .env"`, "PowerShell", "stop"],
-    [`cmd /c "for /f %i in ${run("( ")}.env"`, "PowerShell", "stop"],
-    [`true <<$(${run("(")}\ncat .env`, "Bash", "stop"],
-    // Many here-documents waiting while a `$(` spans many lines, and many `for /f` sets glued to `do`.
-    [`true ${run("<<a ")}$(${run("\n")})\ncat .env`, "Bash", "stop"],
-    // A long word of `(` after a `for`, a `for` set of `(`, and many subshells in a row.
-    [`cmd /c 'for %i in (a) do echo ${run("a(")}'`, "PowerShell", "allow"],
-    [`cmd /c 'for %i in ${run("(")}'`, "PowerShell", "allow"],
-    [`${run("(true) ")}; cat .env`, "Bash", "block"],
-    [`cmd /c "${run("for /f %i in ('x')do ")}type .env"`, "PowerShell", "stop"],
-    [`cat ${run('"a"*')} .env`, "Bash", "block"],
-    [`cat ${run('"a" ')}"README.md"*`, "Bash", "allow"],
-    // A glob at the end of a long path is found by joining the path's plain folders once. A path too long to look up
-    // is judged by its name, which a `*` could make a secret file's, so it's stopped there ("stop": for any file).
-    [`cat ${run("a/")}*; cat .env`, "Bash", "stop"],
-    [`cat "${run("a/")}"*; cat .env`, "Cursor", "stop"],
-  ]) {
-    const label = `${toolName} ${JSON.stringify(command.slice(0, 24))}…`;
-    const started = Date.now();
-    const outcome = shell(command, toolName);
-    const elapsed = Date.now() - started;
-    assert.equal(outcome.action, action === "stop" ? "block" : action, label);
-    if (action === "block") assert.equal(outcome.location, ".env", `${label} is stopped for .env`);
-    assert.ok(elapsed < 2500, `${label} took ${elapsed} ms`);
   }
 });
 
@@ -2402,23 +2755,33 @@ test("the walk for rg skips the hidden folders rg skips, and no others", (t) => 
   assert.equal(shell("rg SAMPLE .venv").action, "block");
 });
 
-// A fresh copy of Guard whose child processes are counted by program name in `spawns`.
+// A fresh copy of Guard's shell check whose child processes are counted by program name in `spawns`.
+// Every cached Guard module is dropped before the reload, so callers that moved out of the bin count too,
+// and the cache is put back exactly as it was afterwards, since other tests hold the modules loaded
+// earlier. It's the shell check's own file, since the bin loads that only when a check first runs, after
+// the cache is back.
 function guardCountingSpawns(spawns) {
   const childProcess = require("child_process");
-  const guardPath = require.resolve(path.join(GUARD_DIR, "bin", "clotr-guard.js"));
+  const guardPath = require.resolve(path.join(GUARD_DIR, "lib", "shell-checks", "shell-check.js"));
+  const inGuard = (key) => key.startsWith(GUARD_DIR + path.sep);
   const real = childProcess.spawnSync;
-  const loaded = require.cache[guardPath];
+  const dropped = new Map(
+    Object.keys(require.cache)
+      .filter(inGuard)
+      .map((key) => [key, require.cache[key]]),
+  );
   childProcess.spawnSync = function countedSpawnSync(command, ...rest) {
     const name = path.basename(String(command)).replace(/\.exe$/i, "");
     spawns[name] = (spawns[name] || 0) + 1;
     return real.call(this, command, ...rest);
   };
-  delete require.cache[guardPath];
+  for (const key of dropped.keys()) delete require.cache[key];
   try {
     return require(guardPath);
   } finally {
     childProcess.spawnSync = real;
-    require.cache[guardPath] = loaded;
+    for (const key of Object.keys(require.cache).filter(inGuard)) delete require.cache[key];
+    for (const [key, entry] of dropped) require.cache[key] = entry;
   }
 }
 
@@ -2448,6 +2811,8 @@ test("rg's walk asks Git about all the secret files it finds at once", (t) => {
   for (const command of ["rg SAMPLE", "rg -n SAMPLE .", "rg -i sample . src"]) {
     const { outcome, count } = asked(command);
     assert.equal(outcome.action, "allow", command);
+    // The copy counts: the walk asks Git about the git-ignored secret files.
+    assert.ok(count > 0, `${command}: nothing counted`);
     // One rg probe (or its listing), one batch of files and one question about the folder itself.
     assert.ok(count <= quiet + 3, `${command}: ${JSON.stringify(spawns)}, ${quiet} without secret files`);
   }
@@ -3536,43 +3901,6 @@ function distinctOperands(length) {
   return operands;
 }
 
-// Counts every disk lookup the check makes while `fn` runs; with `tick`, a made-up clock stands still but for a
-// millisecond per lookup, so a deadline is reached after a known number of lookups, however fast or busy the
-// computer is. (It used to run on the real clock as well, so how many lookups fit in a deadline varied from run to
-// run.)
-function countingLookups(fn, { tick = false } = {}) {
-  const names = ["lstatSync", "statSync", "realpathSync", "readdirSync", "existsSync", "opendirSync", "accessSync"];
-  const originals = names.map((name) => [name, fs[name], fs[name].native]);
-  const realNow = Date.now;
-  const started = realNow();
-  let lookups = 0;
-  const byName = {};
-  const count = (name) => {
-    lookups += 1;
-    byName[name] = (byName[name] || 0) + 1;
-  };
-  for (const [name, original, native] of originals) {
-    fs[name] = function (...args) {
-      count(name);
-      return original.apply(this, args);
-    };
-    if (native) {
-      fs[name].native = function (...args) {
-        count(`${name}.native`);
-        return native.apply(this, args);
-      };
-    }
-  }
-  if (tick) Date.now = () => started + lookups;
-  try {
-    const result = fn();
-    return { result, lookups, byName };
-  } finally {
-    for (const [name, original] of originals) fs[name] = original;
-    Date.now = realNow;
-  }
-}
-
 // Runs `fn` with forty folders that aren't there at the front of PATH, so finding Git costs more lookups than any
 // real PATH would (npm test adds about a dozen), on every computer.
 function withLongPath(fn) {
@@ -3931,37 +4259,48 @@ test("an error nothing catches ends a hook with the answer a failed check gives,
       encoding: "utf8",
       env: { ...process.env, CLOTR_GUARD_DATA_DIR: path.join(dir, "data") },
     });
-  // The shell hook stops the command, as for a check that didn't finish.
+  // The shell hook stops the command, as for a check that hit an internal error.
   const shell = hook(["shell", "claude"], { tool_name: "Bash", tool_input: { command: "echo hello", cwd: root } });
   assert.equal(shell.status, 0, shell.stderr);
-  assert.match(shell.stdout, /"permissionDecision":"deny".*check didn't finish in time/);
-  // The others say they couldn't check, and let it through, as their own failed checks always have.
+  assert.match(shell.stdout, /"permissionDecision":"deny".*check hit an internal error/);
+  // The prompt hook stops the prompt, and the read hook asks in Claude Code, as their own failed checks do.
   const prompt = hook(["hook", "claude"], { prompt: "hello", cwd: root });
   assert.equal(prompt.status, 0, prompt.stderr);
-  assert.match(prompt.stdout, /couldn't check this prompt, so it went through/);
+  assert.match(prompt.stdout, /"decision":"block".*hit an error and couldn't check this prompt, so it was stopped/);
   const read = hook(["read", "claude"], { tool_name: "Read", tool_input: { file_path: path.join(root, "app.js") } });
   assert.equal(read.status, 0, read.stderr);
-  assert.match(`${read.stdout}${read.stderr}`, /couldn't check/);
+  assert.match(read.stdout, /"permissionDecision":"ask".*hit an error and couldn't check/);
 });
 
-// A fresh copy of Guard whose helper `name` from the lib module `lib` throws, as an internal error would.
+// A fresh copy of Guard whose helper `name` from the lib module `lib` throws, as an internal error would. Every other
+// cached Guard module is dropped before the reload, so callers that moved out of the bin pick up the swap too, and the
+// cache is put back exactly as it was afterwards, since other tests hold the modules loaded earlier.
+// The shell check is its own file's, since the bin loads that only when a check first runs, after the
+// cache is back.
 function guardWithThrowing(lib, name) {
   const libPath = require.resolve(path.join(GUARD_DIR, "lib", lib));
   const guardPath = require.resolve(path.join(GUARD_DIR, "bin", "clotr-guard.js"));
+  const shellCheckPath = require.resolve(path.join(GUARD_DIR, "lib", "shell-checks", "shell-check.js"));
+  const inGuard = (key) => key.startsWith(GUARD_DIR + path.sep) && key !== libPath;
   const real = require(libPath);
-  const loaded = require.cache[guardPath];
+  const dropped = new Map(
+    Object.keys(require.cache)
+      .filter(inGuard)
+      .map((key) => [key, require.cache[key]]),
+  );
   require.cache[libPath].exports = {
     ...real,
     [name]: () => {
       throw new Error(`injected ${name} failure`);
     },
   };
-  delete require.cache[guardPath];
+  for (const key of dropped.keys()) delete require.cache[key];
   try {
-    return require(guardPath);
+    return { ...require(guardPath), inspectShell: require(shellCheckPath).inspectShell };
   } finally {
     require.cache[libPath].exports = real;
-    require.cache[guardPath] = loaded;
+    for (const key of Object.keys(require.cache).filter(inGuard)) delete require.cache[key];
+    for (const [key, entry] of dropped) require.cache[key] = entry;
   }
 }
 
@@ -3972,7 +4311,7 @@ test("an internal error the shell check catches stops the command and says why",
   // One in the path check (a secret-file name lookup) and one in the content check (the engine).
   for (const [lib, name] of [
     ["secret-files.js", "isSecretFile"],
-    ["engine.js", "check"],
+    ["text-checks/engine-loader.js", "check"],
   ]) {
     const broken = guardWithThrowing(lib, name);
     const outcome = broken.inspectShell("claude", event, { cwd: root, dataDir });
@@ -3990,7 +4329,7 @@ test("an internal error the shell check catches stops the command and says why",
   const preload = path.join(dataDir, "throwing-engine.js");
   fs.writeFileSync(
     preload,
-    `require(${JSON.stringify(path.join(GUARD_DIR, "lib", "engine.js"))}).check = () => { throw new Error("injected"); };\n`,
+    `require(${JSON.stringify(path.join(GUARD_DIR, "lib", "text-checks", "engine-loader.js"))}).check = () => { throw new Error("injected"); };\n`,
   );
   const run = (mode, input) =>
     spawnSync(process.execPath, ["--require", preload, path.join(GUARD_DIR, "bin", "clotr-guard.js"), mode, "claude"], {
@@ -4001,23 +4340,41 @@ test("an internal error the shell check catches stops the command and says why",
   const shell = run("shell", event);
   assert.equal(shell.status, 0, shell.stderr);
   assert.match(shell.stdout, /"permissionDecision":"deny".*check hit an internal error/);
-  // The prompt hook still lets the prompt through with a note, as it always has.
+  // The prompt hook stops the prompt too, and says how to fix it.
   const prompt = run("hook", { prompt: "hello", cwd: root });
   assert.equal(prompt.status, 0, prompt.stderr);
-  assert.match(prompt.stdout, /couldn't check this prompt, so it went through/);
+  assert.match(prompt.stdout, /"decision":"block".*hit an error and couldn't check this prompt, so it was stopped/);
 });
 
 // Runs the real hook without waiting on it, so the slow cases run side by side. `preload` is loaded first in the hook
 // and in its check's process; `checker` is code only the check's process runs (it's started with -e, the hook isn't).
 // `input` undefined, or `keepOpen`, leaves stdin open. A hook still running after `killAfter` is stopped, status null.
+// `elapsed` counts from the call; `fromHookStart` counts from the hook process's own start, the time its deadline
+// counts from, so it leaves out how long the system took to start the process. `timers`: see recordLongTimers.
 function hookRun(
   args,
   input,
-  { preload = "", checker = "", flags = [], env = {}, cwd, keepOpen = false, killAfter = 25_000, dataDir } = {},
+  {
+    preload = "",
+    checker = "",
+    flags = [],
+    env = {},
+    cwd,
+    keepOpen = false,
+    killAfter = 25_000,
+    dataDir,
+    recordTimers = false,
+  } = {},
 ) {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "clotr-hook-run-"));
   const file = path.join(dir, "preload.js");
-  fs.writeFileSync(file, `${preload}\nif (typeof process._eval === "string") {\n${checker}\n}\n`);
+  const origin = path.join(dir, "origin");
+  const timers = path.join(dir, "timers.json");
+  fs.writeFileSync(
+    file,
+    `${preload}\n${recordTimers ? recordLongTimers(timers) : ""}\nif (typeof process._eval === "string") {\n${checker}\n} else {\n` +
+      `require("fs").writeFileSync(${JSON.stringify(origin)}, String(performance.timeOrigin));\n}\n`,
+  );
   const started = Date.now();
   const child = require("child_process").spawn(
     process.execPath,
@@ -4038,9 +4395,12 @@ function hookRun(
   const killer = setTimeout(() => child.kill("SIGKILL"), killAfter);
   return new Promise((resolve) => {
     child.on("close", (status) => {
+      const ended = Date.now();
       clearTimeout(killer);
+      const fromHookStart = fs.existsSync(origin) ? ended - Number(fs.readFileSync(origin, "utf8")) : NaN;
+      const recorded = readLongTimers(timers);
       fs.rmSync(dir, { recursive: true, force: true });
-      resolve({ status, stdout, stderr, elapsed: Date.now() - started });
+      resolve({ status, stdout, stderr, elapsed: ended - started, fromHookStart, timers: recorded });
     });
   });
 }
@@ -4093,13 +4453,13 @@ test("the shell hook stops a command whose check is held up past its deadline, b
     ),
   ]);
   for (const [index, run] of runs.entries()) {
-    const label = `run ${index}: ${run.elapsed} ms, ${run.stdout}${run.stderr}`;
+    const label = `run ${index}: ${run.fromHookStart} ms from the hook's start (${run.elapsed} ms from the call), ${run.stdout}${run.stderr}`;
     // Exit 0, so the assistant reads the answer, which stops the command and says why.
     assert.equal(run.status, 0, label);
     assert.match(run.stdout, index === 4 ? /"permission":"deny"/ : /"permissionDecision":"deny"/, label);
     assert.match(run.stdout, UNFINISHED, label);
     // Ten seconds from the hook's start, plus a little to stop the check and exit, well inside the 15-second timeout.
-    assert.ok(run.elapsed >= 9_500 && run.elapsed < 11_000, label);
+    assert.ok(run.fromHookStart >= 9_500 && run.fromHookStart < 11_000, label);
   }
   // The held-up checks were stopped, not left running. (On Windows a process's children end with it anyway; on other
   // systems only the hook's own stop ends them.)
@@ -4107,46 +4467,84 @@ test("the shell hook stops a command whose check is held up past its deadline, b
   assert.equal(written.length, 4, written.join(", "));
   for (const name of written) {
     const pid = Number(fs.readFileSync(path.join(pids, name), "utf8"));
-    assert.throws(() => process.kill(pid, 0), { code: "ESRCH" }, `the check in run ${name} is still running`);
+    assert.ok(!stillRunning(pid), `the check in run ${name} is still running`);
   }
 });
+
+// Whether a process is still running. On Linux a killed process whose parent has exited is a zombie until the
+// system's first process collects it, which in some containers takes a second or more; it runs nothing, so it's gone.
+function stillRunning(pid) {
+  try {
+    process.kill(pid, 0);
+  } catch (error) {
+    return error.code === "EPERM";
+  }
+  if (process.platform !== "linux") return true;
+  try {
+    return fs.readFileSync(`/proc/${pid}/stat`, "utf8").replace(/^.*\) /s, "")[0] !== "Z";
+  } catch {
+    return false;
+  }
+}
 
 test("a check that can't start, crashes or answers wrongly stops the command and says so", async (t) => {
   const root = recursiveFixture(t);
   const bash = { tool_name: "Bash", tool_input: { command: "echo hello", cwd: root } };
+  // The hook's deadline never comes here, so each answer is the failed check's own, given without waiting for it.
+  const never = (options) => ({ ...options, preload: `${DEADLINE_PRELOAD.never}\n${options.preload || ""}` });
   const runs = await Promise.all([
     // It can't start: no unbounded check on the hook's own thread instead.
-    hookRun(["shell", "claude"], bash, {
-      preload: 'require("child_process").spawn = () => { throw new Error("EAGAIN"); };',
-    }),
-    hookRun(["shell", "claude"], bash, {
-      preload: `const cp = require("child_process"); const real = cp.spawn;
+    hookRun(
+      ["shell", "claude"],
+      bash,
+      never({
+        preload: 'require("child_process").spawn = () => { throw new Error("EAGAIN"); };',
+      }),
+    ),
+    hookRun(
+      ["shell", "claude"],
+      bash,
+      never({
+        preload: `const cp = require("child_process"); const real = cp.spawn;
       cp.spawn = (command, args, options) => real(${JSON.stringify(path.join(root, "no-such-node.exe"))}, args, options);`,
-    }),
+      }),
+    ),
     // Out of file handles (EMFILE), Node hands back a process with no pipes.
-    hookRun(["shell", "claude"], bash, {
-      preload: `const { EventEmitter } = require("events");
+    hookRun(
+      ["shell", "claude"],
+      bash,
+      never({
+        preload: `const { EventEmitter } = require("events");
       require("child_process").spawn = () => Object.assign(new EventEmitter(), {
         stdin: null, stdout: null, stderr: null, exitCode: null, signalCode: null, kill: () => false, unref() {},
       });`,
-    }),
+      }),
+    ),
     // It crashes, exits without an answer, answers with something else, or runs out of memory.
-    hookRun(["shell", "claude"], bash, { checker: 'throw new Error("checker failed");' }),
-    hookRun(["shell", "claude"], bash, { checker: "process.exit(0);" }),
-    hookRun(["shell", "claude"], bash, { checker: "process.exitCode = 3;" }),
-    hookRun(["shell", "claude"], bash, { checker: 'process.stdout.write("garbage");' }),
-    hookRun(["shell", "claude"], bash, {
-      checker: `const guard = require(${JSON.stringify(path.join(GUARD_DIR, "bin", "clotr-guard.js"))});
+    hookRun(["shell", "claude"], bash, never({ checker: 'throw new Error("checker failed");' })),
+    hookRun(["shell", "claude"], bash, never({ checker: "process.exit(0);" })),
+    hookRun(["shell", "claude"], bash, never({ checker: "process.exitCode = 3;" })),
+    hookRun(["shell", "claude"], bash, never({ checker: 'process.stdout.write("garbage");' })),
+    hookRun(
+      ["shell", "claude"],
+      bash,
+      never({
+        checker: `const guard = require(${JSON.stringify(path.join(GUARD_DIR, "bin", "clotr-guard.js"))});
       guard.shellCheckReply = () => ({ outcome: { action: "maybe" } });`,
-    }),
-    hookRun(["shell", "claude"], bash, {
-      flags: ["--max-old-space-size=64"],
-      checker: "const kept = []; for (;;) kept.push(new Array(100000).fill(kept.length));",
-    }),
+      }),
+    ),
+    hookRun(
+      ["shell", "claude"],
+      bash,
+      never({
+        flags: ["--max-old-space-size=64"],
+        checker: "const kept = []; for (;;) kept.push(new Array(100000).fill(kept.length));",
+      }),
+    ),
     hookRun(
       ["shell", "cursor"],
       { command: "echo hello", cwd: root },
-      { checker: 'throw new Error("checker failed");' },
+      never({ checker: 'throw new Error("checker failed");' }),
     ),
   ]);
   for (const [index, run] of runs.entries()) {
@@ -4241,10 +4639,12 @@ test("every client reads the shell hook's unfinished and failed answers as a sto
   const root = recursiveFixture(t);
   const failing = { checker: 'throw new Error("checker failed");' };
   const cases = [
+    // The deadline comes at once here, and its length and the exit after it are checked; the test above waits for it
+    // for real.
     ...guard.IMPLEMENTED_TOOL_NAMES.map((tool) => [
       tool,
       UNFINISHED,
-      hookRun(["shell", tool], undefined, { cwd: root }),
+      hookRun(["shell", tool], undefined, { cwd: root, preload: DEADLINE_PRELOAD.now, recordTimers: true }),
     ]),
     [
       "claude",
@@ -4263,7 +4663,9 @@ test("every client reads the shell hook's unfinished and failed answers as a sto
     const [tool, words] = cases[index];
     const label = `${tool}: ${run.elapsed} ms, status ${run.status}, ${run.stdout}${run.stderr}`;
     assertStops(tool, { code: run.status, stdout: run.stdout, stderr: run.stderr }, words, label);
-    assert.ok(run.elapsed < 11_000, label);
+    // The failed runs use the real clock, so they're bounded by it: an answer on time that holds the hook open fails.
+    if (words === UNFINISHED) assertDeadlineKept(run.timers, label, { ran: true });
+    else assert.ok(run.elapsed < 11_000, label);
   }
 });
 
@@ -4687,8 +5089,10 @@ test("a glob of only [...] classes, or one that starts with letters, is read as 
   for (const command of ["cat cert/server.t?t", "cat cert/serv*.txt", "cat cert/s[e]rver.txt", "cat cert/x*"]) {
     assert.equal(shell(command).action, "allow", command);
   }
-  // A glob that starts with letters and could name a secret file is still stopped by its name, matched or not.
-  assert.equal(shell("cat .e?v.local").action, "block");
+  // A glob that could name a secret file is looked up in its folder too, so it's stopped only by a file it matches.
+  assert.equal(shell("cat .e?v.local").action, "allow");
+  assert.equal(shell("cat id_r?a").action, "allow");
+  fs.writeFileSync(path.join(root, "id_rsa"), "placeholder\n");
   assert.equal(shell("cat id_r?a").action, "block");
 });
 
@@ -4832,3 +5236,273 @@ test("the shell reader keeps where each word ends, so the word as written can be
     [`'a;b'`, `"c"`],
   );
 });
+
+// A file read through an add-on tool server, from any server and through each hook that sees one. The made-up
+// `.env` holds no value: a secret file's name alone stops the read.
+function toolReadRoot(t) {
+  const root = tempDir(t);
+  fs.writeFileSync(path.join(root, ".env"), "NAME=example\n");
+  fs.writeFileSync(path.join(root, ".env.example"), "NAME=\n");
+  fs.writeFileSync(path.join(root, "README.md"), "# Notes\n");
+  return root;
+}
+
+const toolCall = (root, tool, name, args) =>
+  guard.inspectTool(tool, { tool_name: name, tool_input: args, cwd: root }, { cwd: root, dataDir: root }).action;
+const geminiRead = (root, name, args) =>
+  inspectRead("gemini", { tool_name: name, tool_input: args, cwd: root }, { cwd: root, dataDir: root }).action;
+
+test("Claude's tool hook stops another server's get_file_contents on .env", (t) => {
+  const root = toolReadRoot(t);
+  assert.equal(toolCall(root, "claude", "mcp__other__get_file_contents", { path: ".env" }), "block");
+});
+
+test("Cursor's tool hook stops read_file on .env", (t) => {
+  const root = toolReadRoot(t);
+  assert.equal(toolCall(root, "cursor", "read_file", JSON.stringify({ path: ".env" })), "block");
+});
+
+test("Gemini's read hook stops mcp_filesystem_read_file on .env", (t) => {
+  const root = toolReadRoot(t);
+  assert.equal(geminiRead(root, "mcp_filesystem_read_file", { path: ".env" }), "block");
+});
+
+test("the added read names are stopped on .env whatever server they come from", (t) => {
+  const root = toolReadRoot(t);
+  for (const name of ["get_file_contents", "view_file", "open_file", "read_text_file"]) {
+    assert.equal(toolCall(root, "claude", `mcp__docs__${name}`, { path: ".env" }), "block", `claude ${name}`);
+    assert.equal(toolCall(root, "cursor", name, { file_path: ".env" }), "block", `cursor ${name}`);
+    assert.equal(geminiRead(root, `mcp_docs_${name}`, { path: ".env" }), "block", `gemini ${name}`);
+  }
+  for (const name of ["read_many_files", "read_multiple_files"]) {
+    const args = { paths: ["README.md", ".env"] };
+    assert.equal(toolCall(root, "claude", `mcp__docs__${name}`, args), "block", `claude ${name}`);
+    assert.equal(toolCall(root, "cursor", name, args), "block", `cursor ${name}`);
+    assert.equal(geminiRead(root, `mcp_docs_${name}`, args), "block", `gemini ${name}`);
+  }
+});
+
+test("tool calls that only name .env, or read an ordinary file, still pass", (t) => {
+  const root = toolReadRoot(t);
+  const calls = [
+    ["write_file", { path: ".env", content: "NAME=example" }],
+    ["edit_file", { path: ".env", edits: [{ oldText: "NAME=", newText: "NAME=x" }] }],
+    ["read_file", { path: ".env.example" }],
+    ["read_file", { path: "README.md" }],
+    ["get_file_contents", { path: "README.md" }],
+    ["create_issue", { title: "Setup", body: "Copy .env.example to .env before you start." }],
+    ["search_files", { path: ".", pattern: ".env" }],
+  ];
+  for (const [name, args] of calls) {
+    assert.equal(toolCall(root, "claude", `mcp__other__${name}`, args), "allow", `claude ${name}`);
+    assert.equal(toolCall(root, "cursor", name, JSON.stringify(args)), "allow", `cursor ${name}`);
+    assert.equal(geminiRead(root, `mcp_other_${name}`, args), "allow", `gemini ${name}`);
+  }
+});
+
+// An add-on read of a file this computer can't open is judged by its name, as 0.1.3 judged it, and passes with no note
+// when the name isn't a secret file's. Claude Code's filesystem reads keep the note they had.
+const plainAllow = (outcome, label) => {
+  assert.equal(outcome.action, "allow", label);
+  for (const flag of ["internalError", "skipped", "partial", "unfinished"]) {
+    assert.ok(!outcome[flag], `${label} ${flag}`);
+  }
+};
+const toolOutcome = (root, tool, name, args) =>
+  guard.inspectTool(tool, { tool_name: name, tool_input: args, cwd: root }, { cwd: root, dataDir: root });
+const geminiOutcome = (root, name, args) =>
+  inspectRead("gemini", { tool_name: name, tool_input: args, cwd: root }, { cwd: root, dataDir: root });
+
+const remoteSource = { owner: "octo", repo: "demo", path: "src/index.js" };
+const remoteSourceCalls = [
+  ["Claude's tool hook", (root) => toolOutcome(root, "claude", "mcp__github__get_file_contents", remoteSource)],
+  ["Cursor's tool hook", (root) => toolOutcome(root, "cursor", "get_file_contents", JSON.stringify(remoteSource))],
+  ["Gemini's read hook", (root) => geminiOutcome(root, "mcp_github_get_file_contents", remoteSource)],
+];
+for (const [label, call] of remoteSourceCalls) {
+  test(`${label} passes a GitHub server's get_file_contents of a file in a remote repo with no note`, (t) => {
+    plainAllow(call(toolReadRoot(t)), label);
+  });
+}
+
+const unopenablePaths = [
+  ["a missing file", "nothere.txt"],
+  ["a home path", "~/clotr-made-up-notes.txt"],
+  ["a Windows path on Linux", "C:\\Users\\someone\\project\\README.md"],
+  ["a path with a zero byte", ".env\u0000.txt"],
+  ["a 64 KB name", "x".repeat(65536)],
+];
+
+for (const [label, filePath] of unopenablePaths) {
+  test(`Cursor's tool hook passes an add-on read of ${label} with no note`, (t) => {
+    if (process.platform === "win32" && label === "a Windows path on Linux") return;
+    const root = toolReadRoot(t);
+    plainAllow(toolOutcome(root, "cursor", "read_file", JSON.stringify({ path: filePath })), label);
+  });
+
+  test(`Gemini's read hook passes an add-on read of ${label} with no note`, (t) => {
+    if (process.platform === "win32" && label === "a Windows path on Linux") return;
+    const root = toolReadRoot(t);
+    plainAllow(geminiOutcome(root, "mcp_srv_read_file", { path: filePath }), label);
+  });
+}
+
+test("a GitHub server's get_file_contents naming .env in a remote repo is still stopped", (t) => {
+  const root = tempDir(t);
+  for (const filePath of [".env", "config/.env.production"]) {
+    const args = { owner: "octo", repo: "demo", path: filePath };
+    assert.equal(toolCall(root, "claude", "mcp__github__get_file_contents", args), "block", `claude ${filePath}`);
+    assert.equal(toolCall(root, "cursor", "get_file_contents", JSON.stringify(args)), "block", `cursor ${filePath}`);
+  }
+});
+
+// Cursor's tool hook gets no file contents, so a read there costs only what the hook reads from disk: at most
+// CURSOR_DISK_READ's bytes of each file, through reads of that size. This counts each read call and the bytes it
+// asked for and got while the hook runs, on a clock that stands still so its 50 ms of reading never runs out. A read
+// with no size of its own (a whole file at once) counts as unbounded.
+const CURSOR_READ_BYTES =
+  Number(
+    /const CURSOR_DISK_READ = \{ bytes: (\d+) \* 1024,/.exec(
+      fs.readFileSync(path.join(GUARD_DIR, "lib", "hooks", "file-read-tools.js"), "utf8"),
+    )[1],
+  ) * 1024;
+
+function cursorDiskReads(root, name, args) {
+  const call = () =>
+    guard.inspectTool("cursor", { tool_name: name, tool_input: JSON.stringify(args), cwd: root }, { cwd: root });
+  // The first call loads the engine from disk, which isn't the read's cost.
+  call();
+  const counted = { calls: 0, bytes: 0, biggest: 0, unbounded: 0 };
+  const originals = ["readSync", "readFileSync", "readvSync", "createReadStream"].map((n) => [n, fs[n]]);
+  fs.readSync = function (fd, buffer, ...rest) {
+    const asked = typeof rest[0] === "object" && rest[0] ? rest[0].length : rest[1];
+    const got = originals[0][1].call(this, fd, buffer, ...rest);
+    counted.calls += 1;
+    counted.bytes += got;
+    counted.biggest = Math.max(counted.biggest, asked ?? buffer.length);
+    return got;
+  };
+  for (const [n, original] of originals.slice(1)) {
+    fs[n] = function (...a) {
+      counted.calls += 1;
+      counted.unbounded += 1;
+      return original.apply(this, a);
+    };
+  }
+  const realNow = Date.now;
+  const now = realNow();
+  Date.now = () => now;
+  try {
+    return { action: call().action, ...counted };
+  } finally {
+    for (const [n, original] of originals) fs[n] = original;
+    Date.now = realNow;
+  }
+}
+
+// Every read asks for at most the bound and one byte more (that byte tells a file that goes on), each file takes at
+// most two reads (the second finds its end), and the bytes read stay inside the bound for each file.
+function assertCursorReadsBounded(read, files) {
+  assert.equal(read.action, "allow");
+  assert.equal(read.unbounded, 0, `${read.unbounded} reads of a whole file`);
+  assert.ok(read.biggest <= CURSOR_READ_BYTES + 1, `a read asked for ${read.biggest} bytes`);
+  assert.ok(read.calls <= 2 * files, `${read.calls} reads for ${files} files`);
+  assert.ok(read.bytes <= files * (CURSOR_READ_BYTES + 1), `${read.bytes} bytes read for ${files} files`);
+}
+
+test("Cursor's tool hook reads only its bound of a 5 MB file for a read_file", (t) => {
+  const root = tempDir(t);
+  const line = "ordinary line of text for the big file, nothing to see here\n";
+  fs.writeFileSync(path.join(root, "big.txt"), line.repeat(Math.ceil((5 * 1024 * 1024) / line.length)));
+  const read = cursorDiskReads(root, "read_file", { path: "big.txt" });
+  assertCursorReadsBounded(read, 1);
+  assert.equal(read.calls, 1, "one read of the bound fills the buffer");
+});
+
+test("Cursor's tool hook reads only its bound of each of 200 small files for a read_multiple_files", (t) => {
+  const root = tempDir(t);
+  fs.mkdirSync(path.join(root, "many"));
+  const paths = [];
+  for (let i = 1; i <= 200; i++) {
+    fs.writeFileSync(path.join(root, "many", `f${i}.txt`), `file ${i}\n`);
+    paths.push(`many/f${i}.txt`);
+  }
+  const read = cursorDiskReads(root, "read_multiple_files", { paths });
+  assertCursorReadsBounded(read, 200);
+  assert.equal(read.calls, 400, "each small file is read to its end, all 200 of them");
+});
+
+test("Cursor's tool hook still stops a read of a service account file under a plain name", (t) => {
+  const root = toolReadRoot(t);
+  fs.writeFileSync(path.join(root, "notes.json"), '{ "type": "service_account", "project_id": "made-up" }\n');
+  assert.equal(toolCall(root, "cursor", "read_file", JSON.stringify({ path: "notes.json" })), "block");
+  assert.equal(
+    toolCall(root, "cursor", "read_multiple_files", JSON.stringify({ paths: ["README.md", "notes.json"] })),
+    "block",
+  );
+});
+
+// Opening a named pipe waits until something writes to it, so a read of one is checked in a child process that's
+// ended after 10 seconds, and the check inside it must answer within 1 second. mkfifo doesn't exist on Windows, so
+// these tests are skipped there.
+const NO_FIFO = process.platform === "win32" ? "mkfifo doesn't exist on Windows" : false;
+
+function fifoRoot(t, name) {
+  const root = toolReadRoot(t);
+  const made = spawnSync("mkfifo", [path.join(root, name)], { encoding: "utf8" });
+  assert.equal(made.status, 0, made.stderr);
+  return root;
+}
+
+// Runs one hook's check of a read in a child process: its outcome and how long the check took, or null when it hung.
+function checkInChild(root, hook, name, args) {
+  const script = `
+    const guard = require(${JSON.stringify(path.join(GUARD_DIR, "bin", "clotr-guard.js"))});
+    const [hook, name, args, root] = JSON.parse(process.argv[1]);
+    const tool = hook === "gemini-read" ? "gemini" : hook;
+    const event = { tool_name: name, tool_input: tool === "cursor" ? JSON.stringify(args) : args, cwd: root };
+    const options = { cwd: root, dataDir: root, searchWalkMaxMs: 10000 };
+    const started = performance.now();
+    const outcome = hook === "gemini-read" ? guard.inspectRead(tool, event, options) : guard.inspectTool(tool, event, options);
+    process.stdout.write(JSON.stringify({ outcome, ms: performance.now() - started }));`;
+  const result = spawnSync(process.execPath, ["-e", script, JSON.stringify([hook, name, args, root])], {
+    encoding: "utf8",
+    timeout: 10000,
+    killSignal: "SIGKILL",
+  });
+  if (result.error || result.signal) return null;
+  assert.equal(result.status, 0, result.stderr);
+  return JSON.parse(result.stdout);
+}
+
+for (const fileName of ["pipe.json", "notes.json"]) {
+  for (const [label, hook, name] of [
+    ["Cursor's tool hook", "cursor", "read_file"],
+    ["Gemini's read hook", "gemini-read", "mcp_fs_read_file"],
+  ]) {
+    test(
+      `${label} judges a read_file of a named pipe called ${fileName} by its name within 1 second`,
+      { skip: NO_FIFO },
+      (t) => {
+        const root = fifoRoot(t, fileName);
+        const answer = checkInChild(root, hook, name, { path: fileName });
+        assert.ok(answer, "no answer within 10 seconds");
+        assert.ok(answer.ms < 1000, `${Math.round(answer.ms)} ms`);
+        plainAllow(answer.outcome, label);
+      },
+    );
+  }
+}
+
+test(
+  "Claude's tool hook gives a filesystem read of a named pipe the couldn't-check note within 1 second",
+  { skip: NO_FIFO },
+  (t) => {
+    const root = fifoRoot(t, "pipe.json");
+    const answer = checkInChild(root, "claude", "mcp__fs__read_file", { path: "pipe.json" });
+    assert.ok(answer, "no answer within 10 seconds");
+    assert.ok(answer.ms < 1000, `${Math.round(answer.ms)} ms`);
+    assert.equal(answer.outcome.action, "allow");
+    assert.equal(answer.outcome.internalError, true);
+  },
+);

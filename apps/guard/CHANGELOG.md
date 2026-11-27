@@ -2,6 +2,34 @@
 
 What changed in each version of Clotr Guard and Clotr MCP, the MCP server that comes with it.
 
+## 0.1.4 (2026-11-27)
+
+Known issue: a command that copies the example env file is stopped when it also has `alias`, `function` or `hash`
+in it, even in quotes, like `alias ll='ls -la'; cp .env.example .env`. 0.1.3 runs it. Run the two parts one at a
+time.
+
+- A copy of the example env file that renames the copy command first, like `alias cp=cat; cp .env.example .env` or
+  `function copy { gc $args[1] }; copy .env.example .env`, is stopped. 0.1.3 ran it and printed the real `.env`.
+- Copying the example env file with a comment or a second line after it, like
+  `Copy-Item .env.example .env  # first run only`, runs again in PowerShell and Cursor.
+- The shell check stops more reads of a secret file. It follows a `cd` or a variable earlier in the command, like
+  `cd .kube && cat config`, and reads `xargs`, `find -exec`, `Start-Process` and inline code like
+  `python -c "print(open(\".env\").read())"`.
+- More ways of printing the environment are stopped, like `env > e.txt`, `sudo env` or `docker exec app env`, and
+  `printenv PATH` runs again.
+- A commit message that mentions a secret file, like `git commit -m "read PORT once; type .env values"`, runs. So
+  does a wildcard like `cat config*` that matches no secret file.
+- A file read through a tool server, like GitHub's `get_file_contents` on `.env`, is stopped by its name.
+- Hook input that never ends, a Git that doesn't answer and a network share that stalls get an answer in time,
+  where 0.1.3 could hang.
+- A stopped prompt sent again goes through only in the session that showed the warning, and an error inside Guard
+  stops the prompt instead of letting it through.
+- `clotr-guard check` checks every file it's given, finds a key in a UTF-16 file with no byte order mark, and shows
+  less of each value.
+- The engine is 1.6.4, up from 1.6.1. A password in a link like `smb://sam:hunter2!@nas.example.org/share` is found.
+
+Every change in detail is in `apps/guard/docs/0.1.4-details.md` in the repo.
+
 ## 0.1.3 (2026-11-08)
 
 This fixes the known issue in 0.1.2. Commands that only mention a secret file, like `Copy-Item .env.example .env` or
