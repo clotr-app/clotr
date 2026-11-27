@@ -23,7 +23,7 @@ next. Never repeat or reconstruct any part of the value. The choice is theirs, s
   with that exclusion, and don't try to get the named file's text another way.
 - If a commit is stopped, say which file Clotr named and let the person take it out of the commit.
 
-A stopped prompt goes through if the person sends it again within two minutes with the same findings. A new finding
+A stopped prompt goes through if the person sends it again in the same session within two minutes with the same findings. A hook event with no session id counts in any session of that assistant. A new finding
 pauses it again. Some checks ask the person instead of stopping. Claude Code asks before reading an ordinary file with a credential in it, and Claude Code
 and Cursor ask before a shell command or MCP tool call whose arguments hold one. That answer is the person's too.
 

@@ -17,6 +17,9 @@ if (!fs.existsSync(path.join(GUARD_DIR, "dist", "clotr-engine.js"))) {
 }
 const guard = require("../apps/guard/bin/clotr-guard.js");
 const mcp = require("../apps/guard/bin/clotr-mcp.js");
+const secretPaths = require("../apps/guard/lib/path-forms/drive-top-folders.js");
+const { countingLookups } = require("./guard-lookups.js");
+const { onStandInClock } = require("./guard-stand-in-clock.js");
 
 const WINDOWS_ONLY = process.platform === "win32" ? false : "Windows path forms";
 
@@ -296,14 +299,13 @@ test("the read hook's path checks stop at its deadline and the read is held as u
   const root = fixture(t);
   const STEP_MS = 250;
   const started = [];
+  // Each lookup takes STEP_MS on the made-up clock, as one on a slow or busy disk would.
+  let clock;
   const slow = (original) =>
     function (...args) {
       if (typeof args[0] === "string" && args[0].includes(root)) {
         started.push(Date.now());
-        const until = Date.now() + STEP_MS;
-        while (Date.now() < until) {
-          // A lookup on a slow or busy disk.
-        }
+        clock.skip(STEP_MS);
       }
       return original.apply(this, args);
     };
@@ -318,43 +320,46 @@ test("the read hook's path checks stop at its deadline and the read is held as u
     fs.statSync = statSync;
     fs.realpathSync = realpathSync;
   });
-  for (const [tool, event] of [
-    ["claude", { tool_name: "Read", tool_input: { file_path: "notes.txt" } }],
-    ["gemini", { tool_name: "read_file", tool_input: { absolute_path: path.join(root, "notes.txt") } }],
-    ["codex", { tool_name: "mcp__fs__read_file", tool_input: { path: "notes.txt" } }],
-    ["cursor", { file_path: "notes.txt", content: "notes\n" }],
-  ]) {
+  onStandInClock((madeUp) => {
+    clock = madeUp;
+    for (const [tool, event] of [
+      ["claude", { tool_name: "Read", tool_input: { file_path: "notes.txt" } }],
+      ["gemini", { tool_name: "read_file", tool_input: { absolute_path: path.join(root, "notes.txt") } }],
+      ["codex", { tool_name: "mcp__fs__read_file", tool_input: { path: "notes.txt" } }],
+      ["cursor", { file_path: "notes.txt", content: "notes\n" }],
+    ]) {
+      started.length = 0;
+      const deadline = Date.now() + 400;
+      const outcome = guard.inspectRead(tool, event, { cwd: root, deadline });
+      const finished = Date.now();
+      assert.equal(outcome.action, "block", tool);
+      assert.equal(outcome.unfinished, true, tool);
+      assert.ok(started.length > 0, `${tool}: the slow lookup ran`);
+      assert.deepEqual(
+        started.filter((at) => at >= deadline),
+        [],
+        `${tool}: a lookup started after the deadline`,
+      );
+      assert.ok(finished < deadline + STEP_MS + 1000, `${tool} took ${finished - deadline} ms past the deadline`);
+    }
+    // From the command line, the hook's start sets the deadline.
     started.length = 0;
-    const deadline = Date.now() + 400;
-    const outcome = guard.inspectRead(tool, event, { cwd: root, deadline });
-    const finished = Date.now();
-    assert.equal(outcome.action, "block", tool);
-    assert.equal(outcome.unfinished, true, tool);
-    assert.ok(started.length > 0, `${tool}: the slow lookup ran`);
-    assert.deepEqual(
-      started.filter((at) => at >= deadline),
-      [],
-      `${tool}: a lookup started after the deadline`,
+    const startedAt = Date.now();
+    const outcome = guard.inspectRead(
+      "claude",
+      { tool_name: "Read", tool_input: { file_path: "notes.txt" } },
+      { cwd: root, startedAt, hookCheckMaxMs: 400 },
     );
-    assert.ok(finished < deadline + STEP_MS + 1000, `${tool} took ${finished - deadline} ms past the deadline`);
-  }
-  // From the command line, the hook's start sets the deadline.
-  started.length = 0;
-  const startedAt = Date.now();
-  const outcome = guard.inspectRead(
-    "claude",
-    { tool_name: "Read", tool_input: { file_path: "notes.txt" } },
-    { cwd: root, startedAt, hookCheckMaxMs: 400 },
-  );
-  assert.equal(outcome.unfinished, true);
-  assert.deepEqual(
-    started.filter((at) => at >= startedAt + 400),
-    [],
-  );
-  assert.ok(
-    guard.readHookOutput("claude", outcome).stdout.includes("ran out of time"),
-    "the read is put to the person as one that wasn't checked",
-  );
+    assert.equal(outcome.unfinished, true);
+    assert.deepEqual(
+      started.filter((at) => at >= startedAt + 400),
+      [],
+    );
+    assert.ok(
+      guard.readHookOutput("claude", outcome).stdout.includes("ran out of time"),
+      "the read is put to the person as one that wasn't checked",
+    );
+  });
 });
 
 // The drive's own volume as the system names it: `\\?\Volume{...}\` (from mountvol) and
@@ -1398,6 +1403,7 @@ test(
   },
 );
 
+// On the real clock: its first two checks time how fast a long glob is read, which only the real clock shows.
 test("a long Claude Code Grep glob list is checked inside the hook's deadline", (t) => {
   const root = fixture(t);
   const grep = (glob, options = {}) => {
@@ -1996,10 +2002,7 @@ test("a Read file_path too long for the system to open is judged by name, withou
           : tool === "gemini"
             ? { tool_name: "read_file", tool_input: { absolute_path: file } }
             : { tool_name: "mcp__fs__read_file", tool_input: { path: file } };
-    const started = Date.now();
-    const outcome = guard.inspectRead(tool, event, { cwd: root, startedAt: started });
-    assert.ok(Date.now() - started < 2500, `${tool} took ${Date.now() - started} ms`);
-    return outcome;
+    return guard.inspectRead(tool, event, { cwd: root, startedAt: Date.now() });
   };
   for (const tool of ["claude", "cursor", "gemini", "codex"]) {
     lookedUp.length = 0;
@@ -2162,7 +2165,7 @@ test("a search's filter checks and slow ignore checks don't let a secret file th
   fs.writeFileSync(slow, "Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 5000);\n");
   const saved = { PATH: process.env.PATH, NODE_OPTIONS: process.env.NODE_OPTIONS };
   process.env.PATH = `${bin}${path.delimiter}${saved.PATH}`;
-  process.env.NODE_OPTIONS = `--require "${slow}"`;
+  process.env.NODE_OPTIONS = `--require ${JSON.stringify(slow)}`;
   t.after(() => {
     process.env.PATH = saved.PATH;
     if (saved.NODE_OPTIONS === undefined) delete process.env.NODE_OPTIONS;
@@ -2381,22 +2384,32 @@ test("a read hook's ripgrep listing too big for its buffer is answered from ripg
       "process.stdout.write(out, () => process.exit(0));\n",
   );
   const childProcess = require("child_process");
-  const guardPath = require.resolve("../apps/guard/bin/clotr-guard.js");
+  // The read check's own file, since the bin loads it only when a check first runs, after the stand-in
+  // is gone.
+  const guardPath = require.resolve("../apps/guard/lib/hooks/file-read-check.js");
   const real = childProcess.spawnSync;
-  const loaded = require.cache[guardPath];
+  // Every cached Guard module is dropped before the reload, so the lib modules that start rg take the stand-in too, and
+  // the cache is put back exactly as it was afterwards, since other tests hold the modules loaded earlier.
+  const inGuard = (key) => key.startsWith(GUARD_DIR + path.sep);
+  const dropped = new Map(
+    Object.keys(require.cache)
+      .filter(inGuard)
+      .map((key) => [key, require.cache[key]]),
+  );
   let started = 0;
   childProcess.spawnSync = function bigRipgrep(command, args, options) {
     if (command !== "rg") return real.call(this, command, args, options);
     started += 1;
     return real.call(this, process.execPath, [big], options);
   };
-  delete require.cache[guardPath];
+  for (const key of dropped.keys()) delete require.cache[key];
   let bigGuard;
   try {
     bigGuard = require(guardPath);
   } finally {
     childProcess.spawnSync = real;
-    require.cache[guardPath] = loaded;
+    for (const key of Object.keys(require.cache).filter(inGuard)) delete require.cache[key];
+    for (const [key, entry] of dropped) require.cache[key] = entry;
   }
   const search = () =>
     bigGuard.inspectRead(
@@ -2675,14 +2688,23 @@ test("a PowerShell provider path (`FileSystem::C:\\...`) is read as the path it 
 
 test("a recursive reader given the same home folder path many times walks it once", (t) => {
   const { proj } = homeFixture(t);
-  const command = `rg x ${"~/notes ".repeat(250000)}`;
-  const outcome = guard.inspectShell(
-    "claude",
-    { tool_name: "Bash", tool_input: { command, cwd: proj } },
-    { cwd: proj },
-  );
-  assert.equal(outcome.unfinished, undefined);
-  assert.equal(outcome.action, "allow");
+  const check = (copies) =>
+    guard.inspectShell(
+      "claude",
+      { tool_name: "Bash", tool_input: { command: `rg x ${"~/notes ".repeat(copies)}`, cwd: proj } },
+      { cwd: proj },
+    );
+  // The clock is held still, so the answer doesn't hang on how busy the computer is, and walking the folder once shows
+  // as the same disk lookups for four times the copies.
+  const fewer = countingLookups(() => check(62_500), { still: true });
+  const more = countingLookups(() => check(250_000), { still: true });
+  for (const { result } of [fewer, more]) {
+    assert.equal(result.unfinished, undefined);
+    assert.equal(result.action, "allow");
+  }
+  assert.equal(more.lookups, fewer.lookups, `${fewer.lookups} lookups for 62,500 copies, ${more.lookups} for 250,000`);
+  // On the real clock, a thousand copies finish well inside the check's deadline.
+  assert.equal(check(1000).action, "allow");
 });
 
 // Claude Code's Bash and PowerShell tools and Cursor's shell, from a folder.
@@ -2858,19 +2880,6 @@ test("a variable's default value is read in its place", (t) => {
     assert.equal(cursor(command), "block", `cursor ${command}`);
   }
   assert.equal(bash("cat notes${X:-}.txt"), "allow");
-});
-
-test("a run of unclosed `${` is read in linear time", (t) => {
-  const root = fixture(t);
-  const command = `cat a${"${a".repeat(250000)}`;
-  const started = Date.now();
-  const outcome = guard.inspectShell(
-    "claude",
-    { tool_name: "Bash", tool_input: { command, cwd: root } },
-    { cwd: root },
-  );
-  assert.equal(outcome.unfinished, undefined);
-  assert.ok(Date.now() - started < 5000, `took ${Date.now() - started} ms`);
 });
 
 test("PowerShell's `u{...} escape is read outside quotes too", (t) => {
@@ -3073,5 +3082,744 @@ test("a Bash backtick's command and a PowerShell braced variable are read as the
   for (const command of ["echo $(echo a)#x; cat .e\\nv", "echo `echo a`#x; cat .e\\nv", "echo $((1))#x; cat .e\\nv"]) {
     assert.equal(bash(command), "block", JSON.stringify(command));
     assert.equal(cursor(command), "block", `cursor ${JSON.stringify(command)}`);
+  }
+});
+
+// A drive-relative path on another drive, a share named by a fullwidth host, and a recursive listing piped into a
+// reader. The values are made up.
+const windowsPaths = require("../apps/guard/lib/path-forms/windows-paths.js");
+
+function shellAction(root, toolName, command) {
+  return guard.inspectShell("claude", { tool_name: toolName, tool_input: { command, cwd: root } }, { cwd: root })
+    .action;
+}
+
+test("a drive-relative path is placed below its own drive's current folder when that can be known", () => {
+  const place = windowsPaths.driveRelativePlace;
+  // The working folder is on that drive.
+  assert.equal(place("D:config\\.env", "D:\\work\\proj", {}), "D:\\work\\proj\\config\\.env");
+  assert.equal(place("d:.env", "D:\\work\\proj", {}), "D:\\work\\proj\\.env");
+  // cmd keeps each drive's current folder in `=D:`.
+  assert.equal(place("D:.env", "C:\\proj", { "=D:": "D:\\work" }), "D:\\work\\.env");
+  assert.equal(place("'D:config\\.env'", "C:\\proj", { "=D:": "D:\\work" }), "D:\\work\\config\\.env");
+  // Neither tells, so it can't be placed.
+  assert.equal(place("D:.env", "C:\\proj", {}), null);
+  assert.equal(place("D:.env", "C:\\proj", { "=D:": "C:\\other" }), null);
+  // Not drive-relative.
+  assert.equal(place("D:\\proj\\.env", "D:\\work", {}), null);
+  assert.equal(place(".env", "D:\\work", {}), null);
+});
+
+test("a drive-relative path on another drive whose folder can't be known is judged by its name", (t) => {
+  const root = fixture(t);
+  for (const toolName of ["Bash", "PowerShell"]) {
+    for (const file of ["D:.env", "D:config\\.env", "D:..\\proj\\.env", "D:.kube\\config"]) {
+      const command = toolName === "Bash" ? `cat '${file}'` : `Get-Content '${file}'`;
+      assert.equal(shellAction(root, toolName, command), "block", `${toolName} ${file}`);
+    }
+    for (const file of ["D:notes.txt", "D:docs\\readme.md"]) {
+      const command = toolName === "Bash" ? `cat '${file}'` : `Get-Content '${file}'`;
+      assert.equal(shellAction(root, toolName, command), "allow", `${toolName} ${file}`);
+    }
+  }
+  for (const file of ["D:.env", "D:config\\.env"]) {
+    assert.equal(
+      guard.inspectRead("claude", { tool_name: "Read", tool_input: { file_path: file } }, { cwd: root }).action,
+      "block",
+      file,
+    );
+  }
+});
+
+test("a share whose host is written in fullwidth letters is read as the host it names", () => {
+  assert.equal(windowsPaths.hostIsThisComputer("\uff4c\uff4f\uff43\uff41\uff4c\uff48\uff4f\uff53\uff54"), true);
+  assert.equal(windowsPaths.hostIsThisComputer("\uff2c\uff4f\uff43\uff41\uff4c\uff28\uff4f\uff53\uff54"), true);
+  assert.equal(windowsPaths.hostIsThisComputer("\uff11\uff12\uff17\uff0e\uff10\uff0e\uff10\uff0e\uff11"), true);
+  const shares = windowsPaths.driveSharePaths(
+    "\\\\\uff4c\uff4f\uff43\uff41\uff4c\uff48\uff4f\uff53\uff54\\c$\\proj\\notes.txt",
+    "/",
+    { lookups: false },
+  );
+  assert.deepStrictEqual(shares, [{ drive: "c:\\proj\\notes.txt", loopback: true }]);
+  assert.equal(windowsPaths.hostIsThisComputer("fileserver.example"), false);
+});
+
+test(
+  "a recursive listing piped into a reader is read as a reader of that folder",
+  { todo: "the shell check's reader list is outside this change" },
+  (t) => {
+    const root = fixture(t);
+    for (const [toolName, command] of [
+      ["PowerShell", "Get-ChildItem -Recurse | Get-Content"],
+      ["PowerShell", "gci -r | gc"],
+      ["PowerShell", "Get-ChildItem -Recurse -File | Get-Content"],
+      ["Bash", "dir /s /b | findstr /f:/ DB_"],
+    ]) {
+      assert.equal(shellAction(root, toolName, command), "block", `${toolName} ${command}`);
+    }
+    assert.equal(shellAction(root, "PowerShell", "Get-ChildItem -Recurse docs | Get-Content"), "allow");
+  },
+);
+
+// A mocked Windows disk, the same on every system: D:\.env with the short name ENV~1, D:\.kube\config, D:\kubelink a
+// junction to D:\.kube, and D:\notes.txt. The working folder is C:\proj and there's no `=D:`, so Guard can't tell
+// D:'s current folder. Only D:\ and C:\proj are mocked; the rest of the disk is left alone. Gives back an undo.
+function mockedDriveD() {
+  const pathKeys = ["resolve", "isAbsolute", "normalize", "join", "dirname", "basename", "relative", "parse", "sep"];
+  const fsKeys = ["lstatSync", "statSync", "realpathSync", "readdirSync"];
+  const saved = { path: {}, fs: {}, native: fs.realpathSync.native, cwd: process.cwd, env: process.env["=D:"] };
+  saved.platform = Object.getOwnPropertyDescriptor(process, "platform");
+  for (const key of pathKeys) saved.path[key] = path[key];
+  for (const key of fsKeys) saved.fs[key] = fs[key];
+  const files = {
+    "D:\\.env": "D:\\.env",
+    "D:\\ENV~1": "D:\\.env",
+    "D:\\notes.txt": "D:\\notes.txt",
+    "D:\\.kube\\config": "D:\\.kube\\config",
+    "D:\\kubelink\\config": "D:\\.kube\\config",
+  };
+  const folders = {
+    "C:\\proj": [],
+    "D:\\": [".env", ".kube", "kubelink", "notes.txt"],
+    "D:\\.kube": ["config"],
+    "D:\\kubelink": ["config"],
+  };
+  const known = [...Object.keys(files), ...Object.keys(folders)];
+  const mocked = (p) => typeof p === "string" && /^(?:D:\\|C:\\proj(?:\\|$))/i.test(p);
+  const find = (p) => known.find((name) => name.toLowerCase() === p.toLowerCase());
+  const missing = () => Object.assign(new Error("ENOENT: no such file or directory"), { code: "ENOENT" });
+  const stat = (p, options) => {
+    const name = find(p);
+    if (!name) {
+      if (options?.throwIfNoEntry === false) return undefined;
+      throw missing();
+    }
+    const file = name in files;
+    return { isFile: () => file, isDirectory: () => !file, isSymbolicLink: () => false, size: file ? 40 : 0 };
+  };
+  const realpath = (p, options) => {
+    if (!mocked(p)) return saved.native(p, options);
+    const name = find(p);
+    if (!name) throw missing();
+    return files[name] ?? (name === "D:\\kubelink" ? "D:\\.kube" : name);
+  };
+  const readdir = (p, options) => {
+    if (!mocked(p)) return saved.fs.readdirSync(p, options);
+    const name = find(p);
+    if (!name || !(name in folders)) throw missing();
+    if (!options?.withFileTypes) return folders[name].slice();
+    return folders[name].map((entry) => {
+      const file = `${name.replace(/\\$/, "")}\\${entry}` in files;
+      return { name: entry, isFile: () => file, isDirectory: () => !file, isSymbolicLink: () => entry === "kubelink" };
+    });
+  };
+  for (const key of pathKeys) path[key] = path.win32[key];
+  fs.lstatSync = (p, options) => (mocked(p) ? stat(p, options) : saved.fs.lstatSync(p, options));
+  fs.statSync = (p, options) => (mocked(p) ? stat(p, options) : saved.fs.statSync(p, options));
+  fs.realpathSync = Object.assign((p, options) => (mocked(p) ? realpath(p) : saved.fs.realpathSync(p, options)), {
+    native: realpath,
+  });
+  fs.readdirSync = readdir;
+  // Guard lists a drive's top in a child process (see driveTopLister), which can't see this mock, so it lists here.
+  const lister = secretPaths.driveTopLister;
+  const savedList = lister?.list;
+  if (lister) lister.list = listOnThisThread;
+  Object.defineProperty(process, "platform", { value: "win32", configurable: true });
+  process.cwd = () => "C:\\proj";
+  delete process.env["=D:"];
+  return () => {
+    if (lister) lister.list = savedList;
+    Object.defineProperty(process, "platform", saved.platform);
+    process.cwd = saved.cwd;
+    if (saved.env !== undefined) process.env["=D:"] = saved.env;
+    for (const key of pathKeys) path[key] = saved.path[key];
+    for (const key of fsKeys) fs[key] = saved.fs[key];
+    fs.realpathSync.native = saved.native;
+  };
+}
+
+// A drive's top listed with fs.readdirSync as it is now, mocked or not, the way Guard's own lister answers.
+function listOnThisThread(folder) {
+  try {
+    return { names: fs.readdirSync(folder) };
+  } catch (error) {
+    return { code: error.code };
+  }
+}
+
+// The answers on the mocked disk for a file named three ways: a Claude Code Read, PowerShell's Get-Content and
+// Cursor's cmd `type`.
+function answersOnDriveD(files) {
+  const cwd = "C:\\proj";
+  const undo = mockedDriveD();
+  try {
+    return files.map((file) => ({
+      file,
+      read: guard.inspectRead("claude", { tool_name: "Read", tool_input: { file_path: file } }, { cwd }).action,
+      ps: shellAction(cwd, "PowerShell", `Get-Content ${file}`),
+      cursor: guard.inspectShell("cursor", { command: `type ${file}`, cwd }, { cwd }).action,
+    }));
+  } finally {
+    undo();
+  }
+}
+
+test("a drive-relative path whose drive folder can't be known is also checked where Windows opens it", () => {
+  // D:'s current folder is its root here, as in any process without `=D:`, so ENV~1 is .env and kubelink a junction.
+  for (const answer of answersOnDriveD(["D:ENV~1", "D:kubelink\\config", "D:.env"])) {
+    assert.deepStrictEqual(answer, { file: answer.file, read: "block", ps: "block", cursor: "block" });
+  }
+  const [notes] = answersOnDriveD(["D:notes.txt"]);
+  assert.deepStrictEqual(notes, { file: "D:notes.txt", read: "allow", ps: "allow", cursor: "allow" });
+});
+
+test("a wildcard behind a drive-relative path whose drive folder can't be known is stopped", () => {
+  const [all, env] = answersOnDriveD(["D:*", "D:.e*"]);
+  assert.equal(all.cursor, "block", "type D:*");
+  assert.equal(all.ps, "block", "Get-Content D:*");
+  assert.equal(env.ps, "block", "Get-Content D:.e*");
+  assert.equal(env.cursor, "block", "type D:.e*");
+});
+
+test("a command with a colon that names no drive path still runs", (t) => {
+  const root = fixture(t);
+  const commands = [
+    "scp host:notes.txt .",
+    "scp host:.env .",
+    "rsync -a host:app/ .",
+    "git show HEAD:README.md",
+    "docker cp app:/tmp/x .",
+    "kubectl cp pod:/x .",
+    "cat a:b",
+    "cd D:",
+    "C:",
+    "dir D:",
+    "git clone git@github.com:o/r.git",
+    "sed -e 's:a:b:'",
+  ];
+  for (const command of commands) assert.equal(shellAction(root, "Bash", command), "allow", command);
+  const undo = mockedDriveD();
+  try {
+    for (const command of commands) assert.equal(shellAction("C:\\proj", "Bash", command), "allow", `win32 ${command}`);
+  } finally {
+    undo();
+  }
+});
+
+// Searches whose option values hold a one-letter name and a colon: an rg type, a glob, a grep filter. None of them
+// names a path, and none of their files is read.
+const OPTION_VALUE_SEARCHES = [
+  "rg --type-add k:*.txt -tpy DB_ proj",
+  "rg --type-add k:*.txt -tpy DB_ //fileserver.example/share/proj",
+  "rg --type-add=k:*.txt -tpy DB_ proj",
+  "rg -g k:*.txt DB_ proj",
+  "rg --glob k:*.txt DB_ proj",
+  "rg --glob=k:*.txt DB_ proj",
+  "rg --iglob k:*.txt DB_ proj",
+  "rg --pre-glob k:*.txt DB_ proj",
+  "grep -r --include=k:*.txt DB_ proj",
+  "grep -r --exclude=k:*.txt DB_ docs",
+  "grep -r --include k:*.txt DB_ proj",
+];
+
+// The answers for a command through Claude Code's Bash, through `cmd /c`, Claude Code's PowerShell and Cursor's shell.
+function answersEveryShell(cwd, command) {
+  return {
+    bash: shellAction(cwd, "Bash", command),
+    cmd: shellAction(cwd, "Bash", `cmd /c ${command}`),
+    ps: shellAction(cwd, "PowerShell", command),
+    cursor: guard.inspectShell("cursor", { command, cwd }, { cwd }).action,
+  };
+}
+
+const ALL_ALLOW = { bash: "allow", cmd: "allow", ps: "allow", cursor: "allow" };
+
+test("a search's option value with a one-letter name and a colon isn't read as a drive path", (t) => {
+  const root = fixture(t);
+  for (const command of OPTION_VALUE_SEARCHES) {
+    assert.deepStrictEqual(answersEveryShell(root, command), ALL_ALLOW, command);
+  }
+});
+
+test("a search's option value with a one-letter name and a colon isn't read as a drive path on Windows", () => {
+  // Windows' rules forced on the mocked disk: no drive K:, and D:'s current folder can't be known.
+  const undo = mockedDriveD();
+  try {
+    for (const command of OPTION_VALUE_SEARCHES) {
+      assert.deepStrictEqual(answersEveryShell("C:\\proj", command), ALL_ALLOW, `win32 ${command}`);
+    }
+    for (const command of OPTION_VALUE_SEARCHES.map((item) => item.replace(/k:/g, "d:"))) {
+      assert.deepStrictEqual(answersEveryShell("C:\\proj", command), ALL_ALLOW, `win32 ${command}`);
+    }
+  } finally {
+    undo();
+  }
+});
+
+test("rg's own file types are read as its filters with Windows' rules forced", () => {
+  const undo = mockedDriveD();
+  try {
+    const shell = (command) => shellAction("C:\\proj", "Bash", command);
+    for (const command of [
+      "rg --hidden --type-add k:id_* -tk DB_ //fileserver.example/home/alex",
+      "rg --hidden --type-add=k:.env* --type=k DB_ //fileserver.example/share/proj",
+      "rg --hidden --type-add 'k:*.md' --type-add 'k:.env' -t k DB_ //fileserver.example/share/proj",
+    ]) {
+      assert.equal(shell(command), "block", command);
+    }
+    for (const command of [
+      "rg -tpy DB_ //fileserver.example/share/proj",
+      "rg --type-add k:*.md -tk DB_ //fileserver.example/share/proj",
+      "rg --type-add k:*.txt -tpy DB_ //fileserver.example/share/proj",
+      "rg --type-add k:*.txt -tpy DB_ proj",
+    ]) {
+      assert.equal(shell(command), "allow", command);
+    }
+  } finally {
+    undo();
+  }
+});
+
+test("a wildcard behind a drive whose folder can't be known runs where it matches no secret file", () => {
+  // D:\ holds .env, .kube, kubelink and notes.txt: `*.txt` matches only notes.txt, `*.md` nothing.
+  for (const answer of answersOnDriveD(["D:*.txt", "D:*.md", "D:note?.txt"])) {
+    assert.equal(answer.cursor, "allow", `type ${answer.file}`);
+    assert.equal(answer.ps, "allow", `Get-Content ${answer.file}`);
+  }
+});
+
+test("a wildcard behind a drive whose folder can't be known is stopped where it matches a secret file", () => {
+  for (const answer of answersOnDriveD(["D:*", "D:.e*", "D:*env", "D:.en[v]"])) {
+    assert.equal(answer.cursor, "block", `type ${answer.file}`);
+    assert.equal(answer.ps, "block", `Get-Content ${answer.file}`);
+  }
+});
+
+test("a real drive-relative path is still judged when an option nearby has a colon", (t) => {
+  const root = fixture(t);
+  for (const command of ["cat D:config\\.env", "rg -g k:*.txt DB_ D:.env", "cut -d: -f1 D:.env", "awk -F: 1 D:.env"]) {
+    assert.equal(shellAction(root, "Bash", command), "block", command);
+  }
+  const [env, short] = answersOnDriveD(["D:.env", "D:ENV~1"]);
+  assert.deepStrictEqual(env, { file: "D:.env", read: "block", ps: "block", cursor: "block" });
+  assert.deepStrictEqual(short, { file: "D:ENV~1", read: "block", ps: "block", cursor: "block" });
+});
+
+// Drive folders behind a wildcard, listed with a time limit. The mocked disk's helpers list on this thread (see
+// mockedDriveD); the tests that time a drive that never answers run the real listing in a child process.
+
+// The mocked disk of mockedDriveD with a K: drive whose top holds `names`, or whose listing throws `error`. K:\ is
+// listed on this thread as D:\\ is (see mockedDriveD), and every listing of D:\ or K:\ is counted in `counts`.
+function mockedDrivesDK({ names = null, error = null } = {}) {
+  const undo = mockedDriveD();
+  const saved = { lstatSync: fs.lstatSync, statSync: fs.statSync, readdirSync: fs.readdirSync };
+  const counts = { "d:\\": 0, "k:\\": 0 };
+  const onK = (p) => typeof p === "string" && /^K:/i.test(p);
+  const kFile = (p) => names?.some((name) => `k:\\${name}` === p.toLowerCase());
+  const missing = () => Object.assign(new Error("ENOENT"), { code: "ENOENT" });
+  const stat = (key) => (p, options) => {
+    if (!onK(p)) return saved[key](p, options);
+    const top = /^K:\\?$/i.test(p) && names;
+    if (!top && !kFile(p)) {
+      if (options?.throwIfNoEntry === false) return undefined;
+      throw missing();
+    }
+    return { isFile: () => !top, isDirectory: () => Boolean(top), isSymbolicLink: () => false, size: top ? 0 : 40 };
+  };
+  fs.lstatSync = stat("lstatSync");
+  fs.statSync = stat("statSync");
+  fs.readdirSync = (p, options) => {
+    const key = typeof p === "string" ? p.toLowerCase() : "";
+    if (key in counts) counts[key] += 1;
+    if (!onK(p)) return saved.readdirSync(p, options);
+    if (error) throw Object.assign(new Error(error), { code: error });
+    if (!names || !/^K:\\$/i.test(p)) throw missing();
+    return names.slice();
+  };
+  return {
+    counts,
+    undo() {
+      Object.assign(fs, saved);
+      undo();
+    },
+  };
+}
+
+test("one hook call lists a drive's top at most once, however many words name it, with Windows' rules forced", () => {
+  const disk = mockedDrivesDK({ names: ["notes.txt", "a.txt"] });
+  try {
+    const cwd = "C:\\proj";
+    const cursor = (command) => guard.inspectShell("cursor", { command, cwd }, { cwd }).action;
+    const calls = [
+      ["cursor", "type D:*.txt", () => cursor("type D:*.txt")],
+      ["cursor", "type D:*.txt D:*.md D:note?.txt", () => cursor("type D:*.txt D:*.md D:note?.txt")],
+      [
+        "cursor",
+        "type K:*.txt & type D:*.txt & type k:*.md",
+        () => cursor("type K:*.txt & type D:*.txt & type k:*.md"),
+      ],
+      ["cmd", "cmd /c type D:*.txt & type d:*.md", () => shellAction(cwd, "Bash", "cmd /c type D:*.txt & type d:*.md")],
+      ["ps", "Get-Content D:*.txt; gc D:*.md", () => shellAction(cwd, "PowerShell", "Get-Content D:*.txt; gc D:*.md")],
+      [
+        "bash",
+        "rg --type-add k:*.txt -g k:*.md -tpy DB_ proj",
+        () => shellAction(cwd, "Bash", "rg --type-add k:*.txt -g k:*.md -tpy DB_ proj"),
+      ],
+      [
+        "bash",
+        "rg --type-add k:*.txt -g d:*.md --iglob K:*.txt DB_ proj",
+        () => shellAction(cwd, "Bash", "rg --type-add k:*.txt -g d:*.md --iglob K:*.txt DB_ proj"),
+      ],
+    ];
+    for (const [shell, command, run] of calls) {
+      disk.counts["d:\\"] = 0;
+      disk.counts["k:\\"] = 0;
+      run();
+      assert.ok(disk.counts["d:\\"] <= 1, `${shell} ${command}: D:\\ listed ${disk.counts["d:\\"]} times`);
+      assert.ok(disk.counts["k:\\"] <= 1, `${shell} ${command}: K:\\ listed ${disk.counts["k:\\"]} times`);
+    }
+  } finally {
+    disk.undo();
+  }
+});
+
+// Round 3's searches whose option value holds `k:` and a wildcard, and the same search through `cmd /c`.
+const K_OPTION_SEARCHES = [...OPTION_VALUE_SEARCHES, "cmd /c rg --type-add k:*.txt -tpy DB_ proj"];
+
+test("a search's `k:` option value runs when K: is there and its top holds no secret, with Windows' rules forced", () => {
+  const disk = mockedDrivesDK({ names: ["notes.txt", "a.txt", "README.md"] });
+  try {
+    for (const command of K_OPTION_SEARCHES) {
+      assert.deepStrictEqual(answersEveryShell("C:\\proj", command), ALL_ALLOW, `win32 ${command}`);
+    }
+  } finally {
+    disk.undo();
+  }
+});
+
+test("a wildcard behind K: is stopped when K:'s top holds a secret it matches, with Windows' rules forced", () => {
+  for (const names of [
+    ["secrets.txt", "notes.txt", "a.txt"],
+    ["notes.txt", "a.txt", "secrets.txt"],
+  ]) {
+    const disk = mockedDrivesDK({ names });
+    try {
+      assert.equal(shellAction("C:\\proj", "Bash", "type K:*.txt"), "block", `${names[0]} first: type K:*.txt`);
+      // A search's glob and file type values open no file on K: (see searchTextWords).
+      for (const command of ["rg --type-add k:*.txt -tpy DB_ proj", "rg -g k:*.txt DB_ proj"]) {
+        assert.equal(shellAction("C:\\proj", "Bash", command), "allow", `${names[0]} first: ${command}`);
+      }
+      const cursor = guard.inspectShell("cursor", { command: "type K:*.txt", cwd: "C:\\proj" }, { cwd: "C:\\proj" });
+      assert.equal(cursor.action, "block", `${names[0]} first: Cursor type K:*.txt`);
+    } finally {
+      disk.undo();
+    }
+  }
+});
+
+test("a search's `k:` value after a long command still runs, and a `K:` wildcard there is stopped, with Windows' rules forced", () => {
+  const disk = mockedDrivesDK({ names: ["secrets.txt", "notes.txt", "a.txt"] });
+  const lead = "(a)".repeat(2000);
+  try {
+    for (const [tool, command, action] of [
+      ["PowerShell", `cp ${lead} (Join-Path x 'notes.txt'); rg -g k:*.txt DB_ proj`, "allow"],
+      ["Bash", `echo ${lead}; rg --type-add k:*.txt -tpy DB_ proj`, "allow"],
+      ["PowerShell", `cp ${lead} (Join-Path x 'notes.txt'); type K:*.txt`, "block"],
+      ["Bash", `echo ${lead}; type K:*.txt`, "block"],
+      // The same word read as a file elsewhere in the command is matched on K: (see searchTextWords).
+      ["Bash", `echo ${lead}; rg -g k:*.txt DB_ proj; type k:*.txt`, "block"],
+    ]) {
+      assert.equal(shellAction("C:\\proj", tool, command), action, `${tool} ${command.slice(-48)}`);
+    }
+  } finally {
+    disk.undo();
+  }
+});
+
+test("a wildcard behind a drive whose top can't be listed is stopped, with Windows' rules forced", () => {
+  // A drive that isn't ready can give a code Node doesn't name.
+  for (const error of ["EACCES", "EBUSY", "EIO", "EAGAIN", "UNKNOWN"]) {
+    const disk = mockedDrivesDK({ error });
+    try {
+      assert.equal(shellAction("C:\\proj", "Bash", "type K:*.txt"), "block", `${error}: type K:*.txt`);
+      const search = "rg --type-add k:*.txt -tpy DB_ proj";
+      assert.equal(shellAction("C:\\proj", "Bash", search), "allow", `${error}: ${search}`);
+      const cursor = guard.inspectShell("cursor", { command: "type K:*.txt", cwd: "C:\\proj" }, { cwd: "C:\\proj" });
+      assert.equal(cursor.action, "block", `${error}: Cursor type K:*.txt`);
+    } finally {
+      disk.undo();
+    }
+  }
+});
+
+test("a wildcard behind a drive whose top holds more than 2,048 names is stopped, with Windows' rules forced", () => {
+  const answers = {};
+  for (const size of [2047, 2048, 2049]) {
+    const disk = mockedDrivesDK({ names: Array.from({ length: size }, (_, index) => `n${index}.txt`) });
+    try {
+      const cwd = "C:\\proj";
+      answers[size] = guard.inspectShell("cursor", { command: "type K:*.txt", cwd }, { cwd }).action;
+      // The same wildcard twice, and judged on each pass, charges its lookups once.
+      answers[`${size} twice`] = shellAction(cwd, "PowerShell", "Get-Content K:*.txt; gc k:*.txt");
+    } finally {
+      disk.undo();
+    }
+  }
+  assert.deepStrictEqual(answers, {
+    2047: "allow",
+    2048: "allow",
+    2049: "block",
+    "2047 twice": "allow",
+    "2048 twice": "allow",
+    "2049 twice": "block",
+  });
+});
+
+// Loaded with --require in a child Node and in the process Guard starts to list a drive: Windows' rules forced on a
+// mocked disk, C:\proj the working folder. D:\ holds .env and notes.txt, K:\ notes.txt and a.txt, and listing either
+// top takes CLOTR_TEST_TOP_MS ms, or forever when that's "never".
+function slowDrivePreload() {
+  const disk = require("fs");
+  const paths = require("path");
+  Object.defineProperty(process, "platform", { value: "win32", configurable: true });
+  delete process.env["=D:"];
+  delete process.env["=K:"];
+  const top = {
+    "d:\\": [".env", "notes.txt"],
+    "k:\\": ["notes.txt", "a.txt"],
+    "c:\\proj": ["proj"],
+    "c:\\proj\\proj": [],
+  };
+  const files = new Set(["d:\\.env", "d:\\notes.txt", "k:\\notes.txt", "k:\\a.txt"]);
+  const mocked = (p) => typeof p === "string" && /^(?:[DK]:|C:\\proj(?:\\|$))/i.test(p);
+  const key = (p) =>
+    paths.win32
+      .normalize(p)
+      .toLowerCase()
+      .replace(/(.:\\.+?)\\+$/, "$1");
+  const missing = () => Object.assign(new Error("ENOENT"), { code: "ENOENT" });
+  const real = { lstatSync: disk.lstatSync, statSync: disk.statSync, readdirSync: disk.readdirSync };
+  const stat = (name) => (p, options) => {
+    if (!mocked(p)) return real[name](p, options);
+    const found = key(p);
+    if (files.has(found) || found in top) {
+      return { isFile: () => files.has(found), isDirectory: () => found in top, isSymbolicLink: () => false, size: 40 };
+    }
+    if (options?.throwIfNoEntry === false) return undefined;
+    throw missing();
+  };
+  disk.lstatSync = stat("lstatSync");
+  disk.statSync = stat("statSync");
+  const realpath = (original) => (p, options) => {
+    if (!mocked(p)) return original(p, options);
+    if (files.has(key(p)) || key(p) in top) return p;
+    throw missing();
+  };
+  disk.realpathSync = Object.assign(realpath(disk.realpathSync), { native: realpath(disk.realpathSync.native) });
+  disk.readdirSync = (p, options) => {
+    if (!mocked(p)) return real.readdirSync(p, options);
+    const found = key(p);
+    if (/^.:\\$/.test(found)) {
+      const ms = process.env.CLOTR_TEST_TOP_MS === "never" ? Infinity : Number(process.env.CLOTR_TEST_TOP_MS);
+      Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms);
+    }
+    if (!(found in top)) throw missing();
+    return top[found].slice();
+  };
+}
+
+// Run in the child Node: each command's answer and time, one JSON line. A command is asked up to `tries` times and
+// stops at the first "allow"; every try is kept in `tries`, and the answer is "allow" if one try allowed.
+function timeDriveCommands(bin, commands, tries) {
+  const paths = require("path");
+  const hook = require(bin);
+  // The bin loads its shell check on first use, and Node's loader shares this path module.
+  // So one plain command loads the check before Windows' path rules go in.
+  // Otherwise Linux's loader looks for its files with Windows' rules and can't find them.
+  hook.inspectShell("claude", { tool_name: "Bash", tool_input: { command: "echo ready" } }, { cwd: process.cwd() });
+  for (const key of ["resolve", "isAbsolute", "normalize", "join", "dirname", "basename", "relative", "parse", "sep"]) {
+    paths[key] = paths.win32[key];
+  }
+  process.cwd = () => "C:\\proj";
+  const ask = (tool, command) => {
+    const started = Date.now();
+    const options = { cwd: "C:\\proj" };
+    const answer =
+      tool === "cursor"
+        ? hook.inspectShell("cursor", { command, cwd: "C:\\proj" }, options)
+        : hook.inspectShell("claude", { tool_name: tool, tool_input: { command } }, options);
+    return { action: answer.action, ms: Date.now() - started };
+  };
+  const answers = commands.map(([tool, command]) => {
+    const asked = [ask(tool, command)];
+    while (asked.at(-1).action !== "allow" && asked.length < tries) asked.push(ask(tool, command));
+    return { tool, command, ...asked.at(-1), tries: asked };
+  });
+  process.stdout.write(JSON.stringify(answers));
+}
+
+const SLOW_DRIVE_COMMANDS = [
+  ["Bash", "rg --type-add k:*.txt -tpy DB_ proj"],
+  ["cursor", "type D:*.txt"],
+  ["cursor", "type K:*.txt"],
+];
+
+// The answers, with their times, for SLOW_DRIVE_COMMANDS in a child Node whose drive tops list in `topMs`, each
+// command asked up to `tries` times.
+function slowDriveAnswers(t, topMs, tries) {
+  const dir = tempDir(t);
+  const preload = path.join(dir, "slow-drive.js");
+  fs.writeFileSync(preload, `"use strict";\n(${slowDrivePreload})();\n`);
+  const bin = path.join(GUARD_DIR, "bin", "clotr-guard.js");
+  const script = `(${timeDriveCommands})(${JSON.stringify(bin)}, ${JSON.stringify(SLOW_DRIVE_COMMANDS)}, ${tries});`;
+  const started = Date.now();
+  const run = spawnSync(process.execPath, ["-e", script], {
+    encoding: "utf8",
+    timeout: 20000,
+    env: {
+      ...process.env,
+      CLOTR_TEST_TOP_MS: String(topMs),
+      NODE_OPTIONS: `${process.env.NODE_OPTIONS || ""} --require ${JSON.stringify(preload)}`.trim(),
+    },
+  });
+  assert.equal(run.signal, null, `top ${topMs}: the child Node was stopped after ${Date.now() - started} ms`);
+  assert.equal(run.status, 0, run.stderr);
+  return JSON.parse(run.stdout);
+}
+
+// rg's `--type-add` value is a file type, not a path, so it's answered without listing K:'s top (see searchTextWords).
+// At 0 ms a command gets three tries: the listing child Node can start late once on a busy computer, and then Guard
+// rightly blocks. Guard keeps a drive top's listing only within one check, so each try lists the drive again. A
+// slower listing path still fails, since every try is late.
+for (const [topMs, expected] of [
+  [0, ["allow", "allow", "allow"]],
+  [900, ["allow", "block", "block"]],
+  [1500, ["allow", "block", "block"]],
+  ["never", ["allow", "block", "block"]],
+]) {
+  test(`a drive whose top lists in ${topMs} ms gets its answer within the hook's second`, (t) => {
+    const answers = slowDriveAnswers(t, topMs, topMs === 0 ? 3 : 1);
+    assert.deepStrictEqual(
+      answers.map((answer) => answer.action),
+      expected,
+      JSON.stringify(answers),
+    );
+    for (const answer of answers) {
+      for (const tried of answer.tries) {
+        assert.ok(
+          tried.ms < 1100,
+          `top ${topMs}: ${answer.tool} ${answer.command} took ${tried.ms} ms: ${JSON.stringify(answer.tries)}`,
+        );
+      }
+    }
+  });
+}
+
+// A search's pattern, and an option value that is a glob or a file type, name no file, so they start no drive listing.
+
+// The everyday searches whose pattern or option value has a letter, a colon and a wildcard. [tool, command].
+const SEARCH_TEXT_COMMANDS = [
+  ["Bash", 'grep "x:*" notes.txt'],
+  ["Bash", "rg 'a:.*' src"],
+  ["Bash", "grep -E 'v:[0-9]+' notes.txt"],
+  ["Bash", "grep -n 'x:*' src/app.js"],
+  ["Bash", "rg -n 'k:.*' src"],
+  ["Bash", "grep 'a:?' notes.txt"],
+  ["Bash", "grep -o 'h:[a-z]*' notes.txt"],
+  ["Bash", "rg --type-add 'k:*.txt' -tk TODO"],
+  ["Bash", "rg -g 'k:*' TODO"],
+  ["Bash", "tr ':' ' ' < notes.txt | grep 'x:*'"],
+  ["Bash", "grep -c 'x:*' *.log"],
+  ["PowerShell", "Select-String -Pattern 'x:*' notes.txt"],
+  ["Bash", "grep -e 'x:*' notes.txt"],
+  ["Bash", "grep --regexp='x:*' notes.txt"],
+  ["Bash", "grep -- 'x:*' notes.txt"],
+  ["Bash", "rg --glob 'k:*' TODO"],
+  ["Bash", "rg --iglob 'k:*' TODO"],
+  ["Bash", "rg -t k --type-add k:*.txt TODO"],
+  ["Bash", "for f in *.txt; do grep 'x:*' $f; done"],
+  ["PowerShell", "Select-String 'x:*' notes.txt"],
+  ["PowerShell", "Get-Content notes.txt | Select-String -Pattern 'k:*'"],
+  ["Bash", "grep --include 'k:*' -r TODO ."],
+];
+
+// Counts every drive top Guard lists, on the mocked disk of mockedDrivesDK.
+function countedDriveTops(names) {
+  const disk = mockedDrivesDK({ names });
+  const lister = secretPaths.driveTopLister;
+  const list = lister.list;
+  const listed = [];
+  lister.list = (folder, ...rest) => {
+    listed.push(folder);
+    return list(folder, ...rest);
+  };
+  return {
+    listed,
+    undo() {
+      lister.list = list;
+      disk.undo();
+    },
+  };
+}
+
+test("a search's pattern or a glob or type option value starts no drive listing, with Windows' rules forced", () => {
+  // K:\ holds a secret a `k:*` wildcard would match if it were a path.
+  const disk = countedDriveTops(["secrets.txt", "notes.txt"]);
+  try {
+    for (const [tool, command] of SEARCH_TEXT_COMMANDS) {
+      disk.listed.length = 0;
+      const answer = shellAction("C:\\proj", tool, command);
+      assert.deepStrictEqual(disk.listed, [], `${tool} ${command}`);
+      assert.equal(answer, "allow", `${tool} ${command}`);
+    }
+  } finally {
+    disk.undo();
+  }
+});
+
+test("a search's pattern starts no drive listing through cmd or Cursor, with Windows' rules forced", () => {
+  const disk = countedDriveTops(["secrets.txt", "notes.txt"]);
+  try {
+    for (const [, command] of SEARCH_TEXT_COMMANDS.filter(([tool]) => tool === "Bash").slice(0, 9)) {
+      disk.listed.length = 0;
+      assert.deepStrictEqual(answersEveryShell("C:\\proj", command), ALL_ALLOW, command);
+      assert.deepStrictEqual(disk.listed, [], command);
+    }
+  } finally {
+    disk.undo();
+  }
+});
+
+test("a search's file argument behind a drive is still listed and judged, with Windows' rules forced", () => {
+  // D:\ holds .env, .kube, kubelink and notes.txt (see mockedDriveD).
+  const disk = countedDriveTops(["notes.txt"]);
+  try {
+    const cases = [
+      ["Bash", "grep 'x:*' D:*.txt", "allow"],
+      ["Bash", "grep 'x:*' D:*", "block"],
+      ["Bash", "rg 'a:.*' D:*", "block"],
+      ["Bash", "rg -g 'k:*' TODO D:*", "block"],
+      ["Bash", "grep -f D:*.txt notes.txt", "allow"],
+      ["Bash", "grep -f D:* notes.txt", "block"],
+      ["Bash", "grep x:* x:* D:*.txt", "allow"],
+      ["PowerShell", "Select-String -Pattern 'x:*' -Path D:*", "block"],
+      ["Bash", "cat D:*.env", "block"],
+      ["Bash", "cat D:*.md", "allow"],
+      ["Bash", "cat D:.e*", "block"],
+    ];
+    for (const [tool, command, expected] of cases) {
+      disk.listed.length = 0;
+      assert.equal(shellAction("C:\\proj", tool, command), expected, `${tool} ${command}`);
+      assert.ok(disk.listed.length >= 1, `${tool} ${command}: no drive listed`);
+    }
+    // The same word as a pattern and as a file is listed as the file.
+    disk.listed.length = 0;
+    shellAction("C:\\proj", "Bash", "grep 'k:*' k:*");
+    assert.deepStrictEqual(
+      disk.listed.map((folder) => folder.toUpperCase()),
+      ["K:\\"],
+    );
+  } finally {
+    disk.undo();
   }
 });

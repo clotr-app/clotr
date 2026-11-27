@@ -14,13 +14,21 @@ const { build } = require("../tools/engine-bundle.js");
 const { makeSecrets } = require("./fixtures/secrets.js");
 const ENGINE_PATH = path.join(__dirname, "../apps/guard/dist/clotr-engine.js");
 const BUNDLE = build().text;
+
+// Guard's lib files as the package's `files` list names them, the one list of what ships from lib/.
+function guardLibFiles() {
+  const pkg = JSON.parse(fs.readFileSync(path.join(__dirname, "../apps/guard/package.json"), "utf8"));
+  return pkg.files.filter((file) => file.startsWith("lib/")).sort();
+}
+
 if (fs.existsSync(ENGINE_PATH)) {
   assert.equal(fs.readFileSync(ENGINE_PATH, "utf8"), BUNDLE, "guard engine bundle is stale");
 } else {
   fs.mkdirSync(path.dirname(ENGINE_PATH), { recursive: true });
   fs.writeFileSync(ENGINE_PATH, BUNDLE);
 }
-const { check, findingsFromDetections } = require("../apps/guard/lib/engine.js");
+const { check, findingsFromDetections } = require("../apps/guard/lib/text-checks/engine-loader.js");
+const { promptHash } = require("../apps/guard/lib/text-checks/check-text.js");
 const {
   parseClotrIgnore,
   readClotrIgnore,
@@ -74,7 +82,7 @@ function packGuard(tempRoot) {
   const packageRoot = path.resolve(__dirname, "../apps/guard");
   const result = npmRun(["pack", "--pack-destination", tempRoot], packageRoot, tempRoot);
   assert.equal(result.status, 0, `${result.stdout}\n${result.stderr}`);
-  const tarball = path.join(tempRoot, "clotr-guard-0.1.3.tgz");
+  const tarball = path.join(tempRoot, "clotr-guard-0.1.4.tgz");
   assert.equal(fs.existsSync(tarball), true, `${result.stdout}\n${result.stderr}`);
   return tarball;
 }
@@ -149,7 +157,7 @@ test("Guard's engine agrees with a small public fixture and registry-token cases
   const guardContext = vm.createContext({});
   vm.runInContext(source, guardContext, { filename: "clotr-engine.js" });
   const extensionContext = vm.createContext({});
-  for (const file of ["patterns.js", "detector.js"]) {
+  for (const file of require("./load-engine.js").files("rules", "detect")) {
     const script = fs.readFileSync(path.join(__dirname, "../extension", file), "utf8");
     vm.runInContext(script, extensionContext, { filename: file });
   }
@@ -409,8 +417,9 @@ test("the same findings can pass after a small edit, but a new secret blocks and
     assert.equal(saved.includes(PROMPT), false);
     assert.equal(saved.includes(AWS_KEY), false);
     assert.equal(saved.includes(CARD_NUMBER), false);
-    const state = JSON.parse(saved);
-    assert.deepEqual(Object.keys(state).sort(), ["at", "fingerprints", "salt"]);
+    const [state, ...others] = JSON.parse(saved).entries;
+    assert.deepEqual(others, []);
+    assert.deepEqual(Object.keys(state).sort(), ["at", "fingerprints", "salt", "session"]);
     assert.equal(state.fingerprints.length, blocked.findings.length);
     assert.ok(state.fingerprints.every((fingerprint) => /^[0-9a-f]{64}$/.test(fingerprint)));
 
@@ -420,7 +429,7 @@ test("the same findings can pass after a small edit, but a new secret blocks and
 
     const addedSecret = `${edited}\npassword: NewSecret7x`;
     assert.equal(inspectPrompt("claude", addedSecret, { dataDir: dir, now: 10_003 }).action, "block");
-    const updatedState = JSON.parse(fs.readFileSync(stateFile, "utf8"));
+    const [updatedState] = JSON.parse(fs.readFileSync(stateFile, "utf8")).entries;
     assert.equal(updatedState.fingerprints.length, state.fingerprints.length + 1);
     assert.equal(fs.readFileSync(stateFile, "utf8").includes("NewSecret7x"), false);
     assert.equal(
@@ -429,6 +438,173 @@ test("the same findings can pass after a small edit, but a new secret blocks and
     );
     assert.equal(inspectPrompt("claude", addedSecret, { dataDir: dir, now: 130_002 }).action, "allow");
     assert.equal(inspectPrompt("claude", addedSecret, { dataDir: dir, now: 130_003 }).action, "block");
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+// A resend only counts in the assistant session that showed the warning, so a prompt stopped in one window can't be
+// let through by sending it again in another.
+test("a prompt stopped in one session goes through when resent in that same session", () => {
+  const dir = tempDir();
+  try {
+    assert.equal(inspectPrompt("claude", PROMPT, { dataDir: dir, now: 10_000, session: "window-a" }).action, "block");
+    assert.equal(inspectPrompt("claude", PROMPT, { dataDir: dir, now: 10_001, session: "window-a" }).action, "allow");
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("the same prompt resent in another session, or by another assistant, is stopped again", () => {
+  const dir = tempDir();
+  try {
+    assert.equal(inspectPrompt("claude", PROMPT, { dataDir: dir, now: 10_000, session: "window-a" }).action, "block");
+    assert.equal(inspectPrompt("claude", PROMPT, { dataDir: dir, now: 10_001, session: "window-b" }).action, "block");
+    assert.equal(inspectPrompt("cursor", PROMPT, { dataDir: dir, now: 10_002, session: "window-a" }).action, "block");
+    assert.equal(inspectPrompt("claude", PROMPT, { dataDir: dir, now: 10_003 }).action, "block");
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("two sessions resending different prompts don't clear each other's record", () => {
+  const dir = tempDir();
+  const other = "Here is my password: Garden-Lamp-41x for the staging box";
+  try {
+    assert.equal(inspectPrompt("claude", PROMPT, { dataDir: dir, now: 10_000, session: "window-a" }).action, "block");
+    assert.equal(inspectPrompt("claude", other, { dataDir: dir, now: 10_001, session: "window-b" }).action, "block");
+    assert.equal(inspectPrompt("claude", PROMPT, { dataDir: dir, now: 10_002, session: "window-a" }).action, "allow");
+    assert.equal(inspectPrompt("claude", other, { dataDir: dir, now: 10_003, session: "window-b" }).action, "allow");
+    // Each session's record still runs out two minutes after its own warning.
+    assert.equal(inspectPrompt("claude", PROMPT, { dataDir: dir, now: 130_000, session: "window-a" }).action, "block");
+    const saved = fs.readFileSync(path.join(dir, "prompt-repeat.json"), "utf8");
+    assert.equal(saved.includes("window-a"), false);
+    assert.equal(saved.includes("Garden-Lamp-41x"), false);
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("a single-record file from Guard 0.1.3 is read without a crash and can't let a resend through", () => {
+  const dir = tempDir();
+  const salt = "a".repeat(64);
+  try {
+    const first = inspectPrompt("claude", PROMPT, { dataDir: path.join(dir, "first"), now: 1 });
+    const fingerprints = first.findings
+      .map((finding) => promptHash(salt, PROMPT.slice(finding.start, finding.end)))
+      .sort();
+    fs.writeFileSync(path.join(dir, "prompt-repeat.json"), `${JSON.stringify({ salt, fingerprints, at: 10_000 })}\n`);
+    assert.equal(inspectPrompt("claude", PROMPT, { dataDir: dir, now: 10_001, session: "window-a" }).action, "block");
+    assert.equal(inspectPrompt("claude", PROMPT, { dataDir: dir, now: 10_002, session: "window-a" }).action, "allow");
+    assert.equal(inspectPrompt("claude", PROMPT, { dataDir: dir, now: 10_003, session: "window-b" }).action, "block");
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("each assistant's hook keys the resend by its own session id", () => {
+  const script = path.join(__dirname, "../apps/guard/bin/clotr-guard.js");
+  const dir = tempDir();
+  const events = {
+    claude: (session) => ({ hook_event_name: "UserPromptSubmit", session_id: session, prompt: PROMPT }),
+    codex: (session) => ({ hook_event_name: "UserPromptSubmit", session_id: session, prompt: PROMPT }),
+    gemini: (session) => ({ hook_event_name: "BeforeAgent", session_id: session, prompt: PROMPT }),
+    cursor: (session) => ({ hook_event_name: "beforeSubmitPrompt", conversation_id: session, prompt: PROMPT }),
+    windsurf: (session) => ({
+      agent_action_name: "pre_user_prompt",
+      trajectory_id: session,
+      tool_info: { user_prompt: PROMPT },
+    }),
+    cline: (session) => ({ hookName: "UserPromptSubmit", taskId: session, userPromptSubmit: { prompt: PROMPT } }),
+  };
+  const stopped = (run) => {
+    if (run.status === 2) return true;
+    const answer = JSON.parse(run.stdout || "{}");
+    return (
+      answer.decision === "block" || answer.decision === "deny" || answer.continue === false || answer.cancel === true
+    );
+  };
+  try {
+    for (const [tool, event] of Object.entries(events)) {
+      const run = (session) =>
+        spawnSync(process.execPath, [script, "hook", tool], {
+          input: JSON.stringify(event(session)),
+          encoding: "utf8",
+          env: { ...process.env, CLOTR_GUARD_DATA_DIR: path.join(dir, tool) },
+        });
+      assert.equal(stopped(run("window-a")), true, `${tool} first send`);
+      assert.equal(stopped(run("window-b")), true, `${tool} resend in another session`);
+      assert.equal(stopped(run("window-b")), false, `${tool} resend in the same session`);
+    }
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+// Sends one Cline prompt event through the hook and says whether Guard stopped it.
+function clinePromptStopped(dataDir, ids) {
+  const script = path.join(__dirname, "../apps/guard/bin/clotr-guard.js");
+  const run = spawnSync(process.execPath, [script, "hook", "cline"], {
+    input: JSON.stringify({ hookName: "UserPromptSubmit", ...ids, userPromptSubmit: { prompt: PROMPT } }),
+    encoding: "utf8",
+    env: { ...process.env, CLOTR_GUARD_DATA_DIR: dataDir },
+  });
+  assert.equal(run.status, 0, run.stderr);
+  return JSON.parse(run.stdout).cancel === true;
+}
+
+test("a Cline prompt carrying sessionId keeps its own resend record", () => {
+  const dir = tempDir();
+  try {
+    assert.equal(clinePromptStopped(dir, { sessionId: "window-a" }), true, "first send");
+    assert.equal(clinePromptStopped(dir, { sessionId: "window-b" }), true, "resend in another session");
+    assert.equal(clinePromptStopped(dir, { sessionId: "window-b" }), false, "resend in the same session");
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("a Cline prompt carrying only taskId still keeps its own resend record", () => {
+  const dir = tempDir();
+  try {
+    assert.equal(clinePromptStopped(dir, { taskId: "task-a" }), true, "first send");
+    assert.equal(clinePromptStopped(dir, { taskId: "task-b" }), true, "resend in another task");
+    assert.equal(clinePromptStopped(dir, { taskId: "task-b" }), false, "resend in the same task");
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("a Cline prompt carrying sessionId and taskId is keyed by sessionId", () => {
+  const dir = tempDir();
+  try {
+    assert.equal(clinePromptStopped(dir, { sessionId: "window-a", taskId: "task-1" }), true, "first send");
+    assert.equal(
+      clinePromptStopped(dir, { sessionId: "window-b", taskId: "task-1" }),
+      true,
+      "other session, same task",
+    );
+    assert.equal(clinePromptStopped(dir, { sessionId: "window-b", taskId: "task-2" }), false, "same session");
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("a Cline sessionId and a taskId with the same value are different sessions", () => {
+  const dir = tempDir();
+  try {
+    assert.equal(clinePromptStopped(dir, { sessionId: "same-id" }), true, "first send");
+    assert.equal(clinePromptStopped(dir, { taskId: "same-id" }), true, "resend keyed by the other field");
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("a Cline sessionId shaped like the taskId key is a different session", () => {
+  const dir = tempDir();
+  try {
+    assert.equal(clinePromptStopped(dir, { taskId: "k1" }), true, "first send");
+    assert.equal(clinePromptStopped(dir, { sessionId: "taskId\u0000k1" }), true, "resend under the lookalike id");
   } finally {
     fs.rmSync(dir, { recursive: true, force: true });
   }
@@ -1796,12 +1972,12 @@ test("setup can add the personal-details option to read hooks", () => {
 const ENGINE_PARITY_PATH = path.join(__dirname, "../tools/engine-parity.js");
 if (fs.existsSync(ENGINE_PARITY_PATH)) {
   const { corpora, withAnswers, differences, pageScripts } = require(ENGINE_PARITY_PATH);
-  test("Guard's engine agrees with the shared fixture corpus and registry-token cases for the current extension version", () => {
+  test("Guard's engine agrees with the shared fixture corpus and registry-token cases for the current engine version", () => {
     const source = fs.readFileSync(ENGINE_PATH, "utf8");
     const version = /^\/\/ Clotr engine (\d+(?:\.\d+){2,3}):/m.exec(source)?.[1];
     assert.equal(
       version,
-      JSON.parse(fs.readFileSync(path.join(__dirname, "../extension/manifest.json"), "utf8")).version,
+      JSON.parse(fs.readFileSync(path.join(__dirname, "../apps/engine/package.json"), "utf8")).version,
     );
 
     const serviceTokens = makeSecrets()
@@ -1905,7 +2081,6 @@ test("Bash blocks common secret-file readers and environment listings with the s
     "export",
     "declare -p",
     "env -0",
-    "printenv NAME",
     "Get-ChildItem Env:",
     "ls env:",
     "sed -n p .env",
@@ -1917,7 +2092,6 @@ test("Bash blocks common secret-file readers and environment listings with the s
     `python -c "print(open('.env').read())"`,
     `node -e "console.log(require('fs').readFileSync('.env'))"`,
     "cp .env /tmp/a && cat /tmp/a",
-    "cat .en*",
     "source .env && echo $KEY",
     "cat ~/.aws/credentials",
   ];
@@ -1926,6 +2100,14 @@ test("Bash blocks common secret-file readers and environment listings with the s
     assert.equal(result.secretFile, true, command);
   }
   assert.equal(inspectShell("claude", { tool_name: "Bash", tool_input: { command: "echo .env" } }).action, "allow");
+  // A wildcard is looked up in its folder: `cat .en*` reads `.env` only where there's one.
+  const dir = tempDir();
+  const dotEnv = { tool_name: "Bash", tool_input: { command: "cat .en*" } };
+  assert.equal(inspectShell("claude", dotEnv, { cwd: dir }).action, "allow");
+  fs.writeFileSync(path.join(dir, ".env"), "SAMPLE=placeholder\n");
+  assert.equal(inspectShell("claude", dotEnv, { cwd: dir }).secretFile, true);
+  // One named variable is a different rule, so it passes here as `echo $NAME` does.
+  assert.equal(inspectShell("claude", { tool_name: "Bash", tool_input: { command: "printenv NAME" } }).action, "allow");
   assert.equal(
     inspectShell("claude", { tool_name: "Bash", tool_input: { command: "Get-Content .env.example" } }).action,
     "allow",
@@ -2300,8 +2482,8 @@ test("removing Guard settings removes the backup after its hooks are removed", (
 
 test("commit issue filenames escape terminal control characters", () => {
   assert.equal(
-    formatCommitIssue({ file: "key\u001b[2J.txt", line: 4, kind: "aws_access_key", masked: "AKIA…3N" }),
-    '"key\\u001b[2J.txt":4 aws_access_key (AKIA…3N)',
+    formatCommitIssue({ file: "key\u001b[2J.txt", line: 4, kind: "aws_access_key", masked: "AK…3N" }),
+    '"key\\u001b[2J.txt":4 aws_access_key (AK…3N)',
   );
 });
 
@@ -2569,10 +2751,13 @@ test("Electron setup chooses an absolute Node outside the workspace from PATH", 
 test("the Guard package reads nothing from outside its own folder, so a packed copy runs", () => {
   const root = path.join(__dirname, "../apps/guard");
   const outside = [];
+  const libFiles = guardLibFiles();
   const note = (target) => {
-    if (!target.startsWith(root + path.sep)) outside.push(path.relative(root, target));
+    const file = path.relative(root, target).split(path.sep).join("/");
+    const unlisted = file.startsWith("lib/") && !libFiles.includes(file);
+    if (!target.startsWith(root + path.sep) || unlisted) outside.push(file);
   };
-  for (const file of ["bin/clotr-guard.js", "bin/clotr-mcp.js", "lib/engine.js", "lib/secret-files.js"]) {
+  for (const file of ["bin/clotr-guard.js", "bin/clotr-mcp.js", ...libFiles]) {
     const source = fs.readFileSync(path.join(root, file), "utf8");
     const dir = path.dirname(path.join(root, file));
     for (const [, target] of source.matchAll(/require\("(\.[^"]+)"\)/g)) note(path.resolve(dir, target));
@@ -2582,7 +2767,7 @@ test("the Guard package reads nothing from outside its own folder, so a packed c
   }
   assert.deepEqual(outside, []);
   const pkg = JSON.parse(fs.readFileSync(path.join(root, "package.json"), "utf8"));
-  assert.equal(pkg.version, "0.1.3");
+  assert.equal(pkg.version, "0.1.4");
   assert.equal(pkg.bin["clotr-mcp"], "bin/clotr-mcp.js");
   assert.ok(pkg.files?.includes("dist"), "the engine bundle must ship in the package");
 });
@@ -2594,7 +2779,7 @@ test("Guard prints its package version beside the engine version from the bundle
   const engineVersion = header[1].split(".").slice(0, 3).join(".");
   const version = spawnSync(process.execPath, [script, "--version"], { encoding: "utf8" });
   assert.equal(version.status, 0, version.stderr);
-  assert.equal(version.stdout.trim(), `clotr-guard 0.1.3, engine ${engineVersion}`);
+  assert.equal(version.stdout.trim(), `clotr-guard 0.1.4, engine ${engineVersion}`);
 });
 
 test("the Guard npm package declares its public pages and includes the license", () => {
@@ -2624,13 +2809,30 @@ test("the Guard npm package declares its public pages and includes the license",
       "bin/clotr-guard.js",
       "bin/clotr-mcp.js",
       "dist/clotr-engine.js",
-      "lib/clotrignore.js",
-      "lib/engine.js",
-      "lib/secret-files.js",
+      ...guardLibFiles(),
       "package.json",
       "skills/clotr/SKILL.md",
     ].sort(),
   );
+});
+
+test("every .js file in Guard's lib folder is on the package's files list, and every listed one is there", () => {
+  const lib = path.join(__dirname, "../apps/guard/lib");
+  const listed = guardLibFiles();
+  // Guard's lib files sit in folders too, so the walk takes every folder under lib/.
+  const names = fs
+    .readdirSync(lib, { recursive: true })
+    .filter((entry) => entry.endsWith(".js"))
+    .map((entry) => entry.split(path.sep).join("/"));
+  for (const name of names) {
+    assert.ok(
+      listed.includes(`lib/${name}`),
+      `lib/${name} isn't in apps/guard/package.json "files": add it or remove it`,
+    );
+  }
+  for (const file of listed) {
+    assert.ok(fs.existsSync(path.join(lib, "..", file)), `${file} is in "files" but missing from apps/guard/lib`);
+  }
 });
 
 // The skill is what an assistant reads about Guard, so each fact in it is checked against the code it describes.
@@ -2652,7 +2854,9 @@ test("the assistant skill ships in the Guard package and says what the code does
     }
   }
   assert.ok(skill.includes(`${mcp.MAX_TEXT_BYTES / 1024} KiB`), "the skill gives the MCP text cap");
-  const guardSource = fs.readFileSync(path.join(root, "bin", "clotr-guard.js"), "utf8");
+  const guardSource = ["bin/clotr-guard.js", ...guardLibFiles()]
+    .map((file) => fs.readFileSync(path.join(root, file), "utf8"))
+    .join("\n");
   assert.match(guardSource, /now - state\.at < 120_000/);
   assert.match(skill, /within two minutes/);
   assert.match(guardSource, /Clotr checked the first 256 KiB/);
@@ -2708,11 +2912,43 @@ test("Guard and JetBrains READMEs mark each feature stable or preview and link t
   }
 });
 
+// Where clotr-engine is published. The engine has its own workflow, which its own tests check,
+// and Guard's workflow here publishes only Guard.
+// Public main's copy also publishes clotr-engine after Guard until the shared workflows ship.
+// So that copy keeps its old steps: tested while the engine still says private,
+// then published from this run's copy without running its scripts again.
+function checkEnginePublish(workflow, workflowDir, repo) {
+  assert.ok(fs.existsSync(path.join(workflowDir, "publish-engine.yml")), "the engine has its own publish workflow");
+  const engineAt = workflow.indexOf("working-directory: apps/engine");
+  if (engineAt < 0) {
+    const publishLines = workflow
+      .split("\n")
+      .filter((line) => /\bnpm publish\b/.test(line) && !/^\s*(#|- name:)/.test(line))
+      .map((line) => line.trim());
+    assert.deepEqual(publishLines, ["run: npm publish --provenance --access public"], "it publishes only Guard");
+    return;
+  }
+  assert.equal(JSON.parse(fs.readFileSync(path.join(repo, "apps", "engine", "package.json"), "utf8")).private, true);
+  const guardPublishAt = workflow.indexOf("run: npm publish --provenance --access public\n");
+  assert.ok(engineAt > guardPublishAt, "the engine comes after Guard");
+  const engine = workflow.slice(engineAt);
+  assert.doesNotMatch(engine, /working-directory: apps\/guard/);
+  const engineOrder = [
+    "run: npm pack --dry-run",
+    "run: npm pkg delete private",
+    "npm publish --provenance --access public --ignore-scripts",
+  ].map((step) => engine.indexOf(step));
+  assert.ok(
+    engineOrder.every((position, index) => position >= 0 && (index === 0 || position > engineOrder[index - 1])),
+    `engine steps out of order: ${engineOrder}`,
+  );
+}
+
 // Only the public repository publishes, since npm signs provenance only for a public repository: its workflow lives
 // in public/.github/workflows here and in .github/workflows there. It must never start by itself, it publishes only
 // from one of Guard's own tags, so a release tag can't start it and its tags can't start the extension's release, and
 // it waits for the npm environment's approval.
-test("the npm publish workflow runs only by hand, from a Guard tag, and publishes Guard and clotr-engine with provenance", () => {
+test("the npm publish workflow runs only by hand, from a Guard tag, and publishes Guard with provenance", () => {
   const repo = path.join(__dirname, "..");
   const overlay = path.join(repo, "public", ".github", "workflows");
   const privateCheckout = fs.existsSync(overlay);
@@ -2740,25 +2976,15 @@ test("the npm publish workflow runs only by hand, from a Guard tag, and publishe
     `steps out of order: ${order}`,
   );
   assert.match(wf, /working-directory: apps\/guard\n(?:.*\n)*?\s+run: npm publish --provenance --access public\n/);
-  // clotr-engine goes out in the same run, after Guard: built and tested while its source still says private, then
-  // published from this run's copy without running those scripts again.
-  assert.equal(JSON.parse(fs.readFileSync(path.join(repo, "apps", "engine", "package.json"), "utf8")).private, true);
-  const engineAt = wf.indexOf("working-directory: apps/engine");
-  assert.ok(engineAt > wf.indexOf("run: npm publish --provenance --access public\n"), "the engine comes after Guard");
-  const engine = wf.slice(engineAt);
-  assert.doesNotMatch(engine, /working-directory: apps\/guard/);
-  const engineOrder = [
-    "run: npm pack --dry-run",
-    "run: npm pkg delete private",
-    "npm publish --provenance --access public --ignore-scripts",
-  ].map((step) => engine.indexOf(step));
-  assert.ok(
-    engineOrder.every((at, i) => at >= 0 && (i === 0 || at > engineOrder[i - 1])),
-    `engine steps out of order: ${engineOrder}`,
-  );
-  // The extension's Release workflow builds on v* tags, which never match a guard-v tag.
+  checkEnginePublish(wf, wfDir, repo);
+  // The extension's Release workflow starts on v tags, which never match a guard-v tag.
+  // Public main keeps "v*" until the shared workflows ship. Here it's a v and a digit.
   const release = path.join(repo, ".github", "workflows", "release.yml");
-  if (fs.existsSync(release)) assert.match(fs.readFileSync(release, "utf8"), /tags: \["v\*"\]/);
+  if (fs.existsSync(release)) {
+    const tags = [...fs.readFileSync(release, "utf8").matchAll(/^\s+tags: (.*)$/gm)].map((match) => match[1]);
+    assert.equal(tags.length, 1, "one tags line");
+    assert.ok(['["v*"]', '["v[0-9]+.[0-9]+.[0-9]+"]'].includes(tags[0]), `release tags: ${tags[0]}`);
+  }
   // The private repository never publishes, so no workflow of its own may run npm publish, and the public one only
   // from Guard's and the engine's own workflows.
   const workflows = path.join(repo, ".github", "workflows");
@@ -3123,24 +3349,37 @@ test("Guard documents exact fingerprints and local repeat state without promisin
     .find((file) => fs.existsSync(file));
   assert.ok(publicContributing, "the public CONTRIBUTING.md is missing");
   const contributing = fs.readFileSync(publicContributing, "utf8");
+  // On Guard's own error the prompt and shell hooks stop, and the read and MCP tool hooks ask or stop. A file Guard
+  // can't open here still goes through with a note. (A hook that crashes while Node or Guard is still loading exits 1,
+  // which the assistants read as a hook that failed.)
+  const flatReadme = readme.replace(/\s+/g, " ");
+  assert.match(
+    flatReadme,
+    /If Clotr hits an internal error while checking a prompt, like an engine file that's missing or broken, the prompt is stopped, and the message says to try again or run setup again\. A file read or an MCP tool call is put to you, or stopped where the assistant can't ask\. A shell command is stopped, and the message says its check hit an error\. A hook that hits an error once it has started answers the same way\./,
+  );
+  assert.match(
+    flatReadme,
+    /A file Clotr can't open here, like one that isn't there or one on another computer, still goes through with a visible note/,
+  );
+  assert.doesNotMatch(
+    flatReadme,
+    /internal error while checking a prompt, a file read or an MCP tool call, Guard lets it through/,
+  );
+  // The public CONTRIBUTING.md keeps the earlier wording until the next public release changes it.
+  const flatContributing = contributing.replace(/\s+/g, " ");
+  assert.match(
+    flatContributing,
+    /internal error while checking a prompt, a file read or a tool call to a connected server, Guard lets it through with a visible note/,
+  );
+  assert.match(
+    flatContributing,
+    /A shell command is stopped instead: when its check hits an internal error or doesn't finish in time, the message says which, and a hook that crashes once it has started stops it as a check that didn't finish\./,
+  );
   for (const [file, text] of [
     ["apps/guard/README.md", readme],
     ["public/CONTRIBUTING.md", contributing],
   ]) {
-    // Prompt, read and MCP tool hooks let the action through on an internal error. The shell hook stops a command
-    // whose check hits an internal error or runs out of time, or whose hook crashes once it has started (one that
-    // crashes while Node or Guard is still loading exits 1, which the assistants read as a hook that failed).
     const flat = text.replace(/\s+/g, " ");
-    assert.match(
-      flat,
-      /internal error while checking a prompt, a file read or (an MCP tool call|a tool call to a connected server), Guard lets it through with a visible note/,
-      file,
-    );
-    assert.match(
-      flat,
-      /A shell command is stopped instead: when its check hits an internal error or doesn't finish in time, the message says which, and a hook that crashes once it has started stops it as a check that didn't finish\./,
-      file,
-    );
     assert.doesNotMatch(flat, /errors? in a shell check lets? the command through/i, file);
     assert.doesNotMatch(flat, /internal error while checking readable input/i, file);
     assert.match(text, /stops input\s+it can't read.*malformed hook input.*size limit/is, file);

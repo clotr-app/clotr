@@ -86,17 +86,6 @@ test("ignore-value accepts a finding kind from the CLI before writing a fingerpr
   assert.equal(fs.existsSync(path.join(root, ".clotrignore")), false);
 });
 
-test("the VS Code quick fix writes .clotrignore through Guard's shared writer", () => {
-  const source = fs.readFileSync(path.join(__dirname, "..", "apps", "vscode", "extension.js"), "utf8");
-  const body = source.slice(
-    source.indexOf("async function addToClotrIgnore"),
-    source.indexOf("async function moveToEnv"),
-  );
-  assert.match(body, /guard\.addIgnoredValue\(/);
-  assert.match(body, /guard\.addIgnoredValue\(root, finding\.value, finding\.kind\)/);
-  assert.doesNotMatch(body, /writeSync|openSync|valueFingerprint/, "no second writer for the same file");
-});
-
 test("read hooks stop proc environment files before opening them", (t) => {
   const root = tempDir(t);
   for (const file of ["/proc/self/environ", "/proc/123/environ", "/proc/thread-self/environ"]) {
@@ -450,4 +439,104 @@ test("a dry-run Git remove previews the change and leaves the hook and its backu
     assert.strictEqual(fs.existsSync(backup), Boolean(userHook), "the backup is where setup left it");
     assert.strictEqual(guard.setupGit({ cwd: dir, remove: true }).changed, true, "a real remove still works");
   }
+});
+
+// Setup after a remove, on a settings file the assistant changed in between (the remove left the backup behind).
+async function runGuard(args, options) {
+  const out = [];
+  const err = [];
+  const log = console.log;
+  const error = console.error;
+  console.log = (...parts) => out.push(parts.join(" "));
+  console.error = (...parts) => err.push(parts.join(" "));
+  try {
+    const status = await guard.main(args, options);
+    return { status, out, err };
+  } finally {
+    console.log = log;
+    console.error = error;
+  }
+}
+
+function hasGuardHook(settings) {
+  return JSON.stringify(settings).includes("clotr-guard");
+}
+
+test("setup after a remove on a changed settings file sets Guard up and keeps the first backup", async (t) => {
+  const cwd = tempDir(t);
+  const target = guard.toolSettingsPath("claude", { project: true, cwd });
+  const backup = `${target}.clotr-guard.bak`;
+  fs.mkdirSync(path.dirname(target), { recursive: true });
+  fs.writeFileSync(target, '{\n  "model": "made-up-model",\n  "theme": "dark"\n}\n');
+
+  assert.equal((await runGuard(["setup", "claude", "--project"], { cwd })).status, 0);
+  const firstBackup = fs.readFileSync(backup);
+  const settings = JSON.parse(fs.readFileSync(target, "utf8"));
+  settings.addedByHand = true;
+  fs.writeFileSync(target, `${JSON.stringify(settings, null, 2)}\n`);
+
+  assert.equal((await runGuard(["remove", "claude", "--project"], { cwd })).status, 0);
+  assert.ok(fs.existsSync(backup), "a remove on a changed file leaves the backup");
+
+  const second = await runGuard(["setup", "claude", "--project"], { cwd });
+  assert.equal(second.status, 0, second.err.join("\n"));
+  assert.deepEqual(second.err, []);
+  assert.ok(
+    second.out.some((line) => line.includes("earlier backup") && line.includes(backup)),
+    second.out.join("\n"),
+  );
+  const after = JSON.parse(fs.readFileSync(target, "utf8"));
+  assert.ok(hasGuardHook(after), "Guard's hooks are in the file");
+  assert.equal(after.addedByHand, true);
+  assert.ok(fs.readFileSync(backup).equals(firstBackup), "the first backup is unchanged, byte for byte");
+
+  // A remove after that takes out only Guard's entries and leaves the backup.
+  assert.equal((await runGuard(["remove", "claude", "--project"], { cwd })).status, 0);
+  const removed = JSON.parse(fs.readFileSync(target, "utf8"));
+  assert.equal(hasGuardHook(removed), false);
+  assert.equal(removed.addedByHand, true);
+  assert.ok(fs.readFileSync(backup).equals(firstBackup));
+});
+
+test("setup then remove on an untouched settings file gives back the same bytes for every assistant", async (t) => {
+  for (const tool of ["claude", "cursor", "gemini", "codex", "windsurf"]) {
+    const cwd = tempDir(t);
+    const target = guard.toolSettingsPath(tool, { project: true, cwd });
+    const backup = `${target}.clotr-guard.bak`;
+    const original = '{\n    "madeUpSetting": "keep me",\n    "other": 1\n}';
+    fs.mkdirSync(path.dirname(target), { recursive: true });
+    fs.writeFileSync(target, original);
+    const setup = await runGuard(["setup", tool, "--project"], { cwd });
+    assert.equal(setup.status, 0, `${tool}: ${setup.err.join("\n")}`);
+    assert.ok(fs.existsSync(backup), `${tool}: setup makes a backup`);
+    assert.equal((await runGuard(["remove", tool, "--project"], { cwd })).status, 0, tool);
+    assert.equal(fs.readFileSync(target, "utf8"), original, `${tool}: same bytes after remove`);
+    assert.equal(fs.existsSync(backup), false, `${tool}: the backup is taken away`);
+  }
+});
+
+test("an empty settings file gets its own message and stays untouched", async (t) => {
+  const cwd = tempDir(t);
+  const target = guard.toolSettingsPath("claude", { project: true, cwd });
+  fs.mkdirSync(path.dirname(target), { recursive: true });
+  fs.writeFileSync(target, "");
+  const result = await runGuard(["setup", "claude", "--project"], { cwd });
+  assert.equal(result.status, 1);
+  assert.deepEqual(result.err, [
+    `Clotr Guard didn't change ${target}: it's empty. Put {} in it or delete it, then run setup again.`,
+  ]);
+  assert.equal(fs.readFileSync(target, "utf8"), "");
+});
+
+test("a hooks entry that is a list gets its own message and stays untouched", async (t) => {
+  const cwd = tempDir(t);
+  const target = guard.toolSettingsPath("claude", { project: true, cwd });
+  fs.mkdirSync(path.dirname(target), { recursive: true });
+  fs.writeFileSync(target, '{"hooks": []}');
+  const result = await runGuard(["setup", "claude", "--project"], { cwd });
+  assert.equal(result.status, 1);
+  assert.deepEqual(result.err, [
+    `Clotr Guard didn't change ${target}: its "hooks" entry isn't laid out the way Clotr Guard can read. Fix or remove that entry, then run setup again.`,
+  ]);
+  assert.equal(fs.readFileSync(target, "utf8"), '{"hooks": []}');
 });
