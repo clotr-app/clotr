@@ -1,3 +1,4 @@
+// Leftover. The extension still loads this file, and the extension's next release removes it.
 // Runs the patterns from patterns.js against a page's text, decides how to respond to each hit, and
 // fingerprints the values it finds. This is a classic script, not a module, so it shares its functions through
 // globalThis.Clotr.

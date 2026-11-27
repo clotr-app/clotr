@@ -10,8 +10,7 @@ const fc = require("fast-check");
 const { bestOfPair, grewMoreThan } = require("./timing.js");
 const { SECRET_KINDS, EXTRA_KINDS, makeSecrets } = require("./fixtures/secrets.js");
 
-require("../extension/patterns.js");
-require("../extension/detector.js");
+require("./load-engine.js")("rules", "detect");
 
 const SEVERITIES = new Set(["high", "medium", "low"]);
 const { generatedCases, secretPatterns, wrappersFor } = require("./fuzz/structure.js");

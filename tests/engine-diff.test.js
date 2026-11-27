@@ -115,7 +115,7 @@ toolTest("a kind change at the same span is reported as renamed", (t) => {
 toolTest("the default label probe samples 40 seeded words and full mode keeps the whole list", () => {
   const text = Array.from({ length: 200 }, (_, index) => `candidate${index}ts`).join(" ");
   const rows = [{ text }];
-  const engine = { clotr: { PATTERNS: [], BANDAGE_WORDS: {} }, sources: { "patterns.js": "" } };
+  const engine = { clotr: { PATTERNS: [], BANDAGE_WORDS: {} }, rules: "" };
   const sample = labelProbeRows(engine, engine, rows);
   const repeated = labelProbeRows(engine, engine, rows);
   const full = labelProbeRows(engine, engine, rows, { full: true });

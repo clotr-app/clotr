@@ -1,8 +1,8 @@
 # Engine rule reference
 
-Engine version: 1.6.3
+Engine version: 1.6.4
 
-This table describes every built-in rule in `extension/patterns.js`. Vault and team rules are made from details the
+This table describes every built-in rule in `extension/engine/rules/rule-table.js`. Vault and team rules are made from details the
 person or organization chose to save, so their matches depend on those settings. Examples are invented shapes, not
 working credentials or anyone's personal details. A format match does not prove that a credential is active.
 

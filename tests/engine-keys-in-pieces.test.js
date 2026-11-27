@@ -9,8 +9,7 @@ const assert = require("node:assert/strict");
 
 // The work meter counts steps only in code loaded after it, so it comes before the engine.
 const { work, assertWorkLinear } = require("./work.js");
-require("../extension/patterns.js");
-require("../extension/detector.js");
+require("./load-engine.js")("rules", "detect");
 
 function detect(text) {
   return Object.fromEntries(globalThis.Clotr.detect(text).map((r) => [r.id, r.matches]));

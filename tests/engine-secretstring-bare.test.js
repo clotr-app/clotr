@@ -6,8 +6,7 @@
 const test = require("node:test");
 const assert = require("node:assert/strict");
 
-require("../extension/patterns.js");
-require("../extension/detector.js");
+require("./load-engine.js")("rules", "detect");
 const { detect, redact } = globalThis.Clotr;
 
 const pw = ["Tr0ub4", "dor&3x"].join("");

@@ -7,8 +7,7 @@ const assert = require("node:assert/strict");
 
 const { assertWorkLinear, onWorkClock } = require("./work.js");
 const { MARKERS, contextUnits } = require("./service-token-units.js");
-require("../extension/patterns.js");
-require("../extension/detector.js");
+require("./load-engine.js")("rules", "detect");
 
 const Clotr = globalThis.Clotr;
 const serviceTokens = Clotr.PATTERNS.find((p) => p.id === "service_token").find;

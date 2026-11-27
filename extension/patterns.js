@@ -1,3 +1,4 @@
+// Leftover. The extension still loads this file, and the extension's next release removes it.
 // Every pattern Clotr looks for in a message lives here. detector.js runs them and turns a
 // match into a response and a fingerprint.
 //

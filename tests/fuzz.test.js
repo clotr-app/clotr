@@ -12,8 +12,7 @@
 const test = require("node:test");
 const assert = require("node:assert/strict");
 
-require("../extension/patterns.js");
-require("../extension/detector.js");
+require("./load-engine.js")("rules", "detect");
 const { bestOfPair, grewMoreThan, grewEveryTime } = require("./timing.js");
 
 // A small, fast generator (mulberry32). The seed is fixed, not time-based, so every run of this file fuzzes the

@@ -9,8 +9,7 @@ const assert = require("node:assert/strict");
 
 const { COUNTED, meter, assertCounted } = require("./work-child.js");
 const work = meter(); // before the engine, so the meter counts its steps
-require("../extension/patterns.js");
-require("../extension/detector.js");
+require("./load-engine.js")("rules", "detect");
 const { bestOfPair, grewMoreThan, grewEveryTime } = require("./timing.js");
 
 function detect(text) {

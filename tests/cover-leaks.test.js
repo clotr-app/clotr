@@ -5,8 +5,7 @@
 const test = require("node:test");
 const assert = require("node:assert/strict");
 
-require("../extension/patterns.js");
-require("../extension/detector.js");
+require("./load-engine.js")("rules", "detect");
 
 const AKIA = "AKIA4HPQ7XZ2R6TWLJ3N";
 const AWS_SECRET = ["q7Vb2Rk9", "LmT4xWz8", "Np3Hs6Jd", "1Fc5Gy0U", "a7Ee2Io9"].join("");

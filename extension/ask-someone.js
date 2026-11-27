@@ -8,7 +8,7 @@
 
   const C = (globalThis.Clotr = globalThis.Clotr || {});
 
-  // One phrase per sign in extension/scam-signs.js' SCAM_SIGNS, first person so it reads as the note's own
+  // One phrase per sign in extension/clotr-pages/scam-check/scam-signs.js' SCAM_SIGNS, first person so it reads as the note's own
   // voice ("a message that asked me for..."), English and Spanish side by side. New sign ids need a line here;
   // an id with none is left out of the note rather than guessed at.
   const SIGN_PHRASE = {
@@ -48,7 +48,7 @@
   };
 
   // Joins a list as "a, b and c" (or "a, b y c" in Spanish); one item is just itself, and no items gives "".
-  // Matches extension/letter.js's own helper, kept separate since the two files load independently.
+  // Matches extension/clotr-pages/look-back/deletion-letter.js's own helper, kept separate since the two files load independently.
   function joinList(items, lang) {
     const list = (items || []).filter(Boolean);
     if (!list.length) return "";

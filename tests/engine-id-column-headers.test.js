@@ -6,8 +6,7 @@
 const test = require("node:test");
 const assert = require("node:assert/strict");
 
-require("../extension/patterns.js");
-require("../extension/detector.js");
+require("./load-engine.js")("rules", "detect");
 
 const ids = (text) => globalThis.Clotr.detect(text).find((r) => r.id === "national_id")?.matches || [];
 

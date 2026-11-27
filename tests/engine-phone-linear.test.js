@@ -7,7 +7,7 @@
 const test = require("node:test");
 const assert = require("node:assert/strict");
 
-require("../extension/patterns.js");
+require("./load-engine.js")("rules");
 const { bestOfPair, grewMoreThan, grewEveryTime } = require("./timing.js");
 
 const findPhones = globalThis.Clotr.PATTERNS.find((p) => p.id === "phone_number").find;

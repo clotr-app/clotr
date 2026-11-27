@@ -9,7 +9,7 @@
 //                                                    pages folder brought up to date when there is one
 //        node tools/engine-bundle.js --out <file>  e.g. into an app's build folder (that file only)
 //        node tools/engine-bundle.js --scans [--out <file>]  the same, plus Look back's and Extension check's
-//                                                    shared readers (SCAN_PARTS below), the shape Clotr for
+//                                                    shared readers (scanParts() below), the shape Clotr for
 //                                                    Windows loads; no other app needs them, so the plain bundle
 //                                                    never carries them. apps/desktop/tools/prepare-ui.js always
 //                                                    asks for this.
@@ -22,6 +22,7 @@
 const fs = require("fs");
 const path = require("path");
 const crypto = require("crypto");
+const { engineFiles, extensionGroups } = require("./engine-files.js");
 
 const ROOT = path.join(__dirname, "..");
 const OUT = path.join(ROOT, "apps", "engine", "dist", "clotr-engine.js");
@@ -31,21 +32,28 @@ const MARK = "//#part ";
 // scam?"'s own signs: the extension's own files, so Clotr for Windows finds the same export shapes, the
 // same "can read your AI chats" answer, the same presets a stronger setting for someone it helps turns on, and the
 // same warning signs with no second copy of any of their rules. The readers come in the order they depend on each
-// other; Tourniquet and scam-signs.js after them, since nothing else here depends on either.
-const SCAN_PARTS = [
-  "extension/scan-words.js",
-  "extension/zip.js",
-  "extension/csv.js",
-  "extension/attachments.js",
-  "extension/pictures.js",
-  "extension/lookback-core.js",
-  "extension/letter.js",
-  "extension/extcheck-core.js",
-  "extension/reported-extensions.js",
-  "extension/insights.js",
-  "extension/sites.js",
-  "extension/scam-signs.js",
-];
+// other; Tourniquet and clotr-pages/scam-check/scam-signs.js after them, since nothing else here depends on either.
+// A function, so the extension's list is read only for these. The engine releases on its own, and its plain
+// bundle has to build without the extension's files.
+function scanParts() {
+  return [
+    "extension/clotr-pages/look-back/scan-words.js",
+    "extension/clotr-pages/look-back/zip-reader.js",
+    "extension/clotr-pages/look-back/csv-reader.js",
+    "extension/on-websites/attached-files.js",
+    "extension/on-websites/attached-pictures.js",
+    "extension/clotr-pages/look-back/chat-export-reader.js",
+    "extension/clotr-pages/look-back/deletion-letter.js",
+    "extension/clotr-pages/extension-check/extension-reach.js",
+    "extension/clotr-pages/extension-check/reported-extensions.js",
+    "extension/page-parts/insights.js",
+    // The site files build their content script list from the two lists, so both come first.
+    "extension/engine/files.js",
+    "extension/extension-files.js",
+    ...extensionGroups().sitesAndPolicy.map((file) => `extension/${file}`),
+    "extension/clotr-pages/scam-check/scam-signs.js",
+  ];
+}
 
 // Results' grouping and its words, after everything else: the apps' own words (apps/locales, each language as
 // ClotrAppWords.<lang>), then findings.js, the Windows app's own grouping, plan.js, its "What to do first",
@@ -70,7 +78,7 @@ function resultsParts() {
 
 // What a bare engine lacks, the words (every language but English, which is written in the code), the detection
 // pair, the decisions, the move file's cleaning, and ClotrHost. The order is the order they load in.
-// `{ scans: true }` adds SCAN_PARTS after them (see the usage note above), and `{ results: true }` the results
+// `{ scans: true }` adds scanParts() after them (see the usage note above), and `{ results: true }` the results
 // parts after those.
 function parts(opts = {}) {
   const locales = fs
@@ -80,15 +88,13 @@ function parts(opts = {}) {
   const base = [
     "apps/engine/host-shim.js",
     ...locales.map((l) => `extension/_locales/${l}/messages.json`),
-    "extension/patterns.js",
-    "extension/detector.js",
-    "extension/decide.js",
+    ...engineFiles().map((file) => `extension/${file}`),
     "extension/backup.js",
     "extension/commands.js",
     "extension/ask-someone.js",
     "apps/engine/host.js",
   ];
-  return [...base, ...(opts.scans ? SCAN_PARTS : []), ...(opts.results ? resultsParts() : [])];
+  return [...base, ...(opts.scans ? scanParts() : []), ...(opts.results ? resultsParts() : [])];
 }
 
 // A JSON part is a language's words: the extension's messages become ClotrMessages.<lang> and the apps' own words
@@ -210,7 +216,7 @@ function staleBundles(files = WRITTEN, now = build()) {
   return out;
 }
 
-module.exports = { parts, build, split, scriptFor, write, staleBundles, OUT, WRITTEN, SCAN_PARTS, resultsParts };
+module.exports = { parts, build, split, scriptFor, write, staleBundles, OUT, WRITTEN, scanParts, resultsParts };
 
 if (require.main === module) {
   const i = process.argv.indexOf("--out");

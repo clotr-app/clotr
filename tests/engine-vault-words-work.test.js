@@ -1,4 +1,4 @@
-// The saved words' growth tests from tests/engine-r2-vault.test.js, on a count of work (tests/work.js) instead of the
+// The saved words' growth tests from tests/engine-vault-words.test.js, on a count of work (tests/work.js) instead of the
 // clock. The meter keeps V8's block counting on, which slows the engine more on bigger input, so the clock tests stay
 // in their own file. The vault's regexes are bounded or read one phrase at a time, so a slowdown there is a pass or a
 // loop too many, which the count sees on any machine.
@@ -8,9 +8,7 @@ const test = require("node:test");
 const assert = require("node:assert/strict");
 
 const { assertWorkLinear, onWorkClock } = require("./work.js");
-require("../extension/patterns.js");
-require("../extension/detector.js");
-require("../extension/decide.js");
+require("./load-engine.js")("rules", "detect", "decide");
 
 const C = globalThis.Clotr;
 const SALT = "s4lt";

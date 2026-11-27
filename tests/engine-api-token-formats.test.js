@@ -10,8 +10,7 @@ const { COUNTED, meter, assertCounted } = require("./work-child.js");
 const work = meter(); // before the engine, so the meter counts its steps
 const { bestOfPair, grewMoreThan } = require("./timing.js");
 
-require("../extension/patterns.js");
-require("../extension/detector.js");
+require("./load-engine.js")("rules", "detect");
 
 const Clotr = globalThis.Clotr;
 

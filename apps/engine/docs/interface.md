@@ -109,66 +109,69 @@ The other 58 names on `globalThis.Clotr` are internal. They're shared between th
 and the tests, and none of Clotr's apps reads them. `useLocale` comes from the bundle's own start, and `detect()` sets
 `overlapChecks` on its first long scan.
 
+"Set by" names the engine file that defines each name. The last file of its group (`rule-table.js`, `detect.js` or
+`decide.js`) is the one that puts it on `globalThis.Clotr`.
+
 The last column names the files in the public repo. Some readers aren't in it, like private tools and tests and the
 website's copies of the extension's files, so they're counted as private files instead.
 
 | Name | Set by | Read by |
 | --- | --- | --- |
 | `useLocale` | `apps/engine/host-shim.js` | `apps/engine/host.js` |
-| `ASK_REASONS` | `extension/patterns.js` | `extension/decide.js`, `extension/detector.js`, `tests/decide.test.js` and 2 private files |
-| `askLabels` | `extension/patterns.js` | `extension/scam-signs.js`, `tests/scam-signs.test.js` and 1 private file |
-| `numberRuns` | `extension/patterns.js` | `extension/detector.js` and 1 private file |
-| `isPlaceholder` | `extension/patterns.js` | `extension/detector.js` and 2 private files |
-| `setVault` | `extension/patterns.js` | `apps/engine/host.js`, `extension/check.js`, `extension/content.js`, `extension/lookback-core.js`, `tests/bandage.test.js`, `tests/engine-hosts.test.js`, `tests/engine-r2-vault-quiet.test.js`, `tests/engine-r2-vault.test.js`, `tests/patterns.test.js`, `tests/vault-page.test.js` and 1 private file |
-| `vaultKinds` | `extension/patterns.js` | `extension/content.js`, `extension/detector.js`, `tests/patterns.test.js` and 1 private file |
-| `isVaultFormat` | `extension/patterns.js` | `extension/detector.js` and 1 private file |
-| `isClosedLetter` | `extension/patterns.js` | `extension/detector.js` and 1 private file |
-| `closedLength` | `extension/patterns.js` | `extension/detector.js` and 1 private file |
-| `closedHead` | `extension/patterns.js` | `extension/detector.js` and 1 private file |
-| `vaultCutShort` | `extension/patterns.js` | `extension/detector.js` and 1 private file |
-| `setScanDeadline` | `extension/patterns.js` | `extension/detector.js` and 1 private file |
-| `setVaultSource` | `extension/patterns.js` | `extension/detector.js` and 1 private file |
-| `utf8At` | `extension/patterns.js` | `extension/detector.js` and 1 private file |
-| `addressCore` | `extension/patterns.js` | `extension/detector.js`, `extension/vault.js`, `tests/patterns.test.js` and 1 private file |
-| `cleanableParamsOf` | `extension/patterns.js` | `extension/warning-ui.js` |
-| `cleanShareLink` | `extension/patterns.js` | `tests/patterns.test.js` |
-| `findShareLinks` | `extension/patterns.js` | `tests/patterns.test.js` |
-| `sha256Bytes` | `extension/patterns.js` | `tests/engine-held-speed.test.js`, `tests/patterns.test.js` |
-| `SEVERITY_RANK` | `extension/detector.js` | No other file |
-| `DETECT_BUDGET_CHARS` | `extension/detector.js` | No other file |
-| `DETECT_BACKSTOP_MS` | `extension/detector.js` | `apps/engine/test/engine-package.test.cjs`, `tests/engine-hosts.test.js`, `tests/engine-interface.test.js`, `tests/guard-scale-cutoff.test.js`, `tests/mcp.test.js`, `tests/patterns.test.js` and 1 private file |
-| `DETECT_PRIVATE_KEY_FALLBACK_CHARS` | `extension/detector.js` | `tests/patterns.test.js` |
-| `generalize` | `extension/detector.js` | `extension/content.js`, `tests/engine-r2-vault.test.js`, `tests/fuzz-properties.test.js`, `tests/patterns.test.js`, `tests/redact.test.js` |
-| `wordStarts` | `extension/detector.js` | `extension/content.js`, `extension/editor.js` |
-| `isSavedWord` | `extension/detector.js` | `extension/content.js` |
-| `BANDAGE_WORDS` | `extension/detector.js` | `tests/bandage.test.js` and 1 private file |
-| `BANDAGE_BORN_IN` | `extension/detector.js` | `tests/bandage.test.js` |
-| `readBandageLabels` | `extension/detector.js` | `extension/content.js`, `tests/bandage.test.js`, `tests/e2e/checks/15-performance.js` |
-| `bandageKindOf` | `extension/detector.js` | `extension/content.js`, `tests/bandage.test.js` |
-| `RESPONSES` | `extension/detector.js` | `extension/popup.js` |
-| `defaultResponse` | `extension/detector.js` | `extension/background.js`, `extension/popup.js`, `tests/patterns.test.js` |
-| `responseFor` | `extension/detector.js` | `extension/background.js`, `extension/content.js`, `extension/decide.js`, `extension/popup.js`, `extension/sites.js`, `tests/patterns.test.js` and 1 private file |
-| `stricter` | `extension/detector.js` | `extension/background.js`, `extension/content.js`, `extension/sites.js`, `extension/warning-ui.js`, `tests/patterns.test.js`, `tests/sites.test.js` |
-| `normalize` | `extension/detector.js` | `tests/engine-held-speed.test.js`, `tests/fingerprint-strength.test.js`, `tests/patterns.test.js` |
-| `cleanText` | `extension/detector.js` | `tests/engine-r2-vault.test.js` |
-| `findPdfStreams` | `extension/detector.js` | `extension/attachments.js`, `tests/patterns.test.js` |
-| `pdfPageText` | `extension/detector.js` | `extension/attachments.js`, `tests/attachments.test.js`, `tests/patterns.test.js` |
-| `xmlToText` | `extension/detector.js` | `extension/attachments.js`, `tests/attachments.test.js`, `tests/patterns.test.js` |
-| `sha256` | `extension/detector.js` | `extension/sites.js`, `tests/engine-r2-vault.test.js`, `tests/fingerprint-strength.test.js`, `tests/patterns.test.js`, `tests/sites.test.js` |
-| `fingerprintStrong` | `extension/detector.js` | `apps/engine/host.js`, `extension/content.js`, `extension/vault.js`, `tests/decide.test.js`, `tests/e2e/checks/08-vault.js`, `tests/e2e/checks/15-performance.js`, `tests/e2e/checks/18-bandage.js`, `tests/fingerprint-strength.test.js`, `tests/vault-speed.test.js` and 1 private file |
-| `fingerprintFor` | `extension/detector.js` | `extension/check.js`, `extension/decide.js`, `tests/fingerprint-strength.test.js`, `tests/vault-speed.test.js` and 1 private file |
-| `wordEntry` | `extension/detector.js` | `extension/background.js`, `extension/vault.js`, `tests/engine-r2-vault-quiet.test.js`, `tests/engine-r2-vault.test.js` |
-| `overlapChecks` | `extension/detector.js` | `tests/patterns.test.js` and 1 private file |
-| `describeValues` | `extension/decide.js` | `extension/warning-ui.js`, `tests/decide.test.js` |
-| `vaultMode` | `extension/decide.js` | `extension/content.js`, `tests/decide.test.js`, `tests/e2e/checks/15-performance.js`, `tests/vault-speed.test.js` |
-| `respFor` | `extension/decide.js` | `apps/engine/host.js`, `extension/content.js`, `tests/decide.test.js`, `tests/vault-speed.test.js` |
-| `WHO_ASKS` | `extension/decide.js` | `tests/decide.test.js` |
-| `whoAsksFor` | `extension/decide.js` | `tests/decide.test.js` |
-| `whoAsks` | `extension/decide.js` | `extension/page-notice.js`, `extension/warning-ui.js`, `tests/decide.test.js`, `tests/e2e/checks/22-who-asks.js` and 1 private file |
-| `asShown` | `extension/decide.js` | `extension/page-notice.js`, `extension/warning-ui.js`, `tests/decide.test.js` and 1 private file |
-| `VAULT_MODES` | `extension/decide.js` | `extension/background.js`, `tests/decide.test.js` |
-| `vaultKey` | `extension/decide.js` | `extension/background.js`, `tests/decide.test.js` |
-| `dedupeVault` | `extension/decide.js` | `apps/engine/host.js`, `extension/background.js`, `tests/decide.test.js`, `tests/fingerprint-strength.test.js` |
-| `cleanVaultEntry` | `extension/decide.js` | `apps/engine/host.js`, `extension/background.js`, `extension/vault.js`, `tests/decide.test.js`, `tests/engine-r2-vault.test.js`, `tests/fingerprint-strength.test.js`, `tests/vault-page.test.js` |
-| `cleanEvent` | `extension/decide.js` | `apps/engine/host.js`, `extension/background.js`, `tests/decide.test.js`, `tests/fingerprint-strength.test.js` |
+| `ASK_REASONS` | `extension/engine/rules/passwords-and-codes/scam-requests.js` | `extension/engine/detect/detect.js`, `extension/engine/respond/decide.js`, `tests/decide.test.js` and 2 private files |
+| `askLabels` | `extension/engine/rules/passwords-and-codes/scam-requests.js` | `extension/scam-signs.js`, `tests/scam-signs.test.js` and 1 private file |
+| `numberRuns` | `extension/engine/rules/numbers/number-runs.js` | `extension/engine/respond/fingerprints.js` and 1 private file |
+| `isPlaceholder` | `extension/engine/rules/value-checks.js` | `extension/engine/detect/detect.js`, `extension/engine/detect/pieced-keys.js` and 2 private files |
+| `setVault` | `extension/engine/vault/saved-words.js` | `apps/engine/host.js`, `extension/check.js`, `extension/content.js`, `extension/lookback-core.js`, `tests/bandage.test.js`, `tests/engine-hosts.test.js`, `tests/engine-r2-vault-quiet.test.js`, `tests/engine-r2-vault.test.js`, `tests/patterns.test.js`, `tests/vault-page.test.js` and 1 private file |
+| `vaultKinds` | `extension/engine/vault/saved-words.js` | `extension/content.js`, `extension/engine/detect/detect.js`, `extension/engine/respond/bandage-labels.js`, `tests/patterns.test.js` and 1 private file |
+| `isVaultFormat` | `extension/engine/vault/saved-words.js` | `extension/engine/respond/cover-values.js` and 1 private file |
+| `isClosedLetter` | `extension/engine/vault/saved-phrases.js` | `extension/engine/respond/fingerprints.js` and 1 private file |
+| `closedLength` | `extension/engine/vault/saved-phrases.js` | `extension/engine/respond/fingerprints.js` and 1 private file |
+| `closedHead` | `extension/engine/vault/saved-phrases.js` | `extension/engine/respond/fingerprints.js` and 1 private file |
+| `vaultCutShort` | `extension/engine/vault/saved-words.js` | `extension/engine/detect/detect.js` and 1 private file |
+| `setScanDeadline` | `extension/engine/vault/saved-words.js` | `extension/engine/detect/detect.js` and 1 private file |
+| `setVaultSource` | `extension/engine/vault/saved-words.js` | `extension/engine/detect/detect.js` and 1 private file |
+| `utf8At` | `extension/engine/vault/vault-unescape.js` | `extension/engine/respond/cover-values.js` and 1 private file |
+| `addressCore` | `extension/engine/rules/personal/street-addresses.js` | `extension/engine/respond/fingerprints.js`, `extension/vault.js`, `tests/patterns.test.js` and 1 private file |
+| `cleanableParamsOf` | `extension/engine/rules/personal/link-tracking-codes.js` | `extension/warning-ui.js` |
+| `cleanShareLink` | `extension/engine/rules/personal/link-tracking-codes.js` | `tests/patterns.test.js` |
+| `findShareLinks` | `extension/engine/rules/personal/link-tracking-codes.js` | `tests/patterns.test.js` |
+| `sha256Bytes` | `extension/engine/rules/key-formats/crypto-wallets.js` | `tests/engine-held-speed.test.js`, `tests/patterns.test.js` |
+| `SEVERITY_RANK` | `extension/engine/detect/cleaned-text.js` | No other file |
+| `DETECT_BUDGET_CHARS` | `extension/engine/detect/cleaned-text.js` | No other file |
+| `DETECT_BACKSTOP_MS` | `extension/engine/detect/cleaned-text.js` | `apps/engine/test/engine-package.test.cjs`, `tests/engine-hosts.test.js`, `tests/engine-interface.test.js`, `tests/guard-scale-cutoff.test.js`, `tests/mcp.test.js`, `tests/patterns.test.js` and 1 private file |
+| `DETECT_PRIVATE_KEY_FALLBACK_CHARS` | `extension/engine/detect/cleaned-text.js` | `tests/patterns.test.js` |
+| `generalize` | `extension/engine/respond/generalize.js` | `extension/content.js`, `tests/engine-r2-vault.test.js`, `tests/fuzz-properties.test.js`, `tests/patterns.test.js`, `tests/redact.test.js` |
+| `wordStarts` | `extension/engine/respond/cover-values.js` | `extension/content.js`, `extension/editor.js` |
+| `isSavedWord` | `extension/engine/respond/cover-values.js` | `extension/content.js` |
+| `BANDAGE_WORDS` | `extension/engine/respond/bandage-labels.js` | `tests/bandage.test.js` and 1 private file |
+| `BANDAGE_BORN_IN` | `extension/engine/respond/bandage-labels.js` | `tests/bandage.test.js` |
+| `readBandageLabels` | `extension/engine/respond/bandage-labels.js` | `extension/content.js`, `tests/bandage.test.js`, `tests/e2e/checks/15-performance.js` |
+| `bandageKindOf` | `extension/engine/respond/bandage-labels.js` | `extension/content.js`, `tests/bandage.test.js` |
+| `RESPONSES` | `extension/engine/respond/responses.js` | `extension/popup.js` |
+| `defaultResponse` | `extension/engine/respond/responses.js` | `extension/background.js`, `extension/popup.js`, `tests/patterns.test.js` |
+| `responseFor` | `extension/engine/respond/responses.js` | `extension/background.js`, `extension/content.js`, `extension/engine/respond/decide.js`, `extension/popup.js`, `extension/sites.js`, `tests/patterns.test.js` and 1 private file |
+| `stricter` | `extension/engine/respond/responses.js` | `extension/background.js`, `extension/content.js`, `extension/sites.js`, `extension/warning-ui.js`, `tests/patterns.test.js`, `tests/sites.test.js` |
+| `normalize` | `extension/engine/respond/fingerprints.js` | `tests/engine-held-speed.test.js`, `tests/fingerprint-strength.test.js`, `tests/patterns.test.js` |
+| `cleanText` | `extension/engine/detect/cleaned-text.js` | `tests/engine-r2-vault.test.js` |
+| `findPdfStreams` | `extension/engine/detect/attachment-text.js` | `extension/attachments.js`, `tests/patterns.test.js` |
+| `pdfPageText` | `extension/engine/detect/attachment-text.js` | `extension/attachments.js`, `tests/attachments.test.js`, `tests/patterns.test.js` |
+| `xmlToText` | `extension/engine/detect/attachment-text.js` | `extension/attachments.js`, `tests/attachments.test.js`, `tests/patterns.test.js` |
+| `sha256` | `extension/engine/respond/fingerprints.js` | `extension/sites.js`, `tests/engine-r2-vault.test.js`, `tests/fingerprint-strength.test.js`, `tests/patterns.test.js`, `tests/sites.test.js` |
+| `fingerprintStrong` | `extension/engine/respond/fingerprints.js` | `apps/engine/host.js`, `extension/content.js`, `extension/vault.js`, `tests/decide.test.js`, `tests/e2e/checks/08-vault.js`, `tests/e2e/checks/15-performance.js`, `tests/e2e/checks/18-bandage.js`, `tests/fingerprint-strength.test.js`, `tests/vault-speed.test.js` and 1 private file |
+| `fingerprintFor` | `extension/engine/respond/fingerprints.js` | `extension/check.js`, `extension/engine/respond/decide.js`, `tests/fingerprint-strength.test.js`, `tests/vault-speed.test.js` and 1 private file |
+| `wordEntry` | `extension/engine/respond/fingerprints.js` | `extension/background.js`, `extension/vault.js`, `tests/engine-r2-vault-quiet.test.js`, `tests/engine-r2-vault.test.js` |
+| `overlapChecks` | `extension/engine/detect/detect.js` | `tests/patterns.test.js` and 1 private file |
+| `describeValues` | `extension/engine/respond/decide.js` | `extension/warning-ui.js`, `tests/decide.test.js` |
+| `vaultMode` | `extension/engine/respond/decide.js` | `extension/content.js`, `tests/decide.test.js`, `tests/e2e/checks/15-performance.js`, `tests/vault-speed.test.js` |
+| `respFor` | `extension/engine/respond/decide.js` | `apps/engine/host.js`, `extension/content.js`, `tests/decide.test.js`, `tests/vault-speed.test.js` |
+| `WHO_ASKS` | `extension/engine/respond/decide.js` | `tests/decide.test.js` |
+| `whoAsksFor` | `extension/engine/respond/decide.js` | `tests/decide.test.js` |
+| `whoAsks` | `extension/engine/respond/decide.js` | `extension/page-notice.js`, `extension/warning-ui.js`, `tests/decide.test.js`, `tests/e2e/checks/22-who-asks.js` and 1 private file |
+| `asShown` | `extension/engine/respond/decide.js` | `extension/page-notice.js`, `extension/warning-ui.js`, `tests/decide.test.js` and 1 private file |
+| `VAULT_MODES` | `extension/engine/respond/decide.js` | `extension/background.js`, `tests/decide.test.js` |
+| `vaultKey` | `extension/engine/respond/decide.js` | `extension/background.js`, `tests/decide.test.js` |
+| `dedupeVault` | `extension/engine/respond/decide.js` | `apps/engine/host.js`, `extension/background.js`, `tests/decide.test.js`, `tests/fingerprint-strength.test.js` |
+| `cleanVaultEntry` | `extension/engine/respond/decide.js` | `apps/engine/host.js`, `extension/background.js`, `extension/vault.js`, `tests/decide.test.js`, `tests/engine-r2-vault.test.js`, `tests/fingerprint-strength.test.js`, `tests/vault-page.test.js` |
+| `cleanEvent` | `extension/engine/respond/decide.js` | `apps/engine/host.js`, `extension/background.js`, `tests/decide.test.js`, `tests/fingerprint-strength.test.js` |
 | `commandShapes` | `extension/commands.js` | `tests/commands.test.js` |

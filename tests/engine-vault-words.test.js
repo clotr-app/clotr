@@ -1,18 +1,16 @@
 // The vault's own words, formats and kinds: what detect() finds through them, and that Cover it (redact and
-// generalize, and content.js through wordStarts) hides every copy it found, however the text around it is written.
-// Run from the repo root: node --test tests/engine-r2-vault.test.js
+// generalize, and on-websites/content.js through wordStarts) hides every copy it found, however the text around it is written.
+// Run from the repo root: node --test tests/engine-vault-words.test.js
 "use strict";
 
 const test = require("node:test");
 const assert = require("node:assert/strict");
 
-require("../extension/patterns.js");
-require("../extension/detector.js");
-require("../extension/decide.js");
+require("./load-engine.js")("rules", "detect", "decide");
 
 const C = globalThis.Clotr;
 const SALT = "s4lt";
-// A word saved the way vault.js saves one (detector.js wordEntry): its fingerprint, its count of space-separated
+// A word saved the way clotr-pages/vault/vault.js saves one (detector.js wordEntry): its fingerprint, its count of space-separated
 // words and, for a word written in a script without spaces, its count of letters.
 const saved = (type, phrase) => C.wordEntry(SALT, type, phrase);
 // A word saved before wordEntry kept a count of letters: only its fingerprint and words.
@@ -63,7 +61,7 @@ test("a saved name written with combining accents (as macOS and some PDFs paste 
 });
 
 test("a saved name in a script with vowel signs (Devanagari, Tamil, Thai) is found and covered with none of it left", () => {
-  // Each one alone in the vault: one word, as vault.js counts it.
+  // Each one alone in the vault: one word, as clotr-pages/vault/vault.js counts it.
   for (const [name, text, want] of [
     ["प्रिया", "मेरा नाम प्रिया है", `मेरा नाम ${LABEL.my_name} है`],
     ["தமிழ்செல்வி", "நான் தமிழ்செல்வி", `நான் ${LABEL.my_name}`],
@@ -952,7 +950,7 @@ test("a saved word adds little to the scan of a long paste that almost repeats, 
   const fs = require("node:fs");
   const path = require("node:path");
   const box = vm.createContext({ console: { info() {}, log() {}, warn() {}, error() {} } });
-  for (const f of ["patterns.js", "detector.js"]) {
+  for (const f of require("./load-engine.js").files("rules", "detect")) {
     vm.runInContext(fs.readFileSync(path.join(__dirname, "../extension", f), "utf8"), box);
   }
   const E = vm.runInContext("globalThis.Clotr", box);

@@ -9,8 +9,7 @@ const { COUNTED, meter, assertCounted } = require("./work-child.js");
 const work = meter(); // before the engine, so the meter counts its steps
 const { bestOfPair, grewMoreThan, grewEveryTime } = require("./timing.js");
 
-require("../extension/patterns.js");
-require("../extension/detector.js");
+require("./load-engine.js")("rules", "detect");
 
 function detect(text) {
   return Object.fromEntries(globalThis.Clotr.detect(text).map((r) => [r.id, r.matches]));
