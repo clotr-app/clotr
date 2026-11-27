@@ -52,7 +52,8 @@ test("clotr-guard mcp runs the MCP server on stdio, the same one clotr-mcp start
   assert.equal(viaGuard.stderr, "");
   const replies = viaGuard.stdout.trim().split("\n").map(JSON.parse);
   assert.equal(replies.length, 2);
-  assert.deepEqual(replies[0].result.serverInfo, { name: "clotr", version: guardPackage().version });
+  const listing = JSON.parse(fs.readFileSync(path.join(GUARD, "server.json"), "utf8"));
+  assert.deepEqual(replies[0].result.serverInfo, { name: "clotr", version: listing.version });
   assert.deepEqual(
     replies[1].result.tools.map((tool) => tool.name),
     ["check_text", "clean_text", "is_secret_file"],
@@ -141,9 +142,9 @@ test("a clean check says Nothing found. in a terminal and stays silent when pipe
   assert.equal(run(["check"], "A clean prompt").stdout, "");
 });
 
-test("Guard 0.1.3 and the engine carry keywords, Guard's own folder and homepage, and the MCP registry name", () => {
+test("Guard 0.1.4 and the engine carry keywords, Guard's own folder and homepage, and the MCP registry name", () => {
   const guard = guardPackage();
-  assert.equal(guard.version, "0.1.3");
+  assert.equal(guard.version, "0.1.4");
   assert.deepEqual(guard.keywords, [
     "secrets",
     "credentials",
@@ -213,7 +214,6 @@ test("server.json is ready for the MCP registry and matches the package", () => 
   assert.equal(server.name, guard.mcpName);
   assert.match(server.name, /^[a-zA-Z0-9.-]+\/[a-zA-Z0-9._-]+$/);
   assert.ok(server.name.length >= 3 && server.name.length <= 200);
-  assert.equal(server.version, guard.version);
   assert.ok(
     server.description.length > 0 && server.description.length <= 100,
     "the registry caps a description at 100 characters",
@@ -228,6 +228,7 @@ test("server.json is ready for the MCP registry and matches the package", () => 
   const [npm] = server.packages;
   assert.equal(npm.registryType, "npm");
   assert.equal(npm.identifier, guard.name);
+  // The top version is MCP's own; the package entry names the Guard release on npm that carries it.
   assert.equal(npm.version, guard.version);
   assert.notEqual(npm.version, "latest");
   assert.match(npm.registryBaseUrl, /^https:\/\//);
@@ -261,4 +262,13 @@ test("the Claude Code plugin registers the same prompt hook setup writes, throug
   assert.deepEqual(command.args.slice(1), ["hook", "claude", "--min-severity", "medium"]);
   const readme = fs.readFileSync(path.join(GUARD, "plugin", "README.md"), "utf8");
   assert.ok(readme.includes(`npx -y clotr-guard@${guard.version} --version`), "the README warms the same version");
+});
+
+// The released VS Code build packs Guard's engine from lib/engine.js and checks that the file is there,
+// and a public test requires it. So that path has to ship and load the same module as the loader.
+test("the old lib/engine.js path loads the same engine as text-checks/engine-loader.js", () => {
+  const oldPath = require(path.join(GUARD, "lib", "engine.js"));
+  const loader = require(path.join(GUARD, "lib", "text-checks", "engine-loader.js"));
+  assert.equal(oldPath, loader);
+  assert.ok(guardPackage().files.includes("lib/engine.js"), "the old path ships, so a build from the package finds it");
 });

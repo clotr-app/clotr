@@ -122,7 +122,7 @@ test("Guard's shipped files resolve to a real, non-trivial set", () => {
   assert.ok(files.length >= 5, `expected several shipped files, found ${files.length}`);
   assert.ok(files.some((file) => file.endsWith(path.join("bin", "clotr-mcp.js"))));
   assert.ok(files.some((file) => file.endsWith(path.join("bin", "clotr-guard.js"))));
-  assert.ok(files.some((file) => file.endsWith(path.join("lib", "engine.js"))));
+  assert.ok(files.some((file) => file.endsWith(path.join("lib", "text-checks", "engine-loader.js"))));
   assert.ok(files.some((file) => file.endsWith(path.join("lib", "secret-files.js"))));
   assert.ok(files.some((file) => file.endsWith(path.join("lib", "clotrignore.js"))));
 });

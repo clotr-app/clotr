@@ -20,6 +20,7 @@ if (fs.existsSync(ENGINE_PATH)) {
 }
 const { checkResult, cleanResult, callTool } = require("../apps/guard/bin/clotr-mcp.js");
 const guardPackage = require("../apps/guard/package.json");
+const mcpListing = require("../apps/guard/server.json");
 const KEY = "AKIA4HPQ7XZ2R6TWLJ3N";
 const EMAIL = "madeup.person@example.com";
 
@@ -193,7 +194,7 @@ test("the packed npx command and clotr-mcp binary complete a live MCP exchange",
       capabilities: {},
       clientInfo: { name: "clotr-guard-test", version: "1" },
     });
-    assert.deepEqual(initialized.result.serverInfo, { name: "clotr", version: guardPackage.version }, label);
+    assert.deepEqual(initialized.result.serverInfo, { name: "clotr", version: mcpListing.version }, label);
     assert.deepEqual(initialized.result.capabilities, { tools: {} }, label);
     client.notify("notifications/initialized");
 
@@ -361,7 +362,7 @@ test("current MCP discovery and tools calls work without a session", () => {
   assert.equal(replies[0].result.cacheScope, "private");
   assert.deepEqual(replies[0].result._meta["io.modelcontextprotocol/serverInfo"], {
     name: "clotr",
-    version: guardPackage.version,
+    version: mcpListing.version,
   });
   assert.deepEqual(
     replies[1].result.tools.map((tool) => tool.name),
@@ -420,13 +421,76 @@ test("MCP reports a JWT once when two engine findings share its range", () => {
   assert.equal(result.findings.length, 1);
 });
 
-test("the Guard package and MCP command use version 0.1.3", () => {
+// The masked form shows none of a password and at most a quarter of anything else. The values are made up.
+for (const password of ["Zq7#mVx2!", "Zq7#mVx2!kLp"]) {
+  test(`check_text and clean_text show none of a ${password.length}-character password`, () => {
+    const text = `password: ${password}`;
+    const checked = checkResult(text).findings.filter((finding) => finding.kind === "password");
+    const cleaned = cleanResult(text);
+    const replaced = cleaned.replaced.filter((finding) => finding.kind === "password");
+    assert.equal(checked.length, 1);
+    assert.equal(replaced.length, 1);
+    assert.match(checked[0].masked, /^•+$/);
+    assert.match(replaced[0].masked, /^•+$/);
+    assert.ok(!JSON.stringify(cleaned).includes(password));
+  });
+}
+
+test("check_text and clean_text show at most a quarter of another kind", () => {
+  const text = `Use ${KEY} here`;
+  const shown = (masked) => masked.replace(/[•…]/g, "").length;
+  const checked = checkResult(text).findings.find((finding) => finding.kind === "aws_access_key");
+  const replaced = cleanResult(text).replaced.find((finding) => finding.kind === "aws_access_key");
+  assert.ok(shown(checked.masked) <= Math.floor(KEY.length / 4), checked.masked);
+  assert.ok(shown(replaced.masked) <= Math.floor(KEY.length / 4), replaced.masked);
+});
+
+test("the Guard package and MCP command use version 0.1.4", () => {
   assert.equal(guardPackage.private, true);
   assert.equal(guardPackage.bin["clotr-mcp"], "bin/clotr-mcp.js");
-  assert.equal(guardPackage.version, "0.1.3");
+  assert.equal(guardPackage.version, "0.1.4");
   assert.ok(guardPackage.files.includes("bin"));
-  assert.ok(guardPackage.files.includes("lib"));
+  assert.ok(guardPackage.files.includes("lib/text-checks/engine-loader.js"));
   assert.ok(guardPackage.files.includes("dist"));
+});
+
+// MCP has its own number, the one in its registry listing (server.json) and its changelog. Guard's package number can
+// differ, so a copy of the server with a different Guard number must still give MCP's.
+
+test("the MCP server gives MCP's own version, not Guard's package version", () => {
+  const guardRoot = path.join(__dirname, "..", "apps", "guard");
+  const copy = fs.mkdtempSync(path.join(os.tmpdir(), "clotr-mcp-version-"));
+  try {
+    for (const dir of ["bin", "lib", "dist"]) {
+      fs.cpSync(path.join(guardRoot, dir), path.join(copy, dir), { recursive: true });
+    }
+    fs.writeFileSync(path.join(copy, "package.json"), JSON.stringify({ ...guardPackage, version: "9.9.9" }));
+    const child = spawnSync(process.execPath, [path.join(copy, "bin", "clotr-mcp.js")], {
+      input: `${modernRequest("server/discover", {}, 1)}\n`,
+      encoding: "utf8",
+      timeout: 10_000,
+    });
+    assert.equal(child.status, 0, child.stderr);
+    const reply = JSON.parse(child.stdout.trim().split("\n")[0]);
+    assert.equal(reply.result._meta["io.modelcontextprotocol/serverInfo"].version, mcpListing.version);
+  } finally {
+    fs.rmSync(copy, { recursive: true, force: true });
+  }
+});
+
+test("the MCP server's version matches its registry listing", () => {
+  const [reply] = runStdio([request("initialize", { protocolVersion: "2025-11-25", capabilities: {} }, 1)]);
+  assert.equal(reply.result.serverInfo.version, mcpListing.version);
+  assert.equal(mcpListing.packages[0].identifier, "clotr-guard");
+});
+
+// A version being cut has its heading before its date goes on, so the top heading counts with or without one.
+
+test("the MCP server's version is the top version heading in MCP's changelog", () => {
+  const changelog = fs.readFileSync(path.join(__dirname, "..", "apps", "mcp", "CHANGELOG.md"), "utf8");
+  const top = changelog.match(/^## (\d+\.\d+\.\d+)(?: \(|$)/m);
+  assert.ok(top, "no version heading in apps/mcp/CHANGELOG.md");
+  assert.equal(top[1], mcpListing.version);
 });
 
 test("clean_text uses engine placeholders and returns only masked replacement details", () => {
@@ -573,7 +637,10 @@ test("print-config refuses an npx cache path and names the global install, as ho
 test("check_text and clean_text say when the engine ran out of time on part of the text", () => {
   assert.equal(callTool("check_text", { text: "nothing to see here" }).truncated, undefined);
   // A pattern that pretends to take longer than the engine's whole time limit, on a fake clock in Guard's engine.
-  const realm = require("node:vm").runInContext("globalThis", require("../apps/guard/lib/engine.js").engineContext());
+  const realm = require("node:vm").runInContext(
+    "globalThis",
+    require("../apps/guard/lib/text-checks/engine-loader.js").engineContext(),
+  );
   const { Clotr, Date: RealmDate } = realm;
   const realNow = RealmDate.now;
   let now = realNow();
@@ -597,13 +664,18 @@ test("check_text and clean_text say when the engine ran out of time on part of t
   assert.equal(checked.truncated, true);
   assert.match(checked.verdict, /part of this text wasn't checked/i);
   assert.equal(cleaned.truncated, true);
+  assert.equal(cleaned.note, "Clotr ran out of time, so part of this text wasn't checked.");
+  assert.equal(callTool("clean_text", { text: "nothing to see here" }).note, undefined);
 });
 
 // Two scans the time limit cuts short can stop at different points. The first one here stops after every rule has
 // run and the next stops before any, so clean_text must hide what its own list names from that one scan, not from
 // a second one that found less.
 test("clean_text hides every value it lists as replaced when the scan is cut short at a different point each time", () => {
-  const realm = require("node:vm").runInContext("globalThis", require("../apps/guard/lib/engine.js").engineContext());
+  const realm = require("node:vm").runInContext(
+    "globalThis",
+    require("../apps/guard/lib/text-checks/engine-loader.js").engineContext(),
+  );
   const { Clotr, Date: RealmDate } = realm;
   const realNow = RealmDate.now;
   let now = realNow();
@@ -628,4 +700,144 @@ test("clean_text hides every value it lists as replaced when the scan is cut sho
     JSON.stringify(cleaned.replaced),
   );
   assert.ok(!cleaned.text.includes(KEY), "a value listed as replaced is still in the cleaned text");
+});
+
+function initializeAs(protocolVersion) {
+  return request("initialize", {
+    protocolVersion,
+    capabilities: {},
+    clientInfo: { name: "test-client", version: "1.0" },
+  });
+}
+
+function checkCall(text, id) {
+  return { jsonrpc: "2.0", id, method: "tools/call", params: { name: "check_text", arguments: { text } } };
+}
+
+test("a tools/call line over the line limit gets its error with the call's own id", () => {
+  const huge = "x".repeat(1024 * 1024);
+  const idFirst = JSON.stringify(checkCall(huge, 41));
+  // The id comes last here, and the text holds a quoted "id" of its own that mustn't be taken for it.
+  const text = `"id":99,${huge}`;
+  const idLast = JSON.stringify({
+    jsonrpc: "2.0",
+    method: "tools/call",
+    params: { name: "check_text", arguments: { text } },
+    id: "late",
+  });
+  const replies = runStdio([idFirst, idLast, modernRequest("ping", {}, 3)]);
+  assert.equal(replies.length, 3);
+  assert.equal(replies[0].id, 41);
+  assert.equal(replies[0].error.code, -32700);
+  assert.equal(replies[0].error.message, "Request is too large");
+  assert.equal(replies[1].id, "late");
+  assert.equal(replies[1].error.message, "Request is too large");
+  assert.equal(replies[2].id, 3);
+  assert.doesNotMatch(JSON.stringify(replies), /x{100}/);
+});
+
+test("an oversized line whose id can't be read still gets one error with no id", () => {
+  const huge = "x".repeat(1024 * 1024);
+  const replies = runStdio([`[${JSON.stringify(checkCall(huge, 5))}]`, modernRequest("ping", {}, 6)]);
+  assert.equal(replies.length, 2);
+  assert.equal(replies[0].id, null);
+  assert.equal(replies[0].error.message, "Request is too large");
+  assert.equal(replies[1].id, 6);
+});
+
+test("a text under the cap is checked however many of its characters JSON has to escape", () => {
+  const atCap = "\u0001".repeat(64 * 1024);
+  const overCap = "\u0001".repeat(64 * 1024 + 1);
+  const replies = runStdio([
+    modernRequest("tools/call", { name: "check_text", arguments: { text: atCap } }, 1),
+    modernRequest("tools/call", { name: "clean_text", arguments: { text: atCap } }, 2),
+    modernRequest("tools/call", { name: "check_text", arguments: { text: overCap } }, 3),
+  ]);
+  assert.equal(replies.length, 3);
+  assert.equal(replies[0].id, 1);
+  assert.equal(replies[0].result.isError, false);
+  assert.deepEqual(toolResult(replies[0]).findings, []);
+  assert.equal(replies[1].id, 2);
+  assert.equal(replies[1].result.isError, false);
+  assert.equal(replies[2].id, 3);
+  assert.equal(toolResult(replies[2]).content[0].text, "Text is too large to check.");
+});
+
+test("on 2025-03-26 a batch of calls gets one array holding each call's own answer", () => {
+  const single = runStdio([initializeAs("2025-03-26"), JSON.stringify(checkCall(KEY, 2))])[1];
+  const replies = runStdio([
+    initializeAs("2025-03-26"),
+    JSON.stringify([checkCall(KEY, 2), checkCall("nothing here", 3)]),
+  ]);
+  assert.equal(replies.length, 2);
+  assert.ok(Array.isArray(replies[1]));
+  assert.deepEqual(
+    replies[1].map((reply) => reply.id),
+    [2, 3],
+  );
+  assert.deepEqual(replies[1][0], single);
+  assert.deepEqual(toolResult(replies[1][1]).findings, []);
+});
+
+test("where batches aren't allowed, each call in one gets its own error with its id", () => {
+  const batch = JSON.stringify([checkCall(KEY, 2), checkCall(KEY, 3)]);
+  const cases = {
+    "before the handshake": [batch],
+    "2024-11-05": [initializeAs("2024-11-05"), batch],
+    "2025-06-18": [initializeAs("2025-06-18"), batch],
+    "2025-11-25": [initializeAs("2025-11-25"), batch],
+    "2026-07-28": [modernRequest("server/discover", {}, 1), batch],
+  };
+  for (const [label, lines] of Object.entries(cases)) {
+    const replies = runStdio(lines).slice(lines.length - 1);
+    assert.deepEqual(
+      replies.map((reply) => [reply.id, reply.error?.code]),
+      [
+        [2, -32600],
+        [3, -32600],
+      ],
+      label,
+    );
+  }
+});
+
+test("empty batches, non-requests, notifications and initialize in a batch get what JSON-RPC says", () => {
+  const notification = { jsonrpc: "2.0", method: "notifications/initialized" };
+  const replies = runStdio([
+    initializeAs("2025-03-26"),
+    "[]",
+    JSON.stringify([1, notification, checkCall("nothing here", 4), JSON.parse(initializeAs("2025-03-26"))]),
+    JSON.stringify([notification, notification]),
+    modernRequest("ping", {}, 9),
+  ]);
+  assert.equal(replies.length, 4);
+  assert.deepEqual(replies[1], { jsonrpc: "2.0", id: null, error: { code: -32600, message: "Invalid Request" } });
+  assert.ok(Array.isArray(replies[2]));
+  assert.equal(replies[2].length, 3);
+  assert.deepEqual(replies[2][0], { jsonrpc: "2.0", id: null, error: { code: -32600, message: "Invalid Request" } });
+  assert.equal(replies[2][1].id, 4);
+  assert.equal(replies[2][2].id, 1);
+  assert.equal(replies[2][2].error.code, -32600);
+  assert.equal(replies[3].id, 9);
+});
+
+test("a batch runs no more than one call's worth of text and answers the rest with their ids", () => {
+  const many = Array.from({ length: 20 }, (_, index) => checkCall("nothing here", index + 1));
+  const large = "y".repeat(40 * 1024);
+  const replies = runStdio([
+    initializeAs("2025-03-26"),
+    JSON.stringify(many),
+    JSON.stringify([checkCall(large, 31), checkCall(large, 32)]),
+  ]);
+  assert.equal(replies[1].length, 20);
+  assert.deepEqual(
+    replies[1].map((reply) => reply.id),
+    many.map((call) => call.id),
+  );
+  assert.equal(replies[1].filter((reply) => reply.result).length, 16);
+  assert.ok(replies[1].slice(16).every((reply) => reply.error?.message === "Batch is too large"));
+  assert.equal(replies[2][0].id, 31);
+  assert.equal(replies[2][0].result.isError, false);
+  assert.equal(replies[2][1].id, 32);
+  assert.equal(replies[2][1].error.message, "Batch is too large");
 });

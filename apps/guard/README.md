@@ -2,9 +2,9 @@
 
 Clotr Guard checks prompts and file reads through hooks for supported AI coding assistants. You can also check a text
 file yourself or set up the Git pre-commit check. It uses the same on-device engine as Clotr's other apps. A clean
-prompt passes. Medium and high findings pause that prompt and show their kind. Low findings pass with
-one short line on stderr. The default lets email addresses, license plates, gamer tags and share links through. Send
-the same prompt again within two minutes to send it anyway. A new finding pauses it again.
+prompt passes. Medium and high findings pause that prompt and show their kind. Low findings pass with one short note in
+the assistant's window. The default lets email addresses, license plates, gamer tags and share links through. Send the
+same prompt again in the same session within two minutes to send it anyway. A hook event with no session id counts in any session of that assistant. A new finding pauses it again.
 
 Clotr Guard supports Claude Code, Cursor, Gemini CLI, Codex CLI, Windsurf Cascade and Cline hooks on macOS and Linux.
 Its checks run on your computer. Clotr Guard makes no network calls or sends text to a Clotr server. A prompt that the
@@ -99,7 +99,9 @@ the server starts:
 
 The server runs on this computer over standard input and output. It checks only when the assistant calls it and
 returns finding kinds and masked forms. `include_personal_details` adds personal details to `check_text` and
-`clean_text`; credentials stay checked either way.
+`clean_text`; credentials stay checked either way. When the engine runs out of time, both tools return
+`truncated: true` and say in words that part of the text wasn't checked, `check_text` in its verdict and `clean_text`
+in a `note`.
 
 ## Give your assistant the Clotr skill
 
@@ -125,7 +127,9 @@ clotr-guard setup git
 ```
 
 These commands add the prompt hook and, where supported, the file-read hook to your user settings. Run the command
-inside a project with `--project` to add them to that project's settings instead. Use `--dry-run` to preview the
+inside a project with `--project` to add them to that project's settings instead. For now, a `--project` setup only
+works on the PC that made it. It saves that PC's paths, so on a teammate's PC the check doesn't run and nothing warns
+them. Until that's fixed, have each person run `clotr-guard setup <tool>` themselves. Use `--dry-run` to preview the
 change. Run `clotr-guard remove <tool>` to remove Clotr's hooks, or add `--project` to remove its project hooks.
 Before a change is written, Clotr saves a copy of an existing settings file beside it with `.clotr-guard.bak` on the
 end, and a `.bak` of your own is left alone. `setup git` installs a local pre-commit hook in the current repository;
@@ -163,8 +167,9 @@ one too big or slow for that stops the command, as does a check that runs past 1
 File-read hooks check Claude Code's `Read`, Cursor's Agent file reads, Gemini CLI's `read_file`, Windsurf Cascade's
 `pre_read_code` and Cline's `PreToolUse`. A secret file is denied in every tool, with a reason for the assistant. In
 Claude Code an ordinary file with credentials asks you first. The other tools stop it, and reading it again won't get it
-through. Binary files and folders pass. Text in UTF-16 or an older code page is checked like any other, and past 256 KiB
-only the start is checked, with a note saying so.
+through. Binary files and folders pass. Text in UTF-16 or an older code page is checked like any other, and so is a
+UTF-8 line another tool added to a UTF-16 file with a byte order mark. Past 256 KiB only the start is checked, with a
+note saying so.
 
 Gemini CLI loads `.env` files by default. `setup gemini` prints how to turn that off with `advanced.ignoreLocalEnv` and
 leaves the choice to you.
@@ -174,11 +179,13 @@ salted fingerprints of findings and the time of the first warning, in `%LOCALAPP
 per-user app data folder elsewhere. The record is local plain state readable by the same computer account or its
 processes, and Guard doesn't sync it. Guard saves no prompt text or file contents.
 
-If Clotr hits an internal error while checking a prompt, a file read or an MCP tool call, Guard lets it through with a
-visible note that says it went through unchecked. A shell command is stopped instead: when its check hits an internal
-error or doesn't finish in time, the message says which, and a hook that crashes once it has started stops it as a check
-that didn't finish. A prompt check that runs out of time stops the prompt, and a read or tool call that does is put to
-you, or stopped where the assistant can't ask. Guard stops input it can't read, including malformed hook input and text
+If Clotr hits an internal error while checking a prompt, like an engine file that's missing or broken, the prompt is
+stopped, and the message says to try again or run setup again. A file read or an MCP tool call is put to you, or
+stopped where the assistant can't ask. A shell command is stopped, and the message says its check hit an error. A hook
+that hits an error once it has started answers the same way. A file Clotr can't open here, like one that isn't there or one on
+another computer, still goes through with a visible note that says it wasn't checked. A check that doesn't finish in
+time stops the prompt or the shell command, and a read or tool call that runs out of time is put to you, or stopped
+where the assistant can't ask. Guard stops input it can't read, including malformed hook input and text
 over the size limit.
 
 ### Search results
@@ -187,7 +194,7 @@ The read hook also checks searches that return matching lines: Claude Code's `Gr
 Gemini CLI's `search_file_content` and `grep_search`, Cline's `search_files`, and Gemini's `read_many_files`. Claude's
 `files_with_matches` and `count` modes return paths or counts and pass. Guard checks the search path and include glob,
 then walks up to 2,048 entries or 250 ms total, skipping `.git` and `node_modules`. Ripgrep and Git reachability probes
-share that same time limit. If a limit is reached, the search passes and Guard writes a note to stderr.
+share that same time limit. If a limit is reached, the search passes with a note in the assistant's window.
 
 Guard follows the tools' filters when deciding whether a found file can be returned:
 
@@ -213,10 +220,11 @@ default is `medium`.
 
 ## Check text yourself
 
-Pass a file or pipe text through standard input:
+Pass one or more files, or pipe text through standard input:
 
 ```text
 clotr-guard check prompt.txt
+clotr-guard check notes.txt plan.md
 type prompt.txt | clotr-guard check --json
 ```
 
@@ -227,6 +235,11 @@ If the engine stops before the end of the text, for example after 10 seconds, th
 of time, so part of this text wasn't checked." to stderr, `--json` adds `truncated: true` and its decision is
 `block`, and the command returns 1, as for a finding, since the rest of the text wasn't checked. When Clotr can't check
 the text at all, it prints "Clotr couldn't check this text." and returns 2. Files above 1 MiB return that same error.
+With more than one file, each file is checked in turn and each finding starts with its file's name. The command
+returns 1 if any file has a finding or ran out of time, and 2, after checking the rest, if any file couldn't be
+checked, naming it. `--json` takes one file. A file is read the way the read hook reads it, UTF-16 included. Text
+with a few stray bytes, like a zero byte, still lists what's found in it and returns 1. So does a UTF-16 file with a part that isn't text. A mostly binary file,
+or one of those where nothing is found, returns that error.
 
 ## Check staged Git changes
 
@@ -267,6 +280,8 @@ repos:
 ```
 
 It runs the `clotr-guard` you installed globally.
+
+Using Guard on a team? Add your team to [ADOPTERS.md](https://github.com/clotr-app/clotr/blob/main/ADOPTERS.md), or email [support@clotr.app](mailto:support@clotr.app?subject=We%20use%20Clotr%20at%20work&body=How%20many%20people%20use%20Clotr%20at%20your%20work%3F%20%28just%20me%20%2F%202-5%20%2F%206-25%20%2F%2026-100%20%2F%20more%20than%20100%29%0A%0AWhich%20Clotr%20tools%20do%20you%20use%3F%20%28Guard%2C%20MCP%2C%20VS%20Code%2C%20JetBrains%2C%20the%20engine%2C%20the%20browser%20extension%2C%20Windows%2C%20Android%29%0A%0AIs%20anything%20missing%20that%20your%20team%20would%20need%3F%20%28optional%29%0A%0ACan%20I%20add%20you%20to%20ADOPTERS.md%3F%20%28yes%20%2F%20no%29%0A%0AIf%20yes%2C%20should%20I%20list%20your%20organization%27s%20name%20or%20just%20what%20it%20does%3F%20%28optional%29%0A%0A) with the subject "We use Clotr at work".
 
 ## `.clotrignore`
 

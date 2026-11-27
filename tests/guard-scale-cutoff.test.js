@@ -13,6 +13,10 @@ const path = require("node:path");
 const vm = require("node:vm");
 const { spawnSync } = require("node:child_process");
 
+// The work meter counts steps only in code loaded after it, so it comes before Guard. Its block counting slows the
+// code it counts, so the in-process tests here count work or run on a stand-in clock, and only child runs are timed.
+const { workGrowth, WORK_GROWTH } = require("./work.js");
+
 const ROOT = path.join(__dirname, "..");
 const GUARD_ENGINE = path.join(ROOT, "apps", "guard", "dist", "clotr-engine.js");
 if (!fs.existsSync(GUARD_ENGINE)) {
@@ -20,7 +24,7 @@ if (!fs.existsSync(GUARD_ENGINE)) {
   fs.mkdirSync(path.dirname(GUARD_ENGINE), { recursive: true });
   fs.writeFileSync(GUARD_ENGINE, build().text);
 }
-const ENGINE_JS = path.join(ROOT, "apps", "guard", "lib", "engine.js");
+const ENGINE_JS = path.join(ROOT, "apps", "guard", "lib", "text-checks", "engine-loader.js");
 const GUARD_JS = path.join(ROOT, "apps", "guard", "bin", "clotr-guard.js");
 const guardEngine = require(ENGINE_JS);
 const guard = require(GUARD_JS);
@@ -71,20 +75,39 @@ function placesByScanning(text, values) {
   return starts;
 }
 
+// How much each count of placing's work grew for 4 times the input, in Guard's own code. `place(scale)` places the
+// findings for the input at that scale, 1 being the full size; the quarter size is measured against it.
+function assertPlacingWorkLinear(label, place) {
+  const grew = workGrowth(
+    (n) => place(n / 4),
+    (_unit, n) => n,
+    null,
+    1,
+    [path.join(ROOT, "apps", "guard")],
+  );
+  const over = Object.entries(grew).filter(([, times]) => times > WORK_GROWTH);
+  const shown = over.map(([count, times]) => `${count} x${times.toFixed(1)}`).join(", ");
+  assert.ok(!over.length, `${label}: placing's work grew too much for 4× the input: ${shown}`);
+}
+
 test("Guard places tens of thousands of findings in a megabyte in well under a second's work each thousand", () => {
   const context = guardEngine.engineContext();
-  const list = emails(56_000);
-  const text = `${list.join(" ")}\n${KEY}`;
-  // In text order and backwards: the engine can list a kind's matches in either.
-  for (const matches of [list, [...list].reverse()]) {
-    const started = Date.now();
-    const findings = guardEngine.findingsFromDetections(context, text, [
-      { id: "email", name: "Email", severity: "medium", matches },
-      { id: "aws_access_key", name: "AWS Access Key", severity: "high", matches: [KEY] },
-    ]);
-    const elapsed = Date.now() - started;
-    // About a quarter of a second on an idle computer; searching from the start for each took about 25 seconds.
-    assert.ok(elapsed < 5000, `placing 56,001 findings took ${elapsed} ms`);
+  // In text order and backwards: the engine can list a kind's matches in either. Searching from the start for each
+  // took about 25 seconds on 56,000.
+  for (const backwards of [false, true]) {
+    let placed;
+    assertPlacingWorkLinear(backwards ? "backwards" : "in order", (scale) => {
+      const list = emails(56_000 * scale);
+      const matches = backwards ? [...list].reverse() : list;
+      const text = `${list.join(" ")}\n${KEY}`;
+      const findings = guardEngine.findingsFromDetections(context, text, [
+        { id: "email", name: "Email", severity: "medium", matches },
+        { id: "aws_access_key", name: "AWS Access Key", severity: "high", matches: [KEY] },
+      ]);
+      placed = { text, matches, findings };
+    });
+    const { text, matches, findings } = placed;
+    assert.equal(matches.length, 56_000);
     assert.equal(findings.length, matches.length + 1);
     matches.forEach((value, i) => assert.equal(text.slice(findings[i].start, findings[i].end), value));
     assert.equal(findings[matches.length].start, text.lastIndexOf(KEY));
@@ -136,25 +159,30 @@ test("Guard's placing stays quick for values whose copies overlap", () => {
     text: "a".repeat(length),
     values: ["a".repeat(length), ...Array.from({ length: count }, (_, k) => "a".repeat(size(k)))],
   });
+  // Each case at a scale, 1 being the full size.
   const cases = [
-    run(60_000, 20, (k) => 20_000 - k),
-    run(1_000_000, 20, (k) => 1000 - k),
-    run(1_000_000, 64, (k) => 1 + k),
-    {
-      text: "ab".repeat(30_000),
-      values: ["ab".repeat(30_000), ...Array.from({ length: 20 }, (_, k) => "ab".repeat(10_000 - k))],
-    },
+    (s) => run(60_000 * s, 20, (k) => 20_000 * s - k),
+    (s) => run(1_000_000 * s, 20, (k) => 1000 - k),
+    (s) => run(1_000_000 * s, 64, (k) => 1 + k),
+    (s) => ({
+      text: "ab".repeat(30_000 * s),
+      values: ["ab".repeat(30_000 * s), ...Array.from({ length: 20 }, (_, k) => "ab".repeat(10_000 * s - k))],
+    }),
   ];
-  for (const { text, values } of cases) {
-    const started = Date.now();
-    const findings = guardEngine.findingsFromDetections(context, text, [
-      { id: "probe", name: "Probe", severity: "high", matches: values },
-    ]);
-    const elapsed = Date.now() - started;
-    // Well under a second on an idle computer; charging only the distance moved took 4 to 11 seconds.
-    assert.ok(elapsed < 2000, `placing ${values.length} values in ${text.length} characters took ${elapsed} ms`);
+  for (const at of cases) {
+    let placed;
+    const { text, values } = at(1);
+    assertPlacingWorkLinear(`${values.length} values in ${text.length} characters`, (scale) => {
+      const input = at(scale);
+      const findings = guardEngine.findingsFromDetections(context, input.text, [
+        { id: "probe", name: "Probe", severity: "high", matches: input.values },
+      ]);
+      placed = { ...input, findings };
+    });
     // Out of search, a value still sits on a real copy of itself.
-    values.forEach((value, i) => assert.equal(text.slice(findings[i].start, findings[i].end), value));
+    placed.values.forEach((value, i) =>
+      assert.equal(placed.text.slice(placed.findings[i].start, placed.findings[i].end), value),
+    );
   }
 });
 
@@ -326,6 +354,22 @@ test("a commit whose added lines the engine runs out of time on is stopped and t
   assert.ok(unfinished, JSON.stringify(issues));
   assert.equal(unfinished.file, "data.txt");
   assert.match(unfinished.masked, /ran out of time/);
+});
+
+test("a commit check names a file it already stopped for size once, however long the engine takes", (t) => {
+  const { root, git } = initRepo(t);
+  // A diff past Git's 16 MiB buffer: only its first 256 KiB is checked, and the engine runs out of time on that too.
+  fs.writeFileSync(path.join(root, "big.txt"), `KEY=${KEY}\n${"X=1\n".repeat(4_500_000)}`);
+  git("add", "big.txt");
+  stalled(t);
+  const { issues } = guard.checkStaged({ cwd: root });
+  assert.deepEqual(
+    issues.map((issue) => [issue.file, issue.kind]),
+    [
+      ["big.txt", "staged_diff_partial"],
+      ["big.txt", "aws_access_key"],
+    ],
+  );
 });
 
 test("the prompt hook, the commit check and clotr-guard check fail closed when the engine runs out of time", (t) => {

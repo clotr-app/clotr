@@ -31,7 +31,7 @@ test("VS Code runtime and its bundled Guard have no network calls", () => {
   const files = [
     path.join(APP, "extension.js"),
     path.join(APP, "guard", "bin", "clotr-guard.js"),
-    path.join(APP, "guard", "lib", "engine.js"),
+    path.join(APP, "guard", "lib", "text-checks", "engine-loader.js"),
   ];
   const network = /\b(?:fetch|XMLHttpRequest|WebSocket)\b|node:https?|https?\.request|net\.connect|axios|got\s*\(/i;
   for (const file of files) assert.doesNotMatch(fs.readFileSync(file, "utf8"), network, path.relative(ROOT, file));
@@ -392,7 +392,7 @@ test("finding: VS Code 1.57's Node 14 host can load the extension", () => {
     "extension.js",
     "guard/bin/clotr-guard.js",
     "guard/lib/clotrignore.js",
-    "guard/lib/engine.js",
+    "guard/lib/text-checks/engine-loader.js",
     "guard/lib/secret-files.js",
     "guard/dist/clotr-engine.js",
   ]) {
@@ -570,13 +570,17 @@ test("the VSIX package lists its Guard runtime without the MCP binary", () => {
       }
     };
     visit(packageRoot);
+    // The build copies Guard's whole lib folder, so the list reads that folder.
+    const guardLib = path.join(ROOT, "apps", "guard", "lib");
+    const libFiles = fs
+      .readdirSync(guardLib, { recursive: true })
+      .filter((entry) => fs.statSync(path.join(guardLib, entry)).isFile())
+      .map((entry) => `guard/lib/${entry.split(path.sep).join("/")}`);
     assert.deepEqual(files.sort(), [
       "LICENSE",
       "guard/bin/clotr-guard.js",
       "guard/dist/clotr-engine.js",
-      "guard/lib/clotrignore.js",
-      "guard/lib/engine.js",
-      "guard/lib/secret-files.js",
+      ...libFiles.sort(),
       "guard/package.json",
     ]);
     const packageInputs = ["extension.js", "package.json", "package.nls.json", "package.nls.es.json"].map((file) => [
