@@ -7,8 +7,7 @@
 const test = require("node:test");
 const assert = require("node:assert/strict");
 
-require("../extension/patterns.js");
-require("../extension/detector.js");
+require("./load-engine.js")("rules", "detect");
 
 const Clotr = globalThis.Clotr;
 const b64 = (s) => Buffer.from(s).toString("base64");

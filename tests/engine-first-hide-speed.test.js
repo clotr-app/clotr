@@ -65,8 +65,7 @@ test("a first Hide it on a long paste with a saved word inside thousands of long
 // with the square. Only the counting child declares it, so a plain run skips nothing; the test below runs it there.
 if (COUNTED) {
   test("a first Hide it on thousands of longer words makes linear work", () => {
-    require("../extension/patterns.js");
-    require("../extension/detector.js");
+    require("./load-engine.js")("rules", "detect");
     const C = globalThis.Clotr;
     C.setVault({
       salt: SALT,

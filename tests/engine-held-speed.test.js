@@ -7,11 +7,8 @@
 const test = require("node:test");
 const assert = require("node:assert/strict");
 const crypto = require("node:crypto");
-const fs = require("node:fs");
-const path = require("node:path");
 
-require("../extension/patterns.js");
-require("../extension/detector.js");
+require("./load-engine.js")("rules", "detect");
 const { bestOfPair, grewMoreThan, grewEveryTime } = require("./timing.js");
 
 const Clotr = globalThis.Clotr;
@@ -81,8 +78,8 @@ test("a long line of dashes under a table's header is read in a moment", () => {
   assert.ok(Clotr.redact(table, scan(table)).indexOf(password) < 0, "the table's password survived Cover it");
 });
 
-const WORDS = fs
-  .readFileSync(path.join(__dirname, "..", "extension", "patterns.js"), "utf8")
+const WORDS = require("./load-engine.js")
+  .source("rules")
   .match(/const BIP39 = new Set\(\s*`([\s\S]*?)`/)[1]
   .trim()
   .split(/\s+/);

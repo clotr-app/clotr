@@ -1,5 +1,30 @@
 # Clotr engine
 
+## 1.6.4 (2026-11-27)
+
+Known issue: a plain number right after a login code and "and", ", and" or "or", like
+`the login code is 482913 and 551234.`, is read as a second code, so Hide it covers it too. 1.6.3 does this too.
+
+- A password in any link with a login, like `smb://sam:hunter2!@nas.wibblecorp.io/share` or an `ssh://` link, is
+  found as a connection string, and Hide it covers all of it, even with a space in the password or a stand-in link
+  right before it. 1.6.3 read many of these as an email or missed them, and could leave part of the password showing.
+- A stand-in password in a link, like `password` or `secret`, stays quiet, where 1.6.3 read it as an email.
+- A note under a password's ref name, like `password_ref: prod database password`, stays quiet. A passphrase there,
+  like `db_password_ref: correct horse battery staple`, is still found.
+- A typed password that only sounds made up, like `password: example123!`, is found, and so is one under its own
+  `.value`, like `db.password.value=maple_2093`.
+- A key after `sessionKey:` or `authKey:` is found, and so is a crypto private key after `clave privada` and a JWK
+  with a brace in a quoted value.
+- A key file's path, like `apiKey: ./certs/server.pem`, stays quiet. So do the `Thanks!` in
+  `I forgot what my password is. Thanks!` and a dated sentence like `backup codes are not working since 2024`.
+- A phone number spelled with `nought`, `naught` or `ninty`, or with a spaced hyphen between number words, like
+  `fifty - three`, is found whole.
+- Hide it covers a copy of a value behind a second layer of URL encoding, like `%2530%2537`.
+- `Clotr.numberRuns()` renamed some fields. `afterEnd` is now `afterPeriod`, `atEdge` is now `edgeOk`, and the kinds
+  `weak` and `letter` are now `soundAlike` and `lookAlike`.
+
+Every change in detail is in `apps/engine/docs/1.6.4-details.md` in the repo.
+
 ## 1.6.3 (2026-11-22)
 
 Known issue: a plain number right after a login code and "and", ", and" or "or", like

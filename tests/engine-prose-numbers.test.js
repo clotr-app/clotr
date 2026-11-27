@@ -10,8 +10,7 @@ const path = require("node:path");
 
 // The work meter counts steps only in code loaded after it, so it comes before the engine.
 const { assertWorkLinear } = require("./work.js");
-require("../extension/patterns.js");
-require("../extension/detector.js");
+require("./load-engine.js")("rules", "detect");
 
 const detect = (text) => Object.fromEntries(globalThis.Clotr.detect(text).map((r) => [r.id, r.matches]));
 
@@ -796,7 +795,7 @@ const ORDER_LABEL_LANGUAGES = {
 };
 
 test("each order label's language names a card's security code and expiry too", () => {
-  const source = fs.readFileSync(path.join(__dirname, "..", "extension", "patterns.js"), "utf8");
+  const source = require("./load-engine.js").source("rules");
   const table = source.match(/const ORDER_LABELS = \{\n([\s\S]*?)\n {2}\};/)[1];
   const entries = Object.fromEntries(
     table

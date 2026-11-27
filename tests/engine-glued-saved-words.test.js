@@ -6,9 +6,7 @@
 const test = require("node:test");
 const assert = require("node:assert/strict");
 
-require("../extension/patterns.js");
-require("../extension/detector.js");
-require("../extension/decide.js");
+require("./load-engine.js")("rules", "detect", "decide");
 require("../extension/backup.js");
 require("../apps/engine/host.js");
 

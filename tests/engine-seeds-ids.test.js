@@ -6,11 +6,8 @@
 const test = require("node:test");
 const assert = require("node:assert/strict");
 const crypto = require("node:crypto");
-const fs = require("node:fs");
-const path = require("node:path");
 
-require("../extension/patterns.js");
-require("../extension/detector.js");
+require("./load-engine.js")("rules", "detect");
 
 function detect(text) {
   return Object.fromEntries(globalThis.Clotr.detect(text).map((r) => [r.id, r.matches]));
@@ -42,8 +39,8 @@ const digits = (rand, n) => Array.from({ length: n }, () => Math.floor(rand() * 
 
 // ---------- Seed phrases ----------
 
-const WORDS = fs
-  .readFileSync(path.join(__dirname, "..", "extension", "patterns.js"), "utf8")
+const WORDS = require("./load-engine.js")
+  .source("rules")
   .match(/const BIP39 = new Set\(\s*`([\s\S]*?)`/)[1]
   .trim()
   .split(/\s+/);

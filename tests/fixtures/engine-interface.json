@@ -81,7 +81,7 @@
       "apps/engine/host-shim.js": [
         "useLocale"
       ],
-      "extension/patterns.js": [
+      "extension/engine/rules/rule-table.js": [
         "PATTERNS",
         "ASK_REASONS",
         "askLabels",
@@ -104,7 +104,7 @@
         "findShareLinks",
         "sha256Bytes"
       ],
-      "extension/detector.js": [
+      "extension/engine/detect/detect.js": [
         "SEVERITY_RANK",
         "DETECT_BUDGET_CHARS",
         "DETECT_BACKSTOP_MS",
@@ -137,7 +137,7 @@
         "wordEntry",
         "overlapChecks"
       ],
-      "extension/decide.js": [
+      "extension/engine/respond/decide.js": [
         "mask",
         "describeValues",
         "responseOf",

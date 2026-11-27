@@ -1,6 +1,7 @@
 // Holds apps/engine/docs/how-it-works.md to the code it describes: the files and functions it names, the order of the
-// steps in detectWindow(), the window, overlap and clock numbers, the sections of extension/patterns.js in order, the
-// example rule, and its length.
+// steps in detectWindow(), the window, overlap and clock numbers, the example rule and its length. Its list of the
+// rules files' sections is on its own page, rules-sections.md, so the list can grow with the files. The engine's
+// source is read through its list (extension/engine/files.js).
 "use strict";
 
 const test = require("node:test");
@@ -8,14 +9,17 @@ const assert = require("node:assert/strict");
 const fs = require("node:fs");
 const path = require("node:path");
 
-require("../extension/patterns.js");
+const loadEngine = require("./load-engine.js");
+
+loadEngine("rules");
 
 const ROOT = path.join(__dirname, "..");
 const PAGE = path.join(ROOT, "apps", "engine", "docs", "how-it-works.md");
-const DETECTOR = path.join(ROOT, "extension", "detector.js");
+const SECTIONS_PAGE = path.join(ROOT, "apps", "engine", "docs", "rules-sections.md");
 const MAX_LINES = 150;
 
-const page = () => (fs.existsSync(PAGE) ? fs.readFileSync(PAGE, "utf8") : "");
+const read = (file) => (fs.existsSync(file) ? fs.readFileSync(file, "utf8") : "");
+const page = () => read(PAGE);
 const lines = (text) => text.split(/\r?\n/);
 
 // The lines under the "## " heading that starts with `title`, up to the next "## " heading.
@@ -37,7 +41,7 @@ function namedPaths(text) {
 }
 
 // A function declared at the top of the file, or at the top of the one arrow function a classic script wraps itself
-// in, the way extension/patterns.js and extension/detector.js do.
+// in, the way each engine file does.
 function isTopLevelFunction(source, name) {
   const wrapped = /^\(\(\) => \{$/m.test(source);
   const indent = wrapped ? "(?:|  )" : "";
@@ -58,7 +62,7 @@ const callAt = (body, name) => body.search(new RegExp(`(?<![\\w$.])${name}\\(`))
 // The value of `const NAME = 40 * 1024;` in the source, for a product of plain numbers.
 function constant(source, name) {
   const expr = new RegExp(`^\\s*const ${name} = ([\\d_ *]+);`, "m").exec(source)?.[1];
-  assert.ok(expr, `no plain number for ${name} in extension/detector.js`);
+  assert.ok(expr, `no plain number for ${name} in the detect files`);
   return expr.split("*").reduce((product, n) => product * Number(n.replace(/_/g, "")), 1);
 }
 
@@ -69,42 +73,49 @@ test("the how-it-works page exists and fits in 150 lines", () => {
   assert.ok(count <= MAX_LINES, `the page has ${count} lines, more than ${MAX_LINES}`);
 });
 
-test("every file path the page names exists", () => {
-  const text = page();
-  const paths = namedPaths(text);
-  assert.ok(paths.length > 0, "the page names no file");
-  const links = [...text.matchAll(/\]\(([^)#\s]+)(?:#[^)]*)?\)/g)]
-    .map((m) => m[1])
-    .filter((target) => !/^[a-z]+:/i.test(target))
-    .map((target) => path.relative(ROOT, path.resolve(path.dirname(PAGE), target)).replaceAll(path.sep, "/"));
-  const missing = [...new Set([...paths, ...links])].filter((p) => !fs.existsSync(path.join(ROOT, p)));
-  assert.deepEqual(missing, [], "paths the page names that don't exist");
+test("every file path the pages name exists", () => {
+  for (const file of [PAGE, SECTIONS_PAGE]) {
+    const text = read(file);
+    const paths = namedPaths(text);
+    assert.ok(paths.length > 0, `${path.basename(file)} names no file`);
+    const links = [...text.matchAll(/\]\(([^)#\s]+)(?:#[^)]*)?\)/g)]
+      .map((m) => m[1])
+      .filter((target) => !/^[a-z]+:/i.test(target))
+      .map((target) => path.relative(ROOT, path.resolve(path.dirname(file), target)).replaceAll(path.sep, "/"));
+    const missing = [...new Set([...paths, ...links])].filter((p) => !fs.existsSync(path.join(ROOT, p)));
+    assert.deepEqual(missing, [], `paths ${path.basename(file)} names that don't exist`);
+  }
 });
 
-test("every function the page names is a top-level function in the file it names beside it", () => {
-  const text = page();
-  const calls = [...text.matchAll(/`[A-Za-z_$][\w$]*\(\)`/g)];
-  const pairs = [...text.matchAll(/`([A-Za-z_$][\w$]*)\(\)`\s+in\s+`([^`]+)`/g)].map((m) => ({
-    name: m[1],
-    file: m[2],
-  }));
-  assert.ok(pairs.length > 0, "the page names no function");
-  assert.equal(calls.length, pairs.length, "each `name()` on the page is followed by in `its file`");
-  const wrong = pairs
-    .filter(({ name, file }) => {
-      const full = path.join(ROOT, file);
-      return !fs.existsSync(full) || !isTopLevelFunction(fs.readFileSync(full, "utf8"), name);
-    })
-    .map(({ name, file }) => `${name}() in ${file}`);
-  assert.deepEqual(wrong, [], "functions that aren't top-level functions in the file the page names");
+test("every function the pages name is a top-level function in the file named beside it", () => {
+  for (const pageFile of [PAGE, SECTIONS_PAGE]) {
+    const text = read(pageFile);
+    const calls = [...text.matchAll(/`[A-Za-z_$][\w$]*\(\)`/g)];
+    const pairs = [...text.matchAll(/`([A-Za-z_$][\w$]*)\(\)`\s+in\s+`([^`]+)`/g)].map((m) => ({
+      name: m[1],
+      file: m[2],
+    }));
+    assert.ok(pairs.length > 0, `${path.basename(pageFile)} names no function`);
+    assert.equal(calls.length, pairs.length, "each `name()` on a page is followed by in `its file`");
+    const wrong = pairs
+      .filter(({ name, file }) => {
+        const full = path.join(ROOT, file);
+        return !fs.existsSync(full) || !isTopLevelFunction(fs.readFileSync(full, "utf8"), name);
+      })
+      .map(({ name, file }) => `${name}() in ${file}`);
+    assert.deepEqual(wrong, [], "functions that aren't top-level functions in the file a page names");
+  }
 });
 
-test("the page lists the sections of extension/patterns.js, in order", () => {
-  const source = fs.readFileSync(path.join(ROOT, "extension", "patterns.js"), "utf8");
+test("the sections page lists the rules files' sections, in the order they load", () => {
+  const source = loadEngine.source("rules");
   const headings = [...source.matchAll(/^\s*\/\/ -{10} (.+?) -{10}\s*$/gm)].map((m) => m[1]);
   const part = section(page(), "The sections of");
-  assert.ok(part, 'no "## The sections of" heading on the page');
-  const listed = part.map((line) => /^\d+\. `([^`]+)`/.exec(line)?.[1]).filter(Boolean);
+  assert.ok(part, 'no "## The sections of" heading on the how-it-works page');
+  assert.ok(part.join(" ").includes("(rules-sections.md)"), "the how-it-works page doesn't link the sections page");
+  const listed = lines(read(SECTIONS_PAGE))
+    .map((line) => /^\d+\. `([^`]+)`/.exec(line)?.[1])
+    .filter(Boolean);
   assert.deepEqual(listed, headings);
 });
 
@@ -119,8 +130,8 @@ test("the example rule is a real rule, written as the table has it", () => {
   assert.ok(ids.includes(id), `the example rule's id ${id} isn't a built-in rule`);
   const trim = (s) => lines(s).map((line) => line.trim());
   const shown = trim(block).filter(Boolean).join("\n");
-  const source = trim(fs.readFileSync(path.join(ROOT, "extension", "patterns.js"), "utf8")).join("\n");
-  assert.ok(source.includes(shown), "the example rule differs from its entry in extension/patterns.js");
+  const source = trim(loadEngine.source("rules")).join("\n");
+  assert.ok(source.includes(shown), "the example rule differs from its entry in the rules files");
 });
 
 test("the steps under detectWindow() are in the order the code calls them", () => {
@@ -130,10 +141,14 @@ test("the steps under detectWindow() are in the order the code calls them", () =
   assert.ok(from >= 0, "no numbered step for detectWindow() on the page");
   const to = part.findIndex((line, i) => i > from && /^\d+\. /.test(line));
   const steps = part.slice(from + 1, to < 0 ? part.length : to).join("\n");
-  const named = [...steps.matchAll(/`([A-Za-z_$][\w$]*)\(\)`\s+in\s+`extension\/detector\.js`/g)].map((m) => m[1]);
+  // The detect group's files come from the list, since the steps' functions move between them.
+  const detectFiles = new Set(loadEngine.files("detect").map((file) => `extension/${file}`));
+  const named = [...steps.matchAll(/`([A-Za-z_$][\w$]*)\(\)`\s+in\s+`(extension\/[\w/.-]+\.js)`/g)]
+    .filter((m) => detectFiles.has(m[2]))
+    .map((m) => m[1]);
   const listed = [...new Set(named)];
-  assert.ok(listed.length > 1, "the detectWindow() step names fewer than two detector.js functions");
-  const source = fs.readFileSync(DETECTOR, "utf8");
+  assert.ok(listed.length > 1, "the detectWindow() step names fewer than two functions in the detect files");
+  const source = loadEngine.source("detect");
   const body = functionBody(source, "detectWindow");
   // A function the window calls through the step before it, like withoutPhoneDots() in secondReading(), takes that
   // step's place.
@@ -150,7 +165,7 @@ test("the steps under detectWindow() are in the order the code calls them", () =
 });
 
 test("the page's window, overlap and clock numbers are the code's", () => {
-  const source = fs.readFileSync(DETECTOR, "utf8");
+  const source = loadEngine.source("detect");
   const chars = (n) => `${n.toLocaleString("en-US")} characters`;
   const windowChars = chars(constant(source, "DETECT_WINDOW_CHARS"));
   const overlapChars = chars(constant(source, "DETECT_WINDOW_OVERLAP"));

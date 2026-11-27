@@ -2,7 +2,7 @@
 
 This page follows one message through Clotr's engine, for anyone who wants to fix or add a rule and hasn't opened the
 code yet. `tests/engine-how-it-works.test.js` checks the files and functions it names, the order of the steps in
-`detectWindow()` in `extension/detector.js`, the window, overlap and clock numbers, the sections and the example rule.
+`detectWindow()` in `extension/engine/detect/detect.js`, the window, overlap and clock numbers, the sections and the example rule.
 
 ## What goes in and what comes out
 
@@ -11,43 +11,42 @@ A string goes in. Out comes an array with one result for each kind of detail fou
 `asks`, and the array gets `truncated: true` when the time limit stopped the scan early. Results come highest severity
 first. The exact shapes, and what happens with input that isn't text, are in [interface.md](interface.md). The engine
 only finds things. Turning a finding into a warning, a quiet count or a hold is a separate step, `respFor()` in
-`extension/decide.js`, which reads the person's own setting for that rule's id.
+`extension/engine/respond/decide.js`, which reads the person's own setting for that rule's id.
 
 ## The path a message takes
 
-The engine is `extension/patterns.js`, `extension/detector.js` and `extension/decide.js`, classic scripts loaded in
-that order that share what they define through `globalThis.Clotr`, joined into one file by `tools/engine-bundle.js`.
+The engine is the classic scripts under `extension/engine/`, in the order `files.js` there lists. They share names through `globalThis.Clotr` and `globalThis.ClotrInternal`, and `tools/engine-bundle.js` joins them.
 
 1. `detect()` in `apps/engine/index.cjs` reads a `String` object as text with `asText()` in `apps/engine/index.cjs`,
-   then calls `detect()` in `extension/detector.js` and copies each result into a plain object.
-2. `detect()` in `extension/detector.js` adds a team policy's kinds after the table. Saved words only feed the vault
+   then calls `detect()` in `extension/engine/detect/detect.js` and copies each result into a plain object.
+2. `detect()` in `extension/engine/detect/detect.js` adds a team policy's kinds after the table. Saved words only feed the vault
    rules. For the same text, rules and names as the last call, it hands back a copy of the last answer and runs nothing.
-3. `detectFresh()` in `extension/detector.js` sets the scan's two limits, a 10-second clock and a character budget.
-4. `detectAll()` in `extension/detector.js` reads up to 40,960 characters as one window, and longer text in windows
-   of 40,960 characters that overlap by 8,192 characters. `seamParts()` in `extension/detector.js` and `seamRescue()`
-   in `extension/detector.js` look after values that cross a seam, and the windows' results are merged into one list.
-5. `detectWindow()` in `extension/detector.js` does the work for each window, in this order.
-   1. `cleanText()` in `extension/detector.js` makes a cleaned copy, with invisible characters dropped and odd
+3. `detectFresh()` in `extension/engine/detect/detect.js` sets the scan's two limits, a 10-second clock and a character budget.
+4. `detectAll()` in `extension/engine/detect/detect.js` reads up to 40,960 characters as one window, and longer text in windows
+   of 40,960 characters that overlap by 8,192 characters. `seamParts()` in `extension/engine/detect/detect.js` and `seamRescue()`
+   in `extension/engine/detect/detect.js` look after values that cross a seam, and the windows' results are merged into one list.
+5. `detectWindow()` in `extension/engine/detect/detect.js` does the work for each window, in this order.
+   1. `cleanText()` in `extension/engine/detect/cleaned-text.js` makes a cleaned copy, with invisible characters dropped and odd
       spaces, dashes, quotes and other scripts' digits made plain, and a map from each character back to the original.
    2. Every rule reads the cleaned copy. A rule with `find` gets the text passed to its function, and a rule with
       `regex` gets the text matched against it. The budget is checked before each rule, never in the middle of one.
-   3. `secondReading()` in `extension/detector.js` makes a second copy with a phone keyboard's dots turned back into
-      spaces by `withoutPhoneDots()` in `extension/detector.js`, and JSON or log escapes like `\n` blanked out. Built-in
+   3. `secondReading()` in `extension/engine/detect/second-readings.js` makes a second copy with a phone keyboard's dots turned back into
+      spaces by `withoutPhoneDots()` in `extension/engine/detect/second-readings.js`, and JSON or log escapes like `\n` blanked out. Built-in
       rules read it too, except `my_name`, `family_name`, `employer`, `my_id` and `watch_list`, which skip it.
    4. When the cleaned copy held a JSON string's `\n` (`jsonBreaks`), or `hasTokenLineBreak()` in
-      `extension/detector.js` sees a token wrapped over lines, `withoutTokenLineBreaks()` in `extension/detector.js`
+      `extension/engine/detect/second-readings.js` sees a token wrapped over lines, `withoutTokenLineBreaks()` in `extension/engine/detect/second-readings.js`
       joins it back up and every rule reads the joined copy.
-   5. `piecedKeys()` in `extension/detector.js` looks for a key typed in pieces.
-   6. For each rule, `addedByReading()` in `extension/detector.js` keeps only what the second copy found that the
+   5. `piecedKeys()` in `extension/engine/detect/pieced-keys.js` looks for a key typed in pieces.
+   6. For each rule, `addedByReading()` in `extension/engine/detect/pieced-keys.js` keeps only what the second copy found that the
       first didn't. A value from any reading is kept only if the rule's `validate` passes it and, for a rule marked
-      `secret`, `isPlaceholder()` in `extension/patterns.js` doesn't call it a placeholder.
+      `secret`, `isPlaceholder()` in `extension/engine/rules/value-checks.js` doesn't call it a placeholder.
    7. A weaker match is dropped when every place it occurs sits inside a more severe match. A separate copy of it
       keeps its own result.
    8. Each value is mapped back to the text as it was written, so Cover it replaces exactly what the person typed.
 
 ## What one rule is made of
 
-Each rule is one entry in the `PATTERNS` table near the end of `extension/patterns.js`. This is the whole entry for a
+Each rule is one entry in the `PATTERNS` table in `extension/engine/rules/rule-table.js`. This is the whole entry for a
 DigitalOcean token.
 
 ```js
@@ -58,7 +57,7 @@ DigitalOcean token.
   name: "DigitalOcean Token",
   severity: "high",
   regex: /\bd(?:op|oo|or)_v1_[0-9a-fA-F]{64}\b/g,
-  validate: (m) => looksRandomAnyCase(m.slice(7)),
+  validate: (token) => looksRandomHex(token.slice(7)),
 },
 ```
 
@@ -71,43 +70,13 @@ DigitalOcean token.
 - `regex` finds the shape, here `dop_v1_`, `doo_v1_` or `dor_v1_` and then 64 hex characters. A rule that needs more
   than one pattern has `find` instead, a function that takes the text and returns the values.
 - `validate` runs on each value the regex found. This one skips the 7-character prefix and asks
-  `looksRandomAnyCase()` in `extension/patterns.js` whether the rest has digits, letters, a long unbroken run and
+  `looksRandomHex()` in `extension/engine/rules/value-checks.js` whether the rest has digits, letters, a long unbroken run and
   the spread random hex has.
 
-## The sections of extension/patterns.js
+## The sections of the rules files
 
-The file is one wrapped classic script. Helpers come first, then these sections, in this order, and the `PATTERNS`
-table closes it.
-
-1. `Fewer false alarms for credentials` holds `isPlaceholder()` in `extension/patterns.js` and the checks for whether
-   a key looks machine-made.
-2. `Numbers written any way` is a note that digits, number words or a mix of them all count as a number.
-3. `Translations` starts with `msg()` in `extension/patterns.js`, then holds the number reader that note describes,
-   `numberRuns()` in `extension/patterns.js`, and the phone, card and Social Security number readers.
-4. `Emails, including spelled-out forms` reads email addresses, including ones written out in words.
-5. `Where a sentence ends` keeps a detail from running across the end of a sentence.
-6. `Street addresses (US style), digits or spelled out` reads US street addresses and PO boxes.
-7. `Dates of birth (only next to a birth word, since a plain date isn't personal)` reads birth dates.
-8. `Bank and ID numbers: the value right after a label` reads account, routing and license numbers after their label.
-9. `Cars and school` reads VINs, license plates and student IDs.
-10. `Gamer tags: the handle reader` reads a handle after a clear gaming-account label.
-11. `International IDs, medical record numbers, your IP` holds IBANs with their mod-97 check and the UK, Canadian,
-    Spanish, Mexican and US ITIN number shapes.
-12. `National IDs from other countries` holds other countries' ID numbers, each with its public check.
-13. `More EU and EEA personal and tax numbers` holds more European numbers, each with its check digit or birth date.
-14. `IDs after a Spanish label, and Colombia's numbered streets` reads IDs after a Spanish label.
-15. `Crypto wallets` holds the BIP-39 word list and checks a seed phrase's last-word checksum.
-16. `Private keys written as JSON Web Keys` reads private keys in JWK form as the same kind as a PEM block.
-17. `Two-step sign-in keys (otp_secret)` reads the secret an authenticator app makes sign-in codes from.
-18. `Clean link: a URL's own tracking code` finds the share codes a copied link carries and cleans the link.
-19. `Developer secrets: connection strings, JWTs, internal addresses` reads connection strings, JWTs, private
-    network addresses, internal hostnames and AWS access keys.
-20. `Your vault: things you told Clotr to protect` matches saved words by salted fingerprint and formats by shape.
-21. `Passwords and secrets, found by the words around them` reads a secret from the label in front of it.
-22. `A downloaded two-step backup-code file` reads a file of backup codes by its title line, and holds the card
-    security code reader.
-23. `Gift card codes` reads a code after a gift card word. Below it, up to the table, sit `findSecrets()` in
-    `extension/patterns.js` and the service-token readers.
+Each rules file groups its rules by topic under section headings. [`rules-sections.md`](rules-sections.md) lists
+every heading, in the order the files load.
 
 ## Where a rule's tests are
 
@@ -138,7 +107,7 @@ Add `--test-name-pattern="<words from a test's name>"` to run single tests. Each
 
 ## Why one table with checks after a match
 
-Every rule goes through the same steps in `detectWindow()` in `extension/detector.js`. So a new way of reading text,
+Every rule goes through the same steps in `detectWindow()` in `extension/engine/detect/detect.js`. So a new way of reading text,
 like a wrapped token, helps every rule at once, and no rule has to know about it. The vault rules skip the phone-dot
 one. The time limit is checked between rules, so a scan that runs out stops cleanly and says so with `truncated`.
 

@@ -6,7 +6,7 @@ const assert = require("node:assert/strict");
 const fs = require("node:fs");
 const path = require("node:path");
 
-require("../extension/patterns.js");
+require("./load-engine.js")("rules");
 
 const ROOT = path.join(__dirname, "..");
 const SPEC = path.join(ROOT, "docs", "engine", "rule-reference.md");

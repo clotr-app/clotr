@@ -9,8 +9,7 @@ const assert = require("node:assert/strict");
 
 // The work meter counts steps only in code loaded after it, so it comes before the engine.
 const { assertWorkLinear } = require("./work.js");
-require("../extension/patterns.js");
-require("../extension/detector.js");
+require("./load-engine.js")("rules", "detect");
 
 // Calls the extension's own detect() and reshapes the result to { kind: [matched text, ...] }.
 function detect(text) {

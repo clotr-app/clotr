@@ -6,8 +6,7 @@
 const test = require("node:test");
 const assert = require("node:assert/strict");
 
-require("../extension/patterns.js");
-require("../extension/detector.js");
+require("./load-engine.js")("rules", "detect");
 const { detect } = globalThis.Clotr;
 
 const credentials = (text) => detect(text).filter((result) => result.group === "credentials");

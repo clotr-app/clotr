@@ -1,15 +1,13 @@
 // Where a saved word's letters only sit beside or inside something else, the vault stays quiet: prose marks between
 // two words, a short word in code, a contraction or an elision, an abbreviation glued to Japanese, and Chinese or
 // Japanese letters that belong to the words around them. Each shape keeps the finds it was built for.
-// Run from the repo root: node --test tests/engine-r2-vault-quiet.test.js
+// Run from the repo root: node --test tests/engine-vault-words-quiet.test.js
 "use strict";
 
 const test = require("node:test");
 const assert = require("node:assert/strict");
 
-require("../extension/patterns.js");
-require("../extension/detector.js");
-require("../extension/decide.js");
+require("./load-engine.js")("rules", "detect", "decide");
 
 const C = globalThis.Clotr;
 const SALT = "s4lt";
@@ -525,7 +523,7 @@ function engineReading(words, seen = () => {}) {
     }
   }
   const box = vm.createContext({ Intl: Object.create(Intl, { Segmenter: { value: Segmenter } }), console });
-  for (const f of ["patterns.js", "detector.js", "decide.js"]) {
+  for (const f of require("./load-engine.js").files("rules", "detect", "decide")) {
     vm.runInContext(fs.readFileSync(path.join(__dirname, "../extension", f), "utf8"), box, { filename: f });
   }
   return vm.runInContext("globalThis.Clotr", box);

@@ -3,8 +3,7 @@
 const test = require("node:test");
 const assert = require("node:assert/strict");
 
-require("../extension/patterns.js");
-require("../extension/detector.js");
+require("./load-engine.js")("rules", "detect");
 
 function detect(text) {
   return Object.fromEntries(globalThis.Clotr.detect(text).map((r) => [r.id, r.matches]));

@@ -8,8 +8,7 @@ const { grewMoreThan } = require("./timing.js");
 
 test("oversized text reaches rules in bounded overlapping windows", () => {
   const source = String.raw`
-    require("./extension/patterns.js");
-    require("./extension/detector.js");
+    require("./tests/load-engine.js")("rules", "detect");
     const { PATTERNS, detect } = globalThis.Clotr;
     const windowChars = 40 * 1024;
     const marker = "boundary-marker-1234567890";
@@ -44,8 +43,7 @@ test("oversized text reaches rules in bounded overlapping windows", () => {
 
 test("hostile repeated-character input stays within the scan budget and grows linearly", () => {
   const source = String.raw`
-    require("./extension/patterns.js");
-    require("./extension/detector.js");
+    require("./tests/load-engine.js")("rules", "detect");
     const { bestOfPair } = require("./tests/timing.js");
     const make = (size) => "x".repeat(size);
     const results = globalThis.Clotr.detect(make(64 * 1024));
@@ -74,8 +72,7 @@ test("hostile repeated-character input stays within the scan budget and grows li
 
 test("a time-limited scan reports incomplete coverage across windows", () => {
   const source = String.raw`
-    require("./extension/patterns.js");
-    require("./extension/detector.js");
+    require("./tests/load-engine.js")("rules", "detect");
     const { PATTERNS, detect } = globalThis.Clotr;
     let now = 0;
     let calls = 0;
@@ -102,8 +99,7 @@ test("a time-limited scan reports incomplete coverage across windows", () => {
 // A value that crosses a seam between two windows, or sits right next to one, is found once, whole and as its own
 // kind: the window that cuts it off, or starts partway into it, doesn't add a piece of it as another finding.
 test("a value at each offset across a window seam is found exactly once, whole, as its own kind", () => {
-  require("../extension/patterns.js");
-  require("../extension/detector.js");
+  require("./load-engine.js")("rules", "detect");
   const { makeSecrets } = require("./fixtures/secrets.js");
   const { detect, DETECT_WINDOW_CHARS, DETECT_WINDOW_OVERLAP } = globalThis.Clotr;
   const line = "the quick brown fox jumps over the lazy dog and keeps running far away\n";
@@ -147,8 +143,7 @@ test("a value at each offset across a window seam is found exactly once, whole, 
 // corpus, its one real value for a message that has one. Two different messages share each paste, one across the
 // second window's start and one across the first window's end, to keep the sweep quick.
 test("a message cut at any offset by a window seam gives what it gives on its own", () => {
-  require("../extension/patterns.js");
-  require("../extension/detector.js");
+  require("./load-engine.js")("rules", "detect");
   const fs = require("node:fs");
   const path = require("node:path");
   const { detect, DETECT_WINDOW_CHARS, DETECT_WINDOW_OVERLAP } = globalThis.Clotr;
@@ -228,8 +223,7 @@ const PROSE_LINE =
 const prose = (n) => PROSE_LINE.repeat(Math.ceil(n / PROSE_LINE.length) + 1).slice(0, Math.max(0, n));
 
 test("a labelled seed phrase that ends right before a window's end is still found", () => {
-  require("../extension/patterns.js");
-  require("../extension/detector.js");
+  require("./load-engine.js")("rules", "detect");
   const { detect, DETECT_WINDOW_CHARS } = globalThis.Clotr;
   const label = "My seed phrase is below.\n";
   const missed = [];
@@ -248,8 +242,7 @@ test("a labelled seed phrase that ends right before a window's end is still foun
 });
 
 test("a seed phrase labelled further on is still found right after the next window's start", () => {
-  require("../extension/patterns.js");
-  require("../extension/detector.js");
+  require("./load-engine.js")("rules", "detect");
   const { detect, DETECT_WINDOW_CHARS, DETECT_WINDOW_OVERLAP } = globalThis.Clotr;
   const secondStart = DETECT_WINDOW_CHARS - DETECT_WINDOW_OVERLAP;
   const missed = [];
@@ -282,8 +275,7 @@ const seamKinds = (text) => {
 };
 
 test("a seed phrase or backup-code file near a seam is found with its label in the window that holds it", () => {
-  require("../extension/patterns.js");
-  require("../extension/detector.js");
+  require("./load-engine.js")("rules", "detect");
   const { DETECT_WINDOW_CHARS, DETECT_WINDOW_OVERLAP } = globalThis.Clotr;
   const secondStart = DETECT_WINDOW_CHARS - DETECT_WINDOW_OVERLAP;
   const missed = [];
@@ -326,11 +318,8 @@ test("a seed phrase or backup-code file near a seam is found with its label in t
 });
 
 test("a label a window or more away from a word list or a column of codes doesn't count, as before", () => {
-  require("../extension/patterns.js");
-  require("../extension/detector.js");
-  const fs = require("node:fs");
-  const path = require("node:path");
-  const source = fs.readFileSync(path.join(__dirname, "..", "extension", "patterns.js"), "utf8");
+  require("./load-engine.js")("rules", "detect");
+  const source = require("./load-engine.js").source("rules");
   const at = source.indexOf("const BIP39 = new Set(");
   const open = source.indexOf("`", at);
   const words = source
@@ -395,8 +384,7 @@ test("a 1 MB paste with an emoji and a label costs about what it did before the 
   // Memory, in a fresh process each, with and without the seam check.
   const memory = (labels) =>
     run(String.raw`
-      require("./extension/patterns.js");
-      require("./extension/detector.js");
+      require("./tests/load-engine.js")("rules", "detect");
       const { PATTERNS, detect } = globalThis.Clotr;
       if (!${labels}) for (const pattern of PATTERNS) delete pattern.labelAnywhere;
       ${paste}
@@ -414,8 +402,7 @@ test("a 1 MB paste with an emoji and a label costs about what it did before the 
   // tenth at most.
   const counted = run(String.raw`
     const { work } = require("./tests/work.js");
-    require("./extension/patterns.js");
-    require("./extension/detector.js");
+    require("./tests/load-engine.js")("rules", "detect");
     const { PATTERNS, detect } = globalThis.Clotr;
     ${paste}
     const labelled = PATTERNS.filter((pattern) => pattern.labelAnywhere);
@@ -443,8 +430,7 @@ test("a 1 MB paste with an emoji and a label costs about what it did before the 
 
 test("a value next to a window's end is kept when the window after it can't finish", () => {
   const source = String.raw`
-    require("./extension/patterns.js");
-    require("./extension/detector.js");
+    require("./tests/load-engine.js")("rules", "detect");
     const { PATTERNS, detect, DETECT_WINDOW_CHARS } = globalThis.Clotr;
     const marker = "seam-marker-1234567890";
     let now = 0;

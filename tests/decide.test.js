@@ -10,9 +10,7 @@ const path = require("node:path");
 const vm = require("node:vm");
 
 const EXT = path.join(__dirname, "..", "extension");
-require("../extension/patterns.js");
-require("../extension/detector.js");
-require("../extension/decide.js");
+require("./load-engine.js")("rules", "detect", "decide");
 const C = globalThis.Clotr;
 
 const SALT = "0123456789abcdef0123456789abcdef";
@@ -31,7 +29,7 @@ const valueEntry = (type, value, mode) => ({ kind: "value", type, fp: fp(type, v
 
 test("loads with no page, no storage and no browser: patterns, detector and decide in a bare script context", () => {
   const context = vm.createContext({});
-  for (const f of ["patterns.js", "detector.js", "decide.js"]) {
+  for (const f of require("./load-engine.js").files("rules", "detect", "decide")) {
     vm.runInContext(fs.readFileSync(path.join(EXT, f), "utf8"), context, { filename: f });
   }
   const out = vm.runInContext(

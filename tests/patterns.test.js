@@ -7,9 +7,7 @@ const assert = require("node:assert/strict");
 // In the counting child (tests/patterns-counted.test.js) the work meter loads before the engine, so it counts the
 // engine's steps. The mutator copies only the files it lists, so this file loads tests/work.js and not work-child.js.
 const work = process.env.CLOTR_WORK === "1" ? require("./work.js") : null;
-require("../extension/patterns.js");
-require("../extension/detector.js");
-require("../extension/decide.js");
+require("./load-engine.js")("rules", "detect", "decide");
 const { SECRET_KINDS, makeGen, makeSecrets } = require("./fixtures/secrets.js");
 const { PHONE_LIST_FALSE_ALARM } = require("./fixtures/engine-corpus.js");
 const { bestOfPair, grewMoreThan, grewEveryTime } = require("./timing.js");
@@ -1466,10 +1464,7 @@ test("seed checks continue after long list word prefixes", () => {
   for (const seed of [seed12, seed24]) {
     expectOnly(`${"abandon ".repeat(500)}${seed}`, "crypto_secret");
   }
-  const source = require("node:fs").readFileSync(
-    require("node:path").join(__dirname, "..", "extension", "patterns.js"),
-    "utf8",
-  );
+  const source = require("./load-engine.js").source("rules");
   const words = source
     .match(/const BIP39 = new Set\(\s*`([\s\S]*?)`/)[1]
     .trim()
@@ -1956,28 +1951,6 @@ test("a card's security code is its own kind, beside the card's number, and neve
   expectOnly("the verification code is 4821", "password", "4821");
 });
 
-test("advice for a card's security code that went out: call the card company, not a password's", () => {
-  require("../extension/insights.js");
-  const { adviceFor } = globalThis.ClotrInsights;
-  assert.equal(
-    adviceFor("card_code"),
-    "Call the number on your card and ask for a new one if someone else could have it.",
-  );
-  assert.notEqual(adviceFor("card_code"), adviceFor("password"));
-});
-
-// Two places treat money details alike: the warning's line on who really asks, behind "Why am I seeing this?", and
-// the report's risky moments. A card's code used to count as a password there; now it counts as a card detail.
-test("a card's security code still gets the warning's scam line and counts as a risky moment in the report", () => {
-  const fs = require("fs");
-  const path = require("path");
-  const read = (f) => fs.readFileSync(path.join(__dirname, "..", "extension", f), "utf8");
-  const scam = /const SCAM_TARGETS = new Set\(\[([^\]]*)\]\)/.exec(read("warning-ui.js"))[1];
-  assert.match(scam, /"card_code"/);
-  const risky = /function renderRisky[\s\S]*?\[([^\]]*)\]\.includes\(e\.type\)/.exec(read("dashboard.js"))[1];
-  assert.match(risky, /"card_code"/);
-});
-
 // None of these are a card's code: another thing's back, a description of the code, a product code, a room
 // number, a course, the expiry date or the card's own number, and a bare three-digit number with nothing about a
 // card.
@@ -2134,23 +2107,6 @@ test("gift card codes: a gift, a balance, the last four, an order or a link stay
   // A person's phone number near a gift card is a phone number.
   expectOnly("the gift card came with a note: call me at (555) 555-0123", "phone_number", "(555) 555-0123");
   expectOnly("the gift card came with a note: call me at 555 555 0123", "phone_number", "555 555 0123");
-});
-
-test("a gift card's code that went out gets the warning's scam line, counts in the report, and its advice says to call the gift card company", () => {
-  require("../extension/insights.js");
-  const { adviceFor } = globalThis.ClotrInsights;
-  assert.equal(
-    adviceFor("gift_card"),
-    "Call the gift card company on the number on the back of the card. Say a scammer got the number and PIN, and ask for your money back.",
-  );
-  const fs = require("fs");
-  const path = require("path");
-  const read = (f) => fs.readFileSync(path.join(__dirname, "..", "extension", f), "utf8");
-  assert.match(/const SCAM_TARGETS = new Set\(\[([^\]]*)\]\)/.exec(read("warning-ui.js"))[1], /"gift_card"/);
-  assert.match(
-    /function renderRisky[\s\S]*?\[([^\]]*)\]\.includes\(e\.type\)/.exec(read("dashboard.js"))[1],
-    /"gift_card"/,
-  );
 });
 
 // The codes a scammer asks for still show as "Password or Secret" on screen, but each gets a reason saying which
@@ -3160,7 +3116,7 @@ test("vault: your words by category (fingerprinted) and ID formats", () => {
       word("employer", "Initech"),
       { kind: "shape", type: "watch_list", shape: "EMP-#####" },
       { kind: "shape", type: "my_id", shape: "@@-####" },
-      { kind: "value", type: "phone_number", fp: "ffffffffffffffff", mode: "protect" }, // values: handled by content.js
+      { kind: "value", type: "phone_number", fp: "ffffffffffffffff", mode: "protect" }, // values: handled by on-websites/content.js
     ],
   });
   expectOnly("status of project   FALCON please", "watch_list", "project   FALCON");

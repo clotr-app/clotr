@@ -119,7 +119,9 @@ test("globalThis.Clotr holds the names on the list, each set by the file the lis
   // overlapChecks is set by the first detect() on text longer than one window.
   const before = new Set(Object.keys(context.Clotr));
   context.Clotr.detect("x".repeat(context.Clotr.DETECT_WINDOW_CHARS + 1));
-  setBy["extension/detector.js"].push(...Object.keys(context.Clotr).filter((n) => !before.has(n)));
+  // They belong to the file that sets detect().
+  const detectFile = Object.keys(setBy).find((file) => setBy[file].includes("detect"));
+  setBy[detectFile].push(...Object.keys(context.Clotr).filter((n) => !before.has(n)));
 
   same(Object.keys(setBy), Object.keys(LIST.clotr.setBy), "The files that set names on globalThis.Clotr");
   for (const [file, names] of Object.entries(setBy)) {

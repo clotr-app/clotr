@@ -6,8 +6,7 @@
 const test = require("node:test");
 const assert = require("node:assert/strict");
 
-require("../extension/patterns.js");
-require("../extension/detector.js");
+require("./load-engine.js")("rules", "detect");
 const { makeSecrets } = require("./fixtures/secrets.js");
 const { generatedCases, wrappersFor } = require("./fuzz/structure.js");
 

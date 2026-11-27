@@ -1,3 +1,4 @@
+// Leftover. The extension still loads this file, and the extension's next release removes it.
 // This file turns a found detail into a decision (warn, log, or stay quiet) and into the words a warning uses. It
 // never touches the page, storage, or the browser, so every host gets the same answer for the same detail. A host
 // passes in its own state as `s`: the salt, the vault entries, each kind's response setting, this site's mode if

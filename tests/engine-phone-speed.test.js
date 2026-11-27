@@ -11,15 +11,16 @@ const vm = require("node:vm");
 // The work meter counts steps only in code loaded after it, so it comes before the engine. The meter can't see into a
 // vm context, so the growth test reads the engine loaded here.
 const { assertWorkLinear } = require("./work.js");
-require("../extension/patterns.js");
-require("../extension/detector.js");
+require("./load-engine.js")("rules", "detect");
 
 // The engine from `dir` in a context of its own, the way tests/decide.test.js loads it, so this test runs in the
 // public repo too. The context comes back as well, for the test that counts what the rule does there.
 function engineContext(dir = path.join(__dirname, "..", "extension")) {
   const quiet = { info() {}, log() {}, warn() {}, error() {} };
   const context = vm.createContext({ console: quiet, URLSearchParams, TextEncoder, TextDecoder });
-  for (const f of ["patterns.js", "detector.js", "decide.js"]) {
+  // A folder without the engine's list (an older copy) has the three old files.
+  const { GROUPS, engineFiles } = require("../tools/engine-files.js");
+  for (const f of engineFiles(GROUPS, dir)) {
     const file = path.join(dir, f);
     if (fs.existsSync(file)) vm.runInContext(fs.readFileSync(file, "utf8"), context, { filename: file });
   }
@@ -82,7 +83,7 @@ test("the phone rule's work on one window of metric lines stays near the line co
   assert.ok(runs < 100000, `${runs} regular expression runs on 40 KB of metric lines`);
 });
 
-// With CLOTR_LIVE_ENGINE set to a folder holding live's patterns.js, detector.js and decide.js, the tip's growth is
+// With CLOTR_LIVE_ENGINE set to a folder holding live's engine files, the tip's growth is
 // also held to live's on the same machine. Without it this check is skipped.
 const liveDir = process.env.CLOTR_LIVE_ENGINE;
 test("the phone rule grows no faster than live's", { skip: !liveDir && "CLOTR_LIVE_ENGINE isn't set" }, () => {

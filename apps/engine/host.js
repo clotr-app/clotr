@@ -9,7 +9,7 @@
 //   kept in that file) and the person's language: init(settings). Nothing else is kept here, and never any text.
 // - Storage: clean(settings) before anything is written, eventsFor() for history, fingerprintFor() for the vault
 //   screen. Each gives only what may be stored: settings, salted fingerprints, formats and event metadata, never a
-//   detected value (the extension's own guards, extension/decide.js and backup.js).
+//   detected value (the extension's own guards, extension/engine/respond/decide.js and backup.js).
 // - Showing a warning: check() gives each found detail's response, a masked preview and the warning's words; the app
 //   draws them. Hide it: redact().
 // Any error comes back as { error } with no text in it, and the app lets the person go on.
@@ -17,7 +17,7 @@
   "use strict";
 
   const C = globalThis.Clotr;
-  // The kinds' English names, as patterns.js wrote them at load (the shim starts in English): init() names them
+  // The kinds' English names, as rule-table.js wrote them at load (the shim starts in English): init() names them
   // again in the person's language.
   const ENGLISH = new Map(C.PATTERNS.map((p) => [p.id, p.name]));
 

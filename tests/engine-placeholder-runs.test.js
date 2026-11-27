@@ -6,14 +6,11 @@
 
 const test = require("node:test");
 const assert = require("node:assert/strict");
-const fs = require("node:fs");
-const path = require("node:path");
 const vm = require("node:vm");
 
-require("../extension/patterns.js");
-require("../extension/detector.js");
+require("./load-engine.js")("rules", "detect");
 
-const SOURCE = fs.readFileSync(path.join(__dirname, "../extension/patterns.js"), "utf8");
+const SOURCE = require("./load-engine.js").source("rules");
 
 // The table of provider prefixes in patterns.js isn't exported, so it is read from the source as data.
 function prefixedTokenSources() {
@@ -33,11 +30,13 @@ function prefixedTokenSources() {
   return rows.map((row) => row[2]);
 }
 
+// The list's named pieces (GUID, PERM_CHARACTER and the rest) sit above it, so the read starts at the first one.
 function serviceTokenSources() {
-  const start = SOURCE.indexOf("const SERVICE_TOKEN_RE = new RegExp(");
+  const pieces = SOURCE.indexOf("const GUID = ");
+  const start = SOURCE.indexOf("const SERVICE_TOKEN_RE = new RegExp(", pieces);
   const open = SOURCE.indexOf("[", start);
   const end = SOURCE.indexOf('].join("|")', open);
-  return vm.runInNewContext(SOURCE.slice(open, end + 1));
+  return vm.runInNewContext(SOURCE.slice(pieces, start) + SOURCE.slice(open, end + 1));
 }
 
 // Splits a source at its top-level "|" so each alternative is tried on its own.
