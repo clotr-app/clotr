@@ -1,6 +1,7 @@
 **
 !extension.js
-!ignore-once.js
+!src/
+!src/**
 !package.json
 !package.nls.json
 !package.nls.es.json

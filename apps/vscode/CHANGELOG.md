@@ -2,6 +2,31 @@
 
 What changed in each version of Clotr for VS Code, Cursor, Windsurf and VSCodium.
 
+## 0.3.2 (2026-11-28)
+
+Known issue: Guard stops a command that copies a template file like `.env.example` when the command also has `alias`,
+`function` or `hash` in it, even in quotes, like `alias ll='ls -la'; cp .env.example .env`. 0.3.1 runs it. Run the two
+parts one at a time.
+
+- Guard is now 0.1.4. A copy that renames the copy command first, like `alias cp=cat; cp .env.example .env`, is
+  stopped, and so are more reads of a secret file, like `cd .kube && cat config`. Copying the example env file with a
+  comment after it runs again in PowerShell and Cursor.
+- After you update, Clotr points the Guard hooks it set up at the new version by itself, with the options they had,
+  so your assistants keep their check without being asked again.
+- The engine is 1.6.4, up from 1.6.1. Open files get a warning for a password in a link, like
+  `smb://sam:hunter2!@nas.wibblecorp.io/share`, a password under a name like `dbPassword:`, and API tokens in 19 more
+  formats.
+- Fewer wrong warnings, like for `secret: true` in backticks or a note under `password_ref:`.
+- Closing a file clears its warnings from Problems, the Clotr view and the status bar, and "Ignore this occurrence"
+  ends with it. In 0.3.1 both lasted until the window reloaded.
+- A long `clotr.skipList` pattern full of `*` no longer holds up checking a file.
+- With personal details in files off, a driver's licence, insurance or medical record number or an IP address isn't
+  marked any more. Card and bank numbers still are.
+- The icon's corner mark is now a steel disc with brackets.
+- The code is in readable files grouped by what they do now. Nothing about how it works for you changes.
+
+Every change in detail is in `apps/vscode/docs/0.3.2-details.md` in the repo.
+
 ## 0.3.1 (2026-11-08)
 
 - Guard is now 0.1.3, so a command that only names a secret file, like `Copy-Item .env.example .env`, runs again. It
