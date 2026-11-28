@@ -1,8 +1,17 @@
-package app.clotr.jetbrains
+package app.clotr.jetbrains.ignorefiles
 
+import com.intellij.openapi.application.WriteAction
 import com.intellij.testFramework.fixtures.BasePlatformTestCase
+import java.io.IOException
 import java.nio.file.Files
 import java.nio.file.Path
+import kotlin.random.Random
+import app.clotr.jetbrains.clipboard.ClipboardChecker
+import app.clotr.jetbrains.engine.EngineBridge
+import app.clotr.jetbrains.openfiles.ClotrInspection
+import app.clotr.jetbrains.settings.ClotrLocalState
+import app.clotr.jetbrains.ClotrProjectService
+import app.clotr.jetbrains.withProgress
 
 class ClotrIgnoreTest : BasePlatformTestCase() {
     override fun setUp() {
@@ -59,6 +68,29 @@ class ClotrIgnoreTest : BasePlatformTestCase() {
         assertEquals("too-large", ClotrIgnore.parse("**\n".repeat(40_000)).reason)
     }
 
+    // A newline at the end of the last line doesn't make a line of its own, as in Guard.
+    fun testAClotrIgnoreOfEightThousandOneHundredNinetyTwoLinesEndingInANewlineIsKept() {
+        assertTrue(ClotrIgnore.parse("**\n".repeat(8192)).valid)
+        assertTrue(ClotrIgnore.parse("**\r\n".repeat(8192)).valid)
+        assertTrue(ClotrIgnore.parse("**\n".repeat(8191) + "**").valid)
+        assertEquals("too-many-lines", ClotrIgnore.parse("**\n".repeat(8193)).reason)
+        assertEquals("too-many-lines", ClotrIgnore.parse("**\n".repeat(8192) + "**").reason)
+        val root = Files.createTempDirectory("clotr-ignore-lines")
+        try {
+            Files.writeString(root.resolve(".clotrignore"), "**\n".repeat(8192))
+            assertTrue(ClotrIgnore.read(root).valid)
+            Files.writeString(root.resolve(".clotrignore"), "**\n".repeat(8193))
+            assertEquals("too-many-lines", ClotrIgnore.read(root).reason)
+            // A .gitignore is held to the same count.
+            Files.writeString(root.resolve(".gitignore"), "#\n".repeat(8191) + ".env\n")
+            assertNotNull(ClotrIgnore.readGitIgnore(root.resolve(".gitignore")))
+            Files.writeString(root.resolve(".gitignore"), "#\n".repeat(8192) + ".env\n")
+            assertNull(ClotrIgnore.readGitIgnore(root.resolve(".gitignore")))
+        } finally {
+            root.toFile().deleteRecursively()
+        }
+    }
+
     fun testReaderRejectsAnUnsafeClotrIgnoreFile() {
         val root = Files.createTempDirectory("clotr-ignore-root")
         try {
@@ -97,8 +129,44 @@ class ClotrIgnoreTest : BasePlatformTestCase() {
         }
     }
 
+    // Guard fingerprints a value as it is in the file on disk. In a CRLF file a value that runs over a line break has
+    // CRLF in it there, while the editor's copy of the file has LF.
+    fun testAValueAcrossALineBreakInACrlfFileGetsGuardsFingerprint() {
+        val root = Path.of(project.basePath!!)
+        Files.createDirectories(root)
+        val salt = "ab".repeat(32)
+        val random = Random(7)
+        val base64 = ('A'..'Z') + ('a'..'z') + ('0'..'9') + listOf('+', '/')
+        val body = (1..6).joinToString("\r\n") { (1..64).map { base64[random.nextInt(base64.size)] }.joinToString("") }
+        val disk = "# config\r\naws = AKIA4HPQ7XZ2R6TWLJ3N\r\n${keyMarker("BEGIN")}\r\nMIIE$body\r\n" +
+            "${keyMarker("END")}\r\ncard 4111 1111\r\n1111 1111\r\nlast line\r\n"
+        val engine = project.getService(ClotrProjectService::class.java).engine
+        // What Guard finds in the bytes on disk, and saves the fingerprint of with `clotr-guard ignore-value`.
+        val acrossBreaks = engine.detectRanges(disk).map { it.value }.filter { '\r' in it }.distinct()
+        assertEquals(2, acrossBreaks.size)
+        val ignoreFile = root.resolve(".clotrignore")
+        fun shown(name: String): List<String> {
+            val file = myFixture.tempDirFixture.createFile(name)
+            WriteAction.runAndWait<IOException> { file.setBinaryContent(disk.toByteArray(Charsets.UTF_8)) }
+            myFixture.configureFromExistingVirtualFile(file)
+            assertEquals(disk.replace("\r\n", "\n"), myFixture.editor.document.text)
+            return myFixture.doHighlighting().mapNotNull { it.description }.filter { it.contains("Sensitive information") }
+        }
+        try {
+            assertEquals(3, shown("Keys.txt").size)
+            Files.writeString(ignoreFile, "salt: $salt\n" + acrossBreaks.joinToString("") { "fingerprint: ${ClotrIgnore.valueFingerprint(salt, it)}\n" })
+            assertEquals(listOf(true), shown("GuardIgnored.txt").map { it.contains("AWS Access Key") })
+            // A fingerprint of the LF form, which is what matched before, still matches.
+            val lf = acrossBreaks.map { it.replace("\r\n", "\n") }
+            Files.writeString(ignoreFile, "salt: $salt\n" + lf.joinToString("") { "fingerprint: ${ClotrIgnore.valueFingerprint(salt, it)}\n" })
+            assertEquals(listOf(true), shown("LfIgnored.txt").map { it.contains("AWS Access Key") })
+        } finally {
+            Files.deleteIfExists(ignoreFile)
+        }
+    }
+
     fun testClipboardUsesTheSameValueFingerprints() {
-        val engine = ClotrEngine.start("00112233445566778899aabbccddeeff")
+        val engine = EngineBridge.start("00112233445566778899aabbccddeeff")
         val salt = "00112233445566778899aabbccddeeff00112233445566778899aabbccddeeff"
         val text = "Use AKIA4HPQ7XZ2R6TWLJ3N"
         val ignore = ClotrIgnore.parse("salt: $salt\nfingerprint: ${ClotrIgnore.valueFingerprint(salt, "AKIA4HPQ7XZ2R6TWLJ3N")}\n")
@@ -113,3 +181,6 @@ class ClotrIgnoreTest : BasePlatformTestCase() {
         }
     }
 }
+
+// A private key line, built from pieces so no whole key block sits in the source.
+internal fun keyMarker(edge: String) = "-".repeat(5) + "$edge RSA PRIVATE KEY" + "-".repeat(5)

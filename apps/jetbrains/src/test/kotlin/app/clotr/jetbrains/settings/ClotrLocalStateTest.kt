@@ -1,4 +1,4 @@
-package app.clotr.jetbrains
+package app.clotr.jetbrains.settings
 
 import com.intellij.ide.util.PropertiesComponent
 import com.intellij.openapi.components.RoamingType
@@ -6,6 +6,7 @@ import com.intellij.openapi.components.State
 import com.intellij.openapi.components.service
 import com.intellij.testFramework.fixtures.BasePlatformTestCase
 import com.intellij.util.xmlb.XmlSerializer
+import app.clotr.jetbrains.ClotrProjectService
 
 class ClotrLocalStateTest : BasePlatformTestCase() {
     private val salt = "00112233445566778899aabbccddeeff"
