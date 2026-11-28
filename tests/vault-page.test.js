@@ -1,4 +1,4 @@
-// The "What should I protect?" page (vault.html): what Save, Remove and OK to share do, and when they're refused.
+// The "What should I protect?" page (clotr-pages/vault/vault.html): what Save, Remove and OK to share do, and when they're refused.
 // Run from the repo root: node --test tests/vault-page.test.js
 "use strict";
 
@@ -17,17 +17,20 @@ async function openVault({ local = {}, session = {}, boxes = [], reply } = {}) {
   const textareas = boxes.map(([type, kind, value]) =>
     Object.assign(new FakeNode("textarea", `f-${type}`), { value, dataset: { type, kind } }),
   );
-  const page = loadPage(["patterns.js", "detector.js", "decide.js", "sites.js", "vault.js"], {
-    local,
-    session,
-    hidden: ["vault-locked", "welcome", "allow-card", "where-offer"],
-    selectorsAll: { "textarea[data-type]": textareas, textarea: textareas },
-    sendMessage: async (m) => {
-      sent.push(m);
-      if (m.type === "clotr:getSalt") return { salt: FAKE_SALT };
-      return reply ? reply(m) : {};
+  const page = loadPage(
+    ["rules", "detect", "decide", "sites-and-policy/protected-sites.js", "clotr-pages/vault/vault.js"],
+    {
+      local,
+      session,
+      hidden: ["vault-locked", "welcome", "allow-card", "where-offer"],
+      selectorsAll: { "textarea[data-type]": textareas, textarea: textareas },
+      sendMessage: async (m) => {
+        sent.push(m);
+        if (m.type === "clotr:getSalt") return { salt: FAKE_SALT };
+        return reply ? reply(m) : {};
+      },
     },
-  });
+  );
   await settle();
   return { ...page, sent, textareas, changes: () => sent.filter((m) => m.type !== "clotr:getSalt") };
 }

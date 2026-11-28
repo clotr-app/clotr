@@ -28,11 +28,13 @@ module.exports = async function (env) {
   async function openPractice(c = ctx, width = 1040) {
     const page =
       c === ctx
-        ? await openExtPage(ctx, "practice.html")
+        ? await openExtPage(ctx, "clotr-pages/practice/practice.html")
         : await (async () => {
             const p = await c.browser.newPage();
-            p.on("pageerror", (err) => ctx.problems.push(`practice.html (Spanish) error: ${err.message}`));
-            await p.goto(`chrome-extension://${new URL(c.swTarget.url()).host}/practice.html`);
+            p.on("pageerror", (err) =>
+              ctx.problems.push(`clotr-pages/practice/practice.html (Spanish) error: ${err.message}`),
+            );
+            await p.goto(`chrome-extension://${new URL(c.swTarget.url()).host}/clotr-pages/practice/practice.html`);
             return p;
           })();
     await page.setViewport({ width, height: 900 });
@@ -95,7 +97,7 @@ module.exports = async function (env) {
       await page.emulateMediaFeatures([{ name: "prefers-color-scheme", value: theme }]);
       await sleep(150);
       // The reveal fades in (220 ms); a busy computer can still be mid-fade here, and a half-faded label reads as
-      // low contrast. Wait for the animations that end (never a looping one, which vault.css has: its `finished`
+      // low contrast. Wait for the animations that end (never a looping one, which clotr-pages/vault/vault.css has: its `finished`
       // never comes), and at most 2 s.
       await page.evaluate(() =>
         Promise.race([
@@ -350,7 +352,9 @@ module.exports = async function (env) {
         );
         expect(/Nothing about your answers is kept/.test(end.end), `end: ${end.end}`);
         expect(
-          (await page.$eval("#leak-end a[href='check.html']", (a) => a.textContent.trim())) === "Is this a scam?",
+          (await page.$eval("#leak-end a[href='/clotr-pages/scam-check/scam-check.html']", (a) =>
+            a.textContent.trim(),
+          )) === "Is this a scam?",
           "no way to Is this a scam?",
         );
         await shots(page, "practice-leak-end");

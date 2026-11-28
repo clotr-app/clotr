@@ -10,11 +10,11 @@ const fs = require("node:fs");
 const path = require("node:path");
 const { bestOfPair, grewMoreThan } = require("./timing.js");
 
-const source = fs.readFileSync(path.join(__dirname, "..", "extension", "content.js"), "utf8");
+const source = fs.readFileSync(path.join(__dirname, "..", "extension", "on-websites/content.js"), "utf8");
 
 function patternNamed(name) {
   const m = new RegExp(`const ${name} =\\s*/((?:\\\\.|[^/\\n])+)/([a-z]*);`).exec(source);
-  assert.ok(m, `${name} not found in content.js`);
+  assert.ok(m, `${name} not found in on-websites/content.js`);
   return new RegExp(m[1], m[2]);
 }
 

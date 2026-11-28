@@ -4,6 +4,7 @@
 
 const test = require("node:test");
 const assert = require("node:assert/strict");
+const { requireParts } = require("./extension-source.js");
 
 require("../extension/backup.js");
 const { Backup } = globalThis.Clotr;
@@ -88,8 +89,9 @@ test("backup: only known settings with sane values get through", () => {
 
 // Tourniquet moves with the settings as just one of two words and a time, nothing else. That way a changed
 // file can't turn it into something that raises or lowers protection by surprise.
-test("backup: Tourniquet moves; a bad one is dropped, by the same rule as sites.js", () => {
-  require("../extension/sites.js");
+test("backup: Tourniquet moves; a bad one is dropped, by the same rule as sites-and-policy/protected-sites.js", () => {
+  require("../extension/engine/files.js"); // sites-and-policy/protected-sites.js reads the engine's list
+  requireParts("sites-and-policy/protected-sites.js");
   const { cleanTourniquet } = globalThis.ClotrSites;
   assert.ok(Backup.KEYS.includes("tourniquet"), "Tourniquet isn't one of the keys that move");
   assert.deepEqual(Backup.clean({ tourniquet: { for: "child", since: 5 } }).tourniquet, { for: "child", since: 5 });
@@ -107,7 +109,11 @@ test("backup: Tourniquet moves; a bad one is dropped, by the same rule as sites.
     null,
   ]) {
     assert.ok(!("tourniquet" in Backup.clean({ tourniquet: bad })), `kept: ${JSON.stringify(bad)}`);
-    assert.equal(cleanTourniquet(bad), null, `sites.js keeps what the backup drops: ${JSON.stringify(bad)}`);
+    assert.equal(
+      cleanTourniquet(bad),
+      null,
+      `sites-and-policy/protected-sites.js keeps what the backup drops: ${JSON.stringify(bad)}`,
+    );
   }
 });
 
@@ -156,7 +162,8 @@ test("backup: the shared move file still opens with its password, exactly as it 
 // While the after-scam 30 days are running, the move file carries them with their stored dates, so the new
 // computer counts from the same start. An ended one isn't carried, and the end's bookkeeping never moves.
 test("backup: a running after_scam moves with its end; an ended one doesn't; the bookkeeping stays behind", () => {
-  require("../extension/sites.js");
+  require("../extension/engine/files.js"); // sites-and-policy/protected-sites.js reads the engine's list
+  requireParts("sites-and-policy/protected-sites.js");
   const { cleanTourniquet } = globalThis.ClotrSites;
   const DAY = 86400000;
   const since = Date.UTC(2026, 9, 2, 15);
@@ -174,7 +181,11 @@ test("backup: a running after_scam moves with its end; an ended one doesn't; the
     { for: "after_scam", since },
   ]) {
     assert.ok(!("tourniquet" in Backup.clean({ tourniquet: bad }, during)), `kept: ${JSON.stringify(bad)}`);
-    assert.equal(cleanTourniquet(bad, during), null, `sites.js keeps what the backup drops: ${JSON.stringify(bad)}`);
+    assert.equal(
+      cleanTourniquet(bad, during),
+      null,
+      `sites-and-policy/protected-sites.js keeps what the backup drops: ${JSON.stringify(bad)}`,
+    );
   }
   for (const key of ["tourniquetEnded", "tourniquetSeen"]) assert.ok(!Backup.KEYS.includes(key), `${key} moves`);
 });

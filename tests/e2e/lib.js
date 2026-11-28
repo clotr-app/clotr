@@ -18,6 +18,7 @@ const os = require("os");
 const path = require("path");
 const puppeteer = require("puppeteer-core");
 const waitForCondition = require("./wait.js");
+const { extensionAddress } = require("../extension-file.js");
 const bounded = waitForCondition.bounded;
 
 const ROOT = path.resolve(__dirname, "..", "..");
@@ -42,11 +43,11 @@ const FEATURES = (() => {
 })();
 // Each held-back page's own flag, matching tools/package.js's FEATURE_FILES.
 const PAGE_FEATURE = {
-  "check.html": "scamcheck",
-  "extcheck.html": "extcheck",
-  "practice.html": "practice",
-  "training.html": "training",
-  "lookback.html": "lookback",
+  "clotr-pages/scam-check/scam-check.html": "scamcheck",
+  "clotr-pages/extension-check/extension-check.html": "extcheck",
+  "clotr-pages/practice/practice.html": "practice",
+  "clotr-pages/office-training/office-training.html": "training",
+  "clotr-pages/look-back/look-back.html": "lookback",
 };
 // Whether a held-back page actually belongs to the build under test, so a check that isn't itself about one
 // feature can leave that page out of its own list instead of failing on a page the build never shipped. A flag
@@ -77,7 +78,7 @@ const coverage = COVERAGE_FILE ? require("./coverage.js") : null;
 const KEY = ["AKIA", "4HPQ7XZ2", "R6TWLJ3N"].join("");
 const KEY2 = ["AKIA", "Z7Q3M9WX", "2KD5HB8R"].join("");
 // Clotr's scan runs about 0.4 s after you stop typing, and while a new page's settings are still on the way it waits
-// for them up to 3 s more (content.js, READY_WAIT_MS), so a warning can take about 3.4 s on a slow start. A wait
+// for them up to 3 s more (on-websites/content.js, READY_WAIT_MS), so a warning can take about 3.4 s on a slow start. A wait
 // ends as soon as the warning shows, so passing runs don't get slower.
 const DIALOG_WAIT = 4000;
 const QUIET_WAIT = 1200; // How long a check waits before it's confident no dialog is coming.
@@ -386,7 +387,7 @@ const USER_BLOCKS_HIGH = Object.fromEntries(HIGH_RISK.map((id) => [id, "block"])
 
 // A first-time tip shows once per kind of data. Checks start with every tip already seen, so a notice looks the
 // same no matter which check runs it; the GD checks turn the tips back on to test them.
-require(path.join(__dirname, "..", "..", "extension", "patterns.js"));
+require("../load-engine.js")("rules");
 const ALL_GUIDED = Object.fromEntries(globalThis.Clotr.PATTERNS.map((p) => [p.id, 1]));
 
 // Every raw value a check types during the run. None of them should ever turn up in extension storage.
@@ -530,7 +531,10 @@ async function launchOnce(ext, extraArgs, extraEnv, protocolTimeout = 30000) {
     // element screenshot, so a tab that turns up after a check brought its own page forward stalls that check
     // until the protocol times out. Waiting for it here means it's already open before any check starts.
     await waitFor(
-      () => browser.targets().some((t) => t.type() === "page" && t.url().includes("/vault.html?welcome=1")),
+      () =>
+        browser
+          .targets()
+          .some((t) => t.type() === "page" && t.url().includes("/clotr-pages/vault/vault.html?welcome=1")),
       10000,
     );
     // The checks fake a team's policy by swapping managed storage's get. The background keeps the policy it read
@@ -966,14 +970,14 @@ async function expectNoUI(page, why) {
 }
 
 // A choice in a warning that makes Clotr warn less on every site opens Clotr's own page beside the chat to ask
-// again (confirm.html). This answers there the way a person would: once Yes has woken up, moving the mouse onto
+// again (clotr-pages/warn-less/warn-less.html). This answers there the way a person would: once Yes has woken up, moving the mouse onto
 // it before clicking, then goes back to the chat page. Returns the question Clotr's page showed.
 async function answerOnClotrPage(ctx, chat, yes = true) {
-  const target = await ctx.browser.waitForTarget((t) => t.url().includes("/confirm.html#"), {
+  const target = await ctx.browser.waitForTarget((t) => t.url().includes("/clotr-pages/warn-less/warn-less.html#"), {
     timeout: 5000 * patience(),
   });
   const page = await target.page();
-  page.on("pageerror", (err) => ctx.problems.push(`confirm.html error: ${err.message}`));
+  page.on("pageerror", (err) => ctx.problems.push(`clotr-pages/warn-less/warn-less.html error: ${err.message}`));
   await page.bringToFront();
   const button = yes ? "#cf-yes" : "#cf-no";
   await page.waitForFunction(() => document.getElementById("cf-what").textContent, { timeout: 5000 * patience() });
@@ -1015,14 +1019,14 @@ async function chooseResponse(ctx, patternId, value) {
 
 // ---------- Popup ----------
 
-// Opens popup.html in its own tab at the popup's width, since chrome.action.openPopup() is unreliable headless.
+// Opens popup/popup.html in its own tab at the popup's width, since chrome.action.openPopup() is unreliable headless.
 // A scripted open wouldn't get the activeTab grant anyway, so the site card always reads "No web page in this tab"
 // here; I check that card by hand instead.
 async function openPopup(ctx) {
   const popup = await ctx.browser.newPage();
   popup.on("pageerror", (err) => ctx.problems.push(`popup error: ${err.message}`));
   await popup.setViewport({ width: 380, height: 700 });
-  await popup.goto(`chrome-extension://${new URL(ctx.swTarget.url()).host}/popup.html`);
+  await popup.goto(`chrome-extension://${new URL(ctx.swTarget.url()).host}/${extensionAddress("popup/popup.html")}`);
   await popup.bringToFront();
   const ready = await waitFor(() => popup.$("#hero-value"), 10000);
   if (!ready) throw new Error("popup did not show #hero-value within 10000 ms");
@@ -1035,7 +1039,7 @@ async function openExtPage(ctx, file) {
   const page = await ctx.browser.newPage();
   page.on("pageerror", (err) => ctx.problems.push(`${file} error: ${err.message}`));
   await page.setViewport({ width: 700, height: 900 });
-  await page.goto(`chrome-extension://${new URL(ctx.swTarget.url()).host}/${file}`);
+  await page.goto(`chrome-extension://${new URL(ctx.swTarget.url()).host}/${extensionAddress(file)}`);
   await page.bringToFront();
   await settle(400);
   return page;

@@ -9,15 +9,15 @@ const fs = require("node:fs");
 const path = require("node:path");
 
 const EXT = path.join(__dirname, "..", "extension");
-require("../extension/demo-key.js");
+require("../extension/page-parts/practice-key.js");
 const DEMO_AWS_KEY = globalThis.ClotrDemo.awsAccessKey;
-const html = fs.readFileSync(path.join(EXT, "vault.html"), "utf8");
-const js = fs.readFileSync(path.join(EXT, "vault.js"), "utf8");
+const html = fs.readFileSync(path.join(EXT, "clotr-pages/vault/vault.html"), "utf8");
+const js = fs.readFileSync(path.join(EXT, "clotr-pages/vault/vault.js"), "utf8");
 const es = JSON.parse(fs.readFileSync(path.join(EXT, "_locales", "es", "messages.json"), "utf8"));
 
 const at = (needle) => {
   const i = html.indexOf(needle);
-  assert.ok(i >= 0, `vault.html has no ${needle}`);
+  assert.ok(i >= 0, `clotr-pages/vault/vault.html has no ${needle}`);
   return i;
 };
 
@@ -36,7 +36,7 @@ test("welcome page: a Copy button sits beside the made-up key", () => {
   const field = html.slice(at('data-i18n="vault_tryIt"'), at('id="try-result"'));
   assert.match(field, /<code[^>]*data-demo-aws-key[^>]*><\/code>/);
   assert.doesNotMatch(field, new RegExp(DEMO_AWS_KEY));
-  assert.match(html, /<script src="demo-key\.js"><\/script>/);
+  assert.match(html, /<script src="\/page-parts\/practice-key\.js"><\/script>/);
   assert.match(field, /<button[^>]*id="try-copy"[^>]*type="button"|<button[^>]*type="button"[^>]*id="try-copy"/);
   assert.ok(es.vault_copyKey?.message && es.vault_copied?.message, "Copy and Copied have Spanish");
 });

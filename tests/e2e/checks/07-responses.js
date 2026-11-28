@@ -1106,7 +1106,7 @@ module.exports = async function (env) {
       await popup.click("#tab-settings");
       await popup.evaluate(quiet);
       await popup.evaluate(() => {
-        renderSettings(); // eslint-disable-line no-undef -- popup.js's own function, in the popup page
+        renderSettings(); // eslint-disable-line no-undef -- popup/popup.js's own function, in the popup page
         document.querySelector('details[data-group="personal"]').open = true;
         document.querySelector('select[data-pattern="phone_number"]').scrollIntoView({ block: "center" });
       });
@@ -1249,15 +1249,19 @@ module.exports = async function (env) {
   });
 
   await check("R6c", "Upgrade: a user-site registration under the old name (ChainSec) is removed", async () => {
-    await ctx.worker.evaluate(() =>
-      chrome.scripting.registerContentScripts([
-        {
-          id: "chainsec-user-sites",
-          matches: ["https://chatgpt.com/*"],
-          js: ["patterns.js"],
-          persistAcrossSessions: false,
-        },
-      ]),
+    // Any file the extension ships will do; the engine's first one is always there.
+    const firstEngineFile = require("../../load-engine.js").files("rules")[0];
+    await ctx.worker.evaluate(
+      (file) =>
+        chrome.scripting.registerContentScripts([
+          {
+            id: "chainsec-user-sites",
+            matches: ["https://chatgpt.com/*"],
+            js: [file],
+            persistAcrossSessions: false,
+          },
+        ]),
+      firstEngineFile,
     );
     await ctx.worker.evaluate(() => syncUserSites());
     const left = await ctx.worker.evaluate(() =>
@@ -2023,7 +2027,7 @@ module.exports = async function (env) {
       await resetState(ctx, {});
       await store.set(ctx, { picturesNoted: { "chatgpt.com": true, "claude.ai": true } });
       try {
-        const stored = await openExtPage(ctx, "stored.html");
+        const stored = await openExtPage(ctx, "clotr-pages/what-clotr-stores/what-clotr-stores.html");
         try {
           const other = await waitFor(
             () => stored.$eval("#other", (n) => (/picture note/.test(n.innerText) ? n.innerText : null)),

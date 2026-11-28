@@ -22,10 +22,12 @@ const fs = require("fs");
 const path = require("path");
 const crypto = require("crypto");
 const { execFileSync } = require("child_process");
+const { LIST_FILE, EXTENSION_LIST_FILE, engineFiles, extensionGroups } = require("./engine-files.js");
 
 const ROOT = path.join(__dirname, "..");
 const EXT = path.join(ROOT, "extension");
-const SKIP = new Set(["bravelogs", ".DS_Store", "Thumbs.db", "desktop.ini"]);
+// README.md maps the code for people reading the repo. It never goes to the stores.
+const SKIP = new Set(["bravelogs", ".DS_Store", "Thumbs.db", "desktop.ini", "README.md"]);
 const TEXT = new Set([".js", ".json", ".html", ".css", ".md", ".txt", ".svg"]);
 // A guarded stylesheet link is void, so removing it must not look for a closing tag.
 const VOID_ELEMENTS = new Set([
@@ -49,14 +51,16 @@ const DOS_TIME = 0;
 const DOS_DATE = (0 << 9) | (1 << 5) | 1;
 
 // In a service worker, background.js loads these itself with importScripts. Firefox and Safari run a
-// background page instead, so I give it the same list directly, in the same order.
+// background page instead, so I give it the same list directly, in the same order. The engine's files come from
+// its list, which sites-and-policy/protected-sites.js reads too, and the rest from the extension's list, so the two lists go first.
+const EXTENSION_GROUPS = extensionGroups();
 const BACKGROUND_SCRIPTS = [
-  "patterns.js",
-  "detector.js",
-  "decide.js",
-  "helper-core.js",
-  "backup.js",
-  "sites.js",
+  LIST_FILE,
+  EXTENSION_LIST_FILE,
+  ...engineFiles(),
+  ...EXTENSION_GROUPS.worker,
+  ...EXTENSION_GROUPS.sitesAndPolicy,
+  ...EXTENSION_GROUPS.background,
   "background.js",
 ];
 
@@ -65,9 +69,10 @@ const BACKGROUND_SCRIPTS = [
 function firefoxManifest(m) {
   m.background = {
     scripts: [
-      ...BACKGROUND_SCRIPTS.slice(0, -2),
-      ...(m.clotr_features?.oneclotr ? ["one-clotr-protocol.js", "one-clotr-bridge.js"] : []),
-      "sites.js",
+      ...BACKGROUND_SCRIPTS.slice(0, -1 - EXTENSION_GROUPS.sitesAndPolicy.length - EXTENSION_GROUPS.background.length),
+      ...(m.clotr_features?.oneclotr ? ["one-clotr/one-clotr-protocol.js", "one-clotr/one-clotr-bridge.js"] : []),
+      ...EXTENSION_GROUPS.sitesAndPolicy,
+      ...EXTENSION_GROUPS.background,
       "background.js",
     ],
   };
@@ -111,32 +116,59 @@ const MANIFEST_FOR = { chrome: (m) => m, firefox: firefoxManifest, safari: safar
 // Files a target doesn't ship at all, beyond what its manifest already leaves unreferenced. Safari has no
 // chrome.management, so Extension check's page never ships there regardless of the flag below.
 const DROP_FOR = {
-  safari: new Set(["extcheck.html", "extcheck.css", "extcheck.js", "extcheck-core.js", "reported-extensions.js"]),
+  safari: new Set([
+    "clotr-pages/extension-check/extension-check.html",
+    "clotr-pages/extension-check/extension-check.css",
+    "clotr-pages/extension-check/extension-check.js",
+    "clotr-pages/extension-check/extension-reach.js",
+    "clotr-pages/extension-check/reported-extensions.js",
+  ]),
 };
 
 // Each held-back feature's own files, keyed by its name in extension/manifest.json's clotr_features. They're
 // dropped from the package while the feature is off, though nothing is removed from the source tree itself;
-// a later release can ship one just by flipping its flag. practice-data.js is shared by Practice and Office
+// a later release can ship one just by flipping its flag. page-parts/practice-data.js is shared by Practice and Office
 // training, so I handle it separately below.
 const FEATURE_FILES = {
   tourniquet: [],
-  checkup: ["quick-exit.js", "quick-exit.css"],
+  checkup: ["page-parts/quick-exit.js", "page-parts/quick-exit.css"],
   lookback: [
-    "lookback.html",
-    "lookback.css",
-    "lookback.js",
-    "lookback-core.js",
-    "lookback-worker.js",
-    "letter.js",
-    "zip.js",
-    "scan-words.js",
+    "clotr-pages/look-back/look-back.html",
+    "clotr-pages/look-back/look-back.css",
+    "clotr-pages/look-back/look-back.js",
+    "clotr-pages/look-back/chat-export-reader.js",
+    "clotr-pages/look-back/look-back-worker.js",
+    "clotr-pages/look-back/deletion-letter.js",
+    "clotr-pages/look-back/zip-reader.js",
+    "clotr-pages/look-back/csv-reader.js",
+    "clotr-pages/look-back/scan-words.js",
   ],
-  extcheck: ["extcheck.html", "extcheck.css", "extcheck.js", "extcheck-core.js", "reported-extensions.js"],
-  scamcheck: ["check.html", "check.css", "check.js", "scam-signs.js"],
+  extcheck: [
+    "clotr-pages/extension-check/extension-check.html",
+    "clotr-pages/extension-check/extension-check.css",
+    "clotr-pages/extension-check/extension-check.js",
+    "clotr-pages/extension-check/extension-reach.js",
+    "clotr-pages/extension-check/reported-extensions.js",
+  ],
+  scamcheck: [
+    "clotr-pages/scam-check/scam-check.html",
+    "clotr-pages/scam-check/scam-check.css",
+    "clotr-pages/scam-check/scam-check.js",
+    "clotr-pages/scam-check/scam-signs.js",
+  ],
   commandcheck: ["commands.js"],
-  practice: ["practice.html", "practice.css", "practice.js"],
-  training: ["training.html", "training.css", "training.js", "training-data.js"],
-  oneclotr: ["one-clotr-protocol.js", "one-clotr-bridge.js", "one-clotr-protocol.json"],
+  practice: [
+    "clotr-pages/practice/practice.html",
+    "clotr-pages/practice/practice.css",
+    "clotr-pages/practice/practice.js",
+  ],
+  training: [
+    "clotr-pages/office-training/office-training.html",
+    "clotr-pages/office-training/office-training.css",
+    "clotr-pages/office-training/office-training.js",
+    "clotr-pages/office-training/office-training-data.js",
+  ],
+  oneclotr: ["one-clotr/one-clotr-protocol.js", "one-clotr/one-clotr-bridge.js", "one-clotr/one-clotr-protocol.json"],
 };
 
 // A couple of held-back features also need something removed from the manifest itself, not just their own
@@ -160,7 +192,7 @@ function featureManifest(base, features) {
   return m;
 }
 
-// A held-back feature's own card in a shared page (popup.html, vault.html, helper.html, share.html) carries
+// A held-back feature's own card in a shared page (popup/popup.html, clotr-pages/vault/vault.html, clotr-pages/set-up-for-someone/set-up-for-someone.html, clotr-pages/share-clotr/share-clotr.html) carries
 // data-feature="<name>" on its wrapping element, the same name as in FEATURE_FILES and clotr_features. Pulled
 // from the package while the feature is off, so its title and subtitle never ship as dead text for a store
 // reviewer to find; the element (and the switch that un-hides it) stays in the source untouched. Every HTML
@@ -273,7 +305,7 @@ function collect(target, features) {
   }
   const drop = new Set(DROP_FOR[target] || []);
   for (const [name, on] of Object.entries(features)) if (!on) for (const f of FEATURE_FILES[name] || []) drop.add(f);
-  if (!features.practice && !features.training) drop.add("practice-data.js");
+  if (!features.practice && !features.training) drop.add("page-parts/practice-data.js");
   const entries = [];
   (function walk(dir) {
     for (const name of fs.readdirSync(dir)) {

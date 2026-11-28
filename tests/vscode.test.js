@@ -1945,9 +1945,11 @@ test("English and Spanish package words have matching keys", () => {
 
 test("English and Spanish include a label for every detection type", () => {
   const ids = new Set(
-    [...fs.readFileSync(path.join(ROOT, "extension", "patterns.js"), "utf8").matchAll(/\bid:\s*"([^"]+)"/g)].map(
-      ([, id]) => id,
-    ),
+    [
+      ...require("./load-engine.js")
+        .source("rules")
+        .matchAll(/\bid:\s*"([^"]+)"/g),
+    ].map(([, id]) => id),
   );
   const englishWords = require("../apps/vscode/package.nls.json");
   const spanishWords = require("../apps/vscode/package.nls.es.json");

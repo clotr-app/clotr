@@ -10,23 +10,27 @@ const assert = require("node:assert/strict");
 const fs = require("node:fs");
 const path = require("node:path");
 const { build, stripFeatureMarkup } = require("../tools/package.js");
+const { allPages } = require("../tools/engine-files.js");
+const { extensionSource } = require("./extension-source.js");
 
 const EXT = path.join(__dirname, "..", "extension");
 const features = JSON.parse(fs.readFileSync(path.join(EXT, "manifest.json"), "utf8")).clotr_features || {};
+// Every page in every folder, by its path from extension/.
+const pages = allPages();
 const idsIn = (html) => new Set([...html.matchAll(/\bid="([^"]+)"/g)].map((m) => m[1]));
 const scriptsIn = (html) =>
   [...html.matchAll(/<script\b[^>]*\bsrc="([^"]+)"/g)].map((m) => m[1]).filter((src) => !/^[a-z]+:/i.test(src));
 const escape = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 
 test("One Clotr's worker imports and Firefox scripts follow its feature flag", () => {
-  const background = fs.readFileSync(path.join(EXT, "background.js"), "utf8");
+  const background = extensionSource("background.js");
   assert.match(
     background,
-    /if\s*\(\s*chrome\.runtime\.getManifest\(\)\.clotr_features\?\.oneclotr\s*&&\s*typeof importScripts === "function"\s*&&\s*!globalThis\.Clotr\?\.OneClotrProtocol\s*\)\s*\{\s*importScripts\("one-clotr-protocol\.js", "one-clotr-bridge\.js"\);\s*\}/,
+    /if\s*\(\s*chrome\.runtime\.getManifest\(\)\.clotr_features\?\.oneclotr\s*&&\s*typeof importScripts === "function"\s*&&\s*!globalThis\.Clotr\?\.OneClotrProtocol\s*\)\s*\{\s*importScripts\("one-clotr\/one-clotr-protocol\.js", "one-clotr\/one-clotr-bridge\.js"\);\s*\}/,
     "the service worker must guard One Clotr imports before the files can be omitted",
   );
 
-  const bridge = ["one-clotr-protocol.js", "one-clotr-bridge.js"];
+  const bridge = ["one-clotr/one-clotr-protocol.js", "one-clotr/one-clotr-bridge.js"];
   const firefoxOff = build({ firefox: true, zip: false });
   assert.ok(!firefoxOff.manifest.background.scripts.some((file) => bridge.includes(file)));
   const firefoxOn = build({ firefox: true, zip: false, features: { oneclotr: true } });
@@ -38,13 +42,13 @@ test("One Clotr's worker imports and Firefox scripts follow its feature flag", (
 });
 
 test("every page loads Quick exit only through its held-back feature guard", () => {
-  for (const page of fs.readdirSync(EXT).filter((name) => name.endsWith(".html"))) {
+  for (const page of pages) {
     const html = fs.readFileSync(path.join(EXT, page), "utf8");
-    for (const match of html.matchAll(/<script\b[^>]*\bsrc="quick-exit\.js"[^>]*>/g)) {
+    for (const match of html.matchAll(/<script\b[^>]*\bsrc="\/page-parts\/quick-exit\.js"[^>]*>/g)) {
       assert.match(match[0], /\bdata-feature="checkup"/, `${page}: Quick exit lacks its feature guard`);
     }
     assert.ok(
-      !scriptsIn(stripFeatureMarkup(html, features)).includes("quick-exit.js"),
+      !scriptsIn(stripFeatureMarkup(html, features)).includes("/page-parts/quick-exit.js"),
       `${page}: Quick exit survives while held back`,
     );
   }
@@ -86,7 +90,13 @@ function insideFeatureBlock(source, feature, index) {
   return false;
 }
 
-for (const page of fs.readdirSync(EXT).filter((f) => f.endsWith(".html"))) {
+// Before the pages moved into folders, all 14 sat in the top folder. Fewer than that means the checks
+// below stopped finding them.
+test("the held-back checks read every Clotr page", () => {
+  assert.ok(pages.length >= 14, `only ${pages.length} pages found`);
+});
+
+for (const page of pages) {
   const html = fs.readFileSync(path.join(EXT, page), "utf8");
   if (!/data-feature="/.test(html)) continue;
   const packaged = stripFeatureMarkup(html, features);

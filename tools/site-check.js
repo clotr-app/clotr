@@ -4,7 +4,7 @@
 // By default, it opens every site logged out in a throwaway headless Brave or Chrome profile with Clotr
 // loaded. For each built-in AI site, it records where the page ends up, whether Clotr covers that address,
 // whether Clotr's self-check sees a chat box, and what kind of editor it uses. For each everyday app (the
-// EVERYDAY_SITES list in sites.js, mostly reached as a sign-in page while logged out), it records where the
+// EVERYDAY_SITES list in sites-and-policy/protected-sites.js, mostly reached as a sign-in page while logged out), it records where the
 // page ends up, whether that host is still covered by its own per-site permission, and whether it hit a
 // sign-in wall. It compares both groups against the saved baseline and lists what changed, such as a site
 // that moved (lmarena.ai became arena.ai), a chat box Clotr can no longer see, or a new kind of editor that
@@ -42,10 +42,13 @@ const option = (name) => {
   return i >= 0 ? args[i + 1] : null;
 };
 
-// sites.js turns match patterns into regexes; it reads the manifest through chrome.runtime.
+// sites-and-policy/protected-sites.js turns match patterns into regexes; it reads the manifest through chrome.runtime.
 const manifest = JSON.parse(fs.readFileSync(path.join(EXT, "manifest.json"), "utf8"));
 globalThis.chrome = { runtime: { getManifest: () => manifest } };
-require(path.join(EXT, "sites.js"));
+// The site files read the engine's list and the extension's.
+require(path.join(EXT, "engine", "files.js"));
+require(path.join(EXT, "extension-files.js"));
+for (const file of globalThis.ClotrExtensionFiles.sitesAndPolicy) require(path.join(EXT, file));
 const Sites = globalThis.ClotrSites;
 const BUILT_IN = manifest.content_scripts.flatMap((c) => c.matches);
 
@@ -87,7 +90,7 @@ function sitesToCheck() {
     .filter((s) => !only || only.some((o) => s.url.includes(o) || s.name.toLowerCase().includes(o)));
 }
 
-// One address per everyday site to open (from EVERYDAY_SITES in sites.js), plus all of that site's own
+// One address per everyday site to open (from EVERYDAY_SITES in sites-and-policy/protected-sites.js), plus all of that site's own
 // matches, since an everyday site's coverage comes from its own list rather than the built-in one.
 function everydaySitesToCheck() {
   const only = onlyFilter();
@@ -294,7 +297,8 @@ async function main() {
   const everydayFindings = compareToBaseline(everydayResults, baselineData.everyday || {}, {
     signInField: "signInWall",
     checkEditor: false,
-    notCoveredHint: "which its own host permission wouldn't cover: check EVERYDAY_SITES in sites.js",
+    notCoveredHint:
+      "which its own host permission wouldn't cover: check EVERYDAY_SITES in sites-and-policy/protected-sites.js",
   });
   const allFindings = [...findings, ...everydayFindings];
 

@@ -6,6 +6,10 @@
 const fs = require("node:fs");
 const path = require("node:path");
 const vm = require("node:vm");
+const loadEngine = require("./load-engine.js");
+const { loadOrder } = require("./extension-source.js");
+const { GROUPS, LIST_FILE } = require("../tools/engine-files.js");
+const { extensionFile } = require("./extension-file.js");
 
 const EXT = path.join(__dirname, "..", "extension");
 
@@ -103,7 +107,15 @@ function fakeArea(name, onChange) {
   };
 }
 
-// Loads `scripts` (file names in extension/) into one vm context and returns its pieces.
+// A page's scripts with each engine group's name ("rules", "detect", "decide") turned into its files, and the
+// engine's list first, as the page's own engine block loads it.
+function pageScripts(scripts) {
+  const groups = new Set(GROUPS);
+  const files = scripts.flatMap((name) => (groups.has(name) ? loadEngine.files(name) : loadOrder(name)));
+  return [LIST_FILE, ...files];
+}
+
+// Loads `scripts` (file names in extension/, or an engine group's name) into one vm context and returns its pieces.
 // options: local / session (what storage holds as the page opens), hidden (ids the HTML starts hidden), manifest (merged over the real one), messages (a locale's messages.json, for chrome.i18n),
 // sendMessage (the background's answer), selectors / selectorsAll (document.querySelector[All] answers),
 // globals (anything else the page expects).
@@ -197,8 +209,8 @@ function loadPage(scripts, options = {}) {
   ctx.globalThis = ctx;
   ctx.self = ctx;
   vm.createContext(ctx);
-  for (const file of scripts) {
-    vm.runInContext(fs.readFileSync(path.join(EXT, file), "utf8"), ctx, { filename: file });
+  for (const file of pageScripts(scripts)) {
+    vm.runInContext(fs.readFileSync(path.join(EXT, extensionFile(file)), "utf8"), ctx, { filename: file });
   }
   return {
     ctx,

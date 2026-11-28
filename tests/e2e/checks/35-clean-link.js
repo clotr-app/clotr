@@ -53,7 +53,9 @@ module.exports = async function (env) {
         const fresh = (await readNotice(page))?.buttons.find((b) => b.text === "How ads follow you");
         expect(fresh, "the explainer link went away");
         const found = ctx.browser
-          .waitForTarget((t) => t.url().endsWith("/tracking.html"), { timeout: 8000 })
+          .waitForTarget((t) => t.url().endsWith("/clotr-pages/how-ads-follow-you/how-ads-follow-you.html"), {
+            timeout: 8000,
+          })
           .catch(() => null);
         await page.bringToFront();
         await clickNode(page, fresh.nodeId);
@@ -104,7 +106,7 @@ module.exports = async function (env) {
     "CL6",
     "The explainer page loads on its own, with no serious accessibility problems in either theme",
     async () => {
-      const page = await openExtPage(ctx, "tracking.html");
+      const page = await openExtPage(ctx, "clotr-pages/how-ads-follow-you/how-ads-follow-you.html");
       try {
         const title = await page.evaluate(() => document.querySelector("h1")?.textContent.trim());
         expect(title === "How ads follow you", `heading: "${title}"`);
@@ -145,7 +147,7 @@ module.exports = async function (env) {
       await typeText(page, AD_LINK);
       expect(await waitForNotice(page), "no note to screenshot");
       await page.screenshot({ path: path.join(OUT, "cl-clean-link-note.png") });
-      const tracking = await openExtPage(ctx, "tracking.html");
+      const tracking = await openExtPage(ctx, "clotr-pages/how-ads-follow-you/how-ads-follow-you.html");
       try {
         await tracking.screenshot({ path: path.join(OUT, "cl-tracking-page.png"), fullPage: true });
       } finally {
@@ -186,7 +188,9 @@ module.exports = async function (env) {
         "Gemini's why panel omitted the explainer",
       );
       const found = ctx.browser
-        .waitForTarget((t) => t.url().endsWith("/tracking.html"), { timeout: 8000 })
+        .waitForTarget((t) => t.url().endsWith("/clotr-pages/how-ads-follow-you/how-ads-follow-you.html"), {
+          timeout: 8000,
+        })
         .catch(() => null);
       const fresh = (await readNotice(page))?.buttons.find((b) => b.text === "How ads follow you");
       expect(fresh, "Gemini's explainer link went away");

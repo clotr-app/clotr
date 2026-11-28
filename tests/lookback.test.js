@@ -1,4 +1,4 @@
-// Tests extension/lookback-core.js, the reader behind Look Back. It runs the real reader over the same
+// Tests extension/clotr-pages/look-back/chat-export-reader.js, the reader behind Look Back. It runs the real reader over the same
 // fixtures tests/lookback-fixtures.test.js walks by hand, both from a picked folder and from the company's own
 // zip, and checks that both ways land on exactly what expected.json promises.
 "use strict";
@@ -8,14 +8,12 @@ const assert = require("node:assert/strict");
 const fs = require("node:fs");
 const path = require("node:path");
 
-require("../extension/patterns.js");
-require("../extension/detector.js");
-require("../extension/decide.js");
-require("../extension/attachments.js");
-require("../extension/pictures.js");
-require("../extension/zip.js");
-require("../extension/csv.js");
-require("../extension/lookback-core.js");
+require("./load-engine.js")("rules", "detect", "decide");
+require("../extension/on-websites/attached-files.js");
+require("../extension/on-websites/attached-pictures.js");
+require("../extension/clotr-pages/look-back/zip-reader.js");
+require("../extension/clotr-pages/look-back/csv-reader.js");
+require("../extension/clotr-pages/look-back/chat-export-reader.js");
 const C = globalThis.Clotr;
 
 const DIR = path.join(__dirname, "fixtures", "exports");

@@ -339,7 +339,7 @@ module.exports = async function (env) {
         });
         // The vault page is Clotr's own, sitting behind the PIN when there is one, so an OK to share from it
         // is kept and honoured.
-        const vault = await openExtPage(ctx, "vault.html");
+        const vault = await openExtPage(ctx, "clotr-pages/vault/vault.html");
         try {
           await vault.evaluate((entry) => chrome.runtime.sendMessage({ type: "clotr:vaultAdd", entries: [entry] }), {
             kind: "value",
@@ -421,7 +421,9 @@ module.exports = async function (env) {
           await helper.evaluateOnNewDocument(() => {
             chrome.storage.managed.get = async () => ({ lockSettings: true });
           });
-          await helper.goto(`chrome-extension://${new URL(ctx.swTarget.url()).host}/helper.html`);
+          await helper.goto(
+            `chrome-extension://${new URL(ctx.swTarget.url()).host}/clotr-pages/set-up-for-someone/set-up-for-someone.html`,
+          );
           await sleep(500);
           const hidden = await helper.evaluate(() => document.getElementById("steps").hidden);
           expect(hidden, "the setup page shows its steps under the organization's lock");
@@ -781,7 +783,7 @@ module.exports = async function (env) {
       await unlockSettings(ctx);
       await ctx.worker.evaluate((t) => chrome.storage.local.set({ tourniquet: t }), { for: "adult", since });
       const file = path.join(OUT, "move-tourniquet.clotr");
-      const page = await openExtPage(ctx, "stored.html#move");
+      const page = await openExtPage(ctx, "clotr-pages/what-clotr-stores/what-clotr-stores.html#move");
       const asked = [];
       page.on("dialog", (d) => {
         asked.push(d.message());
@@ -822,7 +824,7 @@ module.exports = async function (env) {
     "What Clotr stores shows Tourniquet in one row: since when and what it asks about, never who it's for; Off once it's off",
     async () => {
       await setTourniquet(ctx, "adult");
-      const page = await openExtPage(ctx, "stored.html");
+      const page = await openExtPage(ctx, "clotr-pages/what-clotr-stores/what-clotr-stores.html");
       const row = () =>
         page.evaluate(() => {
           const dt = [...document.querySelectorAll("#settings dt")].find((d) => d.textContent === "Tourniquet");
@@ -861,11 +863,11 @@ module.exports = async function (env) {
     },
   );
 
-  // ---------- The setup page (helper.html), the welcome page's line and the printed guide ----------
+  // ---------- The setup page (clotr-pages/set-up-for-someone/set-up-for-someone.html), the welcome page's line and the printed guide ----------
 
   const extUrl = (file) => `chrome-extension://${new URL(ctx.swTarget.url()).host}/${file}`;
   // Opens the setup page the way a helper first sees it: settings open, Tourniquet off, nothing chosen yet.
-  async function openSetup(file = "helper.html", before = null) {
+  async function openSetup(file = "clotr-pages/set-up-for-someone/set-up-for-someone.html", before = null) {
     await unlockSettings(ctx);
     const page = await ctx.browser.newPage();
     page.on("pageerror", (err) => ctx.problems.push(`${file} error: ${err.message}`));
@@ -984,7 +986,7 @@ module.exports = async function (env) {
       await setTourniquet(ctx, null);
       // A script can't answer the browser's own permission prompt, so this records what was asked for and
       // answers No.
-      const page = await openSetup("helper.html", () => {
+      const page = await openSetup("clotr-pages/set-up-for-someone/set-up-for-someone.html", () => {
         window.__asked = [];
         chrome.permissions.request = async (p) => {
           window.__asked.push(p);
@@ -1028,7 +1030,7 @@ module.exports = async function (env) {
     "Welcome page: one Tourniquet line right after the where-Clotr-checks card; its link opens the setup at Who is it for?; hidden while locked",
     async () => {
       await store.set(ctx, { everydayOffer: "welcome" });
-      const page = await openSetup("vault.html?welcome=1");
+      const page = await openSetup("clotr-pages/vault/vault.html?welcome=1");
       try {
         const line = await waitFor(
           () =>
@@ -1050,7 +1052,7 @@ module.exports = async function (env) {
           `line: ${line.text}`,
         );
         expect(line.after === "where-offer", `the line comes after ${line.after}, not the where-Clotr-checks card`);
-        expect(line.href === "helper.html#who", `link: ${line.href}`);
+        expect(line.href === "/clotr-pages/set-up-for-someone/set-up-for-someone.html#who", `link: ${line.href}`);
         await page.setViewport({ width: 700, height: 900 });
         for (const theme of ["dark", "light"]) {
           await page.emulateMediaFeatures([{ name: "prefers-color-scheme", value: theme }]);
@@ -1064,7 +1066,10 @@ module.exports = async function (env) {
             captureBeyondViewport: true,
           });
         }
-        const opened = ctx.browser.waitForTarget((t) => t.url().endsWith("/helper.html#who"), { timeout: 3000 });
+        const opened = ctx.browser.waitForTarget(
+          (t) => t.url().endsWith("/clotr-pages/set-up-for-someone/set-up-for-someone.html#who"),
+          { timeout: 3000 },
+        );
         await page.click("#tq-offer a");
         const setup = await (await opened).page();
         try {
@@ -1086,7 +1091,7 @@ module.exports = async function (env) {
       await lockSettings(ctx);
       const locked = await ctx.browser.newPage();
       try {
-        await locked.goto(extUrl("vault.html?welcome=1"));
+        await locked.goto(extUrl("clotr-pages/vault/vault.html?welcome=1"));
         await sleep(700);
         expect(await locked.$eval("#tq-offer", (p) => p.hidden), "the Tourniquet line shows while settings are locked");
       } finally {
@@ -1174,7 +1179,7 @@ module.exports = async function (env) {
     "The printed guide says Tourniquet is on, what it does and that they can always send, never who it's for; nothing about it once it's off",
     async () => {
       const read = async (pictures = false) => {
-        const page = await openSetup("share.html");
+        const page = await openSetup("clotr-pages/share-clotr/share-clotr.html");
         try {
           for (const theme of pictures ? ["dark", "light"] : []) {
             await page.emulateMediaFeatures([{ name: "prefers-color-scheme", value: theme }]);
@@ -1406,7 +1411,7 @@ module.exports = async function (env) {
         await page.close();
       }
       // Following a link from another page, such as Is this a scam?, should land with the third tile already chosen.
-      const linked = await openSetup("helper.html?for=after_scam#who");
+      const linked = await openSetup("clotr-pages/set-up-for-someone/set-up-for-someone.html?for=after_scam#who");
       try {
         const at = await linked.evaluate(() => ({
           chosen: document.querySelector('#who input[name="who"]:checked')?.value,
@@ -1590,7 +1595,7 @@ module.exports = async function (env) {
         // It never says who it's for or why, since there should be no word of a scam on a page that sits next
         // to their computer.
         const until = await dayName(popup, again.until);
-        const guide = await openSetup("share.html");
+        const guide = await openSetup("clotr-pages/share-clotr/share-clotr.html");
         try {
           const text = await guide.evaluate(() => {
             const p = document.getElementById("guide-tq");
@@ -1612,7 +1617,7 @@ module.exports = async function (env) {
         }
         // What Clotr stores should show the record with both dates, plus a note of the end and the latest
         // time seen for bookkeeping.
-        const stored = await openExtPage(ctx, "stored.html");
+        const stored = await openExtPage(ctx, "clotr-pages/what-clotr-stores/what-clotr-stores.html");
         const row = (list, label) =>
           stored.evaluate(
             (l, k) => {
@@ -1769,7 +1774,7 @@ module.exports = async function (env) {
         const setup = await es.browser.newPage();
         try {
           await setup.setViewport({ width: 380, height: 900 });
-          await setup.goto(at("helper.html?for=after_scam"));
+          await setup.goto(at("clotr-pages/set-up-for-someone/set-up-for-someone.html?for=after_scam"));
           await setup.evaluate(() => document.fonts.ready);
           await sleep(500);
           const got = await setup.evaluate(() => ({
@@ -1928,7 +1933,7 @@ module.exports = async function (env) {
         ]),
       );
       for (const width of PHONES) {
-        const page = await openOnPhone("helper.html", width);
+        const page = await openOnPhone("clotr-pages/set-up-for-someone/set-up-for-someone.html", width);
         try {
           expectPageFit(await page.evaluate(measurePage), width, "the setup page");
           for (const who of ["adult", "child", "after_scam", "self"]) {

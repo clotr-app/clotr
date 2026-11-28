@@ -13,12 +13,10 @@ const fs = require("node:fs");
 const path = require("node:path");
 const { inflateRawSync } = require("node:zlib");
 
-require("../extension/patterns.js");
-require("../extension/detector.js");
-require("../extension/decide.js");
-require("../extension/attachments.js");
-require("../extension/pictures.js");
-require("../extension/csv.js");
+require("./load-engine.js")("rules", "detect", "decide");
+require("../extension/on-websites/attached-files.js");
+require("../extension/on-websites/attached-pictures.js");
+require("../extension/clotr-pages/look-back/csv-reader.js");
 const C = globalThis.Clotr;
 
 const DIR = path.join(__dirname, "fixtures", "exports");

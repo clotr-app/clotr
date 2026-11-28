@@ -136,7 +136,7 @@ module.exports = async function (env) {
           window.fetch = (url, ...rest) =>
             String(url).endsWith("changelog.json") ? Promise.reject(new TypeError("unreadable")) : real(url, ...rest);
         });
-        await bare.goto(`chrome-extension://${new URL(ctx.swTarget.url()).host}/popup.html`);
+        await bare.goto(`chrome-extension://${new URL(ctx.swTarget.url()).host}/popup/popup.html`);
         await bare.waitForSelector("#hero-value");
         await sleep(400);
         const r = await read(bare);

@@ -49,9 +49,9 @@ module.exports = async function (env) {
 
   await check(
     "BL3",
-    "the new look: the full report (dashboard.html), dark then light, at 380px and 1100px",
+    "the new look: the full report (clotr-pages/exposure-report/exposure-report.html), dark then light, at 380px and 1100px",
     async () => {
-      const page = await openExtPage(ctx, "dashboard.html");
+      const page = await openExtPage(ctx, "clotr-pages/exposure-report/exposure-report.html");
       try {
         await shotTo(page, "dashboard-1100-dark.png", { width: 1100, height: 1400, theme: "dark" });
         await shotTo(page, "dashboard-1100-light.png", { width: 1100, height: 1400, theme: "light" });
@@ -63,15 +63,19 @@ module.exports = async function (env) {
     },
   );
 
-  await check("BL4", "the new look: the welcome page (vault.html), dark then light, at 380px and 1100px", async () => {
-    const page = await openExtPage(ctx, "vault.html");
-    try {
-      await shotTo(page, "vault-1100-dark.png", { width: 1100, height: 1200, theme: "dark" });
-      await shotTo(page, "vault-1100-light.png", { width: 1100, height: 1200, theme: "light" });
-      await shotTo(page, "vault-380-dark.png", { width: 380, height: 1400, theme: "dark" });
-      await shotTo(page, "vault-380-light.png", { width: 380, height: 1400, theme: "light" });
-    } finally {
-      await page.close();
-    }
-  });
+  await check(
+    "BL4",
+    "the new look: the welcome page (clotr-pages/vault/vault.html), dark then light, at 380px and 1100px",
+    async () => {
+      const page = await openExtPage(ctx, "clotr-pages/vault/vault.html");
+      try {
+        await shotTo(page, "vault-1100-dark.png", { width: 1100, height: 1200, theme: "dark" });
+        await shotTo(page, "vault-1100-light.png", { width: 1100, height: 1200, theme: "light" });
+        await shotTo(page, "vault-380-dark.png", { width: 380, height: 1400, theme: "dark" });
+        await shotTo(page, "vault-380-light.png", { width: 380, height: 1400, theme: "light" });
+      } finally {
+        await page.close();
+      }
+    },
+  );
 };

@@ -11,8 +11,8 @@ module.exports = async function (env) {
     "Quick exit: pressing it in the popup closes every open Clotr page, including itself",
     async () => {
       const popup = await openPopup(ctx);
-      const vault = await openExtPage(ctx, "vault.html");
-      const helper = await openExtPage(ctx, "helper.html");
+      const vault = await openExtPage(ctx, "clotr-pages/vault/vault.html");
+      const helper = await openExtPage(ctx, "clotr-pages/set-up-for-someone/set-up-for-someone.html");
 
       // The button closes this very page, so the CDP connection to it can die mid dispatch: race the click
       // against a short wait instead of awaiting it to completion (it may never settle once the tab is gone).

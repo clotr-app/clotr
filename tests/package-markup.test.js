@@ -87,10 +87,10 @@ test("the shipped build strips every still-held-back feature's markup, comments 
   if (STILL_OFF.includes("checkup")) {
     for (const [name, data] of html) {
       const text = data.toString("utf8");
-      assert.ok(!text.includes('src="quick-exit.js"'), `${name}: Quick exit script still referenced`);
-      assert.ok(!text.includes('href="quick-exit.css"'), `${name}: Quick exit stylesheet still referenced`);
+      assert.ok(!text.includes('src="/page-parts/quick-exit.js"'), `${name}: Quick exit script still referenced`);
+      assert.ok(!text.includes('href="/page-parts/quick-exit.css"'), `${name}: Quick exit stylesheet still referenced`);
     }
-    assert.ok(!entries.some(([name]) => name === "quick-exit.js" || name === "quick-exit.css"));
+    assert.ok(!entries.some(([name]) => name === "page-parts/quick-exit.js" || name === "page-parts/quick-exit.css"));
   }
 });
 
@@ -102,17 +102,17 @@ test("a held-back stylesheet link is removed as a void element", () => {
 
 test("One Clotr's popup card and bridge references follow its flag", () => {
   const off = build({ zip: false, folder: tmp() });
-  const offPopup = fs.readFileSync(path.join(off.folder, "popup.html"), "utf8");
+  const offPopup = fs.readFileSync(path.join(off.folder, "popup/popup.html"), "utf8");
   assert.ok(!offPopup.includes('id="one-clotr"'));
-  assert.ok(!offPopup.includes('src="one-clotr-protocol.js"'));
-  assert.ok(!offPopup.includes('src="one-clotr-bridge.js"'));
+  assert.ok(!offPopup.includes('src="/one-clotr/one-clotr-protocol.js"'));
+  assert.ok(!offPopup.includes('src="/one-clotr/one-clotr-bridge.js"'));
 
   const on = build({ zip: false, folder: tmp(), features: { oneclotr: true } });
-  const onPopup = fs.readFileSync(path.join(on.folder, "popup.html"), "utf8");
+  const onPopup = fs.readFileSync(path.join(on.folder, "popup/popup.html"), "utf8");
   assert.ok(onPopup.includes('id="one-clotr"'));
   assert.ok(onPopup.includes('data-feature="oneclotr"'));
-  assert.ok(onPopup.includes('src="one-clotr-protocol.js" data-feature="oneclotr"'));
-  assert.ok(onPopup.includes('src="one-clotr-bridge.js" data-feature="oneclotr"'));
+  assert.ok(onPopup.includes('src="/one-clotr/one-clotr-protocol.js" data-feature="oneclotr"'));
+  assert.ok(onPopup.includes('src="/one-clotr/one-clotr-bridge.js" data-feature="oneclotr"'));
 });
 
 test("turning a held-back feature on ships its markup, name and strings again", () => {
@@ -130,10 +130,10 @@ test("turning a held-back feature on ships its markup, name and strings again", 
     const keys = Array.isArray(FEATURE_MESSAGES[feature]) ? FEATURE_MESSAGES[feature] : [FEATURE_MESSAGES[feature]];
     for (const key of keys) assert.ok(key in es, `${feature}: ${key} is still missing once it's on`);
     if (feature === "checkup") {
-      assert.ok(entries.some(([name]) => name === "quick-exit.js"));
-      assert.ok(entries.some(([name]) => name === "quick-exit.css"));
-      assert.ok(html.some((text) => text.includes('src="quick-exit.js" data-feature="checkup"')));
-      assert.ok(html.some((text) => text.includes('href="quick-exit.css" data-feature="checkup"')));
+      assert.ok(entries.some(([name]) => name === "page-parts/quick-exit.js"));
+      assert.ok(entries.some(([name]) => name === "page-parts/quick-exit.css"));
+      assert.ok(html.some((text) => text.includes('src="/page-parts/quick-exit.js" data-feature="checkup"')));
+      assert.ok(html.some((text) => text.includes('href="/page-parts/quick-exit.css" data-feature="checkup"')));
     }
     if (feature === "oneclotr") assert.ok(html.some((text) => text.includes('id="one-clotr"')));
   }

@@ -514,7 +514,7 @@ module.exports = async function (env) {
   );
 
   await check("WA12", "The welcome page's Try it shows the line too, masked", async () => {
-    const page = await openExtPage(ctx, "vault.html?welcome=1");
+    const page = await openExtPage(ctx, "clotr-pages/vault/vault.html?welcome=1");
     try {
       const s = sample("login_code");
       TYPED_VALUES.add(s.value);

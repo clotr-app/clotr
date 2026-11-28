@@ -1,0 +1,109 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title data-i18n="tw_pageTitle">The AI walkthrough</title>
+  <link rel="stylesheet" href="/popup/popup.css">
+  <link rel="stylesheet" href="/clotr-pages/vault/vault.css">
+  <link rel="stylesheet" href="/clotr-pages/practice/practice.css">
+  <link rel="stylesheet" href="/clotr-pages/office-training/office-training.css">
+</head>
+<body class="vault-page training-page">
+  <header class="top no-print">
+    <img src="/icons/icon-on-32.png" alt="" width="24" height="24">
+    <span class="wordmark" data-i18n-skip>Clotr</span>
+    <h1 id="tw-title" data-i18n="tw_pageTitle">The AI walkthrough</h1>
+  </header>
+
+  <p class="lead no-print" data-i18n="tw_lead">A self-paced, offline walkthrough, about fifteen to twenty minutes. Nothing you type in it is stored or sent anywhere.</p>
+
+  <div id="tw-progress" class="segments no-print" aria-hidden="true"></div>
+  <p id="tw-step-of" class="step-of no-print"></p>
+
+  <main id="tw-body"></main>
+
+  <p class="nav no-print">
+    <button id="tw-next" class="btn primary" type="button" data-i18n="tw_next">Next</button>
+    <button id="tw-back" class="link-button" type="button" data-i18n="pd_back" hidden>Back</button>
+  </p>
+
+  <footer class="app-footer no-print">
+    <div id="report-root"></div>
+  </footer>
+
+  <script src="/page-parts/translate-page.js"></script>
+  <script src="/engine/files.js" data-engine="list"></script>
+  <script src="/engine/rules/value-checks.js" data-engine="rules"></script>
+  <script src="/engine/rules/translations.js" data-engine="rules"></script>
+  <script src="/engine/rules/numbers/number-words.js" data-engine="rules"></script>
+  <script src="/engine/rules/numbers/number-shapes.js" data-engine="rules"></script>
+  <script src="/engine/rules/numbers/number-runs.js" data-engine="rules"></script>
+  <script src="/engine/rules/personal/email-addresses.js" data-engine="rules"></script>
+  <script src="/engine/rules/sentence-ends.js" data-engine="rules"></script>
+  <script src="/engine/rules/personal/street-addresses.js" data-engine="rules"></script>
+  <script src="/engine/rules/personal/birth-dates.js" data-engine="rules"></script>
+  <script src="/engine/rules/ids-and-accounts/labelled-values.js" data-engine="rules"></script>
+  <script src="/engine/rules/ids-and-accounts/vehicles-and-student-ids.js" data-engine="rules"></script>
+  <script src="/engine/rules/personal/gamer-tags.js" data-engine="rules"></script>
+  <script src="/engine/rules/ids-and-accounts/ibans.js" data-engine="rules"></script>
+  <script src="/engine/rules/ids-and-accounts/national-id-check-digits.js" data-engine="rules"></script>
+  <script src="/engine/rules/personal/own-ip-address.js" data-engine="rules"></script>
+  <script src="/engine/rules/ids-and-accounts/spanish-labelled-ids.js" data-engine="rules"></script>
+  <script src="/engine/rules/ids-and-accounts/bank-accounts.js" data-engine="rules"></script>
+  <script src="/engine/rules/numbers/number-context.js" data-engine="rules"></script>
+  <script src="/engine/rules/numbers/social-security-numbers.js" data-engine="rules"></script>
+  <script src="/engine/rules/ids-and-accounts/licenses-and-health-ids.js" data-engine="rules"></script>
+  <script src="/engine/rules/ids-and-accounts/national-ids.js" data-engine="rules"></script>
+  <script src="/engine/rules/numbers/phone-numbers.js" data-engine="rules"></script>
+  <script src="/engine/rules/numbers/payment-cards.js" data-engine="rules"></script>
+  <script src="/engine/rules/key-formats/crypto-wallets.js" data-engine="rules"></script>
+  <script src="/engine/rules/key-formats/private-keys.js" data-engine="rules"></script>
+  <script src="/engine/rules/key-formats/two-step-keys.js" data-engine="rules"></script>
+  <script src="/engine/rules/personal/link-tracking-codes.js" data-engine="rules"></script>
+  <script src="/engine/rules/key-formats/developer-secrets.js" data-engine="rules"></script>
+  <script src="/engine/vault/saved-phrases.js" data-engine="rules"></script>
+  <script src="/engine/vault/vault-unescape.js" data-engine="rules"></script>
+  <script src="/engine/vault/cjk-word-edges.js" data-engine="rules"></script>
+  <script src="/engine/vault/saved-words.js" data-engine="rules"></script>
+  <script src="/engine/rules/passwords-and-codes/backup-codes.js" data-engine="rules"></script>
+  <script src="/engine/rules/passwords-and-codes/secret-values.js" data-engine="rules"></script>
+  <script src="/engine/rules/passwords-and-codes/codes-in-messages.js" data-engine="rules"></script>
+  <script src="/engine/rules/passwords-and-codes/gift-cards.js" data-engine="rules"></script>
+  <script src="/engine/rules/api-tokens/provider-tokens.js" data-engine="rules"></script>
+  <script src="/engine/rules/passwords-and-codes/setting-names.js" data-engine="rules"></script>
+  <script src="/engine/rules/passwords-and-codes/secret-label-words.js" data-engine="rules"></script>
+  <script src="/engine/rules/passwords-and-codes/code-or-prose.js" data-engine="rules"></script>
+  <script src="/engine/rules/passwords-and-codes/secrets-in-messages.js" data-engine="rules"></script>
+  <script src="/engine/rules/passwords-and-codes/passwords-in-code-and-tables.js" data-engine="rules"></script>
+  <script src="/engine/rules/passwords-and-codes/scam-requests.js" data-engine="rules"></script>
+  <script src="/engine/rules/passwords-and-codes/camel-case-settings.js" data-engine="rules"></script>
+  <script src="/engine/rules/passwords-and-codes/setting-values.js" data-engine="rules"></script>
+  <script src="/engine/rules/api-tokens/service-tokens.js" data-engine="rules"></script>
+  <script src="/engine/rules/passwords-and-codes/secret-reader.js" data-engine="rules"></script>
+  <script src="/engine/rules/rule-table.js" data-engine="rules"></script>
+  <script src="/page-parts/report-a-problem.js"></script>
+  <script src="/engine/detect/attachment-text.js" data-engine="detect"></script>
+  <script src="/engine/detect/cleaned-text.js" data-engine="detect"></script>
+  <script src="/engine/detect/second-readings.js" data-engine="detect"></script>
+  <script src="/engine/detect/pieced-keys.js" data-engine="detect"></script>
+  <script src="/engine/respond/responses.js" data-engine="detect"></script>
+  <script src="/engine/respond/fingerprints.js" data-engine="detect"></script>
+  <script src="/engine/respond/cover-values.js" data-engine="detect"></script>
+  <script src="/engine/respond/generalize.js" data-engine="detect"></script>
+  <script src="/engine/respond/bandage-labels.js" data-engine="detect"></script>
+  <script src="/engine/detect/detect.js" data-engine="detect"></script>
+  <script src="/engine/respond/decide.js" data-engine="decide"></script>
+  <script src="/extension-files.js" data-list="extension"></script>
+  <script src="/sites-and-policy/protected-sites.js" data-list="sitesAndPolicy"></script>
+  <script src="/sites-and-policy/ai-site-spotting.js" data-list="sitesAndPolicy"></script>
+  <script src="/sites-and-policy/tourniquet-rules.js" data-list="sitesAndPolicy"></script>
+  <script src="/sites-and-policy/team-policy.js" data-list="sitesAndPolicy"></script>
+  <script src="/page-parts/practice-warning.js"></script>
+  <script src="/page-parts/practice-key.js"></script>
+  <script src="/page-parts/practice-data.js"></script>
+  <script src="/clotr-pages/office-training/office-training-data.js"></script>
+  <script src="/page-parts/quick-exit.js" data-feature="checkup"></script>
+  <script src="/clotr-pages/office-training/office-training.js"></script>
+</body>
+</html>

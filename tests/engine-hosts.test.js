@@ -12,9 +12,7 @@ const path = require("node:path");
 const vm = require("node:vm");
 const { spawnSync } = require("node:child_process");
 
-require("../extension/patterns.js");
-require("../extension/detector.js");
-require("../extension/decide.js");
+require("./load-engine.js")("rules", "detect", "decide");
 const { build } = require("../tools/engine-bundle.js");
 
 const ROOT = path.join(__dirname, "..");

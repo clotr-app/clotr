@@ -76,8 +76,8 @@ module.exports = async function (env) {
 
       const before = await ctx.browser.pages();
       await popup.click("#lb-card-open");
-      const opened = await waitForNewPage(before, "lookback.html");
-      expect(opened, "Open didn't open lookback.html");
+      const opened = await waitForNewPage(before, "clotr-pages/look-back/look-back.html");
+      expect(opened, "Open didn't open clotr-pages/look-back/look-back.html");
       await opened.close();
       await popup.close();
 
@@ -103,8 +103,8 @@ module.exports = async function (env) {
 
       const before = await ctx.browser.pages();
       await popup.click("#lb-card-check");
-      const opened = await waitForNewPage(before, "extcheck.html");
-      expect(opened, "Check didn't open extcheck.html");
+      const opened = await waitForNewPage(before, "clotr-pages/extension-check/extension-check.html");
+      expect(opened, "Check didn't open clotr-pages/extension-check/extension-check.html");
       await opened.close();
       await popup.close();
 
@@ -124,23 +124,29 @@ module.exports = async function (env) {
 
     let before = await ctx.browser.pages();
     await popup.click("#lb-settings-open");
-    const lookback = await waitForNewPage(before, "lookback.html");
-    expect(lookback, "Settings' Open didn't open lookback.html");
+    const lookback = await waitForNewPage(before, "clotr-pages/look-back/look-back.html");
+    expect(lookback, "Settings' Open didn't open clotr-pages/look-back/look-back.html");
     await lookback.close();
 
     before = await ctx.browser.pages();
     await popup.click("#lb-settings-check");
-    const extcheck = await waitForNewPage(before, "extcheck.html");
-    expect(extcheck, "Settings' Check didn't open extcheck.html");
+    const extcheck = await waitForNewPage(before, "clotr-pages/extension-check/extension-check.html");
+    expect(extcheck, "Settings' Check didn't open clotr-pages/extension-check/extension-check.html");
     await extcheck.close();
     await popup.close();
   });
 
   await check("PU4", "The setup page's last step mentions Extension check, in one line", async () => {
-    const helperHtml = fs.readFileSync(path.join(env.EXT, "helper.html"), "utf8");
-    expect(/id="ext-check-line"[^>]*data-i18n="hp_extCheckLine"/.test(helperHtml), "no hp_extCheckLine in helper.html");
+    const helperHtml = fs.readFileSync(
+      path.join(env.EXT, "clotr-pages/set-up-for-someone/set-up-for-someone.html"),
+      "utf8",
+    );
+    expect(
+      /id="ext-check-line"[^>]*data-i18n="hp_extCheckLine"/.test(helperHtml),
+      "no hp_extCheckLine in clotr-pages/set-up-for-someone/set-up-for-someone.html",
+    );
 
-    const page = await openExtPage(ctx, "helper.html");
+    const page = await openExtPage(ctx, "clotr-pages/set-up-for-someone/set-up-for-someone.html");
     try {
       // "Or choose each setting yourself" reaches #after fastest, with every later step hidden.
       await page.click('input[name="who"][value="self"]');
@@ -180,8 +186,8 @@ module.exports = async function (env) {
       );
       const before = await ctx.browser.pages();
       await popup.evaluate(() => [...document.querySelectorAll("#whats-new-doors button")][0].click());
-      const opened = await waitForNewPage(before, "lookback.html");
-      expect(opened, "a What's new door didn't open lookback.html");
+      const opened = await waitForNewPage(before, "clotr-pages/look-back/look-back.html");
+      expect(opened, "a What's new door didn't open clotr-pages/look-back/look-back.html");
       await opened.close();
       await popup.click("#whats-new-ok");
       await popup.close();
@@ -209,7 +215,7 @@ module.exports = async function (env) {
       await popup.close();
     }
 
-    const page = await openExtPage(es, "helper.html");
+    const page = await openExtPage(es, "clotr-pages/set-up-for-someone/set-up-for-someone.html");
     try {
       await page.click('input[name="who"][value="self"]');
       await sleep(150);
@@ -230,7 +236,7 @@ module.exports = async function (env) {
     }
   });
 
-  // A dummy PIN hash (nobody can type it): enough to make settingsLocked() in vault.js return true.
+  // A dummy PIN hash (nobody can type it): enough to make settingsLocked() in clotr-pages/vault/vault.js return true.
   const PIN_HASH = { salt: "00".repeat(16), iterations: 1000, hash: "ab".repeat(32) };
 
   async function lineShots(page, selector, nameBase) {
@@ -246,10 +252,10 @@ module.exports = async function (env) {
 
   await check(
     "PU7",
-    "The welcome page: one Look back line after Try it, opening lookback.html in a new tab; hidden while locked",
+    "The welcome page: one Look back line after Try it, opening clotr-pages/look-back/look-back.html in a new tab; hidden while locked",
     async () => {
       await store.set(ctx, { lock: null });
-      const page = await openExtPage(ctx, "vault.html?welcome=1");
+      const page = await openExtPage(ctx, "clotr-pages/vault/vault.html?welcome=1");
       try {
         const line = await waitFor(
           () =>
@@ -272,14 +278,14 @@ module.exports = async function (env) {
         );
         expect(line.afterField, "the line doesn't come right after Try it");
         expect(
-          line.href === "lookback.html" && line.targetBlank,
+          line.href === "/clotr-pages/look-back/look-back.html" && line.targetBlank,
           `link: ${line.href} target blank: ${line.targetBlank}`,
         );
 
         const before = await ctx.browser.pages();
         await page.click("#lb-offer a");
-        const opened = await waitForNewPage(before, "lookback.html");
-        expect(opened, "the welcome page's line didn't open lookback.html");
+        const opened = await waitForNewPage(before, "clotr-pages/look-back/look-back.html");
+        expect(opened, "the welcome page's line didn't open clotr-pages/look-back/look-back.html");
         await opened.close();
 
         await lineShots(page, "#lb-offer", "vault-lookback-line");
@@ -288,7 +294,7 @@ module.exports = async function (env) {
       }
 
       await store.set(ctx, { lock: PIN_HASH });
-      const locked = await openExtPage(ctx, "vault.html?welcome=1");
+      const locked = await openExtPage(ctx, "clotr-pages/vault/vault.html?welcome=1");
       try {
         await sleep(600);
         expect(await locked.$eval("#lb-offer", (p) => p.hidden), "the Look back line shows while settings are locked");
@@ -301,7 +307,7 @@ module.exports = async function (env) {
 
   await check("PU8", "Spanish: the welcome page's Look back line translates", async () => {
     const es = await spanishBrowser(ctx, EXT);
-    const page = await openExtPage(es, "vault.html?welcome=1");
+    const page = await openExtPage(es, "clotr-pages/vault/vault.html?welcome=1");
     try {
       const text = await waitFor(
         () =>

@@ -69,8 +69,11 @@ test("a function that never ran leaves all of its lines uncovered", () => {
 });
 
 test("a script is matched to extension/ by its file URL, or by a bare name from the vm-loaded tests", () => {
-  const real = path.join(ROOT, "extension", "patterns.js");
-  assert.equal(extensionFile(pathToFileURL(real).href, ROOT), "extension/patterns.js");
+  const real = path.join(ROOT, "extension", "engine", "rules", "passwords-and-codes", "secret-reader.js");
+  assert.equal(
+    extensionFile(pathToFileURL(real).href, ROOT),
+    "extension/engine/rules/passwords-and-codes/secret-reader.js",
+  );
   assert.equal(extensionFile("background.js", ROOT), "extension/background.js");
   assert.equal(extensionFile("evalmachine.<anonymous>", ROOT), null);
   assert.equal(extensionFile(pathToFileURL(path.join(ROOT, "tools", "package.js")).href, ROOT), null);
