@@ -5,7 +5,7 @@
 //   lookback-core.js all ride along in it now, so they aren't copied separately below.
 // - warning-ui.js and ui-styles.js: the browser's own warning, unchanged, which the card reuses;
 // - app-words.js: the words only the apps use (apps/locales/*.json) as ClotrAppWords;
-// - ai-sites.js: Extension check's AI site list (extension/ai-sites.json) as ClotrAiSites, so results.js never
+// - ai-sites.js: Extension check's AI site list (extension/ai-sites.json) as ClotrAiSites, so results-screen.js never
 //   needs fetch() for its own bundled data;
 // - kit/: the suite's tokens and parts, Recursive variable font, Atkinson assets and their SIL OFL licences,
 //   which the main window wears, byte for byte.
@@ -74,8 +74,8 @@ function files(env = process.env) {
   return {
     "clotr-engine.js": Buffer.from(build({ scans: true }).text),
     "desktop-features.js": Buffer.from(desktopFeatures(env)),
-    "warning-ui.js": copy("warning-ui.js"),
-    "ui-styles.js": copy("ui-styles.js"),
+    "warning-ui.js": copy("on-websites/warning-ui.js"),
+    "ui-styles.js": copy("on-websites/warning-styles.js"),
     "ai-sites.js": Buffer.from(aiSites()),
     "app-words.js": Buffer.from(words()),
     ...Object.fromEntries(KIT.map((name) => [`kit/${name}`, kit(name)])),

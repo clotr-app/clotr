@@ -8,43 +8,45 @@
     <title>Clotr</title>
 
     <link rel="icon" href="data:," />
-    <link rel="stylesheet" href="theme.css" />
-    <link rel="stylesheet" href="main.css" />
-    <link rel="stylesheet" href="shield.css" />
-    <link rel="stylesheet" href="scan.css" />
-    <link rel="stylesheet" href="lookback.css" />
-    <link rel="stylesheet" href="note.css" />
-    <link rel="stylesheet" href="detailed.css" />
+    <link rel="stylesheet" href="shared/theme.css" />
+    <link rel="stylesheet" href="main-window/main-window.css" />
+    <link rel="stylesheet" href="shared/line-shield.css" />
+    <link rel="stylesheet" href="check-my-files/scan-screen.css" />
+    <link rel="stylesheet" href="look-back/windows-look-back.css" />
+    <link rel="stylesheet" href="results/helper-note-panel.css" />
+    <link rel="stylesheet" href="results/detailed-view.css" />
     <script defer src="dist/desktop-features.js"></script>
     <script defer src="dist/clotr-engine.js"></script>
     <script defer src="dist/app-words.js"></script>
     <script defer src="dist/ai-sites.js"></script>
-    <script defer src="words.js"></script>
-    <script defer src="tauri.js"></script>
-    <script defer src="move-file.js"></script>
-    <script defer src="tourniquet.js"></script>
-    <script defer src="scamcheck.js"></script>
-    <script defer src="home.js"></script>
-    <script defer src="findings.js"></script>
-    <script defer src="plan.js"></script>
-    <script defer src="file-kinds.js"></script>
-    <script defer src="results-note.js"></script>
-    <script defer src="note.js"></script>
-    <script defer src="guided.js"></script>
-    <script defer src="actions.js"></script>
-    <script defer src="found-feed.js"></script>
-    <script defer src="trace.js"></script>
-    <script defer src="eta.js"></script>
-    <script defer src="scan.js"></script>
-    <script defer src="lookback.js"></script>
-    <script defer src="summary.js"></script>
-    <script defer src="scope.js"></script>
-    <script defer src="detailed.js"></script>
-    <script defer src="results.js"></script>
-    <script defer src="protection.js"></script>
-    <script defer src="history.js"></script>
-    <script defer src="settings.js"></script>
-    <script defer src="main.js"></script>
+    <script defer src="shared/app-language.js"></script>
+    <script defer src="shared/app-bridge.js"></script>
+    <script defer src="main-window/browser-move-file.js"></script>
+    <script defer src="shared/windows-tourniquet.js"></script>
+    <script defer src="main-window/scam-check-screen.js"></script>
+    <script defer src="main-window/home-screen.js"></script>
+    <script defer src="results/shared-with-android/finding-groups.js"></script>
+    <script defer src="results/shared-with-android/what-to-do-plan.js"></script>
+    <script defer src="results/shared-with-android/file-kinds.js"></script>
+    <script defer src="results/shared-with-android/helper-note-text.js"></script>
+    <script defer src="results/helper-note-panel.js"></script>
+    <script defer src="results/shared-with-android/guided-cards.js"></script>
+    <script defer src="results/file-actions.js"></script>
+    <script defer src="check-my-files/found-so-far.js"></script>
+    <script defer src="check-my-files/scan-map-model.js"></script>
+    <script defer src="check-my-files/scan-map-drawing.js"></script>
+    <script defer src="check-my-files/scan-time-left.js"></script>
+    <script defer src="check-my-files/scan-runner.js"></script>
+    <script defer src="check-my-files/scan-screen.js"></script>
+    <script defer src="look-back/windows-look-back.js"></script>
+    <script defer src="results/saved-summary.js"></script>
+    <script defer src="results/scan-coverage.js"></script>
+    <script defer src="results/detailed-view.js"></script>
+    <script defer src="results/results-screen.js"></script>
+    <script defer src="main-window/protection-screen.js"></script>
+    <script defer src="main-window/history-screen.js"></script>
+    <script defer src="main-window/settings-screen.js"></script>
+    <script defer src="main-window/main-window.js"></script>
   </head>
   <body class="glow">
 
@@ -746,6 +748,7 @@
                   <span id="look-label" data-w="ws.theme"></span>
                   <select id="look" aria-labelledby="look-label">
                     <option value="system" data-w="ws.themeSystem"></option>
+                    <option value="light" data-w="ws.themeLight"></option>
                     <option value="plum" data-w="ws.themePlum"></option>
                     <option value="ember" data-w="ws.themeEmber"></option>
                   </select>

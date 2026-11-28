@@ -1,4 +1,4 @@
-// Clotr for Windows' own checks, with Rust's tools (tools/rust.js finds them):
+// Clotr for Windows' own checks, with Rust's tools (tools/rust-toolchain.js finds them):
 //   node tools/run-cargo.js test  the unit tests (cargo test), the licence and ban check (cargo deny), NOTICE current
 //   node tools/run-cargo.js dk    the DK checks on this PC's real desktop (tests/dk.rs; each in its own test process,
 //                                 one Clotr at a time; it takes the front window, clipboard, keyboard and mouse)
@@ -7,7 +7,7 @@
 
 const path = require("path");
 const { spawnSync } = require("child_process");
-const { cargo, env } = require("./rust");
+const { cargo, env } = require("./rust-toolchain");
 
 function run(label, ok) {
   if (!ok) {
