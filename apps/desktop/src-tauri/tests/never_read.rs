@@ -5,12 +5,12 @@
 //!
 //! 1. The built `clotr.exe`'s own import table (a function call reaches in, whatever the source looks like).
 //! 2. `Cargo.toml`'s declared `windows` crate features (a capability turned on before any function is even called).
-//! 3. The source (`TextPattern`/`ValuePattern`/`GetCurrentPattern`/`CurrentName` outside `paste.rs` and
-//!    `typing.rs`, and a read of a box's text anywhere but `typing.rs`, which asks `IsPassword` before every look
+//! 3. The source (`TextPattern`/`ValuePattern`/`GetCurrentPattern`/`CurrentName` outside `paste_into_app.rs` and
+//!    `typing_check.rs`, and a read of a box's text anywhere but `typing_check.rs`, which asks `IsPassword` before every look
 //!    and every read) and the packaging manifest's capabilities.
 //!
 //! Layer 2 never lists `Win32_UI_Input`: the `windows` crate's own feature tree makes
-//! `Win32_UI_Input_KeyboardAndMouse` (which `watch.rs` already turns on for the card's keyboard shortcut) imply it,
+//! `Win32_UI_Input_KeyboardAndMouse` (which `windows_events.rs` already turns on for the card's keyboard shortcut) imply it,
 //! so a literal check would fail on Clotr's own legitimate hotkey.
 //!
 //! Layer 1 never lists `GetAsyncKeyState`, `RegisterRawInputDevices` or `GetRawInputData` either, for a sharper
@@ -185,47 +185,59 @@ windows = { version = "0.62", features = [
 const UI_AUTOMATION_TEXT_TOKENS: &[&str] = &["TextPattern", "ValuePattern", "GetCurrentPattern", "CurrentName"];
 
 /// Polling or raw-input calls that would watch a keystroke or a mouse move without a hook -- forbidden everywhere
-/// in src/, paste.rs included: see the module doc for why layer 1 can't cover these two.
+/// in src/, paste_into_app.rs included: see the module doc for why layer 1 can't cover these two.
 const INPUT_WATCHING_TOKENS: &[&str] = &["GetAsyncKeyState", "RegisterRawInputDevices", "GetRawInputData"];
 
-/// The two places allowed to touch UI Automation's text patterns: `paste.rs` only to read which control has the
-/// keyboard (its id, never its text or value), for `card.rs`'s focus-matching in `brain.rs`, and `typing.rs`, the
+/// The two places allowed to touch UI Automation's text patterns: `paste_into_app.rs` only to read which control has the
+/// keyboard (its id, never its text or value), for `card_placement.rs`'s focus-matching in `clipboard_check_rules.rs`, and `typing_check.rs`, the
 /// typing check.
-const ALLOWED_FILES: &[&str] = &["paste.rs", "typing.rs"];
+const ALLOWED_FILES: &[&str] = &["paste_into_app.rs", "typing_check.rs"];
 
-/// Reading a box's text or value, or asking for the pattern that does: `typing.rs` alone, paste.rs included.
+/// Reading a box's text or value, or asking for the pattern that does: `typing_check.rs` alone, paste_into_app.rs included.
 const BOX_READ_TOKENS: &[&str] = &["GetText(", "CurrentValue(", "DocumentRange(", "UIA_TextPatternId", "UIA_ValuePatternId"];
 
 /// The one file allowed to read a box.
-const BOX_READER: &str = "typing.rs";
+const BOX_READER: &str = "typing_check.rs";
 
-fn source_hits(src_dir: &Path) -> Vec<String> {
+/// Every .rs file under `dir` and its folders, sorted, so a file moved into a folder is still read.
+fn rust_files_below(dir: &Path) -> Vec<PathBuf> {
     let mut out = Vec::new();
-    let mut entries: Vec<_> = std::fs::read_dir(src_dir).expect("src dir reads").filter_map(Result::ok).collect();
+    let mut entries: Vec<_> = std::fs::read_dir(dir).expect("src dir reads").filter_map(Result::ok).collect();
     entries.sort_by_key(|e| e.path());
     for entry in entries {
         let path = entry.path();
-        if path.extension().and_then(|e| e.to_str()) != Some("rs") {
-            continue;
+        if path.is_dir() {
+            out.extend(rust_files_below(&path));
+        } else if path.extension().and_then(|e| e.to_str()) == Some("rs") {
+            out.push(path);
         }
+    }
+    out
+}
+
+fn source_hits(src_dir: &Path) -> Vec<String> {
+    let mut out = Vec::new();
+    for path in rust_files_below(src_dir) {
+        // The allowances go by file name. A hit names the file's path inside src/.
         let name = path.file_name().unwrap().to_string_lossy().into_owned();
+        let shown = path.strip_prefix(src_dir).unwrap().to_string_lossy().replace('\\', "/");
         let text = std::fs::read_to_string(&path).unwrap_or_default();
         for token in INPUT_WATCHING_TOKENS {
             if text.contains(token) {
-                out.push(format!("{name}: {token}"));
+                out.push(format!("{shown}: {token}"));
             }
         }
         if !ALLOWED_FILES.contains(&name.as_str()) {
             for token in UI_AUTOMATION_TEXT_TOKENS {
                 if text.contains(token) {
-                    out.push(format!("{name}: {token}"));
+                    out.push(format!("{shown}: {token}"));
                 }
             }
         }
         if name != BOX_READER {
             for token in BOX_READ_TOKENS {
                 if text.contains(token) {
-                    out.push(format!("{name}: {token}"));
+                    out.push(format!("{shown}: {token}"));
                 }
             }
         }
@@ -250,7 +262,7 @@ fn manifest_hits(manifest: &str) -> Vec<String> {
 const PATTERN_OR_READ: &[&str] = &["GetCurrentPattern", "GetText(", "CurrentValue(", "DocumentRange("];
 
 /// Every function in `source` that asks for a pattern or reads a box without first asking `IsPassword`, by name.
-/// Functions are split at each `fn ` that starts a line, which is how rustfmt lays out every one in typing.rs.
+/// Functions are split at each `fn ` that starts a line, which is how rustfmt lays out every one in typing_check.rs.
 fn password_not_first(source: &str) -> (Vec<String>, usize) {
     let mut late = Vec::new();
     let mut readers = 0;
@@ -278,11 +290,11 @@ fn password_not_first(source: &str) -> (Vec<String>, usize) {
 
 #[test]
 fn the_typing_check_asks_is_password_before_every_look_and_every_read() {
-    let path = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("src").join(BOX_READER);
-    let text = std::fs::read_to_string(path).expect("typing.rs reads");
+    let path = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("src").join("warning_card").join(BOX_READER);
+    let text = std::fs::read_to_string(path).expect("typing_check.rs reads");
     let (late, readers) = password_not_first(&text);
-    assert!(readers >= 2, "typing.rs should have its look and its read, found {readers}");
-    assert!(late.is_empty(), "typing.rs asks for a pattern or reads before IsPassword in: {}", late.join(", "));
+    assert!(readers >= 2, "typing_check.rs should have its look and its read, found {readers}");
+    assert!(late.is_empty(), "typing_check.rs asks for a pattern or reads before IsPassword in: {}", late.join(", "));
 }
 
 #[test]
@@ -302,7 +314,7 @@ fn the_source_never_watches_input_or_reads_another_windows_text_outside_paste_an
     assert!(
         hits.is_empty(),
         "a source file calls an input-watching function, or reads UI Automation text or value content outside \
-         paste.rs and typing.rs: {}",
+         paste_into_app.rs and typing_check.rs: {}",
         hits.join(", ")
     );
 }
@@ -313,23 +325,34 @@ fn the_source_scan_itself_catches_planted_calls() {
     let _ = std::fs::remove_dir_all(&dir);
     std::fs::create_dir_all(&dir).unwrap();
     std::fs::write(dir.join("sneaky.rs"), "fn f() { let _ = TextPattern; }\n").unwrap();
-    // paste.rs is allowed to use a text pattern, but never an input-watching call -- both halves of the rule are
+    // paste_into_app.rs is allowed to use a text pattern, but never an input-watching call -- both halves of the rule are
     // proven in one planted file.
-    // paste.rs may use a text pattern but never read a box with one; typing.rs may read a box.
+    // paste_into_app.rs may use a text pattern but never read a box with one; typing_check.rs may read a box.
     std::fs::write(
-        dir.join("paste.rs"),
+        dir.join("paste_into_app.rs"),
         "fn f() { let _ = TextPattern; let _ = GetAsyncKeyState; let _ = r.GetText(5); }\n",
     )
     .unwrap();
-    std::fs::write(dir.join("typing.rs"), "fn f() { let _ = TextPattern; let _ = r.GetText(5); }\n").unwrap();
+    std::fs::write(dir.join("typing_check.rs"), "fn f() { let _ = TextPattern; let _ = r.GetText(5); }\n").unwrap();
     let hits = source_hits(&dir);
     let _ = std::fs::remove_dir_all(&dir);
     assert_eq!(hits.len(), 3, "{hits:?}");
     assert!(hits.iter().any(|h| h.contains("sneaky.rs") && h.contains("TextPattern")));
-    assert!(hits.iter().any(|h| h.contains("paste.rs") && h.contains("GetAsyncKeyState")));
-    assert!(hits.iter().any(|h| h.contains("paste.rs") && h.contains("GetText(")));
-    assert!(!hits.iter().any(|h| h.contains("paste.rs") && h.contains("TextPattern")));
-    assert!(!hits.iter().any(|h| h.contains("typing.rs")));
+    assert!(hits.iter().any(|h| h.contains("paste_into_app.rs") && h.contains("GetAsyncKeyState")));
+    assert!(hits.iter().any(|h| h.contains("paste_into_app.rs") && h.contains("GetText(")));
+    assert!(!hits.iter().any(|h| h.contains("paste_into_app.rs") && h.contains("TextPattern")));
+    assert!(!hits.iter().any(|h| h.contains("typing_check.rs")));
+}
+
+#[test]
+fn the_source_scan_reads_files_inside_folders() {
+    let dir = std::env::temp_dir().join(format!("clotr-never-read-folder-test-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(dir.join("warning_card")).unwrap();
+    std::fs::write(dir.join("warning_card").join("sneaky.rs"), "fn f() { let _ = GetAsyncKeyState; }\n").unwrap();
+    let hits = source_hits(&dir);
+    let _ = std::fs::remove_dir_all(&dir);
+    assert_eq!(hits, vec!["warning_card/sneaky.rs: GetAsyncKeyState".to_string()]);
 }
 
 #[test]

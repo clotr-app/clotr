@@ -1,5 +1,5 @@
 //! Guards against the web view's browser process burning processor time while nobody can see it: with
-//! `AWAKE_ARGS` (src/webview.rs) keeping the whole shared web view rendering at full rate no matter what
+//! `AWAKE_ARGS` (src/app_setup/offline_web_view.rs) keeping the whole shared web view rendering at full rate no matter what
 //! Windows thinks of a window, a stray animation or timer left running behind a minimized or hidden window
 //! costs a full frame's work forever, not just while it's actually on screen. Needs no screen, keyboard or
 //! mouse -- only a background clotr.exe and the per-process processor-time counters Windows already tracks --
@@ -83,7 +83,7 @@ fn tree(root: u32) -> HashSet<u32> {
 
 /// The one process that is the shared web view's own browser (not a renderer, GPU or utility child of it):
 /// `--webview-exe-name=clotr.exe` names it, and it carries no `--type=`, the flag every other web view process
-/// has. This is the process AWAKE_ARGS (src/webview.rs) keeps running at full rate forever, hidden or not.
+/// has. This is the process AWAKE_ARGS (src/app_setup/offline_web_view.rs) keeps running at full rate forever, hidden or not.
 fn browser_pid(root: u32) -> Option<u32> {
     let pids = tree(root);
     let ids: Vec<String> = pids.iter().map(|p| p.to_string()).collect();

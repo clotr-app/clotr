@@ -1238,6 +1238,10 @@ fn typing_run(tag: &str, store: Option<&str>) -> (Run, Option<HWND>, HWND, HWND,
     }
     let trace = base.join("typing-trace.txt");
     let cleanup = TempBase(base);
+    // Clotr checks what's already copied when an AI app comes to the front, so a flagged copy would show its card
+    // before anything is typed. Start from a plain line; Run puts the old copy back.
+    let saved_clip = clip_get();
+    clip_set("a plain line for the typing check");
     let clotr = Command::new(env!("CARGO_BIN_EXE_clotr"))
         .env("CLOTR_DESKTOP_DATA", &data)
         .env("CLOTR_LOCALE", "en-US")
@@ -1251,7 +1255,7 @@ fn typing_run(tag: &str, store: Option<&str>) -> (Run, Option<HWND>, HWND, HWND,
     let run = Run {
         clotr,
         ai: Some(ai),
-        saved_clip: clip_get(),
+        saved_clip,
     };
     let ai_window = {
         let mut h = HWND::default();
@@ -2134,7 +2138,7 @@ fn scan_stage(window: HWND) -> Stage {
     let title = names
         .iter()
         .find(|n| {
-            ["Done:", "Nothing worth a look", "Stopped:"]
+            ["Done:", "Nothing worth a look", "Nothing found, but", "No files here", "Stopped:"]
                 .iter()
                 .any(|t| n.starts_with(t))
         })
@@ -2398,7 +2402,7 @@ fn dialog_filename_field(
 }
 
 /// Drives the real Save As dialog to `dest`, the way a person types a full path into the filename field and
-/// presses Save -- the page never learns this path (`scan_save_copy`, main.rs); the test does, because it's the
+/// presses Save -- the page never learns this path (`scan_save_copy`, results_commands.rs); the test does, because it's the
 /// one who chose it.
 fn save_as(pid: u32, dest: &Path, tag: &str) {
     let _com = ComApartment::enter();
@@ -2482,7 +2486,7 @@ fn dk_results_copy_without_place() {
 
 /// A made-up Chromium `User Data` folder, under a fixture `%LOCALAPPDATA%` (CLOTR_EXT_LOCALAPPDATA, dk-test-app
 /// only): one plain extension that can read ChatGPT, one sideloaded one that's off -- the same shape
-/// `extensions.rs`'s own fixtures use, laid out the way a real `chromium_roots()` candidate expects
+/// `browser_extension_files.rs`'s own fixtures use, laid out the way a real `chromium_roots()` candidate expects
 /// (`Vivaldi/User Data/Default`). Vivaldi, not Chrome or Edge: the one Chromium browser this check can be sure
 /// isn't actually installed on this PC, so "Show me where to remove it" deterministically falls
 /// back to the word steps rather than depending on what else happens to be on the machine.

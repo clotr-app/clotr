@@ -6,7 +6,7 @@
 //! something, the scan catches the blocked name before a build ever reaches the kit again.
 //!
 //! Scans every file whole, test fixtures included, rather than guessing where a `#[cfg(test)]` block starts or
-//! ends. The known, reviewed exceptions -- `scan.rs`'s and `move_private.rs`'s own test fixtures, which shell out
+//! ends. The known, reviewed exceptions -- `scan.rs`'s and `move_somewhere_private.rs`'s own test fixtures, which shell out
 //! to `cmd /C mklink` to build a junction on disk -- are named explicitly below rather than skipped by pattern,
 //! since none of that test-only code ships in the built app the kit actually certifies.
 
@@ -18,7 +18,7 @@ const BLOCKED_EXECUTABLES: &[&str] =
 
 /// (file, target) pairs allowed to start a blocked name: each is test-only code that never ships, reviewed by
 /// hand rather than detected by pattern. Add to this list only for another test fixture, never for shipped code.
-const ALLOWED: &[(&str, &str)] = &[("scan.rs", "cmd"), ("move_private.rs", "cmd")];
+const ALLOWED: &[(&str, &str)] = &[("scan_tests.rs", "cmd"), ("move_somewhere_private.rs", "cmd")];
 
 /// `Command::new("...")`'s own literal argument, whatever quote style it used, so the scan doesn't need a full
 /// Rust parser to find what program a call would start.
@@ -48,20 +48,32 @@ fn blocked_target(target: &str) -> bool {
     BLOCKED_EXECUTABLES.contains(&name)
 }
 
-fn source_hits(src_dir: &Path) -> Vec<String> {
+/// Every .rs file under `dir` and its folders, sorted, so a file moved into a folder is still read.
+fn rust_files_below(dir: &Path) -> Vec<PathBuf> {
     let mut out = Vec::new();
-    let mut entries: Vec<_> = std::fs::read_dir(src_dir).expect("src dir reads").filter_map(Result::ok).collect();
+    let mut entries: Vec<_> = std::fs::read_dir(dir).expect("src dir reads").filter_map(Result::ok).collect();
     entries.sort_by_key(|e| e.path());
     for entry in entries {
         let path = entry.path();
-        if path.extension().and_then(|e| e.to_str()) != Some("rs") {
-            continue;
+        if path.is_dir() {
+            out.extend(rust_files_below(&path));
+        } else if path.extension().and_then(|e| e.to_str()) == Some("rs") {
+            out.push(path);
         }
+    }
+    out
+}
+
+fn source_hits(src_dir: &Path) -> Vec<String> {
+    let mut out = Vec::new();
+    for path in rust_files_below(src_dir) {
+        // The allowance goes by file name. A hit names the file's path inside src/.
         let name = path.file_name().unwrap().to_string_lossy().into_owned();
+        let shown = path.strip_prefix(src_dir).unwrap().to_string_lossy().replace('\\', "/");
         let text = std::fs::read_to_string(&path).unwrap_or_default();
         for target in command_new_targets(&text) {
             if blocked_target(&target) && !ALLOWED.contains(&(name.as_str(), target.to_lowercase().as_str())) {
-                out.push(format!("{name}: Command::new(\"{target}\")"));
+                out.push(format!("{shown}: Command::new(\"{target}\")"));
             }
         }
     }
@@ -89,9 +101,9 @@ fn the_scan_itself_catches_a_planted_call_and_only_the_named_allowance_escapes_i
         "fn f() { std::process::Command::new(\"powershell.exe\").status().ok(); }\n",
     )
     .unwrap();
-    // The exact (file, target) pair ALLOWED names: a planted stand-in for scan.rs's own fixture, escapes.
+    // The exact (file, target) pair ALLOWED names: a planted stand-in for scan_tests.rs's own fixture, escapes.
     std::fs::write(
-        dir.join("scan.rs"),
+        dir.join("scan_tests.rs"),
         "#[cfg(test)]\nmod tests {\n    #[test]\n    fn fixture() { std::process::Command::new(\"cmd\").status().ok(); }\n}\n",
     )
     .unwrap();
@@ -107,7 +119,22 @@ fn the_scan_itself_catches_a_planted_call_and_only_the_named_allowance_escapes_i
     assert_eq!(hits.len(), 2, "{hits:?}");
     assert!(hits.iter().any(|h| h.contains("sneaky.rs") && h.contains("powershell.exe")));
     assert!(hits.iter().any(|h| h.contains("other.rs") && h.contains("cmd")));
-    assert!(!hits.iter().any(|h| h.contains("scan.rs")));
+    assert!(!hits.iter().any(|h| h.contains("scan_tests.rs")));
+}
+
+#[test]
+fn the_scan_reads_files_inside_folders() {
+    let dir = std::env::temp_dir().join(format!("clotr-blocked-exe-folder-test-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(dir.join("check_my_files")).unwrap();
+    std::fs::write(
+        dir.join("check_my_files").join("sneaky.rs"),
+        "fn f() { std::process::Command::new(\"reg.exe\").status().ok(); }\n",
+    )
+    .unwrap();
+    let hits = source_hits(&dir);
+    let _ = std::fs::remove_dir_all(&dir);
+    assert_eq!(hits, vec!["check_my_files/sneaky.rs: Command::new(\"reg.exe\")".to_string()]);
 }
 
 #[test]

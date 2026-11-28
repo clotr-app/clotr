@@ -1,6 +1,6 @@
 [package]
 name = "clotr-desktop"
-version = "1.6.1"
+version = "1.6.4"
 description = "Clotr for Windows: a warning before you paste personal details into an AI app"
 license = "AGPL-3.0-or-later"
 edition = "2021"
@@ -21,7 +21,7 @@ required-features = ["dk-test-app"]
 
 [[bin]]
 name = "clotr-bridge"
-path = "src/bin/bridge.rs"
+path = "src/bin/clotr-bridge.rs"
 required-features = ["one-clotr"]
 
 # A stand-in "ordinary program" for the DK checks: on no app or terminal list, so a check can confirm the card
@@ -29,13 +29,6 @@ required-features = ["one-clotr"]
 [[bin]]
 name = "clotr-dk-plain"
 path = "src/bin/clotr-dk-plain.rs"
-required-features = ["dk-test-app"]
-
-# Test-only timing tool for the Windows typing check. It records control type, password flag, read time, event count
-# and processor time. It never stores or prints typed text and is not part of Clotr itself.
-[[bin]]
-name = "clotr-typing-spike"
-path = "src/bin/clotr-typing-spike.rs"
 required-features = ["dk-test-app"]
 
 [features]
@@ -59,12 +52,12 @@ serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 getrandom = "0.3"
 # Already in the dependency tree through tauri itself; named directly for the scan's own ignore fingerprint
-# (store.rs), the same 16-hex-character shape the engine's fingerprints use, salted the same way.
+# (stored_value_checks.rs), the same 16-hex-character shape the engine's fingerprints use, salted the same way.
 sha2 = "0.10"
 # WebView2's own options (crash reports kept on this computer): the version Tauri's wry already uses.
 webview2-com = "=0.39.1"
 # Already in the tree through `windows`; named directly because the COM `#[implement]` macro the typing check's
-# event handlers use (typing.rs) refers to it by this name.
+# event handlers use (typing_check.rs) refers to it by this name.
 windows-core = "0.62"
 windows = { version = "0.62", features = [
   # The desktop bridge's own start-at-login task (StartupTask, main.rs): only live once the MSIX gives the
@@ -77,7 +70,7 @@ windows = { version = "0.62", features = [
   "Win32_Graphics_Gdi",
   "Win32_Security",
   "Win32_Security_Cryptography",
-  # Who signed Windows' own programs (program.rs): cmd.exe and powershell.exe are signed in Windows' catalogs,
+  # Who signed Windows' own programs (window_program.rs): cmd.exe and powershell.exe are signed in Windows' catalogs,
   # not inside the file.
   "Win32_Security_Cryptography_Catalog",
   "Win32_Security_Authorization",
@@ -86,7 +79,7 @@ windows = { version = "0.62", features = [
   "Win32_Storage_Packaging_Appx",
   "Win32_System_Com",
   "Win32_System_DataExchange",
-  # The typing check (typing.rs): which processes are the AI app's, since a WebView2 or Electron app answers UI
+  # The typing check (typing_check.rs): which processes are the AI app's, since a WebView2 or Electron app answers UI
   # Automation from a child of its window's process.
   "Win32_System_Diagnostics_ToolHelp",
   "Win32_System_LibraryLoader",
@@ -96,7 +89,7 @@ windows = { version = "0.62", features = [
   "Win32_System_Threading",
   "Win32_System_Pipes",
   "Win32_System_IO",
-  # The typing check's value-changed handler and its button search (typing.rs).
+  # The typing check's value-changed handler and its button search (typing_check.rs).
   "Win32_System_Variant",
   "Win32_UI_Accessibility",
   "Win32_UI_HiDpi",
@@ -107,10 +100,10 @@ windows = { version = "0.62", features = [
   "Win32_UI_Shell_Common",
   "Win32_UI_WindowsAndMessaging",
 ] }
-# *Move to the Recycle Bin* (recycle.rs): a small, focused wrapper over the same Shell IFileOperation the
+# *Move to the Recycle Bin* (recycle_bin.rs): a small, focused wrapper over the same Shell IFileOperation the
 # `windows` crate above already carries the bindings for, tested across Windows versions already.
 trash = "5.2.9"
-# Reading inside a .zip (scan.rs's own budget and cap keep it bounded): only "deflate", the method almost every
+# Reading inside a .zip (scan_rules.rs's own budget and cap keep it bounded): only "deflate", the method almost every
 # real zip uses (Explorer's own, Takeout's, the AI exports'); no password feature, so an encrypted entry simply
 # can't be read, which is exactly "not read" (4-8).
 zip = { version = "9.0.0", default-features = false, features = ["deflate"] }

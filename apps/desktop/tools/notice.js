@@ -5,7 +5,7 @@
 
 const fs = require("fs");
 const path = require("path");
-const { cargo } = require("./rust");
+const { cargo } = require("./rust-toolchain");
 
 const FILE = path.join(__dirname, "..", "NOTICE");
 
