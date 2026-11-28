@@ -8,12 +8,33 @@ const fs = require("fs");
 const systemOs = require("os");
 const path = require("path");
 const vm = require("vm");
+const loadEngine = require("./load-engine.js");
+const { extensionFile } = require("./extension-file.js");
+const { extensionSource, loadSource, partsOf, requireParts } = require("./extension-source.js");
 
 const EXT = path.join(__dirname, "..", "extension");
 const manifest = JSON.parse(fs.readFileSync(path.join(EXT, "manifest.json"), "utf8"));
-const scripts = fs.readdirSync(EXT).filter((f) => f.endsWith(".js"));
-const htmls = fs.readdirSync(EXT).filter((f) => f.endsWith(".html"));
-const cssFiles = fs.readdirSync(EXT).filter((f) => f.endsWith(".css"));
+// The engine's files in folders under extension/engine/ come from its list.
+const engineScripts = loadEngine.files("rules", "detect", "decide").filter((f) => f.includes("/"));
+// The extension's own files outside the engine, in any folder, by their paths from extension/.
+function ownFiles(pattern) {
+  const files = [];
+  (function walk(dir) {
+    for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+      const full = path.join(dir, entry.name);
+      const rel = path.relative(EXT, full).replace(/\\/g, "/");
+      if (entry.isDirectory()) {
+        if (!/^(engine|_locales|icons|fonts)$/.test(rel)) walk(full);
+        continue;
+      }
+      if (pattern.test(entry.name)) files.push(rel);
+    }
+  })(EXT);
+  return files.sort();
+}
+const scripts = [...ownFiles(/\.js$/), ...engineScripts];
+const htmls = ownFiles(/\.html$/);
+const cssFiles = ownFiles(/\.css$/);
 
 function extensionTextFiles() {
   const files = [];
@@ -52,7 +73,15 @@ function extensionPrivateWordHits(files) {
 // string or template literal can itself contain a "/*" or "*/" (every "https://host/*" match pattern ends in
 // one), and a naive match would read that as a real comment and eat everything up to the next genuine one.
 function code(file) {
-  const src = fs.readFileSync(path.join(EXT, file), "utf8");
+  return withoutComments(fs.readFileSync(path.join(EXT, extensionFile(file)), "utf8"));
+}
+
+// The same for a file that may be cut into parts (popup/popup.js, sites-and-policy/protected-sites.js, background.js): all its parts, in load order.
+function wholeCode(file) {
+  return withoutComments(extensionSource(file));
+}
+
+function withoutComments(src) {
   let out = "";
   let quote = null;
   for (let i = 0; i < src.length; i++) {
@@ -133,9 +162,9 @@ test("scope: the broad https://*/* origin is built in exactly one place and regi
       .filter((line) => /EVERYWHERE_ORIGIN\s*=\s*"/.test(line))
       .map((line) => `${f}: ${line.trim()}`),
   );
-  assert.deepEqual(literalHits, ['sites.js: const EVERYWHERE_ORIGIN = "https://*/*";']);
+  assert.deepEqual(literalHits, ['sites-and-policy/protected-sites.js: const EVERYWHERE_ORIGIN = "https://*/*";']);
 
-  const bg = code("background.js");
+  const bg = wholeCode("background.js");
   const userSitesSync = /async function syncUserSites\(\) \{[\s\S]*?\n\}/.exec(bg)?.[0] || "";
   const everywhereSync = /async function syncEverywhere\(\) \{[\s\S]*?\n\}/.exec(bg)?.[0] || "";
   assert.ok(userSitesSync && everywhereSync, "both sync functions found");
@@ -148,8 +177,8 @@ test("scope: the broad https://*/* origin is built in exactly one place and regi
 // findChatBox calls isChatComposer exactly twice: once inside qualifyingEditor (gated on the everywhere flag,
 // already rule-checked elsewhere by its own tests), and once as the fallback, which this checks is gated on
 // builtInSite and nothing broader.
-test("scope: the built-in shape fallback in content.js never runs outside a built-in site", () => {
-  const src = code("content.js");
+test("scope: the built-in shape fallback in on-websites/content.js never runs outside a built-in site", () => {
+  const src = code("on-websites/content.js");
   const calls = [...src.matchAll(/isChatComposer\(composerInfo\(/g)];
   assert.equal(calls.length, 2, `expected one call in qualifyingEditor and one in the fallback, found ${calls.length}`);
   const fallback =
@@ -161,12 +190,13 @@ test("scope: the built-in shape fallback in content.js never runs outside a buil
 
 test("scope: only hosts outside the listed sites use the Everywhere default before settings", () => {
   globalThis.chrome ??= {};
-  require("../extension/sites.js");
+  require("../extension/engine/files.js"); // sites-and-policy/protected-sites.js reads the engine's list
+  requireParts("sites-and-policy/protected-sites.js");
   const { EVERYDAY_SITES, SEARCH_SITES, SUPPORT_SITES } = globalThis.ClotrSites;
   const expectedHosts = [...EVERYDAY_SITES, ...SEARCH_SITES, ...SUPPORT_SITES].flatMap((site) =>
     site.matches.map((match) => new URL(match.replace(/\*$/, "")).hostname),
   );
-  const src = code("content.js");
+  const src = code("on-websites/content.js");
   const hosts = /const LISTED_SITE_HOSTS = new Set\((\[[\s\S]*?\])\);/.exec(src);
   assert.ok(hosts, "the content script's listed hosts are present");
   assert.deepEqual(JSON.parse(hosts[1].replace(/,\s*\]$/, "]")).sort(), [...new Set(expectedHosts)].sort());
@@ -210,7 +240,8 @@ test("scope: no manifest the build produces gains a permission that can read or 
 // browser grants that one site, so the install prompt never mentions them.
 test("scope: everyday sites (email, chat apps) are specific https hosts and never built in", () => {
   globalThis.chrome ??= {};
-  require("../extension/sites.js");
+  require("../extension/engine/files.js"); // sites-and-policy/protected-sites.js reads the engine's list
+  requireParts("sites-and-policy/protected-sites.js");
   const { EVERYDAY_SITES } = globalThis.ClotrSites;
   assert.ok(EVERYDAY_SITES.length >= 4, "the everyday list is there");
   const builtIn = new Set(
@@ -231,7 +262,8 @@ test("scope: everyday sites (email, chat apps) are specific https hosts and neve
 // each, switched on only once the person picks that site.
 test("scope: search and support sites are specific https hosts and never built in", () => {
   globalThis.chrome ??= {};
-  require("../extension/sites.js");
+  require("../extension/engine/files.js"); // sites-and-policy/protected-sites.js reads the engine's list
+  requireParts("sites-and-policy/protected-sites.js");
   const { SEARCH_SITES, SUPPORT_SITES, MORE_SITES } = globalThis.ClotrSites;
   assert.ok(SEARCH_SITES.length >= 3, "the search list is there");
   assert.ok(SUPPORT_SITES.length >= 1, "the support list is there");
@@ -251,21 +283,21 @@ test("scope: search and support sites are specific https hosts and never built i
 });
 
 // Clotr only ever asks the browser for a new permission in its explicit click handlers. requestEverydayApps and requestMoreSites
-// in sites.js ask for listed email/chat apps or listed search/support sites by name, so they can only request
-// addresses already on those lists. requestEverywhere, also in sites.js, asks for the one broad origin the
-// manifest already lists as optional, for "Everywhere I type". protectSite in popup.js asks for the single site
-// the popup is open on. allowBuiltInHere, also in popup.js, asks for a built-in site the browser withheld
-// access to, scoped to the host_permissions pattern(s) covering that one page. askForAiChats in vault.js, on
+// in sites-and-policy/protected-sites.js ask for listed email/chat apps or listed search/support sites by name, so they can only request
+// addresses already on those lists. requestEverywhere, also in sites-and-policy/protected-sites.js, asks for the one broad origin the
+// manifest already lists as optional, for "Everywhere I type". protectSite in popup/popup-this-site.js asks for the single site
+// the popup is open on. allowBuiltInHere, also in popup/popup-this-site.js, asks for a built-in site the browser withheld
+// access to, scoped to the host_permissions pattern(s) covering that one page. askForAiChats in clotr-pages/vault/vault.js, on
 // the welcome page's card, asks for every built-in AI chat the browser hasn't granted yet, and ignores anything
-// not on the manifest's own list. startCheck in extcheck.js asks for the optional management permission, reads
+// not on the manifest's own list. startCheck in clotr-pages/extension-check/extension-check.js asks for the optional management permission, reads
 // it once, and hands it straight back; a test below checks it's never kept or used to change an extension. Any
 // other ask, anywhere, fails here.
 const ASK_ALLOWED = {
-  "sites.js": ["requestEverydayApps", "requestMoreSites", "requestEverywhere"],
-  "popup.js": ["protectSite", "allowBuiltInHere"],
-  "vault.js": ["askForAiChats"],
-  "extcheck.js": ["startCheck"],
-  "one-clotr-bridge.js": ["connectFromClick"],
+  "sites-and-policy/protected-sites.js": ["requestEverydayApps", "requestMoreSites", "requestEverywhere"],
+  "popup/popup-this-site.js": ["protectSite", "allowBuiltInHere"],
+  "clotr-pages/vault/vault.js": ["askForAiChats"],
+  "clotr-pages/extension-check/extension-check.js": ["startCheck"],
+  "one-clotr/one-clotr-bridge.js": ["connectFromClick"],
 };
 
 // Finds where a function's body starts and ends in a source string, counting braces and skipping over quoted
@@ -314,18 +346,27 @@ test("scope: Clotr asks only for listed email and chat apps or the open tab", ()
   }
   // The welcome page's card never asks for a new permission. It only asks for sites the manifest already lists,
   // dropping anything that isn't on that list.
-  const [a, b] = functionSpan(sources["vault.js"], "askForAiChats");
-  const ask = sources["vault.js"].slice(a, b);
+  const [a, b] = functionSpan(sources["clotr-pages/vault/vault.js"], "askForAiChats");
+  const ask = sources["clotr-pages/vault/vault.js"].slice(a, b);
   assert.match(ask, /const builtIn = new Set\(chrome\.runtime\.getManifest\(\)\.host_permissions\b/);
   assert.equal(ask.match(/permissions\.request\b/g).length, 1);
   assert.match(ask, /permissions\.request\(\{ origins: origins\.filter\(\(o\) => builtIn\.has\(o\)\) \}\)/);
   // An ask planted anywhere else in the code gets caught.
   const planted = (file, line) => permissionAsks({ ...sources, [file]: `${sources[file]}\n${line}\n` });
-  assert.equal(planted("content.js", 'chrome.permissions.request({ origins: ["https://*/*"] });').length, 1);
-  assert.equal(planted("popup.js", "async function x() { await chrome.permissions.request({ origins }); }").length, 1);
-  assert.equal(planted("vault.js", 'chrome.permissions["request"]({ origins });').length, 1);
-  assert.equal(planted("sites.js", "chrome.permissions . request({ origins: o });").length, 1);
-  assert.equal(planted("warning-ui.js", "const p = chrome.permissions; p.request({ origins });").length, 1);
+  assert.equal(
+    planted("on-websites/content.js", 'chrome.permissions.request({ origins: ["https://*/*"] });').length,
+    1,
+  );
+  assert.equal(
+    planted("popup/popup.js", "async function x() { await chrome.permissions.request({ origins }); }").length,
+    1,
+  );
+  assert.equal(planted("clotr-pages/vault/vault.js", 'chrome.permissions["request"]({ origins });').length, 1);
+  assert.equal(
+    planted("sites-and-policy/protected-sites.js", "chrome.permissions . request({ origins: o });").length,
+    1,
+  );
+  assert.equal(planted("on-websites/warning-ui.js", "const p = chrome.permissions; p.request({ origins });").length, 1);
   assert.equal(
     planted("background.js", "chrome.permissions.getAll(); chrome.permissions.remove({ origins });").length,
     0,
@@ -392,7 +433,9 @@ function waitsBeforeEverydayAsk(src) {
   return bad;
 }
 test("scope: every page that asks for email and chat apps asks first, in the click's own turn", () => {
-  const callers = scripts.filter((f) => f !== "sites.js" && /requestEverydayApps\s*\(/.test(code(f)));
+  const callers = scripts.filter(
+    (f) => f !== "sites-and-policy/protected-sites.js" && /requestEverydayApps\s*\(/.test(code(f)),
+  );
   assert.ok(callers.length >= 2, `callers: ${callers}`);
   for (const f of callers) assert.deepEqual(waitsBeforeEverydayAsk(code(f)), [], `${f} waits before it asks`);
   // The check itself.
@@ -449,16 +492,16 @@ test("scope: the management permission is optional only, and Clotr never changes
 test("Look back and Extension check write nothing to storage", () => {
   assert.deepEqual(
     offenders(/chrome\.storage\.(local|sync)\.set\s*\(/, [
-      "lookback.js",
-      "lookback-worker.js",
-      "lookback-core.js",
-      "letter.js",
-      "extcheck.js",
-      "extcheck-core.js",
-      "reported-extensions.js",
-      "scan-words.js",
-      "zip.js",
-      "csv.js",
+      "clotr-pages/look-back/look-back.js",
+      "clotr-pages/look-back/look-back-worker.js",
+      "clotr-pages/look-back/chat-export-reader.js",
+      "clotr-pages/look-back/deletion-letter.js",
+      "clotr-pages/extension-check/extension-check.js",
+      "clotr-pages/extension-check/extension-reach.js",
+      "clotr-pages/extension-check/reported-extensions.js",
+      "clotr-pages/look-back/scan-words.js",
+      "clotr-pages/look-back/zip-reader.js",
+      "clotr-pages/look-back/csv-reader.js",
     ]),
     [],
   );
@@ -626,7 +669,7 @@ test("the shipped-code internal-reference check catches planted scripts, styles 
 // loosens a protected detail, replaces every setting, clears history, or answers Clotr's own page about warning
 // less on every site only gets accepted from Clotr's own pages.
 test("vault edits, backups and clearing history are accepted only from Clotr's own pages", () => {
-  const bg = code("background.js");
+  const bg = wholeCode("background.js");
   assert.match(
     bg,
     /const fromClotrPage = \(sender\) => \(sender\.url \|\| ""\)\.startsWith\(chrome\.runtime\.getURL\(""\)\);/,
@@ -659,24 +702,29 @@ test("chrome.action.setIcon always passes a tabId", () => {
 });
 
 test("user-added sites get the same scripts as built-in ones", () => {
-  const listed = code("sites.js").match(/const CONTENT_JS = (\[[^\]]*\])/);
-  assert.ok(listed, "CONTENT_JS not found in sites.js");
-  assert.deepEqual(JSON.parse(listed[1].replace(/,\s*\]$/, "]")), manifest.content_scripts[0].js); // a formatter may add a trailing comma
+  // sites-and-policy/protected-sites.js builds CONTENT_JS from the engine's list, so it's read from the loaded file, not its text.
+  require("../extension/engine/files.js");
+  requireParts("sites-and-policy/protected-sites.js");
+  assert.deepEqual([...globalThis.ClotrSites.CONTENT_JS], manifest.content_scripts[0].js);
   // The popup shows detection types and fingerprints, so it needs the detection pair loaded and nothing else.
-  const popup = fs.readFileSync(path.join(EXT, "popup.html"), "utf8");
-  for (const f of ["patterns.js", "detector.js"]) {
+  const popup = fs.readFileSync(path.join(EXT, "popup/popup.html"), "utf8");
+  for (const f of require("./load-engine.js").files("rules", "detect")) {
     assert.ok(manifest.content_scripts[0].js.includes(f), `content scripts don't include ${f}`);
-    assert.ok(popup.includes(`<script src="${f}">`), `popup.html doesn't load ${f}`);
+    assert.ok(popup.includes(`<script src="/${f}"`), `popup/popup.html doesn't load ${f}`);
   }
 });
 
 // The background registers Clotr under clotr-user-sites for sites people add, and starts it in open tabs using
 // that same CONTENT_JS list rather than one of its own, so every way Clotr reaches a page loads the same scripts
 // in the manifest's order. The warning UI comes after what it reads, the styles and chat-box helpers, and before
-// content.js.
+// on-websites/content.js.
 test("the dynamic registration and every injection use CONTENT_JS, in the manifest's order", () => {
-  const bg = code("background.js");
-  assert.match(bg, /\{\s*CONTENT_JS,[\s\S]*?\}\s*=\s*globalThis\.ClotrSites;/, "CONTENT_JS comes from sites.js");
+  const bg = wholeCode("background.js");
+  assert.match(
+    bg,
+    /\{\s*CONTENT_JS,[\s\S]*?\}\s*=\s*globalThis\.ClotrSites;/,
+    "CONTENT_JS comes from sites-and-policy/protected-sites.js",
+  );
   const script = /const script = \{[\s\S]*?\};/.exec(bg)?.[0] || "";
   assert.match(script, /id: USER_SCRIPT_ID,/, "the user-site registration");
   assert.match(script, /\bjs: CONTENT_JS,/, "the user-site registration loads CONTENT_JS");
@@ -686,40 +734,48 @@ test("the dynamic registration and every injection use CONTENT_JS, in the manife
   assert.ok(injections.length >= 2, `found ${injections.length} injections into open tabs`);
   for (const call of injections) assert.match(call, /\bfiles: CONTENT_JS \}/, call);
   const js = manifest.content_scripts[0].js;
-  assert.deepEqual(js.slice(-3), ["editor.js", "warning-ui.js", "content.js"]);
-  assert.ok(js.indexOf("ui-styles.js") < js.indexOf("warning-ui.js"), "the styles load before the warning UI");
+  assert.deepEqual(js.slice(-3), ["on-websites/chat-box.js", "on-websites/warning-ui.js", "on-websites/content.js"]);
+  assert.ok(
+    js.indexOf("on-websites/warning-styles.js") < js.indexOf("on-websites/warning-ui.js"),
+    "the styles load before the warning UI",
+  );
 });
 
 // decide.js is the one pure module that decides what each found detail does and holds the words for it. Every
 // host runs it right after the detection pair, and it touches no page, no storage and no browser API, so other
 // hosts can run it unchanged.
 test("decide.js: right after the detection pair everywhere, and pure", () => {
+  const engine = loadEngine.files("rules", "detect", "decide");
+  const decideFiles = loadEngine.files("decide");
   const js = manifest.content_scripts[0].js;
-  assert.deepEqual(js.slice(0, 3), ["patterns.js", "detector.js", "decide.js"], "the content scripts");
-  const bg = code("background.js");
-  assert.ok(
-    bg.indexOf('importScripts("decide.js")') > bg.indexOf('importScripts("patterns.js", "detector.js")'),
-    "the background loads it after the detection pair",
+  assert.deepEqual(js.slice(0, engine.length), engine, "the content scripts");
+  const bg = wholeCode("background.js");
+  const loadsDecide = bg.indexOf("importScripts(...globalThis.ClotrEngineFiles.decide)");
+  const loadsPair = bg.indexOf(
+    "importScripts(...globalThis.ClotrEngineFiles.rules, ...globalThis.ClotrEngineFiles.detect)",
   );
+  assert.ok(loadsPair >= 0 && loadsDecide > loadsPair, "the background loads it after the detection pair");
   const { BACKGROUND_SCRIPTS } = require("../tools/package.js");
-  assert.deepEqual(BACKGROUND_SCRIPTS.slice(0, 3), ["patterns.js", "detector.js", "decide.js"], "Firefox and Safari");
+  assert.deepEqual(BACKGROUND_SCRIPTS.slice(2, 2 + engine.length), engine, "Firefox and Safari");
   assert.deepEqual(
-    offenders(/\b(document|window|chrome|navigator|localStorage|fetch|console|setTimeout)\b/, ["decide.js"]),
+    offenders(/\b(document|window|chrome|navigator|localStorage|fetch|console|setTimeout)\b/, decideFiles),
     [],
   );
-  const vault = fs.readFileSync(path.join(EXT, "vault.html"), "utf8");
-  assert.ok(vault.indexOf('<script src="decide.js">') > vault.indexOf('<script src="detector.js">'), "the vault page");
+  const vault = fs.readFileSync(path.join(EXT, "clotr-pages/vault/vault.html"), "utf8");
+  const lastDetect = loadEngine.files("detect").at(-1);
+  const decideAt = vault.indexOf(`<script src="/${decideFiles[0]}"`);
+  assert.ok(decideAt > vault.indexOf(`<script src="/${lastDetect}"`), "the vault page");
 });
 
 // commands.js loads wherever Clotr runs on a page, after the detection trio and before the warning UI and
-// content.js that use it. It's pure: it only reads the two strings it's given, so it touches no page, no
+// on-websites/content.js that use it. It's pure: it only reads the two strings it's given, so it touches no page, no
 // storage, no network and no browser API, and logs nothing.
 test("commands.js: in the content scripts before what uses it, and pure", () => {
   const js = manifest.content_scripts[0].js;
   assert.ok(js.includes("commands.js"), "the content scripts load commands.js");
-  assert.ok(js.indexOf("commands.js") > js.indexOf("decide.js"), "after the detection trio");
-  assert.ok(js.indexOf("commands.js") < js.indexOf("warning-ui.js"), "before the warning UI");
-  assert.ok(js.indexOf("commands.js") < js.indexOf("content.js"), "before content.js");
+  assert.ok(js.indexOf("commands.js") > js.indexOf(loadEngine.files("decide").at(-1)), "after the detection trio");
+  assert.ok(js.indexOf("commands.js") < js.indexOf("on-websites/warning-ui.js"), "before the warning UI");
+  assert.ok(js.indexOf("commands.js") < js.indexOf("on-websites/content.js"), "before on-websites/content.js");
   const src = code("commands.js");
   const bad = [
     /\b(?:document|window|navigator|location)\s*[.[]/,
@@ -756,7 +812,7 @@ test("built-in AI-site list (ai-sites.json) matches the manifest", () => {
 });
 
 test("every pattern belongs to a Settings group", () => {
-  require("../extension/patterns.js");
+  require("./load-engine.js")("rules");
   for (const p of globalThis.Clotr.PATTERNS) {
     assert.ok(["credentials", "personal", "links", "custom"].includes(p.group), `${p.id}: group ${p.group}`);
   }
@@ -804,15 +860,18 @@ test("release notes keep UTF-8 text intact", () => {
 // Windows PowerShell 5.1 writes UTF-8 with a byte-order mark, and the extension's own JSON reads, like the
 // self-update check fetching manifest.json, fail on one.
 test("extension JSON files have no byte-order mark", () => {
-  for (const f of fs.readdirSync(EXT).filter((n) => n.endsWith(".json"))) {
-    assert.notEqual(fs.readFileSync(path.join(EXT, f))[0], 0xef, `${f} starts with a BOM`);
+  const files = ownFiles(/\.json$/);
+  // Before the files moved into folders, all 5 sat in the top folder. Fewer means the scan lost one.
+  assert.ok(files.length >= 5, `only ${files.length} JSON files found`);
+  for (const file of files) {
+    assert.notEqual(fs.readFileSync(path.join(EXT, file))[0], 0xef, `${file} starts with a BOM`);
   }
 });
 
 // The same code ships to Firefox, desktop and Android, through `npm run package -- --firefox`, so any
 // Chrome-only API has to be guarded for the background to keep running there.
 test("background works in Firefox: Chrome-only APIs are guarded", () => {
-  const bg = fs.readFileSync(path.join(EXT, "background.js"), "utf8");
+  const bg = extensionSource("background.js");
   assert.match(
     bg,
     /typeof importScripts === "function"/,
@@ -828,7 +887,7 @@ test("background works in Firefox: Chrome-only APIs are guarded", () => {
 // session storage in 16.4, and its installs always come from an app, never a folder. tests/background.test.js
 // runs the background with only the APIs Safari actually has.
 test("background works in Safari: what Safari lacks is guarded", () => {
-  const bg = code("background.js");
+  const bg = wholeCode("background.js");
   // Managed storage, the toolbar-pin check and the storage lock are only ever used where they exist, with `?.`,
   // in every script.
   const unguarded = (re) => scripts.flatMap((f) => [...code(f).matchAll(re)].map((m) => `${f}: ${m[0]}`));
@@ -838,7 +897,7 @@ test("background works in Safari: what Safari lacks is guarded", () => {
   // The background reads and writes session storage through one fallback, never directly.
   assert.match(bg, /chrome\.storage\.session \|\| /, "session storage needs its in-memory fallback");
   assert.deepEqual(
-    offenders(/chrome\.storage\.session\.\w+\(/, ["background.js"]),
+    offenders(/chrome\.storage\.session\.\w+\(/, partsOf("background.js")),
     [],
     "background uses chrome.storage.session directly",
   );
@@ -853,8 +912,11 @@ test("background works in Safari: what Safari lacks is guarded", () => {
 // Shipped files must never contain raw invisible or bidirectional-control characters. They can make code read
 // differently from what it actually does, an attack known as Trojan Source, so write them as \u escapes instead.
 test("no invisible or bidi-control characters in shipped files", () => {
+  const own = ownFiles(/\.(js|html|css|json)$/);
+  // Before the files moved into folders, 80 sat in the top folder. Fewer means the scan lost a folder.
+  assert.ok(own.length >= 80, `only ${own.length} of the extension's own files found`);
   const bad = [];
-  for (const f of fs.readdirSync(EXT).filter((n) => /\.(js|html|css|json)$/.test(n))) {
+  for (const f of [...own, ...engineScripts]) {
     const text = fs.readFileSync(path.join(EXT, f), "utf8");
     const m = text.match(/\p{Cf}/u);
     if (m) {
@@ -870,25 +932,25 @@ test("no invisible or bidi-control characters in shipped files", () => {
 // draft text, or a file name.
 test("console output never includes detected values, drafts or file names", () => {
   const minimum = [
-    "content.js",
-    "warning-ui.js",
-    "vault.js",
-    "popup.js",
+    "on-websites/content.js",
+    "on-websites/warning-ui.js",
+    "clotr-pages/vault/vault.js",
+    "popup/popup.js",
     "background.js",
-    "stored.js",
-    "pictures.js",
-    "lookback.js",
-    "lookback-worker.js",
-    "lookback-core.js",
-    "letter.js",
-    "extcheck.js",
-    "extcheck-core.js",
-    "check.js",
-    "scam-signs.js",
+    "clotr-pages/what-clotr-stores/what-clotr-stores.js",
+    "on-websites/attached-pictures.js",
+    "clotr-pages/look-back/look-back.js",
+    "clotr-pages/look-back/look-back-worker.js",
+    "clotr-pages/look-back/chat-export-reader.js",
+    "clotr-pages/look-back/deletion-letter.js",
+    "clotr-pages/extension-check/extension-check.js",
+    "clotr-pages/extension-check/extension-reach.js",
+    "clotr-pages/scam-check/scam-check.js",
+    "clotr-pages/scam-check/scam-signs.js",
     "backup.js",
-    "sites.js",
-    "editor.js",
-    "zip.js",
+    "sites-and-policy/protected-sites.js",
+    "on-websites/chat-box.js",
+    "clotr-pages/look-back/zip-reader.js",
   ];
   assert.ok(
     minimum.every((f) => scripts.includes(f)),
@@ -960,7 +1022,7 @@ test("content scripts never log a page address, title or attached-file name", ()
   const suffix = `${process.pid}-${Date.now()}`;
   const planted = `zz-rule-check-planted-${suffix}.js`;
   try {
-    fs.copyFileSync(path.join(EXT, "content.js"), path.join(EXT, planted));
+    fs.copyFileSync(path.join(EXT, "on-websites/content.js"), path.join(EXT, planted));
     fs.appendFileSync(
       path.join(EXT, planted),
       "\nconsole.info(LOG, location.href, document.URL, document.title, location.search, file.name);\n",
@@ -976,7 +1038,7 @@ test("content scripts never log a page address, title or attached-file name", ()
 // picture from anywhere else, never sends or stores anything beyond its own variables, like a path or file name,
 // and never draws the picture itself, so there's no AI reader or text reader involved at all.
 test("the picture code reads only the attached file: no network, no picture loads, no storage, no drawing", () => {
-  const src = code("pictures.js").replace(/^\s*\/\/.*$/gm, "");
+  const src = code("on-websites/attached-pictures.js").replace(/^\s*\/\/.*$/gm, "");
   const bad = [
     /\bfetch\s*\(|XMLHttpRequest|WebSocket|sendBeacon|EventSource/,
     /new\s+Image\b|createElement\(\s*["'`]img|\.src\s*=|createImageBitmap|getContext\(|OffscreenCanvas/,
@@ -1017,8 +1079,8 @@ test("phones: every Clotr page is as wide as the phone and keeps its text size, 
       `${f} has no viewport line`,
     );
   }
-  assert.match(fs.readFileSync(path.join(EXT, "popup.css"), "utf8"), /\nhtml \{[^}]*\stext-size-adjust: 100%/);
-  const ui = code("ui-styles.js");
+  assert.match(fs.readFileSync(path.join(EXT, "popup/popup.css"), "utf8"), /\nhtml \{[^}]*\stext-size-adjust: 100%/);
+  const ui = code("on-websites/warning-styles.js");
   for (const box of ["overlay", "notice"]) {
     const rule = new RegExp(`\\.${box} \\{[^}]*\\stext-size-adjust: 100%`);
     assert.match(ui, rule, `the warning's .${box} doesn't keep its text size`);
@@ -1110,7 +1172,7 @@ test("CI: read-only token and actions pinned to commits", () => {
 // handler could send a message before Ask before sending gets a chance to hold it.
 test("Clotr starts at document_start (built-in and user-added sites)", () => {
   for (const cs of manifest.content_scripts) assert.equal(cs.run_at, "document_start");
-  const bg = fs.readFileSync(path.join(EXT, "background.js"), "utf8");
+  const bg = extensionSource("background.js");
   assert.match(bg, /runAt:\s*"document_start"/);
   assert.doesNotMatch(bg, /runAt:\s*"document_(idle|end)"/);
 });
@@ -1118,17 +1180,24 @@ test("Clotr starts at document_start (built-in and user-added sites)", () => {
 // No source file, shipped or not, may contain a stray control character, like a backspace from a mistyped "\b".
 // They're invisible, and silently change what regexes and strings actually mean.
 test("no control characters in source files (extension, tests, tools)", () => {
-  const dirs = [EXT, __dirname, path.join(__dirname, "e2e"), path.join(__dirname, "..", "tools")];
+  const source = /\.(js|html|css|json|ps1|sh)$/;
+  // The extension's files sit in folders, so they come from the walk. Before they moved, 80 sat in the top
+  // folder, and fewer means the scan lost a folder. Tests and tools are read from their top folders.
+  const own = ownFiles(source);
+  assert.ok(own.length >= 80, `only ${own.length} of the extension's own files found`);
+  const files = [...own, ...engineScripts].map((file) => path.join(EXT, file));
+  for (const dir of [__dirname, path.join(__dirname, "e2e"), path.join(__dirname, "..", "tools")]) {
+    const names = fs.readdirSync(dir).filter((name) => source.test(name));
+    files.push(...names.map((name) => path.join(dir, name)));
+  }
   const bad = [];
-  for (const dir of dirs) {
-    for (const f of fs.readdirSync(dir).filter((n) => /\.(js|html|css|json|ps1|sh)$/.test(n))) {
-      const text = fs.readFileSync(path.join(dir, f), "utf8");
-      const m = text.match(/[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]/);
-      if (m) {
-        bad.push(
-          `${path.relative(path.join(__dirname, ".."), path.join(dir, f))}: U+${m[0].charCodeAt(0).toString(16).padStart(4, "0")} at line ${text.slice(0, m.index).split("\n").length}`,
-        );
-      }
+  for (const file of files) {
+    const text = fs.readFileSync(file, "utf8");
+    const m = text.match(/[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]/);
+    if (m) {
+      bad.push(
+        `${path.relative(path.join(__dirname, ".."), file)}: U+${m[0].charCodeAt(0).toString(16).padStart(4, "0")} at line ${text.slice(0, m.index).split("\n").length}`,
+      );
     }
   }
   assert.deepEqual(bad, []);
@@ -1138,7 +1207,7 @@ test("content scripts never touch storage directly; the background locks it to C
   const contentFiles = manifest.content_scripts.flatMap((c) => c.js);
   assert.deepEqual(offenders(/chrome\.storage/, contentFiles), []);
   assert.match(
-    code("background.js"),
+    wholeCode("background.js"),
     /chrome\.storage\.local\s*\.setAccessLevel\?\.\(\{ accessLevel: "TRUSTED_CONTEXTS" \}\)/,
   );
 });
@@ -1163,7 +1232,7 @@ test("only the background writes event history or response overrides to storage 
   assert.deepEqual(
     offenders(
       re,
-      scripts.filter((f) => f !== "background.js"),
+      scripts.filter((f) => !partsOf("background.js").includes(f)),
     ),
     [],
   );
@@ -1171,7 +1240,7 @@ test("only the background writes event history or response overrides to storage 
 
 // The welcome page's note is the author's own words (revised 25 Oct 2026), so a copy edit elsewhere must never change it.
 test("welcome page: the note is the author's own words", () => {
-  const html = fs.readFileSync(path.join(EXT, "vault.html"), "utf8");
+  const html = fs.readFileSync(path.join(EXT, "clotr-pages/vault/vault.html"), "utf8");
   const copy = (key) => new RegExp(`data-i18n="${key}">([^<]*)<`).exec(html)?.[1] || "";
   assert.equal(
     copy("vault_noteBody"),
@@ -1219,7 +1288,7 @@ test("every translated string has a Spanish message; placeholders are well forme
   const used = new Set(scripts.flatMap((f) => [...code(f).matchAll(/\bmsg\(\s*"([A-Za-z0-9_]+)"/g)].map((m) => m[1])));
   const missing = [...used].filter((k) => !es[k]);
   assert.deepEqual(missing, [], `no Spanish for: ${missing.join(", ")}`);
-  require("../extension/patterns.js");
+  require("./load-engine.js")("rules");
   for (const p of globalThis.Clotr.PATTERNS) assert.ok(es[`type_${p.id}`], `no Spanish name for ${p.id}`);
   for (const [k, v] of Object.entries(es)) {
     for (const [, name] of v.message.matchAll(/\$([A-Za-z0-9_]+)\$/g)) {
@@ -1240,14 +1309,18 @@ test("every data-i18n key in Clotr's pages, and every self-check message, has a 
       (m) => `${f}: ${m[1]}`,
     ),
   );
-  keys.push(...[...code("sites.js").matchAll(/key: "([A-Za-z0-9_]+)"/g)].map((m) => `sites.js: ${m[1]}`));
+  keys.push(
+    ...[...wholeCode("sites-and-policy/protected-sites.js").matchAll(/key: "([A-Za-z0-9_]+)"/g)].map(
+      (m) => `sites-and-policy/protected-sites.js: ${m[1]}`,
+    ),
+  );
   const missing = keys.filter((k) => !es[k.split(": ")[1]]);
   assert.deepEqual(missing, []);
   for (const f of htmls.filter((name) => /data-i18n/.test(fs.readFileSync(path.join(EXT, name), "utf8")))) {
     assert.match(
       fs.readFileSync(path.join(EXT, f), "utf8"),
-      /<script src="page-i18n\.js">/,
-      `${f} uses data-i18n but doesn't load page-i18n.js`,
+      /<script src="\/page-parts\/translate-page\.js">/,
+      `${f} uses data-i18n but doesn't load page-parts/translate-page.js`,
     );
   }
 });
@@ -1283,9 +1356,9 @@ test("the scam feature's words never call anything safe, fine or not a scam, and
 // is typed or kept.
 test("the printed card: six rows in both languages, each carrying its source", () => {
   const es = JSON.parse(fs.readFileSync(path.join(EXT, "_locales", "es", "messages.json"), "utf8"));
-  const html = fs.readFileSync(path.join(EXT, "share.html"), "utf8");
+  const html = fs.readFileSync(path.join(EXT, "clotr-pages/share-clotr/share-clotr.html"), "utf8");
   const card = /<article class="card-sheet"[\s\S]*?<\/article>/.exec(html)?.[0];
-  assert.ok(card, "share.html has no card-sheet article");
+  assert.ok(card, "clotr-pages/share-clotr/share-clotr.html has no card-sheet article");
   const rows = [...card.matchAll(/<div class="card-row" data-source="([^"]+)">([\s\S]*?)<\/div>/g)];
   assert.equal(rows.length, 6);
   const SOURCES = new Set([
@@ -1393,7 +1466,7 @@ test("the public versioning standard is there and linked", () => {
   const root = path.join(__dirname, "..");
   const inPublic = path.join(root, "public", "VERSIONING.md");
   const std = fs.readFileSync(fs.existsSync(inPublic) ? inPublic : path.join(root, "VERSIONING.md"), "utf8");
-  for (const kind of ["**Minor**", "**Patch**", "**Major**", "MAJOR.MINOR.PATCH"]) {
+  for (const kind of ["**Minor**", "**Patch**", "**Major**", "vX.Y.Z"]) {
     assert.ok(std.includes(kind), `VERSIONING.md lost "${kind}"`);
   }
   const exporter = path.join(root, "tools", "export-public.js");
@@ -1591,7 +1664,8 @@ test("no AI inside: no model files or model runtimes in the extension", () => {
 test("Tourniquet's presets hold only requiredResponses, largeText and apps", () => {
   const box = { chrome: { runtime: { getManifest: () => manifest } }, URL };
   box.globalThis = box;
-  vm.runInNewContext(fs.readFileSync(path.join(EXT, "sites.js"), "utf8"), box);
+  vm.runInNewContext(fs.readFileSync(path.join(EXT, "engine", "files.js"), "utf8"), box);
+  vm.runInNewContext(loadSource("sites-and-policy/protected-sites.js"), box);
   const { TOURNIQUET, EVERYDAY_SITES } = box.ClotrSites;
   assert.deepEqual(Object.keys(TOURNIQUET).sort(), ["adult", "after_scam", "child"]);
   const apps = new Set(EVERYDAY_SITES.map((s) => s.name));
@@ -1628,7 +1702,7 @@ test('no words to people say "elder": messages, Clotr\'s pages, the website, the
   for (const f of fs.existsSync(site) ? fs.readdirSync(site).filter((n) => n.endsWith(".html")) : []) {
     look(`site/${f}`, fs.readFileSync(path.join(site, f), "utf8"));
   }
-  for (const f of scripts.filter((n) => n !== "patterns.js")) {
+  for (const f of scripts.filter((n) => !loadEngine.files("rules").includes(n))) {
     for (const m of code(f).matchAll(/\bmsg\(\s*"[A-Za-z0-9_]+",\s*(["'`])((?:\\.|(?!\1).)*)\1/g)) look(f, m[2]);
   }
   assert.deepEqual(hits, []);
@@ -1654,7 +1728,7 @@ test('no warning or card title says "Heads up" or opens with a Spanish "Atenció
     }
   }
   for (const f of htmls) lookAnywhere(f, fs.readFileSync(path.join(EXT, f), "utf8"));
-  for (const f of scripts.filter((n) => n !== "patterns.js")) {
+  for (const f of scripts.filter((n) => !loadEngine.files("rules").includes(n))) {
     for (const m of code(f).matchAll(/\bmsg\(\s*"[A-Za-z0-9_]+",\s*(["'`])((?:\\.|(?!\1).)*)\1/g)) {
       lookAnywhere(f, m[2]);
     }
@@ -1817,7 +1891,8 @@ function reportingOffenders(schema, mergePolicy) {
 }
 test("a team policy sets rules, never reporting: the managed schema's nine fields and a kind's six, nothing sent back", () => {
   globalThis.chrome ??= {};
-  require("../extension/sites.js");
+  require("../extension/engine/files.js"); // sites-and-policy/protected-sites.js reads the engine's list
+  requireParts("sites-and-policy/protected-sites.js");
   const { mergePolicy } = globalThis.ClotrSites;
   assert.equal(manifest.storage?.managed_schema, "managed_schema.json", "the schema the browser reads");
   const schema = JSON.parse(fs.readFileSync(path.join(EXT, "managed_schema.json"), "utf8"));
@@ -1857,7 +1932,7 @@ function dashboardOffenders(guide, siteHtml) {
   if (!flat(guide).includes(NO_DASHBOARD)) found.push("docs/team-rollout.md");
   if (siteHtml !== null) {
     const teams = /<section id="teams"[\s\S]*?<\/section>/.exec(siteHtml)?.[0] || "";
-    if (!flat(teams).includes("There is no admin dashboard")) found.push("the website's Teams section");
+    if (!/no admin dashboard/i.test(flat(teams))) found.push("the website's Teams section");
   }
   return found;
 }
@@ -1906,7 +1981,7 @@ test("no prices inside the extension", () => {
   const os = require("os");
   const fixture = fs.mkdtempSync(path.join(os.tmpdir(), "clotr-prices-"));
   try {
-    const popup = fs.readFileSync(path.join(EXT, "popup.js"), "utf8");
+    const popup = fs.readFileSync(path.join(EXT, "popup/popup.js"), "utf8");
     fs.writeFileSync(path.join(fixture, "popup.js"), `${popup}\nconst pack = "Team pack: $299";\n`);
     fs.writeFileSync(path.join(fixture, "messages.json"), '{ "it": { "message": "IT providers: $1,499" } }\n');
     fs.writeFileSync(path.join(fixture, "ok.js"), 'msg("andMore", "and $1 more", 3);\n');
@@ -2521,7 +2596,7 @@ test("Clotr for VS Code stays local, starts after VS Code opens, and has no runt
   assert.deepEqual(vscodeManifest.dependencies || {}, {});
   assert.ok(vscodeManifest.activationEvents.includes("onStartupFinished"));
   assert.ok(!vscodeManifest.activationEvents.includes("*"));
-  const source = fs.readFileSync(path.join(dir, "extension.js"), "utf8");
+  const source = require("./load-vscode-extension.js").codeSource(dir);
   assert.doesNotMatch(source, /\b(?:fetch|WebSocket|XMLHttpRequest|sendBeacon)\s*\(/);
   assert.match(source, /new vm\.Script\(bundle\)\.runInContext/);
   assert.match(source, /host\.check\(/);
@@ -2617,7 +2692,7 @@ test("apps: no HTML or script built from strings in any web view", () => {
   );
 });
 
-// The "Is this a scam?" page, check.html, never tells anyone a message is fine. No string of the page (sc_), of
+// The "Is this a scam?" page, clotr-pages/scam-check/scam-check.html, never tells anyone a message is fine. No string of the page (sc_), of
 // Scam Shield's shared words (ss_), or of the command check (cg_), in English or Spanish, says "safe", "fine",
 // "legit", "not a scam", "100%", or gives a percentage, except the one footnote that says what the page never
 // does (sc_never), which has to say it as a "never".
@@ -2670,12 +2745,12 @@ test("Is this a scam?: no word says a message is fine, in English or Spanish", (
   assert.deepEqual(honestWordsOffenders({ sc_x: "Security code" }, { sc_x: { message: "Seguridad Social" } }), []);
 });
 
-// Look back and Extension check, in lb_ and ec_, extension/scan-words.js, share the same honesty with their own
+// Look back and Extension check, in lb_ and ec_, extension/clotr-pages/look-back/scan-words.js, share the same honesty with their own
 // word list. "Fine" stays allowed there, since ec_noLead means "That's fine" about the permission being
 // declined, not about a result, but "safe" and the rest still never describe what Clotr found, and neither page
 // ever calls an extension "spying" or "malicious" or gives it a score.
 test("Look back and Extension check: every word exists in both languages, and the honest-words rule covers them too", () => {
-  require("../extension/scan-words.js");
+  require("../extension/clotr-pages/look-back/scan-words.js");
   const keys = globalThis.Clotr.SCAN_WORD_KEYS;
   const en = englishByKey();
   const es = JSON.parse(fs.readFileSync(path.join(EXT, "_locales", "es", "messages.json"), "utf8"));
@@ -2696,15 +2771,26 @@ test("Look back and Extension check: every word exists in both languages, and th
 });
 
 test("Is this a scam?: the page loads only Clotr's own scripts, and keeps, sends and logs nothing", () => {
-  const html = fs.readFileSync(path.join(EXT, "check.html"), "utf8");
+  const html = fs.readFileSync(path.join(EXT, "clotr-pages/scam-check/scam-check.html"), "utf8");
   const srcs = [...html.matchAll(/<script\b[^>]*\bsrc="([^"]+)"/g)].map((m) => m[1]);
-  assert.deepEqual(srcs, ["page-i18n.js", "patterns.js", "detector.js", "scam-signs.js", "report.js", "check.js"]);
+  const engine = loadEngine.files("rules", "detect");
+  const names = [
+    "page-parts/translate-page.js",
+    ...engine,
+    "clotr-pages/scam-check/scam-signs.js",
+    "page-parts/report-a-problem.js",
+    "clotr-pages/scam-check/scam-check.js",
+  ];
+  assert.deepEqual(
+    srcs,
+    names.map((name) => `/${name}`),
+  );
   assert.doesNotMatch(html, /<script\b(?![^>]*\bsrc=)/, "an inline script");
   // The box turns off autofill and spell check, since the browser's spell check could send words away.
   assert.match(html, /<textarea\b[^>]*\bautocomplete="off"/);
   assert.match(html, /<textarea\b[^>]*\bspellcheck="false"/);
-  // check.js reads the salt and the vault's fingerprints, and never writes, sends, fetches or logs.
-  const src = code("check.js");
+  // clotr-pages/scam-check/scam-check.js reads the salt and the vault's fingerprints, and never writes, sends, fetches or logs.
+  const src = code("clotr-pages/scam-check/scam-check.js");
   for (const [re, what] of [
     [/storage\.\w+\.(?:set|remove|clear)\b/, "a storage write"],
     [/\bsendMessage\b|\bconnect\(/, "a message out of the page"],
@@ -2713,17 +2799,17 @@ test("Is this a scam?: the page loads only Clotr's own scripts, and keeps, sends
     [/\bconsole\.(?:log|info|warn|error|debug)\(/, "a log"],
     [/\.innerHTML\b|insertAdjacentHTML|document\.write/, "HTML from a string"],
   ]) {
-    assert.doesNotMatch(src, re, `check.js: ${what}`);
+    assert.doesNotMatch(src, re, `clotr-pages/scam-check/scam-check.js: ${what}`);
   }
   assert.match(src, /chrome\.storage\.local\s*\.get\(\s*\[\s*"salt",\s*"vault"\s*\]\s*\)/, "reads the salt and vault");
   assert.equal((src.match(/storage\.\w+\s*\.get\(/g) || []).length, 1, "reads storage once, for those two");
 });
 
 test("the command check never stores, sends or logs the copied command or the message it came from", () => {
-  const raw = fs.readFileSync(path.join(EXT, "content.js"), "utf8");
+  const raw = fs.readFileSync(path.join(EXT, "on-websites/content.js"), "utf8");
   const start = raw.indexOf("The command check: a copied");
   const end = raw.indexOf("Bandage step 2");
-  assert.ok(start > -1 && end > start, "could not find the command-check section in content.js");
+  assert.ok(start > -1 && end > start, "could not find the command-check section in on-websites/content.js");
   const section = raw
     .slice(start, end)
     .replace(/\/\*[\s\S]*?\*\//g, "")
@@ -2736,7 +2822,7 @@ test("the command check never stores, sends or logs the copied command or the me
     [/\bfetch\(|XMLHttpRequest|sendBeacon|WebSocket/, "a request"],
     [/\blocalStorage\b|\bsessionStorage\b|\bindexedDB\b|document\.cookie/, "the page's own storage"],
   ]) {
-    assert.doesNotMatch(section, re, `content.js command check: ${what}`);
+    assert.doesNotMatch(section, re, `on-websites/content.js command check: ${what}`);
   }
   // The one log in this section names the shape only, never the copied command or the message around it.
   const logs = [...section.matchAll(/console\.(?:log|info|warn|error|debug)\([^)]*\)/g)].map((m) => m[0]);
@@ -2755,11 +2841,11 @@ test("the command check never stores, sends or logs the copied command or the me
 });
 
 test("Is this a scam?: every sign has its name, its meaning and a source, in English and Spanish", () => {
-  require("../extension/patterns.js");
-  require("../extension/scam-signs.js");
+  require("./load-engine.js")("rules");
+  require("../extension/clotr-pages/scam-check/scam-signs.js");
   const en = englishByKey();
   const es = JSON.parse(fs.readFileSync(path.join(EXT, "_locales", "es", "messages.json"), "utf8"));
-  const src = code("check.js");
+  const src = code("clotr-pages/scam-check/scam-check.js");
   for (const { id, group } of globalThis.Clotr.SCAM_SIGNS) {
     for (const key of [`sc_${id}`, `sc_${id}_means`]) {
       assert.ok(en[key], `no English for ${key}`);

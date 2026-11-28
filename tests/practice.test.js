@@ -13,9 +13,8 @@ const EXT = path.join(__dirname, "..", "extension");
 const ES = JSON.parse(fs.readFileSync(path.join(EXT, "_locales", "es", "messages.json"), "utf8"));
 const DEMO_AWS_KEY = ["AKIA", "4HPQ7XZ2", "R6TWLJ3N"].join("");
 
-require("../extension/patterns.js");
-require("../extension/detector.js");
-require("../extension/demo-key.js");
+require("./load-engine.js")("rules", "detect");
+require("../extension/page-parts/practice-key.js");
 const { detect } = globalThis.Clotr;
 
 // Stands in for chrome.i18n, built from the Spanish locale file, and also handles the browser's bare $1 placeholders.
@@ -32,7 +31,7 @@ function spanish(key, subs = []) {
 
 // Loads the practice data in one language: English comes straight from the file, Spanish comes through _locales.
 function load(lang) {
-  const file = require.resolve("../extension/practice-data.js");
+  const file = require.resolve("../extension/page-parts/practice-data.js");
   delete require.cache[file];
   const before = globalThis.chrome;
   globalThis.chrome = lang === "es" ? { i18n: { getMessage: spanish } } : undefined;
@@ -147,86 +146,6 @@ test("the AWS practice lesson still finds the made-up key in English and Spanish
   }
 });
 
-test(
-  "the website practice lesson still builds and detects its key at runtime",
-  { skip: !fs.existsSync(path.join(__dirname, "..", "website-test", "try.html")) && "website-test is private" },
-  () => {
-    const site = path.join(__dirname, "..", "website-test");
-    const html = fs.readFileSync(path.join(site, "try.html"), "utf8");
-    const source = fs.readFileSync(path.join(site, "try", "practice-data.js"), "utf8");
-    assert.match(html, /<script src="try\/demo-key\.js"><\/script>/);
-    assert.ok(!source.includes(DEMO_AWS_KEY), "website practice data contains the whole key");
-    assert.match(source, /AWS_ACCESS_KEY_ID=\$1/);
-    require("../website-test/try/demo-key.js");
-    const websiteData = require.resolve("../website-test/try/practice-data.js");
-    delete require.cache[websiteData];
-    require(websiteData);
-    const lesson = globalThis.Clotr.practice.leaks.find(({ id }) => id === "script");
-    assert.ok(lesson.text.includes(DEMO_AWS_KEY));
-    assert.deepEqual(finds(lesson.text), ["aws_access_key"]);
-  },
-);
-
-// A pasted scam's long link, or Spot the leak's AWS line, is one unbroken word: without a rule to break it, it ran
-// past its card and the whole page scrolled sideways on a 360 px phone.
-test(
-  "the Try page breaks a long link or key inside its card, so a phone never scrolls sideways",
-  { skip: !fs.existsSync(path.join(__dirname, "..", "website-test", "try.css")) && "website-test is private" },
-  () => {
-    const css = fs.readFileSync(path.join(__dirname, "..", "website-test", "try.css"), "utf8");
-    assert.match(css, /\.try-sec \{[^}]*overflow-wrap: anywhere;/);
-    const html = fs.readFileSync(path.join(__dirname, "..", "website-test", "try.html"), "utf8");
-    for (const id of ["scam-check", "practice"]) assert.match(html, new RegExp(`class="sec try-sec" id="${id}"`), id);
-  },
-);
-
-// A browser that can't parse the engine (Safari before 16.4 has no lookbehind) never sets up Clotr. The Try page's
-// own scripts still load, so Check it says it couldn't check and Practice says it couldn't start, instead of a dead
-// page with no reason given.
-test(
-  "the Try page says so when the engine didn't load, instead of going dead",
-  { skip: !fs.existsSync(path.join(__dirname, "..", "website-test", "try.html")) && "website-test is private" },
-  () => {
-    const vm = require("vm");
-    const site = path.join(__dirname, "..", "website-test");
-    const html = fs.readFileSync(path.join(site, "try.html"), "utf8");
-    const startsHidden = new Set([...html.matchAll(/id="([\w-]+)"[^>]*\bhidden\b/g)].map((m) => m[1]));
-    const els = new Map();
-    const node = (id) => ({
-      id,
-      hidden: startsHidden.has(id),
-      value: "",
-      dataset: {},
-      on: {},
-      addEventListener(type, fn) {
-        this.on[type] = fn;
-      },
-      append() {},
-      replaceChildren() {},
-      focus() {},
-    });
-    const page = {
-      document: {
-        getElementById: (id) => els.get(id) || els.set(id, node(id)).get(id),
-        createElement: () => node(""),
-      },
-      addEventListener() {},
-    };
-    page.window = page;
-    page.globalThis = page;
-    vm.createContext(page);
-    for (const f of ["page-notice.js", "scam-check.js", "practice.js"]) {
-      assert.doesNotThrow(() => vm.runInContext(fs.readFileSync(path.join(site, "try", f), "utf8"), page), f);
-    }
-    assert.ok(html.includes('id="pz-failed"'), "try.html has Practice's note");
-    assert.equal(els.get("pz-failed").hidden, false, "Practice says it couldn't start");
-    assert.equal(els.get("pz-drill").hidden, true, "and hides the empty drill");
-    els.get("sc-message").value = "Your account is locked. Call now.";
-    els.get("sc-check-it").on.click();
-    assert.equal(els.get("sc-failed").hidden, false, "Check it says it couldn't check");
-  },
-);
-
 // Every value in the practice data must be made up, never a real person's detail: phone numbers use 555-01xx,
 // email addresses and links use example.com or example.invalid, and the card number is the well-known test
 // number. A kind that isn't listed below fails until someone checks its value is made up and adds it here.
@@ -281,23 +200,27 @@ test("a message with something Bandage can't cover says what the AI needs instea
 // its code never writes to storage, never messages the rest of Clotr so nothing reaches the history, and never
 // goes online.
 test("the practice page loads only Clotr's own scripts and never stores, sends or fetches anything", () => {
-  const html = fs.readFileSync(path.join(EXT, "practice.html"), "utf8");
+  const html = fs.readFileSync(path.join(EXT, "clotr-pages/practice/practice.html"), "utf8");
   const scripts = [...html.matchAll(/<script\b([^>]*)>([\s\S]*?)<\/script\b[^>]*>/gi)];
   assert.ok(scripts.length >= 4, "the page's scripts");
   for (const [, attrs, body] of scripts) {
     const src = /\bsrc="([^"]+)"/.exec(attrs)?.[1];
-    assert.ok(src && /^[a-z0-9-]+\.js$/.test(src), `a script that isn't one of Clotr's files: ${attrs}`);
+    assert.ok(
+      src && /^\/[a-z0-9-]+(\/[a-z0-9-]+)*\.js$/.test(src),
+      `a script that isn't one of Clotr's files: ${attrs}`,
+    );
     assert.ok(fs.existsSync(path.join(EXT, src)), `${src} isn't in the extension`);
     assert.equal(body.trim(), "", "no inline script");
   }
   assert.doesNotMatch(html, /\b(src|href)="(https?:)?\/\//, "nothing from elsewhere");
   assert.match(html, /<textarea[^>]*id="reply"[^>]*autocomplete="off"[^>]*spellcheck="false"/);
-  const own = ["practice.js", "practice-data.js", "page-notice.js"].map((f) =>
-    fs
-      .readFileSync(path.join(EXT, f), "utf8")
-      .split("\n")
-      .filter((l) => !l.trim().startsWith("//"))
-      .join("\n"),
+  const own = ["clotr-pages/practice/practice.js", "page-parts/practice-data.js", "page-parts/practice-warning.js"].map(
+    (f) =>
+      fs
+        .readFileSync(path.join(EXT, f), "utf8")
+        .split("\n")
+        .filter((l) => !l.trim().startsWith("//"))
+        .join("\n"),
   );
   for (const code of own) {
     assert.doesNotMatch(code, /storage\.\w+\.(set|remove|clear)|sendMessage|connect\(|fetch\(|XMLHttpRequest/);
@@ -306,7 +229,7 @@ test("the practice page loads only Clotr's own scripts and never stores, sends o
 });
 
 // Spot the Leak's Bandage line names the labels Bandage would really send, in the order they appear. It uses
-// the same bl_ message words and the same numbering rules as content.js's bandageLabel(), and keeps a written
+// the same bl_ message words and the same numbering rules as on-websites/content.js's bandageLabel(), and keeps a written
 // birth year down to its decade.
 test("Spot the leak: Bandage's labels are the ones Bandage would send, in both languages", () => {
   const labels = (lang, id) => {
@@ -333,13 +256,13 @@ test("Spot the leak: Bandage's labels are the ones Bandage would send, in both l
     "[Phone 1]",
     "[Phone 2]",
   ]);
-  // These words for each kind come straight from content.js, so a kind added there needs adding here too.
-  const content = fs.readFileSync(path.join(EXT, "content.js"), "utf8");
+  // These words for each kind come straight from on-websites/content.js, so a kind added there needs adding here too.
+  const content = fs.readFileSync(path.join(EXT, "on-websites/content.js"), "utf8");
   const body = /function bandageWord\(id\) \{([\s\S]*?)\n {4}\}\n {2}\}/.exec(content)[1];
   const theirs = Object.fromEntries(
     [...body.matchAll(/case "(\w+)":\s*return \["(bl_\w+)"/g)].map(([, id, word]) => [id, word]),
   );
-  assert.ok(Object.keys(theirs).length >= 10, `read ${Object.keys(theirs).length} kinds from content.js`);
+  assert.ok(Object.keys(theirs).length >= 10, `read ${Object.keys(theirs).length} kinds from on-websites/content.js`);
   assert.deepEqual(LANGS.en.coverWords, theirs);
   assert.match(body, /return \["bl_id", msg\("bl_id", "ID"\)\]/, "anything else is an ID, as here");
 });

@@ -473,7 +473,7 @@ module.exports = async function (env) {
     async () => {
       await store.set(ctx, { events: seedEvents() });
       for (const width of PHONES) {
-        const popup = await openOnPhone("popup.html", width);
+        const popup = await openOnPhone("popup/popup.html", width);
         try {
           for (const tab of ["overview", "activity", "settings"]) {
             await popup.tap(`#tab-${tab}`);
@@ -512,10 +512,10 @@ module.exports = async function (env) {
     async () => {
       await store.set(ctx, { events: seedEvents() });
       const pages = [
-        ["vault.html?welcome=1", "welcome"],
-        ["vault.html", "vault"],
-        ["stored.html", "stored"],
-        ["dashboard.html", "report"],
+        ["clotr-pages/vault/vault.html?welcome=1", "welcome"],
+        ["clotr-pages/vault/vault.html", "vault"],
+        ["clotr-pages/what-clotr-stores/what-clotr-stores.html", "stored"],
+        ["clotr-pages/exposure-report/exposure-report.html", "report"],
       ];
       for (const width of PHONES) {
         for (const [file, name] of pages) {
@@ -540,7 +540,7 @@ module.exports = async function (env) {
     async () => {
       const builtIn = JSON.parse(fs.readFileSync(path.join(EXT, "manifest.json"), "utf8")).host_permissions;
       const missing = builtIn.filter((o) => ["https://grok.com/*", "https://pi.ai/*"].includes(o));
-      const welcome = await openOnPhone("vault.html?welcome=1", 360);
+      const welcome = await openOnPhone("clotr-pages/vault/vault.html?welcome=1", 360);
       try {
         expect(await welcome.$eval("#allow-card", (c) => c.hidden), "the card shows with every AI chat allowed");
       } finally {
@@ -566,7 +566,9 @@ module.exports = async function (env) {
           };
         }, missing);
         try {
-          await page.goto(`chrome-extension://${new URL(ctx.swTarget.url()).host}/vault.html?welcome=1`);
+          await page.goto(
+            `chrome-extension://${new URL(ctx.swTarget.url()).host}/clotr-pages/vault/vault.html?welcome=1`,
+          );
           await page.evaluate(() => document.fonts.ready);
           const shown = await waitFor(() => page.$eval("#allow-card", (c) => !c.hidden && c.innerText), 2000);
           expect(shown && shown.includes("2 of the AI chats"), `card: ${JSON.stringify(shown)}`);
@@ -625,7 +627,7 @@ module.exports = async function (env) {
             .join(" | "),
         );
       // Not pinned, whatever the browser under test would say, so both halves read the steps.
-      const onPhone = await openOnPhone("vault.html?welcome=1", 360, { pinned: false });
+      const onPhone = await openOnPhone("clotr-pages/vault/vault.html?welcome=1", 360, { pinned: false });
       try {
         const text = await read(onPhone);
         expect(!/puzzle piece|top-right/i.test(text), `on a phone: ${JSON.stringify(text)}`);
@@ -637,7 +639,9 @@ module.exports = async function (env) {
       try {
         await stubPinned(onComputer, false);
         await onComputer.setViewport({ width: 1040, height: 900 });
-        await onComputer.goto(`chrome-extension://${new URL(ctx.swTarget.url()).host}/vault.html?welcome=1`);
+        await onComputer.goto(
+          `chrome-extension://${new URL(ctx.swTarget.url()).host}/clotr-pages/vault/vault.html?welcome=1`,
+        );
         const text = await read(onComputer);
         expect(/puzzle piece/.test(text) && /top-right/.test(text), `on a computer: ${JSON.stringify(text)}`);
         expect(!/⋮/.test(text), `on a computer, phone words show: ${JSON.stringify(text)}`);
@@ -661,7 +665,7 @@ module.exports = async function (env) {
             plainWeight: getComputedStyle(document.querySelector(".try-hint")).fontWeight,
           };
         });
-      const onPhone = await openOnPhone("vault.html?welcome=1", 360, { pinned: true });
+      const onPhone = await openOnPhone("clotr-pages/vault/vault.html?welcome=1", 360, { pinned: true });
       try {
         await sleep(1700); // one more turn of the pin poll
         const { text, phoneWeight, plainWeight } = await pinStep(onPhone);
@@ -676,7 +680,9 @@ module.exports = async function (env) {
         try {
           await stubPinned(page, pinned);
           await page.setViewport({ width: 1040, height: 900 });
-          await page.goto(`chrome-extension://${new URL(ctx.swTarget.url()).host}/vault.html?welcome=1`);
+          await page.goto(
+            `chrome-extension://${new URL(ctx.swTarget.url()).host}/clotr-pages/vault/vault.html?welcome=1`,
+          );
           await sleep(400);
           const { text } = await pinStep(page);
           if (pinned) expect(/✓ Clotr is pinned/.test(text), `on a computer, pinned: ${JSON.stringify(text)}`);
@@ -895,7 +901,7 @@ module.exports = async function (env) {
           return granted;
         };
       });
-      await popup.goto(`chrome-extension://${new URL(ctx.swTarget.url()).host}/popup.html`);
+      await popup.goto(`chrome-extension://${new URL(ctx.swTarget.url()).host}/popup/popup.html`);
       await popup.waitForSelector("#hero-value");
       await settle(400);
       try {
@@ -931,16 +937,16 @@ module.exports = async function (env) {
       const pages = [];
       const popup = await openPopup(ctx);
       pages.push(["popup", popup]);
-      // check.html and practice.html drop out here when their features are held back and this build doesn't
+      // clotr-pages/scam-check/scam-check.html and clotr-pages/practice/practice.html drop out here when their features are held back and this build doesn't
       // ship them.
       for (const f of [
-        "vault.html?welcome=1",
-        "vault.html",
-        "stored.html",
-        "dashboard.html",
-        "policy.html",
-        "check.html",
-        "practice.html",
+        "clotr-pages/vault/vault.html?welcome=1",
+        "clotr-pages/vault/vault.html",
+        "clotr-pages/what-clotr-stores/what-clotr-stores.html",
+        "clotr-pages/exposure-report/exposure-report.html",
+        "clotr-pages/policy-applied/policy-applied.html",
+        "clotr-pages/scam-check/scam-check.html",
+        "clotr-pages/practice/practice.html",
       ].filter(hasPage)) {
         pages.push([f, await openExtPage(ctx, f)]);
       }

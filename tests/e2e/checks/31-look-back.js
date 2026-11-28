@@ -71,7 +71,7 @@ module.exports = async function (env) {
   // Chrome's devtools protocol can't set files on a webkitdirectory input; a real folder pick only happens
   // through the OS's own dialog, and that leaves `.files` empty here. So instead I build real `File` objects
   // in the page, keep their relative paths, assign them over the input's normally read-only `.files`, and dispatch
-  // a real `change` event, which runs the exact listener lookback.js would.
+  // a real `change` event, which runs the exact listener clotr-pages/look-back/look-back.js would.
   async function pickFolder(page, files) {
     const entries = Object.entries(files).map(([name, content]) => [
       name,
@@ -172,7 +172,7 @@ module.exports = async function (env) {
 
   await check("LK1", "Look back: picking each company's own zip finds exactly what expected.json lists", async () => {
     for (const name of ["chatgpt", "claude", "gemini", "copilot"]) {
-      const page = await openExtPage(ctx, "lookback.html");
+      const page = await openExtPage(ctx, "clotr-pages/look-back/look-back.html");
       try {
         await pickZip(page, zipOf(name), `${name}.zip`);
         await waitSettled(page);
@@ -192,7 +192,7 @@ module.exports = async function (env) {
   // ---------- LK2: a picked folder ----------
 
   await check("LK2", "Look back: a picked folder reads the same as the company's own zip", async () => {
-    const page = await openExtPage(ctx, "lookback.html");
+    const page = await openExtPage(ctx, "clotr-pages/look-back/look-back.html");
     try {
       await page.click('.lb-tab[data-tool="claude"]');
       await pickFolder(page, EXPORTS.claude);
@@ -208,7 +208,7 @@ module.exports = async function (env) {
   // ---------- LK3: a lone JSON file ----------
 
   await check("LK3", "Look back: a lone MyActivity.json, picked by itself, is read", async () => {
-    const page = await openExtPage(ctx, "lookback.html");
+    const page = await openExtPage(ctx, "clotr-pages/look-back/look-back.html");
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), "clotr-lb-json-"));
     try {
       const geminiJson = EXPORTS.gemini["Takeout/My Activity/Gemini Apps/MyActivity.json"];
@@ -236,7 +236,7 @@ module.exports = async function (env) {
     "LK3B",
     "Look back: a lone Copilot CSV, picked by itself (not zipped), is read and grouped by day",
     async () => {
-      const page = await openExtPage(ctx, "lookback.html");
+      const page = await openExtPage(ctx, "clotr-pages/look-back/look-back.html");
       const dir = fs.mkdtempSync(path.join(os.tmpdir(), "clotr-lb-csv-"));
       try {
         await page.click('.lb-tab[data-tool="copilot"]');
@@ -285,12 +285,14 @@ module.exports = async function (env) {
   }
 
   await check("LK4", "Look back: Stop ends the read and keeps nothing on screen", async () => {
-    const page = await openExtPage(ctx, "lookback.html");
+    const page = await openExtPage(ctx, "clotr-pages/look-back/look-back.html");
     try {
       const bytes = geminiPadded(25 * 1024 * 1024);
       const [, workerTarget] = await Promise.all([
         pickZip(page, bytes, "stress.zip"),
-        ctx.browser.waitForTarget((t) => t.url().endsWith("/lookback-worker.js"), { timeout: 10000 }).catch(() => null),
+        ctx.browser
+          .waitForTarget((t) => t.url().endsWith("/clotr-pages/look-back/look-back-worker.js"), { timeout: 10000 })
+          .catch(() => null),
       ]);
       expect(workerTarget, "Look back's worker never started");
       const readingShown = await page.evaluate(() => !document.getElementById("reading").hidden);
@@ -320,7 +322,7 @@ module.exports = async function (env) {
     "LK5",
     "Look back: an unknown export and Takeout's HTML export each explain themselves plainly",
     async () => {
-      const page = await openExtPage(ctx, "lookback.html");
+      const page = await openExtPage(ctx, "clotr-pages/look-back/look-back.html");
       try {
         await pickZip(page, zipOf("unknown"), "unknown.zip");
         await waitSettled(page);
@@ -366,7 +368,7 @@ module.exports = async function (env) {
     "LK5B",
     "Look back: a truncated or garbled zip reads as damaged, not as an unknown export or a stuck screen",
     async () => {
-      const page = await openExtPage(ctx, "lookback.html");
+      const page = await openExtPage(ctx, "clotr-pages/look-back/look-back.html");
       try {
         await pickZip(page, Buffer.from("not actually a zip file"), "export.zip");
         await waitSettled(page);
@@ -387,7 +389,7 @@ module.exports = async function (env) {
   // ---------- LK6: Open the chat, only to the checked address ----------
 
   await check("LK6", "Look back: 'Open the chat' only ever points at the company's own checked address", async () => {
-    const page = await openExtPage(ctx, "lookback.html");
+    const page = await openExtPage(ctx, "clotr-pages/look-back/look-back.html");
     try {
       await pickZip(page, zipOf("chatgpt"), "chatgpt.zip");
       await waitSettled(page);
@@ -421,7 +423,7 @@ module.exports = async function (env) {
   // ---------- LK7: never a whole value, only mask()'ed ----------
 
   await check("LK7", "Look back: not one fixture value ever appears whole on the page, only masked", async () => {
-    const page = await openExtPage(ctx, "lookback.html");
+    const page = await openExtPage(ctx, "clotr-pages/look-back/look-back.html");
     try {
       await pickZip(page, zipOf("chatgpt"), "chatgpt.zip");
       await waitSettled(page);
@@ -511,12 +513,12 @@ module.exports = async function (env) {
     "Look back: a 300 MB synthetic export reads to the end, still finding what's in it, under the worker's memory budget",
     async () => {
       const { bytes, records } = chatgptStress(300 * 1024 * 1024);
-      const page = await openExtPage(ctx, "lookback.html");
+      const page = await openExtPage(ctx, "clotr-pages/look-back/look-back.html");
       try {
         const [, workerTarget] = await Promise.all([
           pickZip(page, bytes, "stress-300mb.zip"),
           ctx.browser
-            .waitForTarget((t) => t.url().endsWith("/lookback-worker.js"), { timeout: 15000 })
+            .waitForTarget((t) => t.url().endsWith("/clotr-pages/look-back/look-back-worker.js"), { timeout: 15000 })
             .catch(() => null),
         ]);
         expect(workerTarget, "Look back's worker never started for the 300 MB export");
@@ -595,13 +597,13 @@ module.exports = async function (env) {
     "Look back: a 300 MB synthetic Gemini export reads to the end, under the worker's memory budget",
     async () => {
       const { bytes, records } = geminiStress(300 * 1024 * 1024);
-      const page = await openExtPage(ctx, "lookback.html");
+      const page = await openExtPage(ctx, "clotr-pages/look-back/look-back.html");
       try {
         await page.click('.lb-tab[data-tool="gemini"]');
         const [, workerTarget] = await Promise.all([
           pickZip(page, bytes, "gemini-stress-300mb.zip"),
           ctx.browser
-            .waitForTarget((t) => t.url().endsWith("/lookback-worker.js"), { timeout: 15000 })
+            .waitForTarget((t) => t.url().endsWith("/clotr-pages/look-back/look-back-worker.js"), { timeout: 15000 })
             .catch(() => null),
         ]);
         expect(workerTarget, "Look back's worker never started for the 300 MB Gemini export");
@@ -652,7 +654,7 @@ module.exports = async function (env) {
     "LK10",
     "Look back: the deletion letter's panel builds a letter naming kinds, dates and links, never a value",
     async () => {
-      const page = await openExtPage(ctx, "lookback.html");
+      const page = await openExtPage(ctx, "clotr-pages/look-back/look-back.html");
       try {
         await pickZip(page, zipOf("chatgpt"), "chatgpt.zip");
         await waitSettled(page);
@@ -711,7 +713,7 @@ module.exports = async function (env) {
       let page;
       try {
         const es = await spanishBrowser(ctx, EXT);
-        page = await openExtPage(es, "lookback.html");
+        page = await openExtPage(es, "clotr-pages/look-back/look-back.html");
         stage = "uploading the export";
         await pickZip(page, zipOf("chatgpt"), "chatgpt.zip");
         stage = "waiting for results";
@@ -769,7 +771,7 @@ module.exports = async function (env) {
     async () => {
       const [manifestName, manifestContent] = Object.entries(EXPORTS["claude-manifest"])[0];
       const manifest = JSON.parse(manifestContent);
-      const page = await openExtPage(ctx, "lookback.html");
+      const page = await openExtPage(ctx, "clotr-pages/look-back/look-back.html");
       try {
         await pickZip(page, manifestContent, manifestName);
         await waitSettled(page);
@@ -825,7 +827,7 @@ module.exports = async function (env) {
     "LK13",
     "Look back: several conversations-NNN.zip parts, chosen together, read as one export",
     async () => {
-      const page = await openExtPage(ctx, "lookback.html");
+      const page = await openExtPage(ctx, "clotr-pages/look-back/look-back.html");
       try {
         await pickFiles(page, [
           ["conversations-000.zip", zipOf("claude-conversations-000")],
@@ -874,14 +876,14 @@ module.exports = async function (env) {
           problems.push(...found.map((f) => `${where}, ${theme}: ${f}`));
         }
       };
-      const page = await openExtPage(ctx, "lookback.html");
+      const page = await openExtPage(ctx, "clotr-pages/look-back/look-back.html");
       try {
-        await audit(page, "lookback.html start");
+        await audit(page, "clotr-pages/look-back/look-back.html start");
         await pickZip(page, zipOf("chatgpt"), "chatgpt.zip");
         await waitSettled(page);
-        await audit(page, "lookback.html results");
+        await audit(page, "clotr-pages/look-back/look-back.html results");
         await openFirstCardsLetter(page);
-        await audit(page, "lookback.html letter panel");
+        await audit(page, "clotr-pages/look-back/look-back.html letter panel");
         await page.click("#letter-back");
         await settle(100);
         await page.emulateMediaFeatures([{ name: "prefers-reduced-motion", value: "reduce" }]);
@@ -893,7 +895,7 @@ module.exports = async function (env) {
         const [manifestName, manifestContent] = Object.entries(EXPORTS["claude-manifest"])[0];
         await pickZip(page, manifestContent, manifestName);
         await waitSettled(page);
-        await audit(page, "lookback.html manifest");
+        await audit(page, "clotr-pages/look-back/look-back.html manifest");
       } finally {
         await page.close();
       }
@@ -908,7 +910,7 @@ module.exports = async function (env) {
     };
     const expectedMessage =
       "This Takeout doesn't have your Gemini chats. In Google Takeout, choose My Activity, then Gemini Apps, and pick JSON as the format.";
-    const chats = await openExtPage(ctx, "lookback.html");
+    const chats = await openExtPage(ctx, "clotr-pages/look-back/look-back.html");
     try {
       await pickFolder(chats, {
         "Takeout/My Activity/Gemini Apps/MyActivity.json":
@@ -924,7 +926,7 @@ module.exports = async function (env) {
       async (page) => pickZip(page, zip(files), "takeout.zip"),
       async (page) => pickFolder(page, files),
     ]) {
-      const page = await openExtPage(ctx, "lookback.html");
+      const page = await openExtPage(ctx, "clotr-pages/look-back/look-back.html");
       try {
         await pick(page);
         await waitFor(() => page.$eval("#unsupported", (el) => !el.hidden), 10000);
@@ -933,7 +935,7 @@ module.exports = async function (env) {
         await page.close();
       }
     }
-    const empty = await openExtPage(ctx, "lookback.html");
+    const empty = await openExtPage(ctx, "clotr-pages/look-back/look-back.html");
     try {
       await empty.evaluate(() => {
         const input = document.getElementById("folder-input");

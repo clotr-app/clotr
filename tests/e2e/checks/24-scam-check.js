@@ -1,4 +1,4 @@
-// E2E checks: SC. "Is this a scam?" (check.html) lets someone paste a message they got and see the warning signs
+// E2E checks: SC. "Is this a scam?" (clotr-pages/scam-check/scam-check.html) lets someone paste a message they got and see the warning signs
 // Clotr knows, each in plain words with its source. It never says a message is fine, and it keeps nothing.
 "use strict";
 
@@ -102,7 +102,7 @@ module.exports = async function (env) {
     "SC1",
     "The made-up message: four signs, each word marked in the message, each card with its source",
     async () => {
-      const page = await openExtPage(ctx, "check.html");
+      const page = await openExtPage(ctx, "clotr-pages/scam-check/scam-check.html");
       try {
         await tryMadeUp(page);
         const got = await read(page);
@@ -146,7 +146,7 @@ module.exports = async function (env) {
     "SC2",
     "A look-alike: \"didn't find any of the signs it knows\", no green, no tick, and why it's not a yes",
     async () => {
-      const page = await openExtPage(ctx, "check.html");
+      const page = await openExtPage(ctx, "clotr-pages/scam-check/scam-check.html");
       try {
         await checkMessage(page, LOOKALIKE);
         const got = await read(page);
@@ -177,7 +177,7 @@ module.exports = async function (env) {
     "SC3",
     "A message with a phone number or a link: Before you answer says not to use it to check",
     async () => {
-      const page = await openExtPage(ctx, "check.html");
+      const page = await openExtPage(ctx, "clotr-pages/scam-check/scam-check.html");
       try {
         await checkMessage(page, "Anytown Bank: call our fraud team at (555) 555-0142 right away about a charge.");
         let got = await read(page);
@@ -207,7 +207,7 @@ module.exports = async function (env) {
         globalThis.Clotr.fingerprint(await ensureSalt(), "watch_list", "Maria Lopez"),
       );
       await store.set(ctx, { vault: [{ kind: "word", type: "my_name", fp, words: 2, added: Date.now() }] });
-      const page = await openExtPage(ctx, "check.html");
+      const page = await openExtPage(ctx, "clotr-pages/scam-check/scam-check.html");
       try {
         await sleep(300); // the page reads the vault's fingerprints
         await checkMessage(page, "Hello Maria Lopez, this is the IRS. Confirm your Social Security number today.");
@@ -234,7 +234,7 @@ module.exports = async function (env) {
         JSON.stringify([await chrome.storage.local.get(null), await chrome.storage.session.get(null)]),
       );
     let before;
-    const page = await openExtPage(ctx, "check.html");
+    const page = await openExtPage(ctx, "clotr-pages/scam-check/scam-check.html");
     try {
       const initialized = await waitFor(
         () =>
@@ -271,7 +271,7 @@ module.exports = async function (env) {
     "SC6",
     "Already answered, paid or let someone in? The fold opens on What to do now and Tourniquet",
     async () => {
-      const page = await openExtPage(ctx, "check.html");
+      const page = await openExtPage(ctx, "clotr-pages/scam-check/scam-check.html");
       try {
         await tryMadeUp(page);
         const closed = await page.$eval("#answered", (d) => d.open);
@@ -281,13 +281,18 @@ module.exports = async function (env) {
         const got = await page.evaluate(() => ({
           open: document.getElementById("answered").open,
           text: document.getElementById("answered").innerText,
-          tq: document.querySelector("#answered a[href^='helper.html']")?.getAttribute("href"),
+          tq: document
+            .querySelector("#answered a[href^='/clotr-pages/set-up-for-someone/set-up-for-someone.html']")
+            ?.getAttribute("href"),
           out: [...document.querySelectorAll("#answered a[target='_blank']")].map((a) => a.rel),
         }));
         expect(got.open, "the fold didn't open");
         await shotAt(page, "scam-check-fold-380-dark.png", { width: 380, height: 1900, theme: "dark" });
         expect(/What to do now/.test(got.text) && /Paid with a gift card\?/.test(got.text), `fold: ${got.text}`);
-        expect(got.tq === "helper.html?for=after_scam", `Tourniquet link: ${got.tq}`);
+        expect(
+          got.tq === "/clotr-pages/set-up-for-someone/set-up-for-someone.html?for=after_scam",
+          `Tourniquet link: ${got.tq}`,
+        );
         expect(
           got.out.length >= 2 && got.out.every((r) => /noopener/.test(r) && /noreferrer/.test(r)),
           `links out: ${got.out}`,
@@ -308,7 +313,7 @@ module.exports = async function (env) {
         { LANGUAGE: "es", LANG: "es_ES.UTF-8" },
         { protocolTimeout: 90000 },
       );
-      const page = await openExtPage(es, "check.html");
+      const page = await openExtPage(es, "clotr-pages/scam-check/scam-check.html");
       step = "reading the initial page";
       const empty = await page.evaluate(() => ({
         h1: document.querySelector("h1").textContent.trim(),
@@ -362,7 +367,7 @@ module.exports = async function (env) {
     "At 380 px and 1040 px, light and dark: no sideways scroll, and no serious accessibility problem",
     async () => {
       const AXE = fs.readFileSync(require.resolve("axe-core/axe.min.js"), "utf8");
-      const page = await openExtPage(ctx, "check.html");
+      const page = await openExtPage(ctx, "clotr-pages/scam-check/scam-check.html");
       const problems = [];
       try {
         const states = [
@@ -409,5 +414,107 @@ module.exports = async function (env) {
       expect(!problems.length, problems.slice(0, 4).join(" | "));
       return `screenshots in ${path.relative(process.cwd(), OUT)}`;
     },
+  );
+
+  // The page looks for your own details with detect(), which has a time limit; the signs themselves have none.
+  // This stands in for a check cut short, without a ten-second paste, by marking every detect() result from the
+  // moment detector.js puts it on globalThis.Clotr, before clotr-pages/scam-check/scam-check.js takes its copy. Setting `cutShort` to false
+  // on the page lets the next check run in full.
+  const CUT_LINE = "too long to check all the way through";
+  const openCutShort = async () => {
+    const page = await ctx.browser.newPage();
+    page.on("pageerror", (err) => ctx.problems.push(`clotr-pages/scam-check/scam-check.html error: ${err.message}`));
+    await page.evaluateOnNewDocument(() => {
+      let held;
+      Object.defineProperty(globalThis, "Clotr", {
+        configurable: true,
+        get: () => held,
+        set: (v) => {
+          if (v?.detect && !v.detect.cut) {
+            const real = v.detect;
+            v.detect = Object.assign(
+              (text) => (globalThis.cutShort === false ? real(text) : Object.assign(real(text), { truncated: true })),
+              { cut: true },
+            );
+          }
+          held = v;
+        },
+      });
+    });
+    await page.setViewport({ width: 700, height: 900 });
+    await page.goto(`chrome-extension://${new URL(ctx.swTarget.url()).host}/clotr-pages/scam-check/scam-check.html`);
+    await sleep(400);
+    return page;
+  };
+  const withName = async (fn) => {
+    const fp = await ctx.worker.evaluate(async () =>
+      globalThis.Clotr.fingerprint(await ensureSalt(), "watch_list", "Maria Lopez"),
+    );
+    await store.set(ctx, { vault: [{ kind: "word", type: "my_name", fp, words: 2, added: Date.now() }] });
+    try {
+      await fn();
+    } finally {
+      await store.set(ctx, { vault: [] });
+    }
+  };
+  const cutNote = (page) =>
+    page.evaluate(() => {
+      const el = document.getElementById("cut-short");
+      return el && !el.hidden && el.getClientRects().length ? el.textContent.trim() : "";
+    });
+
+  await check(
+    "SC-CUT1",
+    "A message too long to look through for your own details says part of it wasn't checked; a full check doesn't",
+    () =>
+      withName(async () => {
+        const message = "Hello Maria Lopez, this is the IRS. Confirm your Social Security number today.";
+        const cut = await openCutShort();
+        try {
+          await checkMessage(cut, message);
+          const note = await cutNote(cut);
+          expect(note.includes(CUT_LINE), `no cut-short line: "${note}"`);
+          await again(cut);
+          await checkMessage(cut, "A short note about the weather");
+          expect((await cutNote(cut)).includes(CUT_LINE), "the line went away on a second cut-short check");
+        } finally {
+          await cut.close();
+        }
+        const full = await openExtPage(ctx, "clotr-pages/scam-check/scam-check.html");
+        try {
+          await sleep(300); // the page reads the vault's fingerprints
+          await checkMessage(full, message);
+          expect(!(await cutNote(full)), "a full check said part of it wasn't checked");
+        } finally {
+          await full.close();
+        }
+      }),
+  );
+
+  await check(
+    "SC-CUT2",
+    "A full check after a cut-short one on the same page doesn't keep the part-of-it-wasn't-checked line",
+    () =>
+      withName(async () => {
+        const message = "Hello Maria Lopez, this is the IRS. Confirm your Social Security number today.";
+        const page = await openCutShort();
+        try {
+          await checkMessage(page, message);
+          expect((await cutNote(page)).includes(CUT_LINE), "no cut-short line on the first check");
+          await again(page);
+          await page.evaluate(() => {
+            globalThis.cutShort = false;
+          });
+          await checkMessage(page, message);
+          const signs = await cutNote(page);
+          expect(!signs, `a full check with signs kept the line: "${signs}"`);
+          await again(page);
+          await checkMessage(page, "A short note about the weather");
+          const none = await cutNote(page);
+          expect(!none, `a full check with no signs kept the line: "${none}"`);
+        } finally {
+          await page.close();
+        }
+      }),
   );
 };

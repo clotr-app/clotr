@@ -81,12 +81,10 @@ module.exports = async function (env) {
       fs.writeFileSync(path.join(copy, "manifest.json"), JSON.stringify(m, null, 2));
       if (emailBandage) {
         // The copied test build opens the guarded path only so the email editor behavior can be checked.
-        const backgroundFile = path.join(copy, "background.js");
+        const backgroundFile = path.join(copy, "background/settings-for-sites.js");
         const background = fs.readFileSync(backgroundFile, "utf8").replace(/\r\n/g, "\n");
-        const disabled =
-          'function bandageFor(everyday, host, r) {\n  return everyday ? false : host && typeof r.bandage?.[host] === "boolean" ? r.bandage[host] : undefined;\n}';
-        const enabled =
-          'function bandageFor(everyday, host, r) {\n  return host && typeof r.bandage?.[host] === "boolean" ? r.bandage[host] : undefined;\n}';
+        const disabled = "function bandageFor(everyday, host, stored) {\n  if (everyday) return false;\n";
+        const enabled = "function bandageFor(everyday, host, stored) {\n";
         expect(background.includes(disabled), "the fake email Bandage setup couldn't find the guarded setting");
         fs.writeFileSync(backgroundFile, background.replace(disabled, enabled));
       }
@@ -551,7 +549,7 @@ module.exports = async function (env) {
         return Promise.resolve(yes);
       };
     }, answer);
-    await page.goto(`chrome-extension://${new URL(c.swTarget.url()).host}/vault.html?welcome=1`);
+    await page.goto(`chrome-extension://${new URL(c.swTarget.url()).host}/clotr-pages/vault/vault.html?welcome=1`);
     await page.bringToFront();
     // The card mounts only once chrome.permissions.getAll() answers, a round trip through the browser that a
     // loaded machine can stretch well past a fixed pause; a fixed pause alone once left the card still unmounted.
@@ -727,7 +725,7 @@ module.exports = async function (env) {
         chrome.permissions.request = () => new Promise((r) => (settle = r));
         window.__answerNo = () => settle?.(false);
       });
-      await page.goto(`chrome-extension://${new URL(ctx.swTarget.url()).host}/vault.html?welcome=1`);
+      await page.goto(`chrome-extension://${new URL(ctx.swTarget.url()).host}/clotr-pages/vault/vault.html?welcome=1`);
       await sleep(500);
       await page.evaluate(() => {
         const d = document.getElementById("where-pick-sites");
@@ -808,7 +806,9 @@ module.exports = async function (env) {
           chrome.permissions.request = () => new Promise((r) => (settle = r));
           window.__answerNo = () => settle?.(false);
         });
-        await page.goto(`chrome-extension://${new URL(ctx.swTarget.url()).host}/vault.html?welcome=1`);
+        await page.goto(
+          `chrome-extension://${new URL(ctx.swTarget.url()).host}/clotr-pages/vault/vault.html?welcome=1`,
+        );
         await sleep(500);
         await page.evaluate(() => {
           const d = document.getElementById("where-pick-sites");
@@ -1159,7 +1159,7 @@ module.exports = async function (env) {
   // wasn't actually running on.
   await check("EV10", "What Clotr stores lists only the email and chat apps the browser granted", async () => {
     const readRow = async (c) => {
-      const page = await openExtPage(c, "stored.html");
+      const page = await openExtPage(c, "clotr-pages/what-clotr-stores/what-clotr-stores.html");
       try {
         await sleep(300);
         return await page.evaluate(() => {
@@ -1271,7 +1271,7 @@ module.exports = async function (env) {
           steps.push(await ctx.worker.evaluate((r) => noteEverydayOffer(r), reason));
         }
         expect(steps.join() === "popup,popup,popup", `updates with no app on: ${steps.join()}`);
-        const page = await openExtPage(ctx, "stored.html");
+        const page = await openExtPage(ctx, "clotr-pages/what-clotr-stores/what-clotr-stores.html");
         try {
           await sleep(300);
           const row = await page.evaluate(() => {
@@ -1315,7 +1315,7 @@ module.exports = async function (env) {
           return Promise.resolve(true);
         };
       });
-      await page.goto(`chrome-extension://${new URL(ctx.swTarget.url()).host}/vault.html?welcome=1`);
+      await page.goto(`chrome-extension://${new URL(ctx.swTarget.url()).host}/clotr-pages/vault/vault.html?welcome=1`);
       await sleep(500);
       await page.evaluate(() => {
         const d = document.getElementById("where-pick-sites");
@@ -1395,7 +1395,7 @@ module.exports = async function (env) {
       const page = await ctx.browser.newPage();
       page.on("pageerror", (err) => ctx.problems.push(`welcome page error: ${err.message}`));
       await page.setViewport({ width: 700, height: 900 });
-      await page.goto(`chrome-extension://${new URL(ctx.swTarget.url()).host}/vault.html?welcome=1`);
+      await page.goto(`chrome-extension://${new URL(ctx.swTarget.url()).host}/clotr-pages/vault/vault.html?welcome=1`);
       await waitFor(() => page.evaluate(() => Boolean(document.getElementById("everyday-offer"))), 10000);
       await sleep(500);
       try {
@@ -1417,7 +1417,7 @@ module.exports = async function (env) {
         const w = await other.browser.newPage();
         w.on("pageerror", (err) => other.problems.push(`welcome page error: ${err.message}`));
         await w.setViewport({ width: 700, height: 900 });
-        await w.goto(`chrome-extension://${new URL(other.swTarget.url()).host}/vault.html?welcome=1`);
+        await w.goto(`chrome-extension://${new URL(other.swTarget.url()).host}/clotr-pages/vault/vault.html?welcome=1`);
         await waitFor(() => w.evaluate(() => Boolean(document.getElementById("everyday-offer"))), 10000);
         await sleep(500);
         try {
@@ -1525,7 +1525,9 @@ module.exports = async function (env) {
         page.on("pageerror", (err) => other.problems.push(`welcome page error: ${err.message}`));
         await page.setViewport({ width: 700, height: 900 });
         try {
-          await page.goto(`chrome-extension://${new URL(other.swTarget.url()).host}/vault.html?welcome=1`);
+          await page.goto(
+            `chrome-extension://${new URL(other.swTarget.url()).host}/clotr-pages/vault/vault.html?welcome=1`,
+          );
           const slack = await waitFor(
             () =>
               page.evaluate(() => {

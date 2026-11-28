@@ -9,9 +9,10 @@ const test = require("node:test");
 const assert = require("node:assert/strict");
 const fs = require("node:fs");
 const path = require("node:path");
+const { requireParts } = require("./extension-source.js");
 
-require("../extension/patterns.js"); // kind names (English here) and Clotr.msg
-require("../extension/report.js");
+require("./load-engine.js")("rules"); // kind names (English here) and Clotr.msg
+require("../extension/page-parts/report-a-problem.js");
 const { Report, PATTERNS } = globalThis.Clotr;
 
 const DAY = 86400000;
@@ -258,7 +259,8 @@ function assertOnlyClotrsOwnLines(text) {
 
 // A record that stands for a long list is counted as its `n`, the whole list it folds together.
 test("summary: a record that stands for a long list counts as the whole list", () => {
-  require("../extension/sites.js");
+  require("../extension/engine/files.js"); // sites-and-policy/protected-sites.js reads the engine's list
+  requireParts("sites-and-policy/protected-sites.js");
   const text = Report.summaryText(
     {
       events: [

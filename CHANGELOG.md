@@ -2,6 +2,23 @@
 
 What changed in each version of Clotr. How the version numbers work is in [VERSIONING.md](VERSIONING.md).
 
+## 1.6.4 (2026-11-28)
+
+Known issues: a phone number said with `nought` or `naught` as its first or last zero, like `naught seven nine two two six six seven eight four`, can get no warning, where 1.6.1 warned on part of it. A plain number right after a login code and "and" or "or", like `the login code is 482913 and 551234.`, is read as a second code, so Hide it covers it too. Under a camelCase setting like `authToken:` or `jwtSecret:`, a file path or a time can warn as a password, like `authToken: /run/secrets/db_password`. A code in a sign-in or verify link, like `?code=…`, isn't hidden yet, as in 1.6.1.
+
+- A password in any link with a login, like an `smb://` or `ssh://` link, is found, and Hide it covers the whole link. A stand-in like `password` or `secret` in a link stays quiet.
+- More passwords and keys are found in pasted settings: under camelCase names like `dbPassword:`, one level down in YAML, inside XML tags, after `SecretString` or `sessionKey:`, and typed ones that only sound made up, like `example123!`.
+- API tokens in 19 more formats and ID and tax numbers from 19 more European countries are found, and so are secret webhook links for Teams, Google Chat, IFTTT and Zapier.
+- Both codes in a message with two login codes are found and hidden, and so is a code in quotes before its name.
+- Most phone numbers spelled with `nought`, `naught` or `ninty` are found whole, and a word saved in My details is found in more of the ways people type it.
+- The warning's preview shows less of what it found, only dots for a password, PIN or private key and at most a quarter of anything else.
+- Fewer false alarms on order numbers, dates and prices in other languages, image names like `icon@2x.png`, settings in backticks, key file paths and made-up values like `test_pass_42`.
+- When an attached file is too long to check all the way through and nothing turned up in the part Clotr checked, Clotr says part of it wasn't checked, and Is this a scam? says so too.
+- On a phone, the welcome page keeps telling you how to find Clotr in the browser's menu, even when the browser says Clotr is pinned.
+- The source is now readable files grouped by what they do, and nothing about how Clotr works for you changes.
+
+Every change in detail is in `docs/extension/1.6.4-details.md` in the repo.
+
 ## 1.6.1 (2026-11-06)
 
 - Clotr now reads more national ID numbers, from Ireland, New Zealand, Brazil, India, France, the Netherlands, Poland, Italy, Germany, Singapore, South Africa, Korea, Japan and China.

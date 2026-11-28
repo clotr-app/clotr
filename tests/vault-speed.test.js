@@ -8,9 +8,7 @@ const test = require("node:test");
 const assert = require("node:assert/strict");
 const { bestOfPair, grewMoreThan } = require("./timing");
 
-require("../extension/patterns.js");
-require("../extension/detector.js");
-require("../extension/decide.js");
+require("./load-engine.js")("rules", "detect", "decide");
 const C = globalThis.Clotr;
 
 const SALT = "0123456789abcdef0123456789abcdef";

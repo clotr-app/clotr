@@ -1,12 +1,14 @@
-# Runs on a version tag like v0.9.47. Tests the code, builds the Chrome and Firefox zips, proves the build is
-# reproducible, and creates a draft GitHub release holding the zips, their SPDX SBOMs and SHA256SUMS.txt. In the
+# Runs on the extension's version tag, like v1.6.1. Tests the code, builds the Chrome and Firefox zips, proves the
+# build is reproducible, and creates a draft GitHub release holding the zips, their SPDX SBOMs and SHA256SUMS.txt. In the
 # public repo it also attaches a signed build-provenance attestation, which anyone can check with
 # `gh attestation verify <zip> -R <repo>`. Nothing goes out until a maintainer reviews the draft and presses Publish.
 name: Release
 
+# A "v" and a digit: every other product's tag starts with its name (vscode-v0.3.0, guard-v0.1.2), and "v*" alone
+# would start this on a vscode-v tag too.
 on:
   push:
-    tags: ["v*"]
+    tags: ["v[0-9]+.[0-9]+.[0-9]+"]
 
 # Read-only by default. Only the release job gets write access, since it's the one that creates the draft.
 permissions:
@@ -15,7 +17,7 @@ permissions:
 jobs:
   release:
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 30 # npm test takes about 18 minutes on GitHub
     permissions:
       contents: write # creating the draft release and uploading its files
       id-token: write # the provenance attestation's signing identity (public repo only)
@@ -55,9 +57,14 @@ jobs:
       - name: Draft release
         env:
           GH_TOKEN: ${{ github.token }}
+        # The title is built from what this tree has: the extension's number, and the engine package's, whose files
+        # the extension ships as they are. One assignment each, so a failed read stops the step.
         run: |
+          ext="$(node -p "require('./extension/manifest.json').version")"
+          engine="$(node -p "require('./apps/engine/package.json').version")"
+          title="Clotr for browsers $ext (engine $engine)"
           gh release create "$GITHUB_REF_NAME" dist/*.zip dist/*.spdx.json dist/SHA256SUMS.txt --draft \
-            --title "Clotr $GITHUB_REF_NAME" \
+            --title "$title" \
             --notes "Install: unzip, then Load unpacked in chrome://extensions (Developer mode), or use the store listing. Verify: \`sha256sum -c SHA256SUMS.txt\`, or rebuild from this tag with \`npm ci && npm run package\` and compare. Provenance: \`gh attestation verify <zip> -R $GITHUB_REPOSITORY\`."
       # A signed record of which workflow run built each zip from which commit, the SLSA provenance that's free on
       # public repos.
@@ -87,7 +94,7 @@ jobs:
   reproduce-second-os:
     needs: release
     runs-on: windows-latest
-    timeout-minutes: 15
+    timeout-minutes: 30
     permissions:
       contents: read
       actions: read # gh run download reads this run's artifacts

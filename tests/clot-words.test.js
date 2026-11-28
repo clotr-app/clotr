@@ -33,13 +33,21 @@ test("the browser's warning buttons read Clot this leak and Leave it alone, in E
     leaveItSend: "Dejarlo así y enviar",
   };
   for (const [key, words] of Object.entries(english)) {
-    assert.deepEqual(englishOf("extension/warning-ui.js", key), [words], `warning-ui.js ${key}`);
+    assert.deepEqual(
+      englishOf("extension/on-websites/warning-ui.js", key),
+      [words],
+      `on-websites/warning-ui.js ${key}`,
+    );
     assert.equal(es[key]?.message, spanish[key], `es ${key}`);
   }
   for (const key of ["coverIt", "leaveIt"]) {
-    assert.deepEqual(englishOf("extension/page-notice.js", key), [english[key]], `the practice box's ${key}`);
+    assert.deepEqual(
+      englishOf("extension/page-parts/practice-warning.js", key),
+      [english[key]],
+      `the practice box's ${key}`,
+    );
   }
-  const share = read("extension/share.html");
+  const share = read("extension/clotr-pages/share-clotr/share-clotr.html");
   assert.match(share, /data-i18n="coverIt">Clot this leak</);
   assert.match(share, /data-i18n="leaveIt">Leave it alone</);
 });
@@ -51,15 +59,23 @@ test("each browser button's tooltip says plainly what it does", () => {
     leaveItSendHint: "Sends your message as it is, with nothing covered",
   };
   for (const [key, words] of Object.entries(hints)) {
-    assert.deepEqual(englishOf("extension/warning-ui.js", key), [words], `warning-ui.js ${key}`);
+    assert.deepEqual(
+      englishOf("extension/on-websites/warning-ui.js", key),
+      [words],
+      `on-websites/warning-ui.js ${key}`,
+    );
     assert.ok(es[key]?.message, `es has ${key}`);
   }
   for (const key of ["coverItHint", "leaveItHint"]) {
-    assert.deepEqual(englishOf("extension/page-notice.js", key), [hints[key]], `the practice box's ${key}`);
+    assert.deepEqual(
+      englishOf("extension/page-parts/practice-warning.js", key),
+      [hints[key]],
+      `the practice box's ${key}`,
+    );
   }
   // Set as the button's title, so it's a tooltip and the button's accessible description, while the button's
   // name stays the words on it (the browser checks read both).
-  for (const file of ["extension/warning-ui.js", "extension/page-notice.js"]) {
+  for (const file of ["extension/on-websites/warning-ui.js", "extension/page-parts/practice-warning.js"]) {
     const code = read(file);
     assert.match(code, /title: msg\("coverItHint"/, `${file} gives the cover button its tooltip`);
     assert.match(code, /title: msg\("leaveItHint"/, `${file} gives the leave button its tooltip`);
@@ -85,12 +101,12 @@ test("no warning text still teaches the old button words", () => {
     "whyBody",
   ];
   for (const key of keys) {
-    for (const words of englishOf("extension/warning-ui.js", key)) {
+    for (const words of englishOf("extension/on-websites/warning-ui.js", key)) {
       assert.doesNotMatch(words, OLD_EN, `en ${key}: ${words}`);
     }
     assert.doesNotMatch(es[key].message, OLD_ES, `es ${key}: ${es[key].message}`);
   }
-  const share = read("extension/share.html");
+  const share = read("extension/clotr-pages/share-clotr/share-clotr.html");
   assert.doesNotMatch(share.match(/data-i18n="sh_notSure">([^<]*)</)[1], OLD_EN, "the share page's tip");
   assert.doesNotMatch(es.sh_notSure.message, OLD_ES, "es sh_notSure");
 });

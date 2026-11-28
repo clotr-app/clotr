@@ -146,11 +146,10 @@ test("the scam corpora use every sign, in both languages, and the look-alikes ar
   }
 });
 
-// ---------- The signs (scam-signs.js) ----------
+// ---------- The signs (clotr-pages/scam-check/scam-signs.js) ----------
 
-require("../extension/patterns.js");
-require("../extension/detector.js");
-require("../extension/scam-signs.js");
+require("./load-engine.js")("rules", "detect");
+require("../extension/clotr-pages/scam-check/scam-signs.js");
 const { scamSigns, scamHasLink, SCAM_SIGNS, askLabels, detect } = globalThis.Clotr;
 
 const found = (text, opts) => scamSigns(text, opts).map((s) => s.id);
@@ -258,14 +257,10 @@ test("the phone hint counts toll-free numbers, the ones scam texts give you to c
   for (const text of ["Pay $877.55 by Friday.", "Order 8775550142 has shipped.", "Your code is 800 555.", ""]) {
     assert.equal(scamHasPhone(text), false, text);
   }
-  // The extension's and the site's "Is this a scam?" ask this, not the personal-data check, for their phone line.
-  // The site's preview isn't in the public copy, so its half is checked only where it exists.
-  for (const file of ["extension/check.js", "website-test/try/scam-check.js"]) {
-    if (file.startsWith("website-test/") && !fs.existsSync(path.join(__dirname, "..", "website-test"))) continue;
-    const src = fs.readFileSync(path.join(__dirname, "..", file), "utf8");
-    assert.match(src, /hidden = !scamHasPhone\(text\)/, file);
-    assert.doesNotMatch(src, /r\.id === "phone_number"/, file);
-  }
+  // The extension's "Is this a scam?" asks this, not the personal-data check, for its phone line.
+  const src = fs.readFileSync(path.join(__dirname, "..", "extension", "clotr-pages/scam-check/scam-check.js"), "utf8");
+  assert.match(src, /hidden = !scamHasPhone\(text\)/);
+  assert.doesNotMatch(src, /r\.id === "phone_number"/);
 });
 
 // A real pressure-sell email that landed in spam: paid, fake Chrome Web Store reviews, sold with an invented
@@ -407,7 +402,7 @@ test("Clotr.askLabels: the scam rules' own labels, and what detect() finds after
     assert.deepEqual(kindOf(told), [kind], told);
   }
   // Each rule is built from its label, and that label's source is written only once, in patterns.js.
-  const src = fs.readFileSync(path.join(__dirname, "..", "extension", "patterns.js"), "utf8");
+  const src = require("./load-engine.js").source("rules");
   for (const name of [
     "LOGIN_NAMES",
     "CODE_THEY_SENT",
@@ -470,29 +465,6 @@ test("hostile link and negation inputs grow with their length", () => {
   );
   assert.ok(!grewMoreThan(negationSmall, negationBig, 16), "negated text grew too fast");
 });
-
-test(
-  "Try page caps its check at the extension's 100,000-character scan size",
-  { skip: !fs.existsSync(path.join(__dirname, "..", "website-test")) && "no website-test here" },
-  () => {
-    const root = path.join(__dirname, "..");
-    const html = fs.readFileSync(path.join(root, "website-test", "try.html"), "utf8");
-    const script = fs.readFileSync(path.join(root, "website-test", "try", "scam-check.js"), "utf8");
-    const extensionContent = fs.readFileSync(path.join(root, "extension", "content.js"), "utf8");
-    const extensionSigns = fs.readFileSync(path.join(root, "extension", "scam-signs.js"), "utf8");
-    const siteSigns = fs.readFileSync(path.join(root, "website-test", "try", "scam-signs.js"), "utf8");
-    assert.match(html, /Clotr checks the first 100,000 characters/);
-    assert.match(html, /<textarea\b[^>]*id="sc-message"[^>]*maxlength="100000"/);
-    assert.match(script, /const MAX_MESSAGE_LENGTH = 100000;/);
-    assert.match(
-      script,
-      /const text = input\.length > MAX_MESSAGE_LENGTH \? input\.slice\(0, MAX_MESSAGE_LENGTH\) : input;/,
-    );
-    assert.match(script, /if \(input\.length > MAX_MESSAGE_LENGTH\)[\s\S]*?\$\("sc-message"\)\.value = text;/);
-    assert.match(extensionContent, /if \(text\.length > 100000\) break/);
-    assert.equal(siteSigns, extensionSigns, "the export's Try engine copy matches the extension source");
-  },
-);
 
 test("nothing but text in: an empty, missing or odd input gives no signs and doesn't throw", () => {
   for (const v of ["", "   ", undefined, null, 42, {}]) assert.deepEqual(scamSigns(v), []);

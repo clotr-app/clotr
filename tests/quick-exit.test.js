@@ -7,7 +7,7 @@ const assert = require("node:assert/strict");
 
 function unload() {
   globalThis.Clotr?.stopListeningForQuickExit?.();
-  delete require.cache[require.resolve("../extension/quick-exit.js")];
+  delete require.cache[require.resolve("../extension/page-parts/quick-exit.js")];
   delete globalThis.Clotr;
   delete globalThis.chrome;
 }
@@ -21,7 +21,7 @@ test("Quick exit: another page's broadcast closes this page's own tab", async ()
       remove: (id) => closed.push(id),
     },
   };
-  require("../extension/quick-exit.js"); // loading the script on a page wires its own listener
+  require("../extension/page-parts/quick-exit.js"); // loading the script on a page wires its own listener
 
   const other = new BroadcastChannel("clotr-quick-exit");
   other.postMessage("exit");
@@ -44,7 +44,7 @@ test("Quick exit: closing a tab that isn't one (the popup) is a harmless no-op",
       remove: (id) => closed.push(id),
     },
   };
-  require("../extension/quick-exit.js");
+  require("../extension/page-parts/quick-exit.js");
   await globalThis.Clotr.closeThisTab();
 
   assert.deepEqual(closed, [], "nothing to remove when this page isn't a tab");
@@ -56,7 +56,7 @@ test("Quick exit: no BroadcastChannel (an old browser) never throws", async () =
   const real = globalThis.BroadcastChannel;
   delete globalThis.BroadcastChannel;
   globalThis.chrome = { tabs: { getCurrent: async () => null, remove: () => {} } };
-  assert.doesNotThrow(() => require("../extension/quick-exit.js"));
+  assert.doesNotThrow(() => require("../extension/page-parts/quick-exit.js"));
   assert.doesNotThrow(() => globalThis.Clotr.broadcastQuickExit());
   globalThis.BroadcastChannel = real;
   unload();

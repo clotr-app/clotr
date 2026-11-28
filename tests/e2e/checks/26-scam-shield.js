@@ -173,8 +173,8 @@ module.exports = async function (env) {
         expect(!(await readRow(withTq)).visible, "the row shows on Settings");
         await withTq.click("#tab-overview");
         await sleep(150);
-        await opensAndClose(ctx, withTq, "#ss-row", "Is this a scam?", "check.html");
-        await opensAndClose(ctx, withTq, "#ss-row", "Practice", "practice.html");
+        await opensAndClose(ctx, withTq, "#ss-row", "Is this a scam?", "clotr-pages/scam-check/scam-check.html");
+        await opensAndClose(ctx, withTq, "#ss-row", "Practice", "clotr-pages/practice/practice.html");
         await popupShots(withTq, "scam-shield-overview-tourniquet");
       } finally {
         await withTq.close();
@@ -316,7 +316,7 @@ module.exports = async function (env) {
 
   // Reads the command check's row from the "What Clotr stores" page.
   async function storedSays(c, label) {
-    const page = await openExtPage(c, "stored.html");
+    const page = await openExtPage(c, "clotr-pages/what-clotr-stores/what-clotr-stores.html");
     try {
       return await waitFor(
         () =>
@@ -400,9 +400,21 @@ module.exports = async function (env) {
         expect(carried[0] === false && carried[1] === false, `the backup doesn't carry the switch: ${carried}`);
         await popup.click("#command-check");
         await waitFor(async () => (await store.get(ctx, "commandCheck")).commandCheck === true, 2000);
-        await opensAndClose(ctx, popup, "#ss-help", "Is this a scam?", "check.html");
-        await opensAndClose(ctx, popup, "#ss-help", "Practice with six made-up scams", "practice.html");
-        await opensAndClose(ctx, popup, "#ss-help", "Print Safety Guide", "share.html#card");
+        await opensAndClose(ctx, popup, "#ss-help", "Is this a scam?", "clotr-pages/scam-check/scam-check.html");
+        await opensAndClose(
+          ctx,
+          popup,
+          "#ss-help",
+          "Practice with six made-up scams",
+          "clotr-pages/practice/practice.html",
+        );
+        await opensAndClose(
+          ctx,
+          popup,
+          "#ss-help",
+          "Print Safety Guide",
+          "clotr-pages/share-clotr/share-clotr.html#card",
+        );
         await settingsShots(popup, "scam-shield-settings");
       } finally {
         await popup.close();
@@ -466,7 +478,7 @@ module.exports = async function (env) {
           popup,
           "#ss-tq30",
           "Tourniquet can ask first for 30 days.",
-          "helper.html?for=after_scam#who",
+          "clotr-pages/set-up-for-someone/set-up-for-someone.html?for=after_scam#who",
         );
         try {
           await sleep(600);
@@ -562,7 +574,7 @@ module.exports = async function (env) {
   await check("SN3", "The welcome page has no scam check card, and Try it comes before the setup cards", async () => {
     await resetState(ctx, {});
     await unlockSettings(ctx);
-    const page = await openPage(ctx, "vault.html?welcome=1");
+    const page = await openPage(ctx, "clotr-pages/vault/vault.html?welcome=1");
     try {
       expect(!(await page.$("#ss-welcome")), "the old scam check card is still on the welcome page");
       const h2s = await readWelcomeH2s(page);
@@ -579,7 +591,7 @@ module.exports = async function (env) {
     }
     // Even locked by a PIN, it should stay gone, since these pages don't change any setting.
     await lockSettings(ctx);
-    const locked = await openPage(ctx, "vault.html?welcome=1");
+    const locked = await openPage(ctx, "clotr-pages/vault/vault.html?welcome=1");
     try {
       expect(!(await locked.$("#ss-welcome")), "the card came back while settings are locked");
     } finally {
@@ -608,7 +620,7 @@ module.exports = async function (env) {
     "SN4",
     "The Share page: the card carries the scam check's tag, Practice together opens the practice page and Is this a scam? the check page; none of it prints (pictures)",
     async () => {
-      const page = await openPage(ctx, "share.html");
+      const page = await openPage(ctx, "clotr-pages/share-clotr/share-clotr.html");
       try {
         const s = await readShare(page);
         expect(s.tag === "Scam check" && s.tagShield, `the card's tag: ${s.tag}`);
@@ -624,8 +636,8 @@ module.exports = async function (env) {
           s.texts.includes("Got a message that worries them? Clotr can give a second opinion. Is this a scam?"),
           `check line: ${s.texts.join(" | ")}`,
         );
-        await opensAndClose(ctx, page, "section.no-print", "Practice together", "practice.html");
-        await opensAndClose(ctx, page, "section.no-print", "Is this a scam?", "check.html");
+        await opensAndClose(ctx, page, "section.no-print", "Practice together", "clotr-pages/practice/practice.html");
+        await opensAndClose(ctx, page, "section.no-print", "Is this a scam?", "clotr-pages/scam-check/scam-check.html");
         await fitsAt380(page, "The Share page");
         await partShots(page, "section.no-print", "scam-shield-share");
         // On paper, the guide should print as before, with neither the tag nor these lines showing up in it.
@@ -665,7 +677,12 @@ module.exports = async function (env) {
   async function namesOn(c, lang, name) {
     const problems = [];
     // The welcome page carries no scam check card of its own now, so it isn't one of these places.
-    for (const file of ["share.html", "helper.html", "check.html", "practice.html"]) {
+    for (const file of [
+      "clotr-pages/share-clotr/share-clotr.html",
+      "clotr-pages/set-up-for-someone/set-up-for-someone.html",
+      "clotr-pages/scam-check/scam-check.html",
+      "clotr-pages/practice/practice.html",
+    ]) {
       const page = await openPage(c, file);
       try {
         problems.push(...nameProblems(await pageWords(page), `${lang} ${file}`, name));
@@ -718,7 +735,7 @@ module.exports = async function (env) {
     async () => {
       await unlockSettings(ctx);
       await setTourniquet(ctx, null);
-      const page = await openPage(ctx, "helper.html?for=after_scam");
+      const page = await openPage(ctx, "clotr-pages/set-up-for-someone/set-up-for-someone.html?for=after_scam");
       try {
         await sleep(300);
         const a = await readAfter(page);
@@ -734,10 +751,24 @@ module.exports = async function (env) {
             ]),
           `buttons: ${JSON.stringify(a.buttons)}`,
         );
-        await opensAndClose(ctx, page, "#after", "Print Safety Guide", "share.html#card");
-        await opensAndClose(ctx, page, "#after", "Show them “Is this a scam?”", "check.html");
-        await opensAndClose(ctx, page, "#after", "Practice together", "practice.html");
-        if (FEATURES.training) await opensAndClose(ctx, page, "#after", "Office training walkthrough", "training.html");
+        await opensAndClose(ctx, page, "#after", "Print Safety Guide", "clotr-pages/share-clotr/share-clotr.html#card");
+        await opensAndClose(
+          ctx,
+          page,
+          "#after",
+          "Show them “Is this a scam?”",
+          "clotr-pages/scam-check/scam-check.html",
+        );
+        await opensAndClose(ctx, page, "#after", "Practice together", "clotr-pages/practice/practice.html");
+        if (FEATURES.training) {
+          await opensAndClose(
+            ctx,
+            page,
+            "#after",
+            "Office training walkthrough",
+            "clotr-pages/office-training/office-training.html",
+          );
+        }
         await fitsAt380(page, "The setup page");
         await partShots(page, "#setup-end", "scam-shield-setup-end");
         expect(
@@ -797,7 +828,7 @@ module.exports = async function (env) {
           const fresh = (await readNotice(page))?.buttons.find((b) => b.text === "Get a second opinion");
           expect(fresh, "the second opinion went away");
           const opened = ctx.browser
-            .waitForTarget((t) => t.url().endsWith("/check.html"), { timeout: 8000 })
+            .waitForTarget((t) => t.url().endsWith("/clotr-pages/scam-check/scam-check.html"), { timeout: 8000 })
             .catch(() => null);
           await page.bringToFront();
           await clickNode(page, fresh.nodeId);
@@ -833,13 +864,13 @@ module.exports = async function (env) {
       await unlockSettings(ctx);
       await setTourniquet(ctx, null);
       for (const [file, scope, label] of [
-        ["share.html", "section.no-print", "Practice together"],
-        ["helper.html?for=after_scam", "#after", "Practice together"],
+        ["clotr-pages/share-clotr/share-clotr.html", "section.no-print", "Practice together"],
+        ["clotr-pages/set-up-for-someone/set-up-for-someone.html?for=after_scam", "#after", "Practice together"],
       ]) {
         const page = await openPage(ctx, file);
         try {
           await sleep(200);
-          await opensAndClose(ctx, page, scope, label, "practice.html");
+          await opensAndClose(ctx, page, scope, label, "clotr-pages/practice/practice.html");
         } finally {
           await page.close();
         }
@@ -849,14 +880,20 @@ module.exports = async function (env) {
         await popup.click("#tab-settings");
         await sleep(200);
         await popup.$eval("#ss-help", (d) => (d.open = true));
-        await opensAndClose(ctx, popup, "#ss-help", "Practice with six made-up scams", "practice.html");
+        await opensAndClose(
+          ctx,
+          popup,
+          "#ss-help",
+          "Practice with six made-up scams",
+          "clotr-pages/practice/practice.html",
+        );
       } finally {
         await popup.close();
       }
       await setTourniquet(ctx, "adult");
       const withTq = await openPopup(ctx);
       try {
-        await opensAndClose(ctx, withTq, "#ss-row", "Practice", "practice.html");
+        await opensAndClose(ctx, withTq, "#ss-row", "Practice", "clotr-pages/practice/practice.html");
       } finally {
         await withTq.close();
         await setTourniquet(ctx, null);
@@ -916,7 +953,7 @@ module.exports = async function (env) {
           await setTourniquet(es, null);
         }
         // Checks the welcome page: the old card is gone, and the setup cards follow Try it.
-        const welcome = await openPage(es, "vault.html?welcome=1");
+        const welcome = await openPage(es, "clotr-pages/vault/vault.html?welcome=1");
         try {
           expect(!(await welcome.$("#ss-welcome")), "the old scam check card is still on the welcome page");
           const h2s = await readWelcomeH2s(welcome);
@@ -930,7 +967,7 @@ module.exports = async function (env) {
           await welcome.close();
         }
         // Checks the Share page.
-        const share = await openPage(es, "share.html");
+        const share = await openPage(es, "clotr-pages/share-clotr/share-clotr.html");
         try {
           const s = await readShare(share);
           expect(s.tag === "Revisión de estafas", `tag: ${s.tag}`);
@@ -947,7 +984,7 @@ module.exports = async function (env) {
           await share.close();
         }
         // Checks the setup page's last step.
-        const setup = await openPage(es, "helper.html?for=after_scam");
+        const setup = await openPage(es, "clotr-pages/set-up-for-someone/set-up-for-someone.html?for=after_scam");
         try {
           await sleep(300);
           const a = await readAfter(setup);
@@ -1019,7 +1056,7 @@ module.exports = async function (env) {
         if (now === last) break;
         [last, before] = [now, JSON.parse(now)];
       }
-      const page = await openExtPage(ctx, "share.html");
+      const page = await openExtPage(ctx, "clotr-pages/share-clotr/share-clotr.html");
       try {
         await page.evaluate(() => {
           window.__printed = [];
@@ -1095,9 +1132,12 @@ module.exports = async function (env) {
       );
       expect(!changed.length, `the Share page changed what Clotr stores: ${changed.join(", ")}`);
       // The helper page's last step opens the Share page at the card.
-      const helper = await openExtPage(ctx, "helper.html");
+      const helper = await openExtPage(ctx, "clotr-pages/set-up-for-someone/set-up-for-someone.html");
       try {
-        const opened = ctx.browser.waitForTarget((t) => t.url().endsWith("/share.html#card"), { timeout: 3000 });
+        const opened = ctx.browser.waitForTarget(
+          (t) => t.url().endsWith("/clotr-pages/share-clotr/share-clotr.html#card"),
+          { timeout: 3000 },
+        );
         await helper.evaluate(() => {
           document.getElementById("after").hidden = false;
           document.getElementById("open-card").click();
@@ -1113,7 +1153,7 @@ module.exports = async function (env) {
   await check("WA13", "Spanish browser: the card, its six rows and its last line in Spanish (pictures)", async () => {
     const es = await launch(EXT, ["--lang=es-ES", "--accept-lang=es-ES"], { LANGUAGE: "es", LANG: "es_ES.UTF-8" });
     try {
-      const page = await openExtPage(es, "share.html");
+      const page = await openExtPage(es, "clotr-pages/share-clotr/share-clotr.html");
       try {
         const words = await page.evaluate(() => ({
           title: document.querySelector(".card-sheet h2").textContent,

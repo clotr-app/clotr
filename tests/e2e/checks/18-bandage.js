@@ -383,7 +383,7 @@ module.exports = async function (env) {
     "Bandage with your vault: your name becomes [Me], family [Family 1], a birth date its decade",
     async () => {
       await resetState(ctx, {});
-      const vp = await openExtPage(ctx, "vault.html");
+      const vp = await openExtPage(ctx, "clotr-pages/vault/vault.html");
       try {
         await vp.type("#f-my_name", "Jane Q Doe");
         await vp.type("#f-family_name", "Emma");

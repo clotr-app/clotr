@@ -310,7 +310,7 @@ module.exports = async function (env) {
       await store.set(ctx, { events: [] });
 
       // Picture 7: the welcome page's practice box.
-      const welcome = await openExtPage(ctx, "vault.html?welcome=1");
+      const welcome = await openExtPage(ctx, "clotr-pages/vault/vault.html?welcome=1");
       await welcome.setViewport({ width: 700, height: 800, deviceScaleFactor: 2 });
       await welcome.emulateMediaFeatures([{ name: "prefers-color-scheme", value: "light" }]);
       await welcome.type("#try", "call me at 555-555-0123");
@@ -371,7 +371,7 @@ module.exports = async function (env) {
 
       // Picture 10: Look back shows which old chats already hold a password, a card number, or an address.
       async function lookBackShot(c, fileName) {
-        const page = await openExtPage(c, "lookback.html");
+        const page = await openExtPage(c, "clotr-pages/look-back/look-back.html");
         const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "clotr-ss-lb-"));
         try {
           const zipPath = path.join(tmp, "export.zip");
@@ -437,7 +437,7 @@ module.exports = async function (env) {
           async (other, names) => {
             const all = await other.worker.evaluate(() => chrome.management.getAll());
             const allSitesId = all.find((e) => e.name === names.allSitesName)?.id;
-            const page = await openExtPage(other, "extcheck.html");
+            const page = await openExtPage(other, "clotr-pages/extension-check/extension-check.html");
             try {
               await page.evaluate((id) => {
                 window.Clotr.reportedExtensions.entries = [

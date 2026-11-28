@@ -100,7 +100,11 @@ test("release zip holds exactly the shipped files, sorted, manifest at the root,
   const entries = unzip(fs.readFileSync(r.out));
   const names = entries.map(([n]) => n);
   assert.deepStrictEqual(names, [...names].sort());
-  assert.ok(names.includes("manifest.json") && names.includes("content.js") && names.includes("dashboard.html"));
+  assert.ok(
+    names.includes("manifest.json") &&
+      names.includes("on-websites/content.js") &&
+      names.includes("clotr-pages/exposure-report/exposure-report.html"),
+  );
   assert.ok(!names.some((n) => n.startsWith("bravelogs/") || n.endsWith(".log") || n.includes("\\")), names.join());
   for (const [name, data] of entries) {
     // trimmed for held-back features: checked in their own tests below and in package-features.test.js
@@ -162,19 +166,24 @@ const zipManifest = (out) =>
       .toString("utf8"),
   );
 const sourceManifest = () => JSON.parse(fs.readFileSync(path.join(EXT, "manifest.json"), "utf8"));
+// The extension's own load order, outside the engine (extension/extension-files.js).
+const extensionLists = require("../tools/engine-files.js").extensionGroups();
 const BACKGROUND_SCRIPTS = [
-  "patterns.js",
-  "detector.js",
-  "decide.js",
-  "helper-core.js",
-  "backup.js",
-  "sites.js",
+  "engine/files.js",
+  "extension-files.js",
+  ...require("./load-engine.js").files("rules", "detect", "decide"),
+  ...extensionLists.worker,
+  ...extensionLists.sitesAndPolicy,
+  ...extensionLists.background,
   "background.js",
 ];
 const FIREFOX_BACKGROUND_SCRIPTS = [
-  ...BACKGROUND_SCRIPTS.slice(0, -2),
-  ...(sourceManifest().clotr_features.oneclotr ? ["one-clotr-protocol.js", "one-clotr-bridge.js"] : []),
-  "sites.js",
+  ...BACKGROUND_SCRIPTS.slice(0, -1 - extensionLists.sitesAndPolicy.length - extensionLists.background.length),
+  ...(sourceManifest().clotr_features.oneclotr
+    ? ["one-clotr/one-clotr-protocol.js", "one-clotr/one-clotr-bridge.js"]
+    : []),
+  ...extensionLists.sitesAndPolicy,
+  ...extensionLists.background,
   "background.js",
 ];
 
@@ -261,7 +270,11 @@ test("Safari build: the Safari manifest, the same files, and a ready folder besi
   // which Safari never ships since it has no chrome.management.
   const chromeFiles = new Map(unzip(fs.readFileSync(chrome.out)));
   const safariFiles = unzip(fs.readFileSync(safari.out));
-  const DROPPED = ["extcheck.css", "extcheck.html", "extcheck.js"];
+  const DROPPED = [
+    "clotr-pages/extension-check/extension-check.css",
+    "clotr-pages/extension-check/extension-check.html",
+    "clotr-pages/extension-check/extension-check.js",
+  ];
   assert.deepStrictEqual(
     safariFiles.map(([n]) => n),
     [...chromeFiles.keys()].filter((n) => !DROPPED.includes(n)),
@@ -346,20 +359,21 @@ test("Firefox folder: the zip's files with the Firefox manifest, alone; a rebuil
   // After an edit, a rebuild brings back the edited file, removes anything an older build left behind, and leaves
   // the rest untouched.
   const old = new Date("2001-01-01T00:00:00Z");
-  fs.utimesSync(path.join(folder, "patterns.js"), old, old);
-  fs.writeFileSync(path.join(folder, "content.js"), "// an older content.js\n");
+  const untouched = require("./load-engine.js").files("rules")[0];
+  fs.utimesSync(path.join(folder, untouched), old, old);
+  fs.writeFileSync(path.join(folder, "on-websites/content.js"), "// an older on-websites/content.js\n");
   fs.writeFileSync(path.join(folder, "left-over.txt"), "from an older build\n");
   fs.mkdirSync(path.join(folder, "old-dir"));
   fs.writeFileSync(path.join(folder, "old-dir", "gone.js"), "\n");
   const again = build({ firefox: true, folder, zip: false, outDir: out });
-  assert.deepStrictEqual(again.changed, ["content.js", "left-over.txt", "old-dir/gone.js"]);
+  assert.deepStrictEqual(again.changed, ["left-over.txt", "old-dir/gone.js", "on-websites/content.js"]);
   assert.deepStrictEqual(
     filesIn(folder),
     files.map(([n]) => n),
   );
   assert.ok(!fs.existsSync(path.join(folder, "old-dir")), "an emptied old folder stayed");
   assert.strictEqual(
-    fs.statSync(path.join(folder, "patterns.js")).mtimeMs,
+    fs.statSync(path.join(folder, untouched)).mtimeMs,
     old.getTime(),
     "an untouched file was rewritten",
   );

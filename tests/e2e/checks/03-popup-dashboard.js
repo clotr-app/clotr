@@ -326,7 +326,10 @@ module.exports = async function (env) {
       const before = new Set(await ctx.browser.pages());
       await popup.evaluate(() => document.getElementById("open-welcome").click());
       const opened = await waitFor(
-        async () => (await ctx.browser.pages()).find((p) => !before.has(p) && p.url().endsWith("vault.html?welcome=1")),
+        async () =>
+          (await ctx.browser.pages()).find(
+            (p) => !before.has(p) && p.url().endsWith("clotr-pages/vault/vault.html?welcome=1"),
+          ),
         3000,
       );
       expect(opened, "the welcome page didn't open");
@@ -361,7 +364,7 @@ module.exports = async function (env) {
       title,
     );
     await popup.setViewport({ width: 380, height: 700 });
-    await popup.goto(`chrome-extension://${new URL(ctx.swTarget.url()).host}/popup.html`);
+    await popup.goto(`chrome-extension://${new URL(ctx.swTarget.url()).host}/popup/popup.html`);
     await popup.waitForSelector("#hero-value");
     await sleep(400);
     return popup;
@@ -372,7 +375,7 @@ module.exports = async function (env) {
   // no web page in the tab. Any other Clotr page goes by its own title; someone else's extension page doesn't.
   await check("WP3", "Popup over one of Clotr's own pages names that page, not 'No web page in this tab'", async () => {
     const own = `chrome-extension://${new URL(ctx.swTarget.url()).host}`;
-    const welcome = await openPopupOn(`${own}/vault.html?welcome=1`, "Welcome to Clotr");
+    const welcome = await openPopupOn(`${own}/clotr-pages/vault/vault.html?welcome=1`, "Welcome to Clotr");
     try {
       const text = await siteCard(welcome);
       expect(/^This is Clotr's welcome page\./.test(text) && !/No web page/.test(text), `welcome: ${text}`);
@@ -382,7 +385,7 @@ module.exports = async function (env) {
     } finally {
       await welcome.close();
     }
-    const other = await openPopupOn(`${own}/stored.html`, "What Clotr stores");
+    const other = await openPopupOn(`${own}/clotr-pages/what-clotr-stores/what-clotr-stores.html`, "What Clotr stores");
     try {
       const text = await siteCard(other);
       expect(/What Clotr stores/.test(text) && !/No web page/.test(text), `another Clotr page: ${text}`);

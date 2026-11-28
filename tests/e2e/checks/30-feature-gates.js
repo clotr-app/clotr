@@ -40,7 +40,7 @@ module.exports = async function (env) {
   });
 
   await check("FG2", "The welcome page: no Look back line", async () => {
-    const page = await openPage(ctx, "vault.html?welcome=1");
+    const page = await openPage(ctx, "clotr-pages/vault/vault.html?welcome=1");
     try {
       await sleep(300);
       const found = await hidden(page, ["lb-offer"]);
@@ -51,7 +51,7 @@ module.exports = async function (env) {
   });
 
   await check("FG3", "The setup page's last step: no door to Office training or Extension check", async () => {
-    const after = await openPage(ctx, "helper.html?for=after_scam");
+    const after = await openPage(ctx, "clotr-pages/set-up-for-someone/set-up-for-someone.html?for=after_scam");
     try {
       await sleep(300);
       const found = await hidden(after, ["open-training", "ext-check-line"]);

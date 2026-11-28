@@ -72,7 +72,7 @@ module.exports = async function (env) {
     "Full dashboard: totals, what each AI service was told (personal details only), 12-week trend",
     async () => {
       await store.set(ctx, { events: dashEvents() });
-      const page = await openExtPage(ctx, "dashboard.html");
+      const page = await openExtPage(ctx, "clotr-pages/exposure-report/exposure-report.html");
       await page.setViewport({ width: 1100, height: 1400 });
       try {
         await sleep(400);
@@ -117,7 +117,7 @@ module.exports = async function (env) {
         ...(via ? { via } : {}),
       });
       await store.set(ctx, { events: [ev("chatgpt.com", null)] }); // hand-hidden only: no Bandage section
-      let page = await openExtPage(ctx, "dashboard.html");
+      let page = await openExtPage(ctx, "clotr-pages/exposure-report/exposure-report.html");
       try {
         await sleep(400);
         const hidden = await page.evaluate(() => document.getElementById("bandage-section").hidden);
@@ -128,7 +128,7 @@ module.exports = async function (env) {
       await store.set(ctx, {
         events: [ev("chatgpt.com", "bandage"), ev("chatgpt.com", "bandage"), ev("claude.ai", "bandage")],
       });
-      page = await openExtPage(ctx, "dashboard.html");
+      page = await openExtPage(ctx, "clotr-pages/exposure-report/exposure-report.html");
       try {
         await sleep(400);
         const got = await page.evaluate(() => ({
@@ -154,7 +154,7 @@ module.exports = async function (env) {
     "Full dashboard: riskiest moments come with what to do now; repeats are spotted; no fingerprints shown",
     async () => {
       await store.set(ctx, { events: dashEvents() });
-      const page = await openExtPage(ctx, "dashboard.html");
+      const page = await openExtPage(ctx, "clotr-pages/exposure-report/exposure-report.html");
       try {
         await sleep(400);
         const got = await page.evaluate(() => ({
@@ -178,7 +178,7 @@ module.exports = async function (env) {
     async () => {
       await store.set(ctx, { events: dashEvents() });
       const { salt } = await store.get(ctx, "salt");
-      const page = await openExtPage(ctx, "dashboard.html");
+      const page = await openExtPage(ctx, "clotr-pages/exposure-report/exposure-report.html");
       try {
         await page.click("#export");
         const exported = await waitFor(
@@ -450,7 +450,7 @@ module.exports = async function (env) {
       } finally {
         await again.close();
       }
-      const stored = await openExtPage(ctx, "stored.html");
+      const stored = await openExtPage(ctx, "clotr-pages/what-clotr-stores/what-clotr-stores.html");
       try {
         const row = await waitFor(
           () =>
@@ -481,7 +481,7 @@ module.exports = async function (env) {
           chrome.storage.session.remove("unlockedUntil"),
         ]),
       );
-      const page = await openExtPage(ctx, "vault.html");
+      const page = await openExtPage(ctx, "clotr-pages/vault/vault.html");
       try {
         await sleep(500);
         const got = await page.evaluate(() => ({
@@ -507,7 +507,7 @@ module.exports = async function (env) {
           chrome.storage.session.remove("unlockedUntil"),
         ]),
       );
-      let page = await openExtPage(ctx, "helper.html");
+      let page = await openExtPage(ctx, "clotr-pages/set-up-for-someone/set-up-for-someone.html");
       try {
         await sleep(400);
         // Tourniquet's question comes first, and today's four steps follow right after it in the same list.
@@ -543,7 +543,7 @@ module.exports = async function (env) {
         await page.close();
       }
       await ctx.worker.evaluate(() => chrome.storage.session.remove("unlockedUntil"));
-      page = await openExtPage(ctx, "helper.html");
+      page = await openExtPage(ctx, "clotr-pages/set-up-for-someone/set-up-for-someone.html");
       try {
         await sleep(400);
         const locked = await page.evaluate(() => ({
@@ -696,7 +696,7 @@ module.exports = async function (env) {
     "SH1",
     "Share Clotr: the link, the step-by-step setup and a one-page guide; printed, only the guide shows, with blanks for who set it up",
     async () => {
-      const page = await openExtPage(ctx, "share.html");
+      const page = await openExtPage(ctx, "clotr-pages/share-clotr/share-clotr.html");
       try {
         await sleep(400);
         const got = await page.evaluate(() => ({
@@ -728,7 +728,9 @@ module.exports = async function (env) {
         await page.click("#open-helper");
         const opened = await waitFor(async () => {
           const pages = await ctx.browser.pages();
-          return pages.length > before ? pages.find((p) => p.url().endsWith("helper.html")) : null;
+          return pages.length > before
+            ? pages.find((p) => p.url().endsWith("clotr-pages/set-up-for-someone/set-up-for-someone.html"))
+            : null;
         }, 3000);
         expect(opened, "the guided setup didn't open");
         await opened?.close();
@@ -755,7 +757,7 @@ module.exports = async function (env) {
         mine,
       );
       const file = path.join(OUT, "move-test.clotr");
-      const page = await openExtPage(ctx, "stored.html#move");
+      const page = await openExtPage(ctx, "clotr-pages/what-clotr-stores/what-clotr-stores.html#move");
       const asked = [];
       page.on("dialog", (d) => {
         asked.push(d.message());
@@ -818,7 +820,9 @@ module.exports = async function (env) {
         );
         expect(
           await page.evaluate(
-            () => document.querySelector("#mv-load-msg a")?.getAttribute("href") === "vault.html#vault-list",
+            () =>
+              document.querySelector("#mv-load-msg a")?.getAttribute("href") ===
+              "/clotr-pages/vault/vault.html#vault-list",
           ),
           "no link to see the vault",
         );
@@ -872,9 +876,9 @@ module.exports = async function (env) {
         await clearEditor(page);
         await sleep(800);
         const salt = "0a".repeat(16);
-        // The same request stored.html's Move to a new computer sends once the file is open.
+        // The same request clotr-pages/what-clotr-stores/what-clotr-stores.html's Move to a new computer sends once the file is open.
         const settings = { salt, vault: [{ kind: "word", type: "watch_list", fp: await fpFor(salt), words: 2 }] };
-        const mover = await openExtPage(ctx, "stored.html#move");
+        const mover = await openExtPage(ctx, "clotr-pages/what-clotr-stores/what-clotr-stores.html#move");
         const res = await mover
           .evaluate((s) => chrome.runtime.sendMessage({ type: "clotr:importBackup", settings: s }), settings)
           .finally(() => mover.close());
@@ -1728,19 +1732,23 @@ module.exports = async function (env) {
       }),
   );
 
-  // This opens policy.html with chrome.storage.managed.get stubbed inside that page's own context. Each extension
+  // This opens clotr-pages/policy-applied/policy-applied.html with chrome.storage.managed.get stubbed inside that page's own context. Each extension
   // page has its own JS realm, so the worker's stub from the TM checks above can't reach a page that reads
   // storage.managed for itself, and a real managed policy needs admin rights I don't have here.
   const openPolicyPage = async (policyObj) => {
     const page = await ctx.browser.newPage();
-    page.on("pageerror", (err) => ctx.problems.push(`policy.html error: ${err.message}`));
+    page.on("pageerror", (err) =>
+      ctx.problems.push(`clotr-pages/policy-applied/policy-applied.html error: ${err.message}`),
+    );
     if (policyObj) {
       await page.evaluateOnNewDocument((obj) => {
         chrome.storage.managed.get = async () => obj;
       }, policyObj);
     }
     await page.setViewport({ width: 700, height: 900 });
-    await page.goto(`chrome-extension://${new URL(ctx.swTarget.url()).host}/policy.html`);
+    await page.goto(
+      `chrome-extension://${new URL(ctx.swTarget.url()).host}/clotr-pages/policy-applied/policy-applied.html`,
+    );
     await sleep(400);
     return page;
   };
@@ -1889,7 +1897,7 @@ module.exports = async function (env) {
         chrome.storage.managed.get = async () => ({ requiredResponses: { github_token: "block" } });
       });
       await popup.setViewport({ width: 380, height: 700 });
-      await popup.goto(`chrome-extension://${new URL(ctx.swTarget.url()).host}/popup.html`);
+      await popup.goto(`chrome-extension://${new URL(ctx.swTarget.url()).host}/popup/popup.html`);
       await popup.waitForSelector("#hero-value");
       await sleep(400);
       try {
@@ -1913,7 +1921,9 @@ module.exports = async function (env) {
         await popup.click("#managed-see");
         const opened = await waitFor(async () => {
           const pages = await ctx.browser.pages();
-          return pages.length > before ? pages.find((p) => p.url().endsWith("policy.html")) : null;
+          return pages.length > before
+            ? pages.find((p) => p.url().endsWith("clotr-pages/policy-applied/policy-applied.html"))
+            : null;
         }, 3000);
         expect(opened, "the policy page didn't open");
         await opened?.close();
@@ -2026,7 +2036,7 @@ module.exports = async function (env) {
         chrome.storage.managed.get = async () => p;
       }, RIVERSIDE);
       await popup.setViewport({ width: 380, height: 700 });
-      await popup.goto(`chrome-extension://${new URL(ctx.swTarget.url()).host}/popup.html`);
+      await popup.goto(`chrome-extension://${new URL(ctx.swTarget.url()).host}/popup/popup.html`);
       await popup.waitForSelector("#hero-value");
       await sleep(400);
       try {
@@ -2414,7 +2424,7 @@ module.exports = async function (env) {
     async () => {
       const es = await launch(EXT, ["--lang=es-ES", "--accept-lang=es-ES"], { LANGUAGE: "es", LANG: "es_ES.UTF-8" });
       try {
-        const welcome = await openExtPage(es, "vault.html?welcome=1");
+        const welcome = await openExtPage(es, "clotr-pages/vault/vault.html?welcome=1");
         await welcome.type("#try", "llámame al cinco cinco cinco cinco cinco cinco cero uno cuatro siete");
         await sleep(700);
         const w = await welcome.evaluate(() => ({
@@ -2439,7 +2449,7 @@ module.exports = async function (env) {
             ],
           }),
         );
-        const dash = await openExtPage(es, "dashboard.html");
+        const dash = await openExtPage(es, "clotr-pages/exposure-report/exposure-report.html");
         await dash.waitForSelector("#map [data-you]", { timeout: 5000 }).catch(() => {});
         const d = await dash.evaluate(
           () => document.querySelector("h1").textContent + " | " + document.getElementById("since").textContent,
@@ -2448,7 +2458,7 @@ module.exports = async function (env) {
         await dash.setViewport({ width: 900, height: 1400 });
         await shot(dash, "dashboard-es.png");
         await dash.close();
-        const stored = await openExtPage(es, "stored.html");
+        const stored = await openExtPage(es, "clotr-pages/what-clotr-stores/what-clotr-stores.html");
         await sleep(300);
         const s = await stored.evaluate(
           () =>
@@ -2495,7 +2505,7 @@ module.exports = async function (env) {
     "Mind map: you in the middle, four branches (already has, near misses, not shared yet, blind spots), counts per AI service, and a table view",
     async () => {
       await store.set(ctx, { events: dashEvents(), mentions: [], vault: [], spotted: {} });
-      const page = await openExtPage(ctx, "dashboard.html");
+      const page = await openExtPage(ctx, "clotr-pages/exposure-report/exposure-report.html");
       try {
         await sleep(400);
         const nodes = await mindNodes(page);
@@ -2559,7 +2569,7 @@ module.exports = async function (env) {
     "Mind map: choosing an AI service (keyboard) shows which kinds it has, and a branch explains itself; never values or fingerprints",
     async () => {
       await store.set(ctx, { events: dashEvents(), mentions: [], vault: [], spotted: {} });
-      const page = await openExtPage(ctx, "dashboard.html");
+      const page = await openExtPage(ctx, "clotr-pages/exposure-report/exposure-report.html");
       try {
         await sleep(400);
         const choose = async (selector) => {
@@ -2619,7 +2629,10 @@ module.exports = async function (env) {
         );
         await popup.click("#mini-map-open");
         const opened = await waitFor(
-          async () => (await ctx.browser.pages()).find((p) => p.url().endsWith("/dashboard.html")),
+          async () =>
+            (await ctx.browser.pages()).find((p) =>
+              p.url().endsWith("/clotr-pages/exposure-report/exposure-report.html"),
+            ),
           3000,
         );
         expect(opened, "full report didn't open");
@@ -2636,7 +2649,7 @@ module.exports = async function (env) {
     'Mind map: "By kind of detail" regroups every branch by kind, and the choice is remembered',
     async () => {
       await store.set(ctx, { events: dashEvents(), mentions: [], vault: [], spotted: {} });
-      const page = await openExtPage(ctx, "dashboard.html");
+      const page = await openExtPage(ctx, "clotr-pages/exposure-report/exposure-report.html");
       try {
         await sleep(400);
         await page.click('#map-view [data-view="kind"]');
@@ -2685,7 +2698,7 @@ module.exports = async function (env) {
         vault,
         spotted: { "chat.newtool.ai": true, "chatgpt.com": true },
       });
-      const page = await openExtPage(ctx, "dashboard.html");
+      const page = await openExtPage(ctx, "clotr-pages/exposure-report/exposure-report.html");
       try {
         await sleep(400);
         const nodes = await mindNodes(page);
@@ -2724,7 +2737,7 @@ module.exports = async function (env) {
       events: [aged(400, "aaaaaaaaaaaaaaa1"), aged(100, "aaaaaaaaaaaaaaa2"), aged(1, "aaaaaaaaaaaaaaa3")],
       keepDays: 365,
     });
-    const page = await openExtPage(ctx, "dashboard.html");
+    const page = await openExtPage(ctx, "clotr-pages/exposure-report/exposure-report.html");
     try {
       await sleep(400);
       expect((await page.$eval("#keep-days", (s) => s.value)) === "365", "setting doesn't show 1 year");
@@ -2792,7 +2805,7 @@ module.exports = async function (env) {
           Math.abs(historyFull.t - Date.now()) < 60000,
         `historyFull: ${JSON.stringify(historyFull)}`,
       );
-      const page = await openExtPage(ctx, "dashboard.html");
+      const page = await openExtPage(ctx, "clotr-pages/exposure-report/exposure-report.html");
       try {
         const note = await waitFor(() => noteText(page), 4000);
         const date = await page.evaluate(
@@ -2855,7 +2868,7 @@ module.exports = async function (env) {
         }
         expect(!problems.length, problems.slice(0, 4).join(" | "));
         // "What Clotr stores" shows the note's two dates, and says that's all it keeps.
-        const stored = await openExtPage(ctx, "stored.html");
+        const stored = await openExtPage(ctx, "clotr-pages/what-clotr-stores/what-clotr-stores.html");
         try {
           const other = await waitFor(
             () => stored.$eval("#other", (n) => (/History full/.test(n.innerText) ? n.innerText : null)),
@@ -2880,7 +2893,7 @@ module.exports = async function (env) {
       try {
         // Clicking Delete my history in the full report should drop the note right away, with no reload needed.
         expect((await fillHistory()).historyFull, "no note after the cap removed records");
-        const page = await openExtPage(ctx, "dashboard.html");
+        const page = await openExtPage(ctx, "clotr-pages/exposure-report/exposure-report.html");
         try {
           expect(await waitFor(() => noteText(page), 4000), "no note in the report");
           await page.click("#delete-history");
@@ -3004,7 +3017,7 @@ module.exports = async function (env) {
       await ctx.worker.evaluate((e) => enqueue(() => appendEvents(e)), batch);
       const events = await store.events(ctx);
       expect(events.length === 22, `records: ${events.length}`);
-      const page = await openExtPage(ctx, "dashboard.html");
+      const page = await openExtPage(ctx, "clotr-pages/exposure-report/exposure-report.html");
       try {
         const totals = await waitFor(
           () => page.$$eval("#totals .stat b", (els) => (els.length ? els.map((e) => e.textContent).join() : null)),
@@ -3038,7 +3051,7 @@ module.exports = async function (env) {
         const counts = (JSON.parse(exported || "{}").events || []).filter((e) => e.n).map((e) => `${e.type}:${e.n}`);
         expect(counts.sort().join() === "credit_card:5,email:290", `export: ${counts}`);
         // "What Clotr stores" should say that some records stand for a list, and name which ones.
-        const stored = await openExtPage(ctx, "stored.html");
+        const stored = await openExtPage(ctx, "clotr-pages/what-clotr-stores/what-clotr-stores.html");
         try {
           const line = await waitFor(() => stored.$eval("#history-count", (n) => n.textContent || null), 3000);
           expect(/^22 records \(some stand for a long list sent at once\), from /.test(line || ""), `stores: ${line}`);
@@ -3100,7 +3113,10 @@ module.exports = async function (env) {
         expect(/AWS Access Key/.test(text) && /Turn it off/.test(text), `no advice: ${text}`);
         await popup.click("#digest-open");
         const opened = await waitFor(
-          async () => (await ctx.browser.pages()).find((p) => p.url().endsWith("/dashboard.html")),
+          async () =>
+            (await ctx.browser.pages()).find((p) =>
+              p.url().endsWith("/clotr-pages/exposure-report/exposure-report.html"),
+            ),
           3000,
         );
         expect(opened, "full report didn't open");
@@ -3140,7 +3156,8 @@ module.exports = async function (env) {
     const before = (await ctx.browser.pages()).length;
     await popup.click("#open-dashboard");
     const opened = await waitFor(
-      async () => (await ctx.browser.pages()).find((p) => p.url().endsWith("/dashboard.html")),
+      async () =>
+        (await ctx.browser.pages()).find((p) => p.url().endsWith("/clotr-pages/exposure-report/exposure-report.html")),
       3000,
     );
     await popup.close();
@@ -3204,7 +3221,7 @@ module.exports = async function (env) {
         ],
       });
       const { salt } = await store.get(ctx, "salt");
-      const page = await openExtPage(ctx, "stored.html");
+      const page = await openExtPage(ctx, "clotr-pages/what-clotr-stores/what-clotr-stores.html");
       try {
         await page.click(".raw summary");
         const expectedHistoryRows = Math.min(events.length, 100);
@@ -3250,7 +3267,7 @@ module.exports = async function (env) {
     "OFF1",
     '"What Clotr stores" → What Clotr can reach: the live no-network policy, a reason for every permission, the AI-site count',
     async () => {
-      const page = await openExtPage(ctx, "stored.html");
+      const page = await openExtPage(ctx, "clotr-pages/what-clotr-stores/what-clotr-stores.html");
       try {
         await sleep(300);
         const got = await page.evaluate(() => ({

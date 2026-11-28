@@ -1,26 +1,25 @@
 // The toolbar popup's own words: the caught-items lines and the chart's last label, in English and Spanish, and its
-// outside link. popup.js is large, so the pieces under test are read out of its source and run against the real
+// outside link. popup/popup.js is large, so the pieces under test are read out of its source and run against the real
 // patterns.js and locale files.
 // Run from the repo root: node --test tests/popup-page.test.js
 "use strict";
 
 const test = require("node:test");
 const assert = require("node:assert/strict");
-const fs = require("node:fs");
-const path = require("node:path");
 const vm = require("node:vm");
-const { loadPage, locale, EXT } = require("./fake-page.js");
+const { loadPage, locale } = require("./fake-page.js");
+const { extensionSource } = require("./extension-source.js");
 
-const src = fs.readFileSync(path.join(EXT, "popup.js"), "utf8");
+const src = extensionSource("popup/popup.js");
 const piece = (re) => {
   const m = re.exec(src);
-  assert.ok(m, `popup.js has no ${re}`);
+  assert.ok(m, `popup/popup.js has no ${re}`);
   return m[0];
 };
 
 // "A credit card number was covered.": the two caught-item lines for a kind, in the given locale.
 function caughtLines(lang) {
-  const page = loadPage(["patterns.js"], { messages: lang === "en" ? {} : locale(lang) });
+  const page = loadPage(["rules"], { messages: lang === "en" ? {} : locale(lang) });
   const run = `
     const { msg, PATTERNS } = Clotr;
     const PATTERN_NAMES = Object.fromEntries(PATTERNS.map((p) => [p.id, p.name]));
@@ -58,7 +57,7 @@ test("popup: in Spanish the caught-items lines carry no English article", () => 
 
 // The chart's day labels: the last bar is today, in the popup's language like the other days.
 function lastBarLabel(lang) {
-  const page = loadPage(["patterns.js"], { messages: lang === "en" ? {} : locale(lang) });
+  const page = loadPage(["rules"], { messages: lang === "en" ? {} : locale(lang) });
   const run = `
     const { msg } = Clotr;
     const fmtDay = { format: () => "lun" };

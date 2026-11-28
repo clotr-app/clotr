@@ -14,8 +14,7 @@ const assert = require("node:assert/strict");
 const fs = require("node:fs");
 const path = require("node:path");
 
-require("../extension/patterns.js");
-require("../extension/detector.js");
+require("./load-engine.js")("rules", "detect");
 
 // Calls the extension's detect() and reshapes the result to { patternId: [matched text, …] }, the same shape
 // tests/patterns.test.js uses.

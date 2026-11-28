@@ -2,20 +2,26 @@
 // sandbox. The real detect() answers every reveal, and nothing typed here is stored or sent.
 "use strict";
 
+const { extensionSource } = require("../../extension-source.js");
+
 module.exports = async function (env) {
   const { EXT, OUT, check, ctx, expect, fs, launch, path, resetState, sleep, store, waitFor } = env;
 
   const AXE = fs.readFileSync(require.resolve("axe-core/axe.min.js"), "utf8");
 
-  // training.html reads chrome.storage.managed itself, in its own page's JS realm, the same way policy.html does
+  // clotr-pages/office-training/office-training.html reads chrome.storage.managed itself, in its own page's JS realm, the same way clotr-pages/policy-applied/policy-applied.html does
   // (PA1). The worker's managed-policy stub doesn't reach that realm, so this stubs it on the page before it navigates.
   async function openTraining(c = ctx, { policy = null, search = "", width = 700, lang = null } = {}) {
     const page = await c.browser.newPage();
-    page.on("pageerror", (err) => ctx.problems.push(`training.html${lang ? ` (${lang})` : ""} error: ${err.message}`));
+    page.on("pageerror", (err) =>
+      ctx.problems.push(
+        `clotr-pages/office-training/office-training.html${lang ? ` (${lang})` : ""} error: ${err.message}`,
+      ),
+    );
     if (policy) await page.evaluateOnNewDocument((p) => (chrome.storage.managed.get = async () => p), policy);
     await page.setViewport({ width, height: 900 });
     const host = new URL(c.swTarget.url()).host;
-    await page.goto(`chrome-extension://${host}/training.html${search}`);
+    await page.goto(`chrome-extension://${host}/clotr-pages/office-training/office-training.html${search}`);
     await sleep(400);
     await page.evaluate(() => document.fonts.ready);
     return page;
@@ -45,7 +51,7 @@ module.exports = async function (env) {
     await sleep(150);
   }
 
-  // A full-page picture at a width and theme, following practice.js's own pattern: 380 is the phone-width shot, 1280 the wide one.
+  // A full-page picture at a width and theme, following clotr-pages/practice/practice.js's own pattern: 380 is the phone-width shot, 1280 the wide one.
   async function shotFull(page, name, width, theme) {
     await page.bringToFront();
     await page.emulateMediaFeatures([
@@ -165,7 +171,7 @@ module.exports = async function (env) {
         await sleep(150);
         s = await shellState(page);
         expect(/Before you send this/.test(s.resultText), `notice: ${s.resultText}`);
-        expect(/219-…99/.test(s.resultText) || /•{9,11}/.test(s.resultText), `masked SSN: ${s.resultText}`);
+        expect(/2…9/.test(s.resultText) || /•{9,11}/.test(s.resultText), `masked SSN: ${s.resultText}`);
         // The instructional bubble above always shows the made-up number, so it can be copied. Only the notice itself has to mask it.
         expect(!s.resultText.includes("219-09-9999"), `the full number shown in the notice: ${s.resultText}`);
         await shots(page, "training-try-notice");
@@ -472,7 +478,7 @@ module.exports = async function (env) {
         expect(await page.$("#tw-body button"), "no print button"); // Print or save as PDF
         await shots(page, "training-completion");
         // Clearing the name happens on pagehide, which isn't tested here directly.
-        // The unit tests already hold training.js to never writing storage, sending messages or fetching.
+        // The unit tests already hold clotr-pages/office-training/office-training.js to never writing storage, sending messages or fetching.
       } finally {
         await page.close();
       }
@@ -570,28 +576,40 @@ module.exports = async function (env) {
 
   await check(
     "TW13",
-    "Doors in: practice.html, helper.html and policy.html each link to the walkthrough; the popup's door is the gated 'Office training' button only",
+    "Doors in: clotr-pages/practice/practice.html, clotr-pages/set-up-for-someone/set-up-for-someone.html and clotr-pages/policy-applied/policy-applied.html each link to the walkthrough; the popup's door is the gated 'Office training' button only",
     async () => {
-      const practiceHtml = fs.readFileSync(path.join(EXT, "practice.html"), "utf8");
-      expect(/<a href="training\.html"/.test(practiceHtml), "no link to training.html on practice.html");
-      const helperHtml = fs.readFileSync(path.join(EXT, "helper.html"), "utf8");
-      expect(/id="open-training"/.test(helperHtml), "no Office training button on helper.html");
-      const helperJs = fs.readFileSync(path.join(EXT, "helper.js"), "utf8");
+      const practiceHtml = fs.readFileSync(path.join(EXT, "clotr-pages/practice/practice.html"), "utf8");
       expect(
-        /open-training.*training\.html/.test(helperJs.replace(/\n/g, " ")),
-        "open-training doesn't open training.html",
+        /<a href="\/?clotr-pages\/office-training\/office-training\.html"/.test(practiceHtml),
+        "no link to clotr-pages/office-training/office-training.html on clotr-pages/practice/practice.html",
       );
-      const policyHtml = fs.readFileSync(path.join(EXT, "policy.html"), "utf8");
-      expect(/<a href="training\.html"/.test(policyHtml), "no link to training.html on policy.html");
-      const popupHtml = fs.readFileSync(path.join(EXT, "popup.html"), "utf8");
+      const helperHtml = fs.readFileSync(
+        path.join(EXT, "clotr-pages/set-up-for-someone/set-up-for-someone.html"),
+        "utf8",
+      );
+      expect(
+        /id="open-training"/.test(helperHtml),
+        "no Office training button on clotr-pages/set-up-for-someone/set-up-for-someone.html",
+      );
+      const helperJs = fs.readFileSync(path.join(EXT, "clotr-pages/set-up-for-someone/set-up-for-someone.js"), "utf8");
+      expect(
+        /open-training.*clotr-pages\/office-training\/office-training\.html/.test(helperJs.replace(/\n/g, " ")),
+        "open-training doesn't open clotr-pages/office-training/office-training.html",
+      );
+      const policyHtml = fs.readFileSync(path.join(EXT, "clotr-pages/policy-applied/policy-applied.html"), "utf8");
+      expect(
+        /<a href="\/?clotr-pages\/office-training\/office-training\.html"/.test(policyHtml),
+        "no link to clotr-pages/office-training/office-training.html on clotr-pages/policy-applied/policy-applied.html",
+      );
+      const popupHtml = fs.readFileSync(path.join(EXT, "popup/popup.html"), "utf8");
       expect(
         /id="managed-training"[^>]*>/.test(popupHtml) && /id="managed-note"[^>]*hidden/.test(popupHtml),
         "the popup's Office training button should live inside the hidden-by-default managed-note banner",
       );
-      const popupJs = fs.readFileSync(path.join(EXT, "popup.js"), "utf8");
+      const popupJs = extensionSource("popup/popup.js");
       expect(
-        /managed-training.*training\.html/.test(popupJs.replace(/\n/g, " ")),
-        "managed-training doesn't open training.html",
+        /managed-training.*clotr-pages\/office-training\/office-training\.html/.test(popupJs.replace(/\n/g, " ")),
+        "managed-training doesn't open clotr-pages/office-training/office-training.html",
       );
     },
   );
@@ -611,7 +629,9 @@ module.exports = async function (env) {
         await ctx.worker.evaluate(() => offerTeamTraining());
         const opened = await waitFor(async () => {
           const pages = await ctx.browser.pages();
-          return pages.length > before ? pages.find((p) => p.url().endsWith("training.html")) : null;
+          return pages.length > before
+            ? pages.find((p) => p.url().endsWith("clotr-pages/office-training/office-training.html"))
+            : null;
         }, 3000);
         expect(opened, "the walkthrough didn't open itself for a fresh team policy");
         await opened?.close();
@@ -657,7 +677,7 @@ module.exports = async function (env) {
         chrome.storage.managed.get = async () => ({ requiredResponses: { phone_number: "block" } });
       });
       await popup.setViewport({ width: 380, height: 700 });
-      await popup.goto(`chrome-extension://${new URL(ctx.swTarget.url()).host}/popup.html`);
+      await popup.goto(`chrome-extension://${new URL(ctx.swTarget.url()).host}/popup/popup.html`);
       await popup.waitForSelector("#hero-value");
       await sleep(400);
       try {
@@ -673,7 +693,9 @@ module.exports = async function (env) {
         await popup.click("#managed-training");
         const opened = await waitFor(async () => {
           const pages = await ctx.browser.pages();
-          return pages.length > before ? pages.find((p) => p.url().endsWith("training.html")) : null;
+          return pages.length > before
+            ? pages.find((p) => p.url().endsWith("clotr-pages/office-training/office-training.html"))
+            : null;
         }, 3000);
         expect(opened, "Office training didn't open the walkthrough");
         await opened?.close();
@@ -687,7 +709,7 @@ module.exports = async function (env) {
         chrome.storage.managed.get = async () => ({});
       });
       await popupNoPolicy.setViewport({ width: 380, height: 700 });
-      await popupNoPolicy.goto(`chrome-extension://${new URL(ctx.swTarget.url()).host}/popup.html`);
+      await popupNoPolicy.goto(`chrome-extension://${new URL(ctx.swTarget.url()).host}/popup/popup.html`);
       await popupNoPolicy.waitForSelector("#hero-value");
       await sleep(400);
       try {

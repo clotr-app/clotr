@@ -218,7 +218,7 @@ module.exports = async function (env) {
         return Promise.resolve(yes);
       };
     }, answer);
-    await page.goto(`chrome-extension://${new URL(ctx.swTarget.url()).host}/vault.html?welcome=1`);
+    await page.goto(`chrome-extension://${new URL(ctx.swTarget.url()).host}/clotr-pages/vault/vault.html?welcome=1`);
     await waitFor(() => page.evaluate(() => Boolean(document.getElementById("where-offer")?.hidden === false)), 10000);
     return page;
   }

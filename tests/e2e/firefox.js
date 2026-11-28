@@ -654,7 +654,9 @@ async function ownPageChecks(check, firefox, ext) {
     prefs: { "network.proxy.no_proxies_on": "127.0.0.1, localhost", "network.dns.disableIPv6": true },
   });
   try {
-    const welcome = await ff.tabWhere((u) => /^moz-extension:\/\/[^/]+\/vault\.html\?welcome=1$/.test(u));
+    const welcome = await ff.tabWhere((u) =>
+      /^moz-extension:\/\/[^/]+\/clotr-pages\/vault\/vault\.html\?welcome=1$/.test(u),
+    );
     const onWelcome = async () => {
       if (!welcome) throw new Error("Clotr didn't open its welcome page when it was installed");
       await ff.switchTo(welcome);
@@ -901,7 +903,7 @@ async function ownPageChecks(check, firefox, ext) {
         // Opens the popup in a background tab, so the chat's tab stays the one the popup is about.
         await ff.switchTo(welcome);
         const popup = await ff.newTab(() =>
-          ff.exec('await chrome.tabs.create({ url: chrome.runtime.getURL("popup.html"), active: false });'),
+          ff.exec('await chrome.tabs.create({ url: chrome.runtime.getURL("popup/popup.html"), active: false });'),
         );
         if (!popup) throw new Error("the popup didn't open");
         await ff.switchTo(popup);
@@ -992,7 +994,7 @@ async function ownPageChecks(check, firefox, ext) {
           ExtensionParent.GlobalManager.getExtension(${JSON.stringify(addon)}).tabManager.addActiveTabPermission(win.gBrowser.selectedTab);`);
           await ff.switchTo(welcome);
           const popup = await ff.newTab(() =>
-            ff.exec('await chrome.tabs.create({ url: chrome.runtime.getURL("popup.html"), active: false });'),
+            ff.exec('await chrome.tabs.create({ url: chrome.runtime.getURL("popup/popup.html"), active: false });'),
           );
           if (!popup) throw new Error("the popup didn't open");
           await ff.switchTo(popup);
@@ -1149,7 +1151,7 @@ async function ownPageChecks(check, firefox, ext) {
       async () => {
         // With Tourniquet on for an adult, a phone number showed no corner note at all in manual testing, even
         // though a Medicare number and a password worked the same way. This check runs against a real site
-        // through the actual content.js/background.js pipeline, not the welcome page's practice box, which skips
+        // through the actual on-websites/content.js/background.js pipeline, not the welcome page's practice box, which skips
         // Tourniquet entirely; the extra host permission for that site was added above.
         const fixture = await startHttpsFixture(
           fs.readFileSync(path.join(__dirname, "pages", "textarea-chat.html"), "utf8"),
@@ -1223,7 +1225,7 @@ async function ownPageChecks(check, firefox, ext) {
     const appSwitch = (list, name) => `#${list} button[aria-label$=", Clotr on ${name}"]`;
     const reads = (sel) => ff.exec(`return document.querySelector(${JSON.stringify(sel)})?.textContent ?? null;`);
     async function openPopupSettings() {
-      // The tab is in the page before popup.js runs, so a click that early does nothing: click until it shows.
+      // The tab is in the page before popup/popup.js runs, so a click that early does nothing: click until it shows.
       const shown = await ff.waitFor('return document.querySelector("#tab-settings") ? true : null;');
       if (!shown) throw new Error("the popup didn't load");
       const onTab = await ff.waitFor(
@@ -1240,7 +1242,7 @@ async function ownPageChecks(check, firefox, ext) {
       await ff.exec(`document.querySelector(${JSON.stringify(sel)}).scrollIntoView({ block: "center" });`);
       await ff.click(sel);
       if (asks !== undefined) {
-        const asked = await answerPrompt(ff, "/popup.html", asks ? 5000 : 1500);
+        const asked = await answerPrompt(ff, "/popup/popup.html", asks ? 5000 : 1500);
         if (asked !== asks) {
           throw new Error(asks ? `Firefox didn't ask about ${label}` : `Firefox asked about ${label}, already covered`);
         }
@@ -1265,7 +1267,9 @@ async function ownPageChecks(check, firefox, ext) {
       await ff.exec(`document.querySelector(${JSON.stringify(sel)}).scrollIntoView({ block: "center" });`);
       await ff.exec(`document.getElementById(${JSON.stringify(statusId)}).textContent = "";`);
       await ff.click(sel);
-      if (await answerPrompt(ff, "/popup.html", 1500)) throw new Error(`Firefox asked about ${label}, already covered`);
+      if (await answerPrompt(ff, "/popup/popup.html", 1500)) {
+        throw new Error(`Firefox asked about ${label}, already covered`);
+      }
       const said = await ff.waitFor(
         `const t = document.getElementById(${JSON.stringify(statusId)}).textContent; return /keeps Clotr on here/.test(t) ? t : null;`,
         5000,
@@ -1284,7 +1288,7 @@ async function ownPageChecks(check, firefox, ext) {
           await onWelcome();
           await ff.exec(`await chrome.permissions.remove({ origins: ${JSON.stringify(SWITCHED)} });`);
           const popup = await ff.newTab(() =>
-            ff.exec('await chrome.tabs.create({ url: chrome.runtime.getURL("popup.html") });'),
+            ff.exec('await chrome.tabs.create({ url: chrome.runtime.getURL("popup/popup.html") });'),
           );
           if (!popup) throw new Error("the popup didn't open");
           await ff.switchTo(popup);
@@ -1388,7 +1392,9 @@ async function ownPageChecks(check, firefox, ext) {
           await ff.exec(`document.querySelector(${JSON.stringify(ddg)}).scrollIntoView({ block: "center" });`);
           await ff.click(ddg);
           await ff.click("#ms-go");
-          if (await answerPrompt(ff, "/vault.html?welcome=1", 1500)) throw new Error("Firefox asked about DuckDuckGo");
+          if (await answerPrompt(ff, "/clotr-pages/vault/vault.html?welcome=1", 1500)) {
+            throw new Error("Firefox asked about DuckDuckGo");
+          }
           const on = await ff.waitFor(`
             const on = await globalThis.ClotrSites.userSitePatterns();
             return on.includes("https://duckduckgo.com/*") || null;`);

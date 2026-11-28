@@ -10,10 +10,13 @@ const path = require("path");
 const vm = require("vm");
 const { webcrypto, createHash } = require("crypto");
 const { firefoxManifest, safariManifest } = require("../tools/package.js");
+const loadEngine = require("./load-engine.js");
+// The extension's own load order, outside the engine (extension/extension-files.js).
+const extensionLists = require("../tools/engine-files.js").extensionGroups();
 
 const EXT = path.join(__dirname, "..", "extension");
 const source = () => JSON.parse(fs.readFileSync(path.join(EXT, "manifest.json"), "utf8"));
-const oneClotrSchema = JSON.parse(fs.readFileSync(path.join(EXT, "one-clotr-protocol.json"), "utf8"));
+const oneClotrSchema = JSON.parse(fs.readFileSync(path.join(EXT, "one-clotr/one-clotr-protocol.json"), "utf8"));
 const settle = () => new Promise((r) => setTimeout(r, 30));
 // Replies come from inside the test's own JavaScript context, so I make a plain copy to compare by value.
 const plain = (x) => (x === undefined ? x : JSON.parse(JSON.stringify(x)));
@@ -45,7 +48,9 @@ function area() {
 // simulates Safari running the Chrome build's manifest, which happens when someone packages the app without a
 // dedicated Safari build. "firefox" loads the Firefox build's manifest, with installType saying how Firefox
 // installed it: "normal" from addons.mozilla.org, "development" for a temporary or folder install.
-function loadBackground(browser, { chromeManifest = false, installType = "development" } = {}) {
+// pauseAfter stops loading after that file, so a test can fire an event before the rest load. loadRest()
+// loads them.
+function loadBackground(browser, { chromeManifest = false, installType = "development", pauseAfter } = {}) {
   const safari = browser.startsWith("safari");
   const firefox = browser === "firefox";
   const manifest =
@@ -147,21 +152,24 @@ function loadBackground(browser, { chromeManifest = false, installType = "develo
     },
   });
   // Safari runs the background scripts in order on a page, since it has no importScripts to load them another way.
-  for (const file of manifest.background.scripts || [
-    "sites.js",
-    "patterns.js",
-    "detector.js",
-    "decide.js",
-    "helper-core.js",
-    "backup.js",
-    "one-clotr-protocol.js",
-    "one-clotr-bridge.js",
-  ]) {
+  const files = manifest.background.scripts || [
+    "engine/files.js",
+    "extension-files.js",
+    ...extensionLists.sitesAndPolicy,
+    ...loadEngine.files("rules", "detect", "decide"),
+    ...extensionLists.worker,
+    "one-clotr/one-clotr-protocol.js",
+    "one-clotr/one-clotr-bridge.js",
+    ...extensionLists.background,
+    "background.js",
+  ];
+  if (pauseAfter && !files.includes(pauseAfter)) throw new Error(`${pauseAfter} isn't in the ${browser} list`);
+  function loadFile(file) {
     vm.runInContext(fs.readFileSync(path.join(EXT, file), "utf8"), context, { filename: file });
   }
-  if (!manifest.background.scripts) {
-    vm.runInContext(fs.readFileSync(path.join(EXT, "background.js"), "utf8"), context, { filename: "background.js" });
-  }
+  const loadedFirst = pauseAfter ? files.indexOf(pauseAfter) + 1 : files.length;
+  files.slice(0, loadedFirst).forEach(loadFile);
+  const loadRest = () => files.slice(loadedFirst).forEach(loadFile);
   // Date.now here is replaceable, so a test can move the clock with setNow. It reads the real time until one does.
   vm.runInContext("{ const real = Date.now; Date.now = () => globalThis.__now ?? real(); }", context);
   const setNow = (t) => {
@@ -186,7 +194,7 @@ function loadBackground(browser, { chromeManifest = false, installType = "develo
     chrome.storage.managed.get = async () => policy;
     for (const fn of chrome.storage.onChanged.listeners) fn({}, "managed");
   };
-  return { chrome, calls, local, session, send, install, manifest, setNow, setManaged, context };
+  return { chrome, calls, local, session, send, install, manifest, setNow, setManaged, context, loadRest };
 }
 
 const tab = { id: 7, url: "https://chatgpt.com/c/1" };
@@ -204,7 +212,15 @@ test("Safari: the background loads from the Safari build's script list and insta
   for (const browser of ["safari", "safari-no-session"]) {
     const bg = loadBackground(browser);
     assert.deepEqual(bg.manifest.background, {
-      scripts: ["patterns.js", "detector.js", "decide.js", "helper-core.js", "backup.js", "sites.js", "background.js"],
+      scripts: [
+        "engine/files.js",
+        "extension-files.js",
+        ...loadEngine.files("rules", "detect", "decide"),
+        ...extensionLists.worker,
+        ...extensionLists.sitesAndPolicy,
+        ...extensionLists.background,
+        "background.js",
+      ],
     });
     await bg.install();
     assert.deepEqual(bg.calls.errors, [], `${browser}: errors at install`);
@@ -327,7 +343,7 @@ test("Safari 17: Alt+Shift+C still jumps to the warning, in the tab in front", a
 // already knew was set to ask first, a new personal kind the update adds should ask first too. Clotr keeps a
 // list of the kind names it knows, so it can tell a brand new kind apart from one it already had.
 test("Update: new personal kinds follow Ask before sending personal details, in Chrome and Safari", async () => {
-  require("../extension/patterns.js");
+  require("./load-engine.js")("rules");
   const { PATTERNS } = globalThis.Clotr;
   const ids = PATTERNS.map((p) => p.id);
   const personal = PATTERNS.filter((p) => p.group === "personal").map((p) => p.id);
@@ -433,7 +449,7 @@ test("Get a second opinion opens Is this a scam? beside the chat, only that page
     const reply = await bg.send({ type: "clotr:openCheck", url: "https://evil.example/", text: "482" }, chat);
     await settle();
     assert.equal(reply, undefined, "nothing to answer");
-    const page = bg.chrome.runtime.getURL("check.html");
+    const page = bg.chrome.runtime.getURL("clotr-pages/scam-check/scam-check.html");
     assert.deepEqual(opened, [{ url: page, windowId: 3, index: 3 }], browser);
     // Without a tab to open it beside, it opens at the end of the window instead; if even that spot is refused,
     // it falls back to opening the page plainly.
@@ -477,7 +493,7 @@ test("From a chat page, warning less on every site waits for a yes on Clotr's ow
     bg.chrome.tabs.create = async (o) => void opened.push(plain(o));
     bg.chrome.tabs.update = async (id, o) => void fronted.push([id, plain(o)]);
     const chat = { tab: { id: 7, index: 2, windowId: 3, url: "https://chatgpt.com/c/1" } };
-    const ours = { url: bg.chrome.runtime.getURL("confirm.html") };
+    const ours = { url: bg.chrome.runtime.getURL("clotr-pages/warn-less/warn-less.html") };
     const tokenOf = (o) => new URL(o.url).hash.slice(1);
     const fp = "0123456789abcdef";
     const allow = { kind: "value", type: "phone_number", fp, mode: "allow", added: 1 };
@@ -494,7 +510,7 @@ test("From a chat page, warning less on every site waits for a yes on Clotr's ow
     assert.deepEqual(bg.local.data.responses, { email: "block" }, "loosened from the chat");
     await settle();
     assert.equal(opened.length, 1);
-    assert.match(opened[0].url, /^[a-z-]+:\/\/clotr-test\/confirm\.html#[0-9a-f]{32}$/);
+    assert.match(opened[0].url, /^[a-z-]+:\/\/clotr-test\/clotr-pages\/warn-less\/warn-less\.html#[0-9a-f]{32}$/);
     assert.equal(opened[0].index, 3, "beside the chat");
     const first = tokenOf(opened[0]);
     assert.ok(!JSON.stringify(asked).includes(first), "the chat page never gets the token");
@@ -985,6 +1001,51 @@ test("Overlapping add/remove/add syncs never throw and settle on the last grant"
   await settle();
   assert.deepEqual(bg.calls.errors, []);
   assert.deepEqual(plain(registered.get("clotr-user-sites")?.matches), ["https://b.example/*"]);
+});
+
+// Firefox and Safari run the worker's files one at a time, in the manifest's order, and an event can land
+// between two of them. start-on-sites.js adds its listeners before the last files load, so the names those
+// listeners read have to be set already. Otherwise a site switched on right then isn't registered.
+test("Firefox and Safari: a grant or a site change mid-load still registers the site", async () => {
+  const site = "https://chat.example.test/*";
+  for (const browser of ["firefox", "safari"]) {
+    const bg = loadBackground(browser, { pauseAfter: "background/start-on-sites.js" });
+    const registered = new Map();
+    let origins = ["https://*/*", site];
+    bg.chrome.permissions.getAll = async () => ({ origins });
+    Object.assign(bg.chrome.scripting, {
+      getRegisteredContentScripts: async ({ ids }) =>
+        ids.filter((id) => registered.has(id)).map((id) => registered.get(id)),
+      registerContentScripts: async (scripts) => scripts.forEach((script) => registered.set(script.id, script)),
+      updateContentScripts: async (scripts) => scripts.forEach((script) => registered.set(script.id, script)),
+      unregisterContentScripts: async ({ ids }) => ids.forEach((id) => registered.delete(id)),
+    });
+
+    // The person allows a site and Everywhere I type.
+    for (const listener of bg.chrome.permissions.onAdded.listeners) listener({ origins });
+    await settle();
+    assert.deepEqual(plain(registered.get("clotr-user-sites")?.matches), [site], `${browser}: the added site`);
+    const skipped = registered.get("clotr-everywhere")?.excludeMatches || [];
+    assert.ok(skipped.includes("https://chatgpt.com/*"), `${browser}: Everywhere I type skips a built-in tool`);
+    assert.ok(skipped.includes(site), `${browser}: Everywhere I type skips the added site`);
+
+    // The person takes both back.
+    origins = [];
+    for (const listener of bg.chrome.permissions.onRemoved.listeners) listener({ origins: ["https://*/*", site] });
+    await settle();
+    assert.deepEqual([...registered.keys()], [], `${browser}: both scripts go`);
+
+    // The site's sections change while its grant stays.
+    origins = [site];
+    for (const listener of bg.chrome.storage.onChanged.listeners) listener({ siteScopes: { newValue: {} } }, "local");
+    await settle();
+    assert.deepEqual(plain(registered.get("clotr-user-sites")?.matches), [site], `${browser}: the site again`);
+
+    assert.deepEqual(bg.calls.errors, [], `${browser}: errors mid-load`);
+    bg.loadRest();
+    await bg.install();
+    assert.deepEqual(bg.calls.errors, [], `${browser}: errors once loaded`);
+  }
 });
 
 // Reading managed storage can take seconds in a browser that just started (2 to 9 s seen in Brave), and every

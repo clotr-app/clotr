@@ -8,7 +8,12 @@ const assert = require("node:assert/strict");
 const fs = require("node:fs");
 const path = require("node:path");
 
-const FILES = ["content.js", "detector.js", "editor.js", "patterns.js"];
+// The engine's rule and detection files come from its list.
+const FILES = [
+  "on-websites/content.js",
+  "on-websites/chat-box.js",
+  ...require("./load-engine.js").files("rules", "detect"),
+];
 
 test("the scan code never spreads a list into push()", () => {
   for (const name of FILES) {

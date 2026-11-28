@@ -32,12 +32,10 @@ module.exports = async function (env) {
       fs.writeFileSync(path.join(copy, "manifest.json"), JSON.stringify(m, null, 2));
       if (emailBandage) {
         // The shipped setting keeps Bandage off for email. This test-only build opens it to cover the editor path.
-        const backgroundFile = path.join(copy, "background.js");
+        const backgroundFile = path.join(copy, "background/settings-for-sites.js");
         const background = fs.readFileSync(backgroundFile, "utf8").replace(/\r\n/g, "\n");
-        const disabled =
-          'function bandageFor(everyday, host, r) {\n  return everyday ? false : host && typeof r.bandage?.[host] === "boolean" ? r.bandage[host] : undefined;\n}';
-        const enabled =
-          'function bandageFor(everyday, host, r) {\n  return host && typeof r.bandage?.[host] === "boolean" ? r.bandage[host] : undefined;\n}';
+        const disabled = "function bandageFor(everyday, host, stored) {\n  if (everyday) return false;\n";
+        const enabled = "function bandageFor(everyday, host, stored) {\n";
         expect(background.includes(disabled), "the email Bandage test couldn't find the guarded setting");
         fs.writeFileSync(backgroundFile, background.replace(disabled, enabled));
       }

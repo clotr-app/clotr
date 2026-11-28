@@ -34,7 +34,10 @@ module.exports = async function (env) {
   } = env;
   await check("V0", 'First install opens "What should I protect?"', async () => {
     // When this check runs first (--only V), it can start before the install has even opened the tab, so I wait.
-    const t = await waitFor(() => ctx.browser.targets().find((x) => x.url().includes("/vault.html?welcome=1")), 5000);
+    const t = await waitFor(
+      () => ctx.browser.targets().find((x) => x.url().includes("/clotr-pages/vault/vault.html?welcome=1")),
+      5000,
+    );
     expect(
       t,
       `targets: ${ctx.browser
@@ -59,7 +62,7 @@ module.exports = async function (env) {
     "First install: welcome explains Clotr in plain words; the practice box warns and redacts, and records nothing",
     async () => {
       await resetState(ctx, {});
-      const page = await openExtPage(ctx, "vault.html?welcome=1");
+      const page = await openExtPage(ctx, "clotr-pages/vault/vault.html?welcome=1");
       try {
         const count = await waitFor(() => page.$eval("#ai-site-count-fact", (el) => el.textContent || null), 3000);
         expect(count === "19", `AI chat site count: ${count}`);
@@ -91,7 +94,7 @@ module.exports = async function (env) {
       } finally {
         await page.close();
       }
-      const plain = await openExtPage(ctx, "vault.html");
+      const plain = await openExtPage(ctx, "clotr-pages/vault/vault.html");
       const hidden = await plain.evaluate(() => document.getElementById("welcome").hidden);
       await plain.close();
       expect(hidden, "the welcome shows on the normal vault page too");
@@ -114,7 +117,7 @@ module.exports = async function (env) {
         });
       });
       await page.setViewport({ width: 700, height: 900 });
-      await page.goto(`chrome-extension://${new URL(ctx.swTarget.url()).host}/vault.html?welcome=1`);
+      await page.goto(`chrome-extension://${new URL(ctx.swTarget.url()).host}/clotr-pages/vault/vault.html?welcome=1`);
       try {
         await waitFor(() => page.evaluate(() => document.getElementById("where-offer")?.hidden === false), 10000);
         const order = await page.evaluate(() => {
@@ -179,7 +182,9 @@ module.exports = async function (env) {
           chrome.action.getUserSettings = async () => ({ isOnToolbar: on });
         }, pinned);
         await page.setViewport({ width: 1040, height: 900 });
-        await page.goto(`chrome-extension://${new URL(ctx.swTarget.url()).host}/vault.html?welcome=1`);
+        await page.goto(
+          `chrome-extension://${new URL(ctx.swTarget.url()).host}/clotr-pages/vault/vault.html?welcome=1`,
+        );
         await sleep(400);
         const text = await page.evaluate(() => document.getElementById("pin-step").innerText);
         if (ua === UAS.firefox) await shot(page, "welcome-pin-firefox.png");
@@ -200,7 +205,7 @@ module.exports = async function (env) {
     "V1s",
     "Vault page: typed details aren't kept by the browser (no autocomplete; fields cleared when the page is hidden)",
     async () => {
-      const page = await openExtPage(ctx, "vault.html");
+      const page = await openExtPage(ctx, "clotr-pages/vault/vault.html");
       try {
         const off = await page.$$eval("textarea", (ts) => ts.every((t) => t.getAttribute("autocomplete") === "off"));
         expect(off, "a vault field allows autocomplete (the browser could keep what was typed)");
@@ -256,7 +261,7 @@ module.exports = async function (env) {
     async () => {
       await resetState(ctx, {});
       await store.set(ctx, { vault: [] });
-      const vp = await openExtPage(ctx, "vault.html");
+      const vp = await openExtPage(ctx, "clotr-pages/vault/vault.html");
       for (const [type, value] of Object.entries(MY)) {
         value.split("\n").forEach((v) => TYPED_VALUES.add(v));
         await vp.type(`#f-${type}`, value);
@@ -317,7 +322,9 @@ module.exports = async function (env) {
         await popup.click("#open-watch");
         const page = await waitFor(async () => {
           const pages = await ctx.browser.pages();
-          return pages.length > before ? pages.find((p) => p.url().endsWith("vault.html#watch")) : null;
+          return pages.length > before
+            ? pages.find((p) => p.url().endsWith("clotr-pages/vault/vault.html#watch"))
+            : null;
         }, 3000);
         expect(page, "the vault didn't open at #watch");
         const focused = await waitFor(
@@ -348,7 +355,7 @@ module.exports = async function (env) {
   await check("V3", 'Vault → "OK to share" makes your own item quiet; Remove forgets it', async () => {
     await store.set(ctx, { responses: {} });
     // Runs standalone too, so it can't rely on V1 having already saved a phone number: seed one here if it's
-    // not there yet (same fingerprint V1's vault.js save would make, so running after V1 just finds it
+    // not there yet (same fingerprint V1's clotr-pages/vault/vault.js save would make, so running after V1 just finds it
     // already present).
     const fp = await ctx.worker.evaluate(async () => {
       const salt = await ensureSalt();
@@ -360,7 +367,7 @@ module.exports = async function (env) {
         vault: [...vault, { kind: "value", type: "phone_number", fp, scheme: 2, mode: "protect", added: Date.now() }],
       });
     }
-    const vp = await openExtPage(ctx, "vault.html");
+    const vp = await openExtPage(ctx, "clotr-pages/vault/vault.html");
     const setPhone = (v) =>
       vp.evaluate((val) => {
         const li = [...document.querySelectorAll("#vault-list li")].find((x) => x.textContent.includes("Phone number"));
@@ -400,7 +407,7 @@ module.exports = async function (env) {
     async () => {
       await resetState(ctx, {});
       await store.set(ctx, { vault: [] });
-      const vp = await openExtPage(ctx, "vault.html");
+      const vp = await openExtPage(ctx, "clotr-pages/vault/vault.html");
       try {
         const bad = {
           my_name: "This Has Way Too Many Words To Keep",

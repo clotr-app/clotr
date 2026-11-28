@@ -6,8 +6,9 @@ const assert = require("node:assert/strict");
 const fs = require("fs");
 const path = require("path");
 const { schemaProblems } = require("./schema-problems.js");
+const { loadSource, requireParts } = require("./extension-source.js");
 
-// sites.js reads the built-in list from the manifest and grants from chrome.permissions.
+// sites-and-policy/protected-sites.js reads the built-in list from the manifest and grants from chrome.permissions.
 const manifest = JSON.parse(fs.readFileSync(path.join(__dirname, "..", "extension", "manifest.json"), "utf8"));
 let granted = [];
 let stored = {};
@@ -16,9 +17,9 @@ globalThis.chrome = {
   permissions: { getAll: async () => ({ origins: granted }) },
   storage: { local: { get: async (k) => ({ [k]: stored[k] }) } },
 };
-require("../extension/sites.js");
-require("../extension/patterns.js");
-require("../extension/detector.js");
+require("../extension/engine/files.js"); // sites-and-policy/protected-sites.js reads the engine's list
+requireParts("sites-and-policy/protected-sites.js");
+require("./load-engine.js")("rules", "detect");
 const Sites = globalThis.ClotrSites;
 const Clotr = globalThis.Clotr;
 // Turns a number into two capital letters, for names and formats that might not hold a digit. 0 becomes "AA",
@@ -366,14 +367,14 @@ test("holdFiles has its own entry in managed_schema.json, a plain boolean", () =
   assert.ok(schema.properties.holdFiles.description.length > 0);
 });
 
-test("Team pack docs: the expanded JSON block for each preset in docs/team-rollout.md matches sites.js's PRESETS exactly (drift guard)", () => {
+test("Team pack docs: the expanded JSON block for each preset in docs/team-rollout.md matches sites-and-policy/protected-sites.js's PRESETS exactly (drift guard)", () => {
   const doc = fs.readFileSync(path.join(__dirname, "..", "docs", "team-rollout.md"), "utf8");
   const re = /```json\s*\{\s*"preset":\s*"(\w+)"\s*\}\s*```\s*is the same as:\s*```json([\s\S]*?)```/g;
   const found = [...doc.matchAll(re)].map((m) => [m[1], JSON.parse(m[2])]);
   assert.deepEqual(
     found.map(([id]) => id).sort(),
     Object.keys(Sites.PRESETS).sort(),
-    "docs/team-rollout.md should show one expanded block per preset in sites.js",
+    "docs/team-rollout.md should show one expanded block per preset in sites-and-policy/protected-sites.js",
   );
   for (const [id, expanded] of found) assert.deepEqual(expanded, Sites.PRESETS[id], `preset ${id}`);
 });
@@ -1328,9 +1329,9 @@ test("weight: a folded record counts as its n, anything else as one", () => {
 });
 
 // The release zip leaves out a held-back feature's files and drops them from the manifest's content script, but
-// sites.js keeps its own list for the sites people add and the email and chat apps they switch on. The browser
+// sites-and-policy/protected-sites.js keeps its own list for the sites people add and the email and chat apps they switch on. The browser
 // refuses to register a script list that names a missing file, so in the zip those sites got no protection at
-// all while the built-in AI sites worked. Load sites.js against the manifest the zip actually ships and check
+// all while the built-in AI sites worked. Load sites-and-policy/protected-sites.js against the manifest the zip actually ships and check
 // that it only asks for files that are there.
 test("sites people add and the email and chat apps get only the scripts the release zip ships", () => {
   const vm = require("vm");
@@ -1338,7 +1339,8 @@ test("sites people add and the email and chat apps get only the scripts the rele
   const shipped = featureManifest(manifest, { ...manifest.clotr_features });
   const context = vm.createContext({ chrome: { runtime: { getManifest: () => shipped } }, console });
   context.globalThis = context;
-  vm.runInContext(fs.readFileSync(path.join(__dirname, "..", "extension", "sites.js"), "utf8"), context);
+  vm.runInContext(fs.readFileSync(path.join(__dirname, "..", "extension", "engine", "files.js"), "utf8"), context);
+  vm.runInContext(loadSource("sites-and-policy/protected-sites.js"), context);
   const listed = [...context.ClotrSites.CONTENT_JS];
   for (const f of listed) assert.ok(shipped.content_scripts[0].js.includes(f), `${f} isn't in the zip's manifest`);
   assert.deepEqual(listed, shipped.content_scripts[0].js);
@@ -1356,7 +1358,8 @@ test("the shipped script list matches on file names, whatever form the browser g
   };
   const context = vm.createContext({ chrome: { runtime: { getManifest: () => asPaths } }, console });
   context.globalThis = context;
-  vm.runInContext(fs.readFileSync(path.join(__dirname, "..", "extension", "sites.js"), "utf8"), context);
+  vm.runInContext(fs.readFileSync(path.join(__dirname, "..", "extension", "engine", "files.js"), "utf8"), context);
+  vm.runInContext(loadSource("sites-and-policy/protected-sites.js"), context);
   assert.deepEqual([...context.ClotrSites.CONTENT_JS], shipped.content_scripts[0].js);
 });
 

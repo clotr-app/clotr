@@ -1,0 +1,1710 @@
+/* Clotr's shared styles (popup, report, vault, stored pages). Brand: plum on brushed steel, flat finish,
+   no gradients or shadows for mood. Chart colors follow a separate validated categorical palette:
+   blue / orange / aqua, all-pairs colorblind-safe in light and dark. Warnings stay red/amber. */
+/* Recursive (Arrow Type, SIL OFL: fonts/OFL-Recursive.txt), one variable file for every weight and the
+   casual and mono axes below. Bundled, so nothing is fetched; Clotr's own pages only (the in-page warning
+   uses the system font). */
+@font-face {
+  font-family: "Recursive";
+  src: url("/fonts/Recursive-var-normal.woff2") format("woff2-variations");
+  font-weight: 300 1000;
+  font-display: swap;
+}
+:root {
+  color-scheme: light;
+  --page: #ffffff;
+  --surface: #f3f4f5;
+  --ink: #1f2226;
+  /* Dark enough for the chosen-row wash (--chosen-bg), not only the plain page: 4.5:1 holds on both. */
+  --ink-2: #545b64;
+  --muted: #545b64;
+  --faint: #dde0e3; /* hairlines and card rims */
+  --line: #d3d6da; /* rails and stronger dividers */
+  --brand: #5b3a63; /* links and brand text */
+  --focus: #5b3a63;
+  --plum: #5b3a63; /* buttons, pad and accent rails: the same value in both themes */
+  --on-plum: #ffffff; /* white on plum, 9.4:1 */
+  --steel: #c2c7cc; /* the header field: the same value in both themes */
+  --on-steel: #5b3a63; /* plum on steel, 5.5:1: the same value in both themes */
+  --ring: color-mix(in srgb, var(--plum) 8%, var(--faint));
+  --wash: color-mix(in srgb, var(--plum) 6%, var(--surface));
+  --chosen-bg: color-mix(in srgb, var(--plum) 14%, var(--surface));
+  --grid: var(--faint); /* the chart's gridlines ride the hairline token */
+  --axis: var(--line); /* the chart's axis labels ride the rail token */
+  --lemon: #e2c81c; /* the spotted-but-unprotected dot: a separate functional colour, not brand */
+
+  --series-1: #2a78d6; /* redacted: the chart's own validated palette, not the brand's */
+  --series-2: #eb6834; /* allowed */
+  --series-3: #1baf7a; /* silenced */
+
+  --good: #1f7a3f;
+  --good-ink: var(--good);
+  --serious: #ec835a;
+  --critical: #b3261e;
+  --alarm: #9c2b4a; /* a detail that went through as typed: always with a cross and bold, never colour alone */
+
+  --text-xs: 13px;
+
+  --high-bg: #fce8e6;
+  --high-fg: #b3261e;
+  --medium-bg: #fef3e0;
+  --medium-fg: #8a4d00;
+  --low-bg: #e8f0fe;
+  --low-fg: #1a56c4;
+
+  /* Old names, still read by pages not yet rebuilt on the new tokens: the same flat brand underneath,
+     so nothing goes undefined in the meantime. --sheen, --sheen-shadow, --btn-lift and --lift
+     are the dropped glass/glow/lift effects, now plainly none. */
+  --signal: var(--plum);
+  --on-signal: var(--on-plum);
+  --brand-wash: var(--wash);
+  --card-bg: var(--surface);
+  --surface-2: var(--surface);
+  --sheen: none;
+  --sheen-shadow: none;
+  --btn-lift: none;
+  --lift: none;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    color-scheme: dark;
+    --page: #1e1f22;
+    --surface: #24272b;
+    --ink: #ececec;
+    --ink-2: #a9aeb4;
+    --muted: #a9aeb4;
+    --faint: #34373c;
+    --line: #3a3d42;
+    --brand: #c9a6d6;
+    --focus: #c9a6d6;
+    --ring: color-mix(in srgb, var(--plum) 18%, var(--faint));
+    --wash: color-mix(in srgb, var(--plum) 10%, var(--surface));
+    --chosen-bg: color-mix(in srgb, var(--plum) 24%, var(--surface));
+    --lemon: #e8d23a;
+
+    --series-1: #3987e5;
+    --series-2: #d95926;
+    --series-3: #199e70;
+
+    --good: #8edcaa;
+    --good-ink: var(--good);
+    --critical: #ffb4ab;
+    --alarm: #f2a0b8;
+
+    --high-bg: #4a1f1c;
+    --high-fg: #ffb4ab;
+    --medium-bg: #43300f;
+    --medium-fg: #ffcf8a;
+    --low-bg: #1d2f4f;
+    --low-fg: #a8c7ff;
+  }
+}
+
+* {
+  box-sizing: border-box;
+}
+/* On a phone the browser keeps the text the size it's set here (no enlarging or shrinking it to fit). */
+html {
+  -webkit-text-size-adjust: 100%;
+  text-size-adjust: 100%;
+  /* The tabs bar (.tabs, below) stays stuck to the bottom of the viewport once a panel scrolls, so
+     scrolling a control into view (a click, or Tab-key focus) has to stop short of that overlay or the
+     control lands underneath it and can't be reached once a tall card pushes the Overview panel past
+     the fold: the browser's own scroll-into-view now reserves the bar's height. */
+  scroll-padding-bottom: 48px;
+}
+body {
+  margin: 0;
+  width: 380px;
+  padding: 12px 14px 14px;
+  /* See html's scroll-padding-bottom: whichever of html/body is the document's actual scrolling box needs
+     the reserved space, so both carry it. */
+  scroll-padding-bottom: 48px;
+  font:
+    13px/1.45 "Recursive",
+    system-ui,
+    -apple-system,
+    "Segoe UI",
+    sans-serif;
+  font-variation-settings:
+    "MONO" 0,
+    "CASL" 0,
+    "slnt" 0,
+    "CRSV" 0;
+  background: var(--page);
+  color: var(--ink);
+}
+[hidden] {
+  display: none !important;
+}
+button {
+  font: inherit;
+  color: inherit;
+  cursor: pointer;
+}
+/* Headings and the state line: Recursive's casual axis, bold. */
+h1,
+h2,
+h3,
+.wordmark,
+.site .state {
+  font-variation-settings:
+    "MONO" 0,
+    "CASL" 1,
+    "slnt" 0,
+    "CRSV" 0;
+  font-weight: 700;
+}
+/* Numbers typed by the user: Recursive's mono axis. */
+code {
+  font-family: "Recursive", ui-monospace, Consolas, monospace;
+  font-variation-settings:
+    "MONO" 1,
+    "CASL" 0,
+    "slnt" 0,
+    "CRSV" 0;
+  font-size: 11px;
+}
+
+a {
+  color: var(--brand);
+}
+:focus-visible {
+  outline-color: var(--focus);
+}
+
+/* Header: the brushed-steel field every page carries, with the wordmark in plum. */
+.top {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: -12px -14px 10px;
+  padding: 10px 14px;
+  background: var(--steel);
+  border-radius: 10px;
+}
+/* The popup: the site card follows later in the body (after the occasional notice above it), so the two
+   read as one steel field with nothing visible between them. */
+.top:has(~ .site) {
+  margin-bottom: 0;
+  border-radius: 10px 10px 0 0;
+}
+.top h1 {
+  font-size: 15px;
+  margin: 0;
+  flex: 1;
+  color: var(--on-steel);
+}
+.wordmark {
+  display: flex;
+  align-items: center;
+  color: var(--on-steel);
+}
+.wordmark img {
+  display: block;
+}
+/* Pages with their own title: the wordmark and the chip on the first line, the title on its own line below. */
+.top:has(> span.wordmark) {
+  flex-wrap: wrap;
+}
+.top > span.wordmark ~ .chip {
+  margin-left: auto;
+}
+.top > span.wordmark ~ h1 {
+  order: 1;
+  flex-basis: 100%;
+  /* Still on the steel field, so the same plum as the wordmark and chip, not --ink (which
+     turns near-white in the dark theme, over steel's own value staying the same). */
+  color: var(--on-steel);
+}
+.chip {
+  border: none;
+  background: none;
+  padding: 0;
+  font-size: 11px;
+  color: var(--on-steel);
+}
+/* Site status card: the header field continues down through it, so the two read as one steel block. */
+.site {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 0 -14px 10px;
+  padding: 10px 14px;
+  background: var(--steel);
+  border-radius: 0 0 10px 10px;
+  color: var(--on-steel);
+}
+.site .grow {
+  flex: 1;
+  min-width: 0;
+}
+.site .host {
+  font-weight: 600;
+  word-break: break-all;
+}
+.site .state {
+  font-size: 12px;
+  color: var(--on-steel);
+  display: flex;
+  align-items: center;
+  gap: 5px;
+}
+.site .why {
+  font-size: 11px;
+  /* Full strength: a lighter mix against steel reads under 4.5:1. */
+  color: var(--on-steel);
+  margin-top: 2px;
+}
+.list .why {
+  display: block;
+  font-size: 12px;
+  color: var(--muted);
+  margin-top: 2px;
+  word-break: normal;
+  overflow-wrap: break-word;
+}
+.dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex: none;
+  background: var(--muted);
+}
+.site .dot {
+  background: color-mix(in srgb, var(--on-steel) 70%, var(--steel));
+}
+.dot.on {
+  background: var(--good);
+}
+.dot.paused {
+  background: var(--muted);
+}
+.site .dot.paused {
+  background: color-mix(in srgb, var(--on-steel) 70%, var(--steel));
+}
+.dot.spot {
+  background: var(--lemon);
+}
+
+.btn {
+  border-radius: 8px;
+  padding: 6px 12px;
+  border: 1px solid var(--line);
+  flex: none;
+  background: var(--surface);
+  color: var(--ink);
+  /* Theme fills change with their text; fading the fill could briefly drop below AA. */
+  transition: border-color 0.15s;
+}
+.btn:hover {
+  border-color: var(--brand);
+}
+.btn:active {
+  background: var(--chosen-bg);
+}
+.btn.primary {
+  background: var(--plum);
+  border-color: var(--plum);
+  color: var(--on-plum);
+  font-weight: 700;
+}
+.btn.primary:hover {
+  filter: brightness(1.08);
+}
+.site .btn {
+  background: var(--page);
+  border-color: color-mix(in srgb, var(--on-steel) 30%, var(--steel));
+  color: var(--on-steel);
+}
+.site .btn.primary {
+  background: var(--plum);
+  border-color: var(--plum);
+  color: var(--on-plum);
+}
+/* A switch that's on (Settings: email and chat apps): the chosen look, a plum edge and plum words. */
+.btn.switch {
+  min-width: 48px;
+}
+.btn.switch.on {
+  background: var(--chosen-bg);
+  color: var(--brand);
+  font-weight: 700;
+  border-color: var(--plum);
+}
+@media (prefers-reduced-motion: reduce) {
+  .btn {
+    transition: none;
+  }
+}
+.linkish {
+  border: none;
+  background: none;
+  padding: 0;
+  color: var(--ink-2);
+  text-decoration: underline;
+  font-size: 11px;
+}
+
+/* Tabs: at the bottom of the popup, always in view */
+.tabs {
+  position: sticky;
+  bottom: -14px;
+  z-index: 5;
+  display: flex;
+  gap: 2px;
+  margin: 12px -14px -14px;
+  padding: 0 14px 6px;
+  border-top: 1px solid var(--grid);
+  background: var(--page);
+}
+.tabs button {
+  flex: 1;
+  border: none;
+  background: none;
+  padding: 9px 10px 7px;
+  color: var(--ink-2);
+  border-top: 2px solid transparent;
+  margin-top: -1px;
+}
+.tabs button[aria-selected="true"] {
+  color: var(--ink);
+  font-weight: 700;
+  border-top-color: var(--plum);
+}
+
+/* Range filter: two plain text choices above everything they scope, the chosen one bold and underlined. */
+.range {
+  display: inline-flex;
+  gap: 12px;
+  margin-bottom: 10px;
+}
+.range button {
+  border: none;
+  background: none;
+  padding: 0;
+  color: var(--ink-2);
+  font-size: 12px;
+}
+.range button[aria-checked="true"] {
+  color: var(--ink);
+  font-weight: 700;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+/* Hero figure (one per view) */
+.hero {
+  padding: 2px 2px 10px;
+}
+.hero-value {
+  font-size: 48px;
+  font-weight: 600;
+  line-height: 1;
+  letter-spacing: -0.02em;
+}
+.hero-label {
+  font-size: 13px;
+  color: var(--ink-2);
+  margin-top: 4px;
+}
+.hero-sub {
+  font-size: 12px;
+  color: var(--muted);
+  margin-top: 2px;
+}
+
+/* Cards */
+.card {
+  background: var(--surface);
+  border: 1px solid var(--ring);
+  border-radius: 12px;
+  padding: 10px 12px;
+  margin-bottom: 8px;
+}
+.card-title {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--ink-2);
+  margin-bottom: 6px;
+}
+
+/* What Clotr caught on this tab's site: covered with a dash, went through with a cross (bold, alarm colour,
+   never colour alone). */
+.caught-list {
+  list-style: none;
+  margin: 0 0 6px;
+  padding: 0;
+  display: grid;
+  gap: 4px;
+}
+.caught-row {
+  display: flex;
+  gap: 6px;
+  align-items: baseline;
+  font-size: 13px;
+}
+.caught-row .mark {
+  flex: none;
+  width: 1.1em;
+  text-align: center;
+}
+.caught-row.through {
+  font-weight: 700;
+  color: var(--alarm);
+}
+.caught-sum {
+  margin: 4px 0 8px;
+  color: var(--ink-2);
+  font-size: 12px;
+}
+.caught-links {
+  display: flex;
+  gap: 12px;
+  margin: 0;
+}
+.empty-card {
+  display: grid;
+  gap: 4px;
+  margin-bottom: 8px;
+  padding: 14px;
+  border-radius: 12px;
+  background: var(--surface);
+  border: 1px solid var(--ring);
+  color: var(--ink-2);
+}
+.empty-card b {
+  color: var(--ink);
+}
+
+/* Alerts (status: icon + label, never color alone) */
+.alert {
+  display: flex;
+  gap: 8px;
+  align-items: flex-start;
+  padding: 8px 10px;
+  border-radius: 10px;
+  margin-bottom: 8px;
+  background: var(--surface);
+  border: 1px solid var(--ring);
+  border-left: 3px solid var(--serious);
+  font-size: 12px;
+}
+.alert .icon {
+  flex: none;
+}
+
+/* Legend */
+.legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 12px;
+  margin-bottom: 6px;
+  font-size: 11px;
+  color: var(--ink-2);
+}
+.legend span {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+.legend i {
+  width: 10px;
+  height: 10px;
+  border-radius: 2px;
+  display: inline-block;
+}
+.legend b {
+  color: var(--ink);
+  font-weight: 600;
+}
+
+/* Column chart */
+.chart-wrap {
+  position: relative;
+}
+#chart {
+  display: block;
+  width: 100%;
+  height: 132px;
+  overflow: visible;
+}
+#chart .gridline {
+  stroke: var(--grid);
+  stroke-width: 1;
+}
+#chart .baseline {
+  stroke: var(--axis);
+  stroke-width: 1;
+}
+#chart .tick {
+  fill: var(--muted);
+  font-size: 10px;
+}
+#chart .col {
+  transition: opacity 0.12s;
+}
+#chart.hovering .col {
+  opacity: 0.45;
+}
+#chart.hovering .col.active {
+  opacity: 1;
+}
+#chart .hit {
+  fill: transparent;
+  outline: none;
+}
+#chart .hit:focus-visible {
+  stroke: var(--ink-2);
+  stroke-width: 1;
+}
+.s1 {
+  fill: var(--series-1);
+}
+.s2 {
+  fill: var(--series-2);
+}
+.s3 {
+  fill: var(--series-3);
+}
+
+.tooltip {
+  position: absolute;
+  z-index: 2;
+  pointer-events: none;
+  min-width: 128px;
+  padding: 7px 9px;
+  border-radius: 9px;
+  background: var(--surface);
+  color: var(--ink);
+  border: 1px solid var(--ring);
+  font-size: 11px;
+}
+.tooltip .tt-date {
+  color: var(--ink-2);
+  margin-bottom: 4px;
+}
+.tooltip .tt-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.tooltip .tt-row b {
+  min-width: 18px;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+.tooltip .key {
+  width: 10px;
+  height: 2px;
+  border-radius: 1px;
+}
+.tooltip .tt-total {
+  margin-top: 4px;
+  padding-top: 4px;
+  border-top: 1px solid var(--grid);
+  color: var(--ink-2);
+}
+
+/* Horizontal bars (single series) */
+.hbars {
+  display: grid;
+  gap: 7px;
+}
+.hbar {
+  display: grid;
+  grid-template-columns: 128px 1fr;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+}
+.hbar .label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--ink-2);
+}
+.hbar .track {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+.hbar .bar {
+  height: 8px;
+  border-radius: 0 4px 4px 0;
+  background: var(--series-1);
+  min-width: 2px;
+}
+.hbar .val {
+  font-weight: 600;
+  font-size: 12px;
+}
+.hbar:hover .bar {
+  filter: brightness(1.12);
+}
+
+/* Activity table */
+.events {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12px;
+}
+.events th {
+  text-align: left;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--muted);
+  padding: 0 4px 6px;
+  border-bottom: 1px solid var(--grid);
+}
+.events td {
+  padding: 6px 4px;
+  border-bottom: 1px solid var(--grid);
+  vertical-align: top;
+}
+.events td.when {
+  color: var(--ink-2);
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+.events .site-name {
+  display: block;
+  font-size: 11px;
+  color: var(--muted);
+}
+/* The rest of a long list sent at once, as one record. */
+.events .more {
+  display: block;
+  font-weight: 700;
+  color: var(--brand);
+}
+.events .repeat {
+  font-size: 10px;
+  font-weight: 700;
+  color: var(--ink-2);
+  margin-left: 4px;
+}
+.outcome {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  white-space: nowrap;
+}
+.outcome i {
+  width: 8px;
+  height: 8px;
+  border-radius: 2px;
+  display: inline-block;
+}
+
+.sev {
+  font-size: var(--text-xs);
+  font-weight: 700;
+  text-transform: capitalize;
+  margin-right: 4px;
+}
+.sev.high {
+  color: var(--high-fg);
+}
+.sev.medium {
+  color: var(--medium-fg);
+}
+.sev.low {
+  color: var(--low-fg);
+}
+
+/* Settings */
+h2 {
+  font-size: 13px;
+  color: var(--ink);
+  margin: 14px 0 6px;
+}
+h2:first-child {
+  margin-top: 0;
+}
+h3 {
+  font-size: 12px;
+  color: var(--ink-2);
+  margin: 10px 0 4px;
+}
+/* "Pick sites one by one instead": closed by default, so the headings and switches it folds away don't
+   compete with the always-visible switches above for the eye. */
+#pick-sites {
+  margin-top: 8px;
+}
+#pick-sites summary {
+  cursor: pointer;
+  color: var(--ink-2);
+  font-size: 12px;
+}
+#pick-sites summary + h3 {
+  margin-top: 10px;
+}
+.list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.list li {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 0;
+  border-bottom: 1px solid var(--grid);
+}
+.list li:last-child {
+  border-bottom: none;
+}
+.list .grow {
+  flex: 1;
+  min-width: 0;
+  word-break: break-all;
+}
+/* Names and sentences wrap between words; a single word too long for the line still breaks rather than spill. */
+.list .grow.words {
+  word-break: normal;
+  overflow-wrap: break-word;
+}
+.resp {
+  flex: none;
+  font: inherit;
+  font-size: 12px;
+  padding: 3px 4px;
+  border-radius: 6px;
+  border: 1px solid var(--axis);
+  color: var(--ink);
+  background: var(--surface);
+}
+.resp-group {
+  padding: 6px 0;
+  border-bottom: 1px solid var(--grid);
+}
+.resp-group .head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-weight: 600;
+}
+.resp-group .head .grow {
+  flex: 1;
+  min-width: 0;
+}
+.resp-group .head .resp {
+  font-weight: 400;
+}
+.resp-group .head .set-by {
+  font-size: 11px;
+  font-weight: 400;
+  color: var(--ink-2);
+}
+.resp-group details {
+  margin-top: 2px;
+  font-size: 12px;
+}
+.resp-group summary {
+  cursor: pointer;
+  color: var(--ink-2);
+  font-size: 11px;
+}
+.resp-group .list {
+  margin-top: 4px;
+}
+.resp.changed {
+  box-shadow: inset 0 0 0 2px var(--brand);
+}
+/* Locked (a PIN), or held by a policy or Tourniquet: still readable, plainly not for changing */
+.resp:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+.mine-form {
+  display: flex;
+  gap: 6px;
+  margin-bottom: 4px;
+}
+.mine-form input {
+  flex: 1;
+  min-width: 0;
+  font: inherit;
+  font-size: 12px;
+  padding: 5px 8px;
+  border-radius: 7px;
+  border: 1px solid var(--axis);
+  color: var(--ink);
+  background: var(--page);
+}
+.list.compact li {
+  padding: 3px 0;
+  font-size: 12px;
+  color: var(--ink-2);
+  border: none;
+}
+.builtin {
+  margin-top: 8px;
+  font-size: 12px;
+  color: var(--ink-2);
+}
+.builtin summary {
+  cursor: pointer;
+}
+.empty {
+  color: var(--muted);
+  margin: 4px 0;
+  font-size: 12px;
+}
+.muted {
+  color: var(--muted);
+  font-size: 11px;
+  margin: 0 0 6px;
+}
+.danger-link {
+  border: none;
+  background: none;
+  padding: 0;
+  color: var(--ink-2);
+  text-decoration: underline;
+}
+.danger-link.confirm {
+  color: var(--critical);
+  font-weight: 600;
+}
+.muted code {
+  white-space: nowrap;
+}
+.filter-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: var(--ink-2);
+  margin: 12px 0 10px;
+}
+.filter-bar select {
+  max-width: 220px;
+}
+body[data-tab="settings"] .filter-bar {
+  display: none;
+}
+.vault-summary {
+  font-size: 12px;
+  color: var(--ink-2);
+  margin: 0 0 6px;
+}
+.whats-new {
+  background: var(--chosen-bg);
+  border-radius: 12px;
+  border: 1px solid var(--ring);
+  border-left: 3px solid var(--plum);
+  padding: 10px 12px;
+  margin-bottom: 10px;
+  font-size: 12px;
+}
+.whats-new ul {
+  margin: 2px 0 4px;
+  padding-left: 18px;
+  color: var(--ink-2);
+}
+.whats-new li {
+  margin: 3px 0;
+}
+/* The notes stay folded until opened: "See what's new (4)" beside Got it; opened, the list takes the card's
+   width and Got it moves under it. The marker turns and the words change, so the state never rests on the arrow. */
+.whats-new-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 2px 8px;
+  margin-top: 2px;
+}
+.whats-new-row details {
+  flex: 1;
+  min-width: 0;
+}
+.whats-new-row details[open] {
+  flex-basis: 100%;
+}
+.whats-new-row .btn {
+  margin-left: auto;
+}
+.whats-new summary {
+  width: fit-content;
+  min-height: 32px;
+  padding: 7px 4px 7px 0;
+  border-radius: 6px;
+  font-weight: 700;
+  cursor: pointer;
+}
+.whats-new summary::marker {
+  color: var(--brand);
+}
+.whats-new summary:focus-visible {
+  outline: 2px solid var(--brand);
+  outline-offset: 2px;
+}
+
+/* The offer to use Clotr on email and chat apps, on the welcome page and once in the popup: a row per app
+   with a real tick box. Ticked, a row takes the chosen look (a plum edge, plum words); the tick mark stays, so the
+   choice never rests on color alone. An app the browser already granted carries an On tag. */
+.ev-groups {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+  align-items: start;
+}
+.ev-group {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  border: none;
+}
+.ev-group legend {
+  padding: 0;
+  margin-bottom: 2px;
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--ink-2);
+}
+.ev-app {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 32px;
+  padding: 4px 10px;
+  border-radius: 8px;
+  background: var(--surface);
+  border: 1px solid var(--axis);
+  cursor: pointer;
+}
+.ev-app input {
+  flex: none;
+  width: 16px;
+  height: 16px;
+  margin: 0;
+  accent-color: var(--brand);
+}
+.ev-app input:focus-visible {
+  outline: none;
+}
+.ev-app:has(input:focus-visible) {
+  outline: 2px solid var(--brand);
+  outline-offset: 2px;
+}
+.ev-app:has(input:checked) {
+  background: var(--chosen-bg);
+  color: var(--brand);
+  font-weight: 700;
+  border-color: var(--plum);
+  border-left: 3px solid var(--plum);
+}
+.ev-tag {
+  margin-left: auto;
+  padding: 0 7px;
+  border-radius: 6px;
+  font-size: 11px;
+  box-shadow: inset 0 0 0 1px currentColor;
+}
+.everyday-offer h2 {
+  margin-bottom: 2px;
+}
+.ev-intro {
+  margin: 0 0 8px;
+  color: var(--ink-2);
+}
+/* Nothing new ticked: the button stays focusable (it says what to do when pressed) but reads as unavailable. */
+.ev-actions .btn.primary[aria-disabled="true"] {
+  background: var(--grid);
+  border-color: var(--axis);
+  color: var(--ink-2);
+  filter: none;
+  cursor: default;
+}
+.ev-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 10px 0 0;
+}
+.ev-hint {
+  margin: 6px 0 0;
+  font-size: 11px;
+  color: var(--muted);
+}
+.ev-status {
+  margin: 6px 0 0;
+  color: var(--ink-2);
+}
+.ev-status:empty {
+  display: none;
+}
+.ev-status.done {
+  color: var(--good-ink);
+  font-weight: 700;
+}
+
+/* Simple mode (default): advanced controls show only with "Show advanced options". */
+body:not(.advanced) .advanced-only {
+  display: none !important;
+}
+.toggle {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  font-size: 13px;
+  cursor: pointer;
+  margin-bottom: 2px;
+}
+
+/* Overview: range picker and the full-report link on one row. */
+.range-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+/* Weekly digest (Overview) */
+.digest {
+  margin: 0 0 10px;
+  padding: 10px 12px;
+  border-radius: 12px;
+  background: var(--surface);
+  border: 1px solid var(--ring);
+}
+.digest p {
+  margin: 0 0 4px;
+}
+.digest-todo {
+  color: var(--ink-2);
+}
+.digest-todo.urgent {
+  color: var(--ink);
+  border-left: 3px solid var(--critical);
+  padding-left: 8px;
+}
+
+/* Small mind map: drawn at its own size (never stretched past it), centered, first on Overview */
+.mini-map-card {
+  margin-top: 10px;
+}
+.mini-map {
+  max-width: 100%;
+  height: auto;
+  display: block;
+  margin: 2px auto 4px;
+}
+.mini-key {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 4px 16px;
+  margin: 0 0 6px;
+  color: var(--ink-2);
+  font-size: 12px;
+}
+.mini-key span {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.mini-key b {
+  color: var(--ink);
+}
+.mini-key i {
+  width: 18px;
+  border-top: 3px solid var(--series-2);
+}
+.mini-key .key-near i {
+  border-top: 3px dashed var(--series-1);
+}
+.mini-key .key-open i {
+  border-top: 3px dotted var(--good-ink);
+}
+.mini-key .key-blind i {
+  border-top: 3px dashed var(--medium-fg);
+}
+.mini-map .mind-count {
+  font-size: 10px;
+  font-weight: 700;
+  fill: var(--ink);
+}
+.mini-map .mind-you-label {
+  font-size: 10px;
+  font-weight: 700;
+}
+.mini-map .mind-branch-label {
+  font-size: 10px;
+}
+.mini-map .mind-branch-count {
+  font-weight: 700;
+}
+.mini-map .mind-branch-label {
+  fill: var(--ink);
+}
+.mini-map .mind-label {
+  font-size: 10px;
+  fill: var(--ink-2);
+}
+
+/* Self-check states on the site card */
+.dot.warn {
+  background: var(--critical);
+}
+.dot.idle {
+  background: var(--axis);
+}
+.state[data-health="warn"] {
+  color: var(--high-fg);
+  font-weight: 600;
+}
+.site .state[data-health="warn"] {
+  color: var(--on-steel);
+}
+
+/* Helping someone: PIN lock */
+.pin-row {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  margin: 4px 0;
+}
+.pin-row input {
+  width: 9em;
+  font: inherit;
+  padding: 5px 8px;
+  border-radius: 6px;
+  border: 1px solid var(--axis);
+  background: var(--page);
+  color: var(--ink);
+}
+.lock-box {
+  margin-top: 8px;
+}
+.lock-box .muted {
+  margin-top: 6px;
+}
+.msg {
+  min-height: 1.2em;
+  margin: 4px 0;
+  font-size: 13px;
+}
+.msg:empty {
+  min-height: 0;
+  margin: 0;
+} /* no gap while there is nothing to say; still a live region */
+.msg.error {
+  color: var(--high-fg);
+  font-weight: 600;
+}
+.unlock {
+  padding: 4px 0 12px;
+}
+.managed {
+  padding: 8px 10px;
+  border-radius: 8px;
+  background: var(--wash);
+  font-size: 13px;
+}
+
+/* "Report a problem" and "Rate Clotr": small controls at the bottom of the popup. */
+.app-footer {
+  margin-top: 14px;
+  padding-top: 8px;
+  border-top: 1px solid var(--grid);
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 8px;
+}
+#report-root {
+  flex: 1;
+  min-width: 0;
+}
+.report summary {
+  cursor: pointer;
+  color: var(--ink-2);
+  font-size: 12px;
+  list-style: none;
+}
+.rate-link {
+  flex: none;
+  padding: 2px 0;
+  color: var(--ink-2);
+  font-size: 12px;
+  text-decoration: underline;
+}
+.rate-link:hover {
+  color: var(--ink);
+}
+.whats-new-rate {
+  margin: 6px 0 0;
+}
+.report-menu {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 4px;
+  margin-top: 6px;
+  padding-left: 4px;
+}
+.report-menu .link {
+  border: none;
+  background: none;
+  padding: 2px 0;
+  color: var(--ink-2);
+  text-decoration: underline;
+  font-size: 12px;
+  cursor: pointer;
+}
+.report-menu .link:hover {
+  color: var(--ink);
+}
+.report-warn,
+.report-address {
+  max-width: 34em;
+  margin: 0 0 4px;
+  font-size: 12px;
+  color: var(--ink-2);
+}
+.report-warn {
+  font-weight: 700;
+}
+.report-address span {
+  overflow-wrap: anywhere;
+}
+.report-site {
+  font-size: 11px;
+  color: var(--ink-2);
+  margin-bottom: 2px;
+}
+/* "Copy my summary": a card before the forms, closed until asked for. */
+.report-summary {
+  align-self: stretch;
+  max-width: 34em;
+  margin: 2px 0 4px;
+  padding: 8px 12px;
+  border-radius: 10px;
+  background: var(--surface);
+  border: 1px solid var(--grid);
+}
+.report .report-summary > summary {
+  color: var(--ink);
+  font-weight: 700;
+}
+.report-summary > summary::before {
+  content: "▸ ";
+  color: var(--brand);
+}
+.report-summary[open] > summary::before {
+  content: "▾ ";
+}
+.report-sum-text {
+  display: block;
+  width: 100%;
+  min-height: 4.5em;
+  margin: 8px 0 6px;
+  resize: vertical;
+  font: inherit;
+  font-size: 12px;
+  line-height: 1.45;
+  padding: 6px 8px;
+  border: 1px solid var(--axis);
+  border-radius: 8px;
+  color: var(--ink);
+  background: var(--page);
+}
+.report-sum-text:focus {
+  outline: 2px solid var(--brand);
+  outline-offset: 1px;
+}
+.report-sum-note {
+  margin: 0 0 8px;
+  font-size: 12px;
+  color: var(--muted);
+}
+.report-sum-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 10px;
+}
+.report-sum-msg {
+  font-size: 12px;
+  color: var(--ink-2);
+}
+.report-then {
+  margin: 2px 0 0;
+  font-size: 12px;
+  color: var(--ink-2);
+}
+
+/* Tourniquet: the chip, the Overview line and the Settings card share the small shield and a plum edge.
+   Brand text on the chosen wash clears 4.5:1 in both themes. */
+.tq-shield {
+  flex: none;
+  width: 12px;
+  height: 12px;
+  fill: var(--brand);
+}
+.top .tq-shield {
+  fill: var(--on-steel);
+}
+/* Always inside the header field, so it keeps .chip's steel colouring. */
+.tq-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-weight: 700;
+}
+.tq-line {
+  display: flex;
+  gap: 8px;
+  align-items: flex-start;
+  margin: 10px 0;
+  padding: 8px 10px;
+  border-radius: 10px;
+  font-size: 12px;
+  background: var(--chosen-bg);
+  border: 1px solid var(--ring);
+  border-left: 3px solid var(--plum);
+}
+.tq-line .tq-shield {
+  margin-top: 2px;
+}
+.tq-line .linkish {
+  font-size: 12px;
+  color: var(--ink);
+}
+.tq-card {
+  margin: 10px 0 12px;
+  padding: 10px 12px;
+  border-radius: 12px;
+  background: var(--chosen-bg);
+  border: 1px solid var(--ring);
+  border-left: 3px solid var(--plum);
+}
+.tq-card h2 {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 0 0 2px;
+}
+.tq-card h2 .tq-shield {
+  width: 14px;
+  height: 14px;
+}
+.tq-card p {
+  margin: 0 0 6px;
+  font-size: 12px;
+}
+.tq-card .tq-yours {
+  font-weight: 700;
+}
+.tq-switch {
+  display: inline-flex;
+  flex-wrap: wrap;
+  padding: 2px;
+  margin-top: 2px;
+  border-radius: 9px;
+  background: var(--surface);
+  border: 1px solid var(--ring);
+}
+.tq-switch button {
+  border: none;
+  background: none;
+  padding: 4px 10px;
+  border-radius: 6px;
+  color: var(--ink-2);
+  font-size: 12px;
+}
+.tq-switch button[aria-pressed="true"] {
+  background: var(--plum);
+  color: var(--on-plum);
+  font-weight: 700;
+}
+.tq-switch button.confirm {
+  color: var(--high-fg);
+  font-weight: 700;
+}
+/* The 30 days after a scam (Scam Shield), here and on the setup page: one mark per day, the days gone filled, today
+   outlined. A picture only (aria-hidden): the words beside it say the day and the end date. */
+.tq-track {
+  display: grid;
+  grid-template-columns: repeat(30, minmax(0, 1fr));
+  gap: 2px;
+  margin: 6px 0 4px;
+}
+.tq-track span {
+  aspect-ratio: 1;
+  border-radius: 2px;
+  background: var(--grid);
+  box-shadow: inset 0 0 0 1px var(--ring);
+}
+.tq-track .gone {
+  background: var(--plum);
+  box-shadow: none;
+}
+.tq-track .today {
+  background: color-mix(in srgb, var(--plum) 22%, transparent);
+  box-shadow: inset 0 0 0 2px var(--plum);
+}
+/* In the Settings card: "Day 4 of 30" and the end date on one line over the track; the clock's word under it. */
+.tq-card .tq-days {
+  margin: 2px 0 8px;
+}
+.tq-card .tq-days-words {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: 0 10px;
+  margin: 0;
+}
+.tq-card .tq-clock {
+  margin: 4px 0 0;
+  color: var(--ink-2);
+}
+/* Tourniquet's 30 days are over: the top slot's card with the shield, two buttons, and the grown-up's Tourniquet as
+   a quieter choice under them. */
+.tq-end h2 {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 0 0 4px;
+  font-size: 14px;
+}
+.tq-end h2 .tq-shield {
+  width: 14px;
+  height: 14px;
+}
+.tq-end p {
+  margin: 0 0 8px;
+  color: var(--ink-2);
+}
+.tq-end-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+.tq-end .linkish {
+  min-height: 24px;
+  font-size: 12px;
+  color: var(--brand);
+}
+.history-mine {
+  margin: 0 0 12px;
+}
+
+/* Clotr Antibody. The Overview row: one slim card under the site card, the shield and the name, then
+   its two pages as links on the right. Quiet: no count, no badge, no motion. */
+.ss-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 0 0 10px;
+  padding: 7px 12px;
+  border-radius: 12px;
+  background: var(--surface);
+  border: 1px solid var(--ring);
+}
+.ss-row b {
+  flex: 1;
+  min-width: 0;
+}
+.ss-row-links {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 4px 12px;
+}
+.ss-row .linkish,
+.ss-tq30 .linkish {
+  font-size: 12px;
+  color: var(--brand);
+}
+
+/* Look back and Extension check: a quiet card, same spirit as the Antibody
+   row above. While history is empty there's nothing else to look at yet, so each door keeps its own tile, side by
+   side; once there's real history popup/popup.js adds .compact, which folds the whole card onto Antibody's one line. */
+.lb-card:not(.compact) {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  column-gap: 10px;
+}
+.lb-card:not(.compact) .card-title {
+  grid-column: 1 / -1;
+}
+.lb-card-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  column-gap: 8px;
+  margin: 4px 0;
+}
+.lb-card:not(.compact) .lb-card-row {
+  flex-direction: column;
+  flex-wrap: nowrap;
+  align-items: flex-start;
+  row-gap: 4px;
+  margin: 0;
+  padding: 8px 10px;
+  border-radius: 10px;
+  background: var(--surface);
+  border: 1px solid var(--ring);
+}
+.lb-card-row b {
+  flex: none;
+}
+.lb-card-sub {
+  flex-basis: 100%;
+  color: var(--ink-2);
+  font-size: 12px;
+}
+.lb-card.compact {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  column-gap: 14px;
+  row-gap: 4px;
+  margin: 0 0 10px;
+  padding: 7px 12px;
+}
+.lb-card.compact .card-title {
+  margin: 0;
+  flex: 1 1 auto;
+  min-width: 0;
+}
+.lb-card.compact .lb-card-row {
+  display: contents;
+}
+.lb-card.compact .lb-card-sub {
+  display: none;
+}
+.lb-card.compact .btn {
+  border: none;
+  background: none;
+  padding: 0;
+  font-size: 12px;
+  font-weight: 400;
+  color: var(--brand);
+}
+.lb-settings-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 8px;
+  margin: 6px 0;
+}
+.lb-settings-row .muted {
+  flex: 1 1 auto;
+  min-width: 0;
+  margin: 0;
+}
+.whats-new-doors {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 8px;
+}
+
+/* Settings' section: closed by default, so its shield and name sit on the summary row someone taps to open it;
+   everything it holds opens as buttons or a switch, the same way Tourniquet's card reads. */
+#ss-help {
+  margin-top: 14px;
+}
+#ss-help summary {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 4px 6px;
+  cursor: pointer;
+}
+#ss-help summary .tq-shield {
+  width: 14px;
+  height: 14px;
+  align-self: center;
+}
+#ss-help summary:focus-visible {
+  outline: 2px solid var(--brand);
+  outline-offset: 2px;
+}
+.ss-help-lead {
+  font-size: 12px;
+  font-weight: 400;
+  color: var(--ink-2);
+}
+.ss-buttons {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 8px 0;
+}
+.ss-tq30 {
+  margin: 8px 0 0;
+  color: var(--ink-2);
+}
+/* The Overview's quiet nudge for the rest of the day a card-code or gift-card warning showed: one line, no card. */
+.ss-today-link {
+  margin: 0 0 10px;
+  font-size: 12px;
+  color: var(--ink-2);
+}
+.ss-today-link .linkish {
+  font-size: 12px;
+  color: var(--brand);
+}
+/* The feature's tag on Clotr's pages (the setup page's third tile, the Share page's card): the shield and the name. */
+.ss-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  color: var(--brand);
+}
+.ss-tag .tq-shield {
+  width: 11px;
+  height: 11px;
+}
+
+/* Phones. Firefox for Android opens the popup as a full screen, so there it spans the screen. Only on a
+   phone-sized screen: a computer's popup sizes itself to the page, and a width that follows the window would
+   shrink it to nothing. */
+@media (hover: none) and (pointer: coarse) and (max-device-width: 600px) {
+  body {
+    width: auto;
+  }
+}
+/* A finger, not a mouse (phones and tablets): every control at least 44 px each way, and text boxes at 16 px so the
+   browser doesn't zoom in when one is tapped. */
+@media (pointer: coarse) {
+  button,
+  select,
+  summary,
+  textarea,
+  input:not([type="checkbox"], [type="radio"], [type="hidden"]),
+  a.btn {
+    min-height: 44px;
+    min-width: 44px;
+  }
+  input,
+  select,
+  textarea {
+    font-size: 16px !important; /* over each box's own smaller size */
+  }
+  summary {
+    padding-block: calc((44px - 1lh) / 2);
+  }
+  .btn {
+    margin-block: 3px; /* buttons that wrap onto a new line don't touch */
+  }
+  label:has(> input[type="checkbox"]) {
+    min-height: 44px; /* the whole row is what a finger taps */
+  }
+  input[type="checkbox"] {
+    width: 20px;
+    height: 20px;
+    flex: none;
+  }
+}

@@ -16,7 +16,11 @@ const STILL_OFF = HELD_BACK.filter((k) => !manifestOnDisk.clotr_features[k]);
 test("the shipped build drops only the features still held back", () => {
   const { files, manifest } = build({ zip: false });
   assert.strictEqual(manifestOnDisk.clotr_features.oneclotr, false, "One Clotr must stay off in this build");
-  assert.deepEqual(FEATURE_FILES.oneclotr, ["one-clotr-protocol.js", "one-clotr-bridge.js", "one-clotr-protocol.json"]);
+  assert.deepEqual(FEATURE_FILES.oneclotr, [
+    "one-clotr/one-clotr-protocol.js",
+    "one-clotr/one-clotr-bridge.js",
+    "one-clotr/one-clotr-protocol.json",
+  ]);
   const firefox = build({ zip: false, firefox: true });
   for (const file of FEATURE_FILES.oneclotr) assert.ok(!firefox.files.includes(file), `${file} shipped in Firefox`);
   assert.ok(!(firefox.manifest.optional_permissions || []).includes("nativeMessaging"));
@@ -28,9 +32,9 @@ test("the shipped build drops only the features still held back", () => {
   }
   const practiceOrTraining = manifestOnDisk.clotr_features.practice || manifestOnDisk.clotr_features.training;
   assert.equal(
-    files.includes("practice-data.js"),
+    files.includes("page-parts/practice-data.js"),
     Boolean(practiceOrTraining),
-    "practice-data.js should ship exactly when Practice or Office training is on",
+    "page-parts/practice-data.js should ship exactly when Practice or Office training is on",
   );
   assert.equal(
     manifest.content_scripts.some((c) => c.js.includes("commands.js")),
@@ -51,7 +55,7 @@ test("the shipped build drops only the features still held back", () => {
 test("the shipped zip does not carry Quick exit while its flag is off", () => {
   if (manifestOnDisk.clotr_features.checkup) return;
   const { files } = build({ zip: false });
-  for (const file of ["quick-exit.js", "quick-exit.css"]) {
+  for (const file of ["page-parts/quick-exit.js", "page-parts/quick-exit.css"]) {
     assert.ok(!files.includes(file), `${file} shipped while its feature flag is off`);
   }
 });
@@ -62,7 +66,7 @@ test("an all-on build ships every held-back feature's files, unchanged from the 
   for (const name of HELD_BACK) {
     for (const f of FEATURE_FILES[name]) assert.ok(files.includes(f), `${f} (${name}) missing`);
   }
-  assert.ok(files.includes("practice-data.js"));
+  assert.ok(files.includes("page-parts/practice-data.js"));
   assert.ok(manifest.content_scripts.some((c) => c.js.includes("commands.js")));
   assert.deepEqual(manifest.optional_permissions, ["management", "nativeMessaging"]);
   assert.deepEqual(manifest.clotr_features, allOn);

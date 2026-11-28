@@ -9,8 +9,7 @@ const { bestOfPair, grewMoreThan } = require("./timing.js");
 const fs = require("node:fs");
 const path = require("node:path");
 
-require("../extension/patterns.js");
-require("../extension/detector.js");
+require("./load-engine.js")("rules", "detect");
 const { readBandageLabels, BANDAGE_WORDS, BANDAGE_BORN_IN } = globalThis.Clotr;
 
 const EXT = path.join(__dirname, "..", "extension");
@@ -144,11 +143,11 @@ test("a long chat is read in one linear pass", () => {
   assert.ok(!grewMoreThan(plainSmall, plainBig, 16), "plain text grew too fast for 4× the chat");
 });
 
-// The reader's word list has to match what Bandage actually writes: English lives in content.js, Spanish in
+// The reader's word list has to match what Bandage actually writes: English lives in on-websites/content.js, Spanish in
 // _locales. If a label word changes in one place but not the other, labels from before a reload get missed.
-test("the reader's words match the labels content.js gives, in English and Spanish", () => {
+test("the reader's words match the labels on-websites/content.js gives, in English and Spanish", () => {
   const es = JSON.parse(fs.readFileSync(path.join(EXT, "_locales", "es", "messages.json"), "utf8"));
-  const content = fs.readFileSync(path.join(EXT, "content.js"), "utf8");
+  const content = fs.readFileSync(path.join(EXT, "on-websites/content.js"), "utf8");
   const given = Object.fromEntries(
     [...content.matchAll(/\[\s*"(bl_\w+)",\s*msg\(\s*"(bl_\w+)",\s*"([^"]+)"\)\s*\]/g)].map((m) => {
       assert.equal(m[1], m[2], `${m[1]}: the kind and the message key differ`);

@@ -107,7 +107,7 @@ module.exports = async function (env) {
       const selfId = await other.worker.evaluate(() => chrome.runtime.id);
       expect(allSitesId && chatgptId && selfId, `fixture ids: ${JSON.stringify({ allSitesId, chatgptId, selfId })}`);
 
-      const page = await openExtPage(other, "extcheck.html");
+      const page = await openExtPage(other, "clotr-pages/extension-check/extension-check.html");
       // Spies on chrome.tabs.create, which EX4 checks, and on the management calls the rule test already forbids.
       // It's belt and braces: the same guarantee, checked live here instead of only statically.
       await page.evaluate(() => {
@@ -202,7 +202,7 @@ module.exports = async function (env) {
       expect(!results.worth.some((r) => r.id === selfId), "Clotr itself showed up as worth a look");
       expect(!results.rows.some((r) => r.id === selfId), "Clotr itself showed up in the can-read list");
       expect(
-        /Clotr itself reads AI chat pages/.test(results.aboutClotr || ""),
+        /Clotr checks AI chat pages on your device/.test(results.aboutClotr || ""),
         `Clotr's own quiet line: ${results.aboutClotr}`,
       );
     },
@@ -280,7 +280,7 @@ module.exports = async function (env) {
     "EX9",
     "Extension check: a sideloaded extension reads as worth a look even with no report, and an admin install gets its own note",
     async () => {
-      const page = await openExtPage(ctx, "extcheck.html");
+      const page = await openExtPage(ctx, "clotr-pages/extension-check/extension-check.html");
       try {
         await page.evaluate(() => {
           chrome.permissions.request = () => Promise.resolve(true);
@@ -334,7 +334,7 @@ module.exports = async function (env) {
     "EX5",
     "Extension check: saying no explains itself, changes nothing, and Ask me again asks again",
     async () => {
-      const page = await openExtPage(ctx, "extcheck.html");
+      const page = await openExtPage(ctx, "clotr-pages/extension-check/extension-check.html");
       try {
         await page.evaluate(() => {
           window.__asks = [];
@@ -406,23 +406,23 @@ module.exports = async function (env) {
         }
       };
       await withManagementCopy(async (other) => {
-        const page = await openExtPage(other, "extcheck.html");
+        const page = await openExtPage(other, "clotr-pages/extension-check/extension-check.html");
         try {
           await page.click("#start-check");
           await waitFor(() => page.evaluate(() => !document.getElementById("results").hidden), 5000);
-          await audit(page, "extcheck.html results");
+          await audit(page, "clotr-pages/extension-check/extension-check.html results");
         } finally {
           await page.close();
         }
       });
-      const saidNo = await openExtPage(ctx, "extcheck.html");
+      const saidNo = await openExtPage(ctx, "clotr-pages/extension-check/extension-check.html");
       try {
         await saidNo.evaluate(() => {
           chrome.permissions.request = () => Promise.resolve(false);
         });
         await saidNo.click("#start-check");
         await settle(300);
-        await audit(saidNo, "extcheck.html said-no");
+        await audit(saidNo, "clotr-pages/extension-check/extension-check.html said-no");
       } finally {
         await saidNo.close();
       }

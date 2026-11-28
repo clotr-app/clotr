@@ -15,7 +15,8 @@ const AI_OPTS = {
 const EVERYDAY_OPTS = {
   signInField: "signInWall",
   checkEditor: false,
-  notCoveredHint: "which its own host permission wouldn't cover: check EVERYDAY_SITES in sites.js",
+  notCoveredHint:
+    "which its own host permission wouldn't cover: check EVERYDAY_SITES in sites-and-policy/protected-sites.js",
 };
 
 test("hostOf: a match pattern's host, wildcard and all", () => {

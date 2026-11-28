@@ -107,19 +107,19 @@ module.exports = async function (env) {
       } finally {
         await popup.close();
       }
-      // check.html, practice.html and extcheck.html drop out here when their features are held back and this
+      // clotr-pages/scam-check/scam-check.html, clotr-pages/practice/practice.html and clotr-pages/extension-check/extension-check.html drop out here when their features are held back and this
       // build doesn't ship them.
       for (const file of [
-        "vault.html?welcome=1",
-        "vault.html",
-        "stored.html",
-        "dashboard.html",
-        "helper.html",
-        "share.html",
-        "policy.html",
-        "check.html",
-        "practice.html",
-        "extcheck.html",
+        "clotr-pages/vault/vault.html?welcome=1",
+        "clotr-pages/vault/vault.html",
+        "clotr-pages/what-clotr-stores/what-clotr-stores.html",
+        "clotr-pages/exposure-report/exposure-report.html",
+        "clotr-pages/set-up-for-someone/set-up-for-someone.html",
+        "clotr-pages/share-clotr/share-clotr.html",
+        "clotr-pages/policy-applied/policy-applied.html",
+        "clotr-pages/scam-check/scam-check.html",
+        "clotr-pages/practice/practice.html",
+        "clotr-pages/extension-check/extension-check.html",
       ].filter(hasPage)) {
         const page = await openExtPage(ctx, file);
         try {

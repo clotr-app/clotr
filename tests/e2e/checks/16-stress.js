@@ -94,7 +94,7 @@ module.exports = async function (env) {
           const popup = await openPopup(ctx);
           await popup.waitForSelector("#hero-value");
           await popup.close();
-          const dash = await openExtPage(ctx, "dashboard.html");
+          const dash = await openExtPage(ctx, "clotr-pages/exposure-report/exposure-report.html");
           await dash.waitForFunction(() => document.querySelectorAll("#map [data-service]").length > 0, {
             timeout: 10000,
           });

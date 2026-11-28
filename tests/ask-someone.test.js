@@ -9,9 +9,8 @@ const assert = require("node:assert/strict");
 const fs = require("node:fs");
 const path = require("node:path");
 
-require("../extension/patterns.js");
-require("../extension/detector.js");
-require("../extension/scam-signs.js");
+require("./load-engine.js")("rules", "detect");
+require("../extension/clotr-pages/scam-check/scam-signs.js");
 require("../extension/commands.js");
 require("../extension/ask-someone.js");
 
@@ -47,7 +46,7 @@ function valuesIn(text) {
   return values;
 }
 
-test("every sign in extension/scam-signs.js has a note phrase, in English and Spanish", () => {
+test("every sign in extension/clotr-pages/scam-check/scam-signs.js has a note phrase, in English and Spanish", () => {
   const { askSomeoneNoteForScamSigns: build } = globalThis.Clotr;
   for (const sign of SCAM_SIGNS) {
     assert.ok(build([sign.id], "en"), `${sign.id} (en)`);

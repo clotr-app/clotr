@@ -5,15 +5,15 @@
 module.exports = async function (env) {
   const { OUT, check, ctx, expect, hasPage, openExtPage, openPopup, shot, sleep, store, typeText, withSite } = env;
 
-  // check.html drops out here when its feature is held back and this build doesn't ship it.
+  // clotr-pages/scam-check/scam-check.html drops out here when its feature is held back and this build doesn't ship it.
   const PAGES = [
-    "vault.html",
-    "dashboard.html",
-    "stored.html",
-    "helper.html",
-    "share.html",
-    "policy.html",
-    "check.html",
+    "clotr-pages/vault/vault.html",
+    "clotr-pages/exposure-report/exposure-report.html",
+    "clotr-pages/what-clotr-stores/what-clotr-stores.html",
+    "clotr-pages/set-up-for-someone/set-up-for-someone.html",
+    "clotr-pages/share-clotr/share-clotr.html",
+    "clotr-pages/policy-applied/policy-applied.html",
+    "clotr-pages/scam-check/scam-check.html",
   ].filter(hasPage);
 
   // Opens the popup over a tab showing `url`, answering the tab lookup by hand.
@@ -24,7 +24,7 @@ module.exports = async function (env) {
       chrome.tabs.query = async () => [{ id: 999, url: u }];
     }, url);
     await popup.setViewport({ width: 380, height: 700 });
-    await popup.goto(`chrome-extension://${new URL(ctx.swTarget.url()).host}/popup.html`);
+    await popup.goto(`chrome-extension://${new URL(ctx.swTarget.url()).host}/popup/popup.html`);
     await popup.waitForSelector("#hero-value");
     await sleep(400);
     return popup;
@@ -98,7 +98,7 @@ module.exports = async function (env) {
         ],
         vault: [{ kind: "value", type: "phone_number", fp, mode: "protect", added: Date.now() }],
       });
-      const page = await openExtPage(ctx, "dashboard.html");
+      const page = await openExtPage(ctx, "clotr-pages/exposure-report/exposure-report.html");
       try {
         const urls = await page.evaluate(() => {
           window.__opened = [];
@@ -199,7 +199,7 @@ module.exports = async function (env) {
           expect(/public/i.test(got.warn) && /never/i.test(got.warn), `${file}: warning "${got.warn}"`);
           expect(got.warnFirst, `${file}: the warning isn't before the choices`);
           expect(got.address.includes(ADDRESS), `${file}: address "${got.address}"`);
-          if (file === "vault.html") {
+          if (file === "clotr-pages/vault/vault.html") {
             await page.click("#report-root summary");
             await shot(page, "report-menu.png");
           }
@@ -207,7 +207,7 @@ module.exports = async function (env) {
           await page.close();
         }
       }
-      const share = await openExtPage(ctx, "share.html");
+      const share = await openExtPage(ctx, "clotr-pages/share-clotr/share-clotr.html");
       try {
         const guide = await share.evaluate(() => document.querySelector(".guide")?.textContent || "");
         expect(guide.includes(ADDRESS), "the printed guide has no report address");
@@ -428,7 +428,7 @@ module.exports = async function (env) {
       await store.set(ctx, {
         events: [ev("phone_number", "allowed"), ev("email", "suppressed"), ev("aws_access_key", "redacted")],
       });
-      const page = await openExtPage(ctx, "dashboard.html");
+      const page = await openExtPage(ctx, "clotr-pages/exposure-report/exposure-report.html");
       try {
         await sleep(200);
         await openSummary(page);
