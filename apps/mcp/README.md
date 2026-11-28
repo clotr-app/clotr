@@ -77,5 +77,6 @@ Text over 64 KiB is refused before the engine checks it. Findings contain only a
 contains the original text around each replaced finding, so review the cleaned copy before sending it.
 
 The engine can stop a scan before the end of the text, for example after 10 seconds. Then `check_text` and
-`clean_text` return `truncated: true`, and the `check_text` verdict ends with "Clotr ran out of time, so part of this
-text wasn't checked." Findings in the part it didn't reach aren't listed or replaced.
+`clean_text` return `truncated: true` and say "Clotr ran out of time, so part of this text wasn't checked." The
+`check_text` verdict ends with that sentence, and `clean_text` gives it as a `note`. Findings in the part it didn't
+reach aren't listed or replaced.
