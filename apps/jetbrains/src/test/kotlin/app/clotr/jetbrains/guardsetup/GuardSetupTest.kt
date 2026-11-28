@@ -1,4 +1,4 @@
-package app.clotr.jetbrains
+package app.clotr.jetbrains.guardsetup
 
 import com.intellij.ide.DataManager
 import com.intellij.ide.impl.HeadlessDataManager
@@ -20,6 +20,11 @@ import java.io.File
 import java.nio.file.Files
 import java.nio.file.Path
 import javax.swing.SwingUtilities
+import app.clotr.jetbrains.clipboard.ClipboardChecker
+import app.clotr.jetbrains.ClotrBundle
+import app.clotr.jetbrains.settings.ClotrLocalState
+import app.clotr.jetbrains.ClotrProjectService
+import app.clotr.jetbrains.withProgress
 
 class GuardSetupTest : BasePlatformTestCase() {
     // The repository's own Guard, named by the build for these tests only; the plugin never looks for it.

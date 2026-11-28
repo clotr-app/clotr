@@ -1,4 +1,4 @@
-package app.clotr.jetbrains
+package app.clotr.jetbrains.engine
 
 import com.intellij.testFramework.fixtures.BasePlatformTestCase
 import java.nio.file.Files
@@ -6,12 +6,12 @@ import java.nio.file.Path
 import java.security.MessageDigest
 import java.util.Base64
 
-class ClotrEngineTest : BasePlatformTestCase() {
+class EngineBridgeTest : BasePlatformTestCase() {
     fun testSaltReachesTheEngineAsDataNotAsSource() {
         // Spliced into source, this salt would close its string and run a second init with the other salt.
         val other = "ffeeddccbbaa99887766554433221100"
-        val crafted = ClotrEngine.start("00112233445566778899aabbccddeeff'}),ClotrHost.init({salt:'$other")
-        val plain = ClotrEngine.start(other)
+        val crafted = EngineBridge.start("00112233445566778899aabbccddeeff'}),ClotrHost.init({salt:'$other")
+        val plain = EngineBridge.start(other)
         try {
             val value = "AKIA4HPQ7XZ2R6TWLJ3N"
             assertFalse(plain.fingerprintFor("aws_access_key", value).isEmpty())
@@ -24,7 +24,7 @@ class ClotrEngineTest : BasePlatformTestCase() {
     }
 
     fun testLocaleAndFindingIdsReachTheEngineAsData() {
-        val engine = ClotrEngine.start("00112233445566778899aabbccddeeff", "es'});({")
+        val engine = EngineBridge.start("00112233445566778899aabbccddeeff", "es'});({")
         try {
             val findings = engine.check("key=AKIA4HPQ7XZ2R6TWLJ3N", "copied")
             assertEquals(1, findings.size)
@@ -33,11 +33,11 @@ class ClotrEngineTest : BasePlatformTestCase() {
         } finally {
             engine.close()
         }
-        assertEquals("""["a\"b","c\\d","\u000a"]""", ClotrEngine.jsonStrings(listOf("a\"b", "c\\d", "\n")))
+        assertEquals("""["a\"b","c\\d","\u000a"]""", EngineBridge.jsonStrings(listOf("a\"b", "c\\d", "\n")))
     }
 
     fun testDetectRangesReturnsEachOccurrenceOfTheSameValue() {
-        val engine = ClotrEngine.start("00112233445566778899aabbccddeeff")
+        val engine = EngineBridge.start("00112233445566778899aabbccddeeff")
         val phone = "555-555-0123"
         val text = "Call me at $phone or $phone."
         try {
@@ -51,7 +51,7 @@ class ClotrEngineTest : BasePlatformTestCase() {
     }
 
     fun testOneScanGivesTheSameFindingsAndRangesAsSeparateCalls() {
-        val engine = ClotrEngine.start("00112233445566778899aabbccddeeff")
+        val engine = EngineBridge.start("00112233445566778899aabbccddeeff")
         val text = "key=AKIA4HPQ7XZ2R6TWLJ3N\nCall me at 555-555-0123 or 555-555-0123.\nagain AKIA4HPQ7XZ2R6TWLJ3N"
         try {
             val scan = engine.scan(text)
@@ -77,7 +77,7 @@ class ClotrEngineTest : BasePlatformTestCase() {
         val error = process.errorStream.bufferedReader().use { it.readText() }
         assertEquals("Node reference generation failed: ${error.take(500)}", 0, process.waitFor())
 
-        val engine = ClotrEngine.start("00112233445566778899aabbccddeeff", "en")
+        val engine = EngineBridge.start("00112233445566778899aabbccddeeff", "en")
         try {
             assertTrue("the shared detection corpus was empty", rows.size > 1000)
             for (row in rows) {

@@ -12,6 +12,8 @@ import javax.swing.JScrollPane
 import javax.swing.SwingUtilities
 import javax.xml.parsers.DocumentBuilderFactory
 import org.w3c.dom.Element
+import app.clotr.jetbrains.settings.ClotrPreferences
+import app.clotr.jetbrains.settings.ClotrSettingsConfigurable
 
 class ClotrMetadataTest : BasePlatformTestCase() {
     fun testMarketplaceMetadataExplainsThePluginAndHasAChangeNote() {

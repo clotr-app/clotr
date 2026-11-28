@@ -1,6 +1,6 @@
 # Clotr for JetBrains IDEs
 
-Version 0.1.2.
+Version 0.1.3.
 
 After you install Clotr, it flags credentials in open files as you edit.
 Credential checks are on by default, and card, card security code, gift card and bank numbers are checked with them.
@@ -11,8 +11,9 @@ stay silent in the editor. If Git doesn't ignore one, Clotr shows one project no
 
 Use **Clotr: Check my clipboard** or **Clotr: Check selection** before sharing text with an AI assistant. Clotr checks
 up to 1 MB of text behind a progress window, so the editor keeps responding, then shows masked findings and can copy a
-cleaned version with Bandage placeholders. Its status bar item shows the current count. Settings control the minimum
-severity, skipped file patterns and whether open files and personal details are checked.
+cleaned version with Bandage placeholders. If the check ran out of time partway, Clotr checks the rest before it copies,
+and copies nothing if you cancel or it can't finish. Its status bar item shows the current count. Settings control the
+minimum severity, skipped file patterns and whether open files and personal details are checked.
 
 The JetBrains plugin reads exact value fingerprints from `.clotrignore` at the repository root. Path patterns in that
 file do not skip files. Use **File patterns to skip** in Clotr settings for deliberate local skips. Secret files (the
@@ -39,7 +40,7 @@ Permissive License, Version 1.0, which fits this AGPL-3.0-or-later project. See 
 
 GraalJS is pinned to 24.2.2 in `build.gradle.kts`, through `org.graalvm.polyglot:polyglot` and
 `org.graalvm.polyglot:js-community`. To update it, change both lines to the same newer release, read its release notes
-for changes to sandboxing, then run `npm run jetbrains:test`. Keep the guest context's settings in `ClotrEngine.kt` as
+for changes to sandboxing, then run `npm run jetbrains:test`. Keep the guest context's settings in `EngineBridge.kt` as
 they are, with host access, class lookup, file access, threads and native access all off.
 
 The plugin makes no network calls and includes no AI model. Files over 1 MiB and binary files show an inspection
@@ -50,6 +51,8 @@ Settings Sync leaves it out. A project that kept these choices in its workspace 
 time it opens. Detected values are not saved. Fingerprints in `.clotrignore` use a separate repository salt stored
 beside them, readable by anyone with access to the repository.
 
+If your team uses the plugin at work, I'd like to hear about it in [ADOPTERS.md](https://github.com/clotr-app/clotr/blob/main/ADOPTERS.md).
+
 ## Stable and preview
 
 The Kotlin tests run against IntelliJ IDEA 2025.3.3 with `npm run jetbrains:test`, and the JavaScript ones with
@@ -59,16 +62,17 @@ The Kotlin tests run against IntelliJ IDEA 2025.3.3 with `npm run jetbrains:test
 | --- | --- | --- |
 | Warnings in open files, with their quick fixes and the personal details setting | Stable | [ClotrInspectionTest.kt][inspection-tests] |
 | Secret files stay silent, with one note when Git doesn't ignore one | Stable | [ClotrInspectionTest.kt][inspection-tests], [jetbrains-rules.test.js][rules-tests] |
-| Check my clipboard and Check selection, with a cleaned copy | Stable | [ClotrInspectionTest.kt][inspection-tests] |
+| Check my clipboard and Check selection, with a cleaned copy | Stable | [ClotrInspectionTest.kt][inspection-tests], [ClotrHideTest.kt][hide-tests] |
 | The salt and your choices kept on this computer | Stable | [ClotrLocalStateTest.kt][state-tests], [jetbrains-rules.test.js][rules-tests] |
 | Setting up Clotr Guard | Stable | [GuardSetupTest.kt][setup-tests], [jetbrains-rules.test.js][rules-tests] |
 | No network calls and no AI runtime | Stable | [jetbrains-rules.test.js][rules-tests] |
 
 Warnings in open files have been tried in a full IDE (PyCharm 2026.2.3) as well as in the platform tests.
 
-[inspection-tests]: https://github.com/clotr-app/clotr/blob/main/apps/jetbrains/src/test/kotlin/app/clotr/jetbrains/ClotrInspectionTest.kt
-[state-tests]: https://github.com/clotr-app/clotr/blob/main/apps/jetbrains/src/test/kotlin/app/clotr/jetbrains/ClotrLocalStateTest.kt
-[setup-tests]: https://github.com/clotr-app/clotr/blob/main/apps/jetbrains/src/test/kotlin/app/clotr/jetbrains/GuardSetupTest.kt
+[inspection-tests]: https://github.com/clotr-app/clotr/blob/main/apps/jetbrains/src/test/kotlin/app/clotr/jetbrains/openfiles/ClotrInspectionTest.kt
+[hide-tests]: https://github.com/clotr-app/clotr/blob/main/apps/jetbrains/src/test/kotlin/app/clotr/jetbrains/clipboard/ClotrHideTest.kt
+[state-tests]: https://github.com/clotr-app/clotr/blob/main/apps/jetbrains/src/test/kotlin/app/clotr/jetbrains/settings/ClotrLocalStateTest.kt
+[setup-tests]: https://github.com/clotr-app/clotr/blob/main/apps/jetbrains/src/test/kotlin/app/clotr/jetbrains/guardsetup/GuardSetupTest.kt
 [rules-tests]: https://github.com/clotr-app/clotr/blob/main/tests/jetbrains-rules.test.js
 
 ## Building it
@@ -83,3 +87,5 @@ apps\jetbrains\gradlew.bat -p apps\jetbrains runIde
 
 The first Gradle run downloads development dependencies and the IDE platform. Gradle keeps generated files and the IDE
 sandbox under `apps/jetbrains/build/`. A plugin built from a clone isn't signed.
+
+[src/README.md](src/README.md) maps the code's folders.

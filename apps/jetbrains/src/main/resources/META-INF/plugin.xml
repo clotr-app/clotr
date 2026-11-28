@@ -10,12 +10,13 @@
 <p>Free and open source under AGPL-3.0-or-later. <a href="https://github.com/clotr-app/clotr">Source and issues</a>.</p>
 ]]></description>
     <change-notes><![CDATA[<ul>
-<li>A file or clipboard check that stops early is marked incomplete, so unchecked text does not count as clean.</li>
-<li>Medical record, Medicare, driver's license and insurance member numbers, your own IP address and gamer tags now wait for the personal details setting. 0.1.1 warned on them with that setting off. Card, card security code, gift card and bank numbers still warn by default.</li>
-<li>Each copy of a repeated credential gets its own warning and quick fix, but a copy inside a longer word or number doesn't.</li>
-<li>The status bar counts files open in an editor, and ignore checks read parent rules, repository excludes and the global ignore file.</li>
-<li>Guard setup works on the project in the current IDE window and explains which assistants changed when setup fails.</li>
-<li>The skip-pattern list scrolls, Spanish messages match English, and the engine finds more national IDs, access tokens and wrapped credentials.</li>
+<li>Two known issues. A path under a camelCase setting like authToken gets a password warning, and so does a plain number after a login code and "and".</li>
+<li>The newer engine finds passwords under camelCase names like dbPassword: in YAML, JSON and XML, tokens in 19 more formats, secret webhook links, and a password inside an ssh:// or other login link.</li>
+<li>Stand-in keys and passwords, a key block of only "...", a key file's path, a setting in backticks like `secret: true` and an order number shaped like a card no longer raise a warning.</li>
+<li>Check my clipboard and Check selection show dots for a password or private key, and two characters at each end of a key at most.</li>
+<li>When one of those checks runs out of time, Copy a cleaned version checks the rest of the text first and copies nothing if it can't finish.</li>
+<li>A file of thousands of blank lines is checked in under half a second, where 0.1.2 took up to 91 seconds.</li>
+<li>The icon has the same steel corner disc as the VS Code extension. The source is regrouped into readable files, with no change in how the plugin works.</li>
 </ul>]]></change-notes>
     <depends>com.intellij.modules.platform</depends>
     <resource-bundle>messages.ClotrBundle</resource-bundle>
@@ -25,19 +26,19 @@
         <projectService serviceImplementation="app.clotr.jetbrains.ClotrProjectService"/>
         <localInspection language="" shortName="ClotrPrivateDetails" displayName="Private details in open files"
                          groupName="Clotr" enabledByDefault="true" level="WARNING"
-                         implementationClass="app.clotr.jetbrains.ClotrInspection"/>
-        <statusBarWidgetFactory id="ClotrStatus" implementation="app.clotr.jetbrains.ClotrStatusWidgetFactory"/>
+                         implementationClass="app.clotr.jetbrains.openfiles.ClotrInspection"/>
+        <statusBarWidgetFactory id="ClotrStatus" implementation="app.clotr.jetbrains.openfiles.ClotrStatusWidgetFactory"/>
         <applicationConfigurable id="app.clotr.settings" displayName="Clotr"
-                                 instance="app.clotr.jetbrains.ClotrSettingsConfigurable"/>
+                                 instance="app.clotr.jetbrains.settings.ClotrSettingsConfigurable"/>
     </extensions>
     <actions>
-        <action id="app.clotr.CheckClipboard" class="app.clotr.jetbrains.CheckClipboardAction">
+        <action id="app.clotr.CheckClipboard" class="app.clotr.jetbrains.clipboard.CheckClipboardAction">
             <add-to-group group-id="ToolsMenu" anchor="last"/>
         </action>
-        <action id="app.clotr.CheckSelection" class="app.clotr.jetbrains.CheckSelectionAction">
+        <action id="app.clotr.CheckSelection" class="app.clotr.jetbrains.clipboard.CheckSelectionAction">
             <add-to-group group-id="EditorPopupMenu" anchor="last"/>
         </action>
-        <action id="app.clotr.GuardSetup" class="app.clotr.jetbrains.GuardSetupAction">
+        <action id="app.clotr.GuardSetup" class="app.clotr.jetbrains.guardsetup.GuardSetupAction">
             <add-to-group group-id="ToolsMenu" anchor="last"/>
         </action>
     </actions>

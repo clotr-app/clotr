@@ -1,4 +1,4 @@
-package app.clotr.jetbrains
+package app.clotr.jetbrains.openfiles
 
 import com.intellij.codeInsight.daemon.DaemonCodeAnalyzer
 import com.intellij.codeInsight.daemon.impl.DaemonCodeAnalyzerImpl
@@ -9,6 +9,8 @@ import com.intellij.codeInspection.ProblemsHolder
 import com.intellij.testFramework.PlatformTestUtil
 import java.util.concurrent.atomic.AtomicReference
 import kotlin.concurrent.thread
+import com.intellij.openapi.application.WriteAction
+import com.intellij.openapi.ide.CopyPasteManager
 import com.intellij.openapi.ui.TestDialog
 import com.intellij.openapi.ui.TestDialogManager
 import com.intellij.testFramework.fixtures.BasePlatformTestCase
@@ -16,8 +18,25 @@ import java.nio.file.Files
 import java.nio.file.Path
 import java.nio.file.LinkOption
 import java.io.IOException
+import java.awt.datatransfer.DataFlavor
+import java.awt.datatransfer.StringSelection
 import javax.xml.parsers.DocumentBuilderFactory
 import kotlin.random.Random
+import app.clotr.jetbrains.secretfiles.SecretFiles
+import app.clotr.jetbrains.ignorefiles.ClotrIgnore
+import app.clotr.jetbrains.ignorefiles.ClotrIgnoreConfig
+import app.clotr.jetbrains.engine.EngineBridge
+import app.clotr.jetbrains.engine.Finding
+import app.clotr.jetbrains.engine.Scan
+import app.clotr.jetbrains.settings.ClotrLocalState
+import app.clotr.jetbrains.settings.ClotrPreferences
+import app.clotr.jetbrains.settings.ClotrSettingsConfigurable
+import app.clotr.jetbrains.clipboard.showCheck
+import app.clotr.jetbrains.clipboard.showCheckResult
+import app.clotr.jetbrains.clipboard.ClipboardChecker
+import app.clotr.jetbrains.ClotrBundle
+import app.clotr.jetbrains.ClotrProjectService
+import app.clotr.jetbrains.withProgress
 
 class ClotrInspectionTest : BasePlatformTestCase() {
     override fun setUp() {
@@ -178,6 +197,33 @@ class ClotrInspectionTest : BasePlatformTestCase() {
             } finally {
                 Files.deleteIfExists(global)
             }
+        } finally {
+            repo.toFile().deleteRecursively()
+        }
+    }
+
+    // A rule that ends in a slash names folders only. It hid the note for a .env file that Git would still commit.
+    fun testAFoldersOnlyGitignoreRuleDoesNotCoverAFileOfThatName() {
+        val repo = Files.createTempDirectory("clotr-gitignore-folders")
+        val service = project.getService(ClotrProjectService::class.java)
+        try {
+            Files.createDirectories(repo.resolve(".git"))
+            for (rule in listOf(".env/", "/.env/", "**/.env/", "*.env/")) {
+                Files.writeString(repo.resolve(".gitignore"), "$rule\n")
+                assertFalse(rule, service.isIgnoredByGit(".env", repo, null))
+                assertFalse(rule, service.isIgnoredByGit("app/.env", repo, null))
+            }
+            // A folder rule still covers the files inside that folder, at any depth unless it's anchored.
+            Files.writeString(repo.resolve(".gitignore"), "config/\n")
+            assertTrue(service.isIgnoredByGit("config/.env", repo, null))
+            assertTrue(service.isIgnoredByGit("app/config/.env", repo, null))
+            assertFalse(service.isIgnoredByGit("config", repo, null))
+            Files.writeString(repo.resolve(".gitignore"), "/config/\n")
+            assertTrue(service.isIgnoredByGit("config/.env", repo, null))
+            assertFalse(service.isIgnoredByGit("app/config/.env", repo, null))
+            // A folders-only "!" rule can't bring a file back either.
+            Files.writeString(repo.resolve(".gitignore"), ".env\n!.env/\n")
+            assertTrue(service.isIgnoredByGit(".env", repo, null))
         } finally {
             repo.toFile().deleteRecursively()
         }
@@ -594,15 +640,163 @@ class ClotrInspectionTest : BasePlatformTestCase() {
     }
 
     fun testClipboardCheckOffersMaskedBandagedText() {
-        val engine = ClotrEngine.start("00112233445566778899aabbccddeeff")
+        val engine = EngineBridge.start("00112233445566778899aabbccddeeff")
         try {
             val result = withProgress(project, "test") { ClipboardChecker.check(engine, "key=AKIA4HPQ7XZ2R6TWLJ3N") }
             assertEquals(1, result.findings.size)
             assertTrue(result.findings.single().preview.contains("AK…3N"))
-            assertTrue(result.cleaned.contains("[REDACTED AWS ACCESS KEY]"))
-            assertFalse(result.cleaned.contains("AKIA4HPQ7XZ2R6TWLJ3N"))
+            assertTrue(result.cleaned!!.contains("[REDACTED AWS ACCESS KEY]"))
+            assertFalse(result.cleaned!!.contains("AKIA4HPQ7XZ2R6TWLJ3N"))
         } finally {
             engine.close()
         }
     }
+
+    // A check that stopped partway hid only what it had found, so its "cleaned" copy kept every key past the cut.
+    fun testHideItAfterAPartlyCheckedTextHidesTheKeysPastTheCut() {
+        val text = keysPastTheCut()
+        val clipboard = copyCleanedVersion(text, stopAt = 48 * 1024)
+        assertTrue("Hide it copied nothing", clipboard != CLIPBOARD_BEFORE)
+        for (key in KEYS) assertFalse("$key is still in the copy", clipboard.contains(key))
+        assertEquals(KEYS.size, Regex("\\[REDACTED AWS ACCESS KEY]").findAll(clipboard).count())
+        assertEquals(text.lines().size, clipboard.lines().size)
+    }
+
+    // A CRLF file opens with LF in its document, with a different key every 60 lines, most of them past the cut.
+    fun testHideItAfterAPartlyCheckedCrlfFileHidesEveryKey() {
+        val keys = (0 until 50).map { madeUpAwsKey(100 + it) }
+        val disk = (0 until 3000).joinToString("") { i -> if (i % 60 == 7) "key$i = ${keys[i / 60]}\r\n" else "line $i of a long file\r\n" }
+        val file = myFixture.tempDirFixture.createFile("Long.txt")
+        WriteAction.runAndWait<IOException> { file.setBinaryContent(disk.toByteArray(Charsets.UTF_8)) }
+        myFixture.configureFromExistingVirtualFile(file)
+        val document = myFixture.editor.document.text
+        assertEquals(disk.replace("\r\n", "\n"), document)
+        val clipboard = copyCleanedVersion(document, stopAt = 40 * 1024)
+        for (key in keys) assertFalse("$key is still in the copy", clipboard.contains(key))
+        assertEquals(50, Regex("\\[REDACTED AWS ACCESS KEY]").findAll(clipboard).count())
+    }
+
+    // A check that can't finish (here every check stops early) hands nothing back as clean, and says what it skipped.
+    fun testHideItThatCannotFinishCopiesNothingAndSaysWhichLines() {
+        val text = keysPastTheCut()
+        val shown = mutableListOf<String>()
+        val clipboard = copyCleanedVersion(text, stopAt = 1024, shown = shown)
+        assertEquals(CLIPBOARD_BEFORE, clipboard)
+        val lines = text.trimEnd('\n').lines().size
+        assertTrue(shown.last(), shown.last().contains(ClotrBundle.message("found.notCopied", 1, lines)))
+    }
+
+    fun testAPartlyCheckedClipboardHandsBackNoCleanedCopy() {
+        val engine = project.getService(ClotrProjectService::class.java).engine
+        val checked = engine.withChecksStoppedAt(48 * 1024) {
+            withProgress(project, "test") { ClipboardChecker.check(engine, keysPastTheCut(), "medium", ClotrIgnoreConfig()) }
+        }
+        assertTrue(checked.truncated)
+        assertTrue(checked.findings.isNotEmpty())
+        assertNull(checked.cleaned)
+    }
+
+    // A made-up second key, put together here so the whole value is written nowhere.
+    private val keyPastTheCut = "AKIA" + "QX7M2WRT" + "5NPLK3VY"
+
+    /** A scan of `text` as if the engine stopped between the two keys: it reached the first and never the second. */
+    private fun scanCutBeforeSecondKey(engine: EngineBridge, text: String): Scan {
+        val cut = text.indexOf(keyPastTheCut)
+        val full = engine.scan(text, "copied")
+        val reached = full.ranges.filter { it.start < cut }
+        val fingerprints = reached.map { it.fp }.toSet()
+        return Scan(full.findings.filter { it.fp in fingerprints }, reached, truncated = true)
+    }
+
+    fun testCutShortClipboardCheckOffersNoCleanedText() {
+        val engine = EngineBridge.start("00112233445566778899aabbccddeeff")
+        val text = "first=AKIA4HPQ7XZ2R6TWLJ3N\n" + "filler line\n".repeat(50) + "second=$keyPastTheCut\n"
+        try {
+            val result = withProgress(project, "test") {
+                ClipboardChecker.check(engine, text, scanCutBeforeSecondKey(engine, text), "medium", ClotrIgnoreConfig())
+            }
+            assertEquals(1, result.findings.size)
+            assertTrue(result.truncated)
+            assertNull(result.cleaned)
+        } finally {
+            engine.close()
+        }
+    }
+
+    // The dialog lists only what the cut-short check found, and Hide it checks the rest before it copies anything.
+    fun testCutShortCheckHideItChecksTheRestBeforeCopying() {
+        val engine = EngineBridge.start("00112233445566778899aabbccddeeff")
+        val text = "first=AKIA4HPQ7XZ2R6TWLJ3N\n" + "filler line\n".repeat(50) + "second=$keyPastTheCut\n"
+        val shown = mutableListOf<String>()
+        // Answers every dialog with its first button, Copy a cleaned version.
+        val previous = TestDialogManager.setTestDialog(TestDialog { message: String -> shown += message; 0 })
+        CopyPasteManager.getInstance().setContents(StringSelection(CLIPBOARD_BEFORE))
+        try {
+            val result = withProgress(project, "test") {
+                ClipboardChecker.check(engine, text, scanCutBeforeSecondKey(engine, text), "medium", ClotrIgnoreConfig())
+            }
+            showCheckResult(project, text, result) { ClipboardChecker.hide(engine, text, result, "medium", ClotrIgnoreConfig()) }
+        } finally {
+            TestDialogManager.setTestDialog(previous)
+            engine.close()
+        }
+        assertEquals(2, shown.size)
+        assertTrue(shown.first().contains(ClotrBundle.message("found.part")))
+        assertTrue(shown.first().contains("AK…3N"))
+        assertEquals(1, Regex("AK…").findAll(shown.first()).count())
+        assertEquals(ClotrBundle.message("found.copiedMore"), shown.last())
+        val clipboard = CopyPasteManager.getInstance().getContents<String>(DataFlavor.stringFlavor)!!
+        assertFalse(clipboard.contains("AKIA4HPQ7XZ2R6TWLJ3N"))
+        assertFalse(clipboard.contains(keyPastTheCut))
+        assertEquals(2, Regex("\\[REDACTED AWS ACCESS KEY]").findAll(clipboard).count())
+    }
+
+    /** Presses "Copy a cleaned version" on `text` with every check stopping after `stopAt` characters. */
+    private fun copyCleanedVersion(text: String, stopAt: Int, shown: MutableList<String> = mutableListOf()): String {
+        CopyPasteManager.getInstance().setContents(StringSelection(CLIPBOARD_BEFORE))
+        val previous = TestDialogManager.setTestDialog(TestDialog { message: String -> shown += message; 0 })
+        try {
+            project.getService(ClotrProjectService::class.java).engine.withChecksStoppedAt(stopAt) { showCheck(project, text) }
+        } finally {
+            TestDialogManager.setTestDialog(previous)
+        }
+        assertTrue(shown.first(), shown.first().contains(ClotrBundle.message("found.part")))
+        return CopyPasteManager.getInstance().getContents<String>(DataFlavor.stringFlavor)!!
+    }
+
+    private fun keysPastTheCut(): String =
+        "key = ${KEYS[0]}\n" + "line = \"partly checked clipboard\"\n".repeat(3000) + KEYS.drop(1).joinToString("") { "key = $it\n" }
+
+    private companion object {
+        const val CLIPBOARD_BEFORE = "clipboard before"
+        // Made-up keys in the AWS shape.
+        val KEYS = listOf("AKIA4HPQ7XZ2R6TWLJ3N", "AKIA2MQ7XZ4HPR6TWLJ5", "AKIA7TWLJ3N4HPQ2XZ6R")
+    }
+}
+
+/**
+ * Runs `work` with each check of a text longer than `chars` stopping there, as one that runs out of time does: it
+ * reports what it found before that point, and that it stopped early.
+ */
+internal fun <T> EngineBridge.withChecksStoppedAt(chars: Int, work: () -> T): T {
+    evalForTest("""
+        globalThis.clotrRealDetect = Clotr.detect;
+        Clotr.detect = Object.assign((text) => {
+          if (typeof text !== 'string' || text.length <= $chars) return clotrRealDetect(text);
+          const results = clotrRealDetect(text.slice(0, $chars));
+          results.truncated = true;
+          return results;
+        }, { forget: clotrRealDetect.forget });
+    """.trimIndent())
+    try {
+        return work()
+    } finally {
+        evalForTest("Clotr.detect = globalThis.clotrRealDetect")
+    }
+}
+
+/** A made-up AWS access key ID, the same for the same `seed`. */
+internal fun madeUpAwsKey(seed: Int): String {
+    val random = Random(seed)
+    return "AKIA" + (1..16).map { "ABCDEFGHIJKLMNOPQRSTUVWXYZ234567"[random.nextInt(32)] }.joinToString("")
 }

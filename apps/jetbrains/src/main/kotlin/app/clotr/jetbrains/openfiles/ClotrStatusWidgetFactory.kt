@@ -1,4 +1,4 @@
-package app.clotr.jetbrains
+package app.clotr.jetbrains.openfiles
 
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.wm.StatusBarWidget

@@ -1,4 +1,4 @@
-package app.clotr.jetbrains
+package app.clotr.jetbrains.settings
 
 import com.intellij.ide.util.PropertiesComponent
 import com.intellij.openapi.application.ApplicationManager

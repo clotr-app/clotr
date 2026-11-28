@@ -1,4 +1,4 @@
-package app.clotr.jetbrains
+package app.clotr.jetbrains.secretfiles
 
 import java.util.Locale
 

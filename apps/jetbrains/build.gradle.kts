@@ -12,7 +12,7 @@ repositories {
 }
 
 group = "app.clotr"
-version = "0.1.2"
+version = "0.1.3"
 
 kotlin { jvmToolchain(21) }
 
@@ -64,6 +64,15 @@ tasks {
     register<Exec>("clotrEngineBundle") {
         workingDir = rootProject.projectDir.resolve("../..")
         commandLine("node", "tools/engine-bundle.js", "--out", engineBundle.get().asFile.absolutePath)
+        // What engine-bundle.js reads (its parts()), so a changed engine rebuilds the bundle. With only an output,
+        // Gradle kept an old bundle for as long as the file was there.
+        val repo = rootProject.projectDir.resolve("../..")
+        inputs.file(repo.resolve("tools/engine-bundle.js"))
+        inputs.file(repo.resolve("tools/engine-files.js"))
+        inputs.files(listOf("host-shim.js", "host.js", "package.json").map { repo.resolve("apps/engine/$it") })
+        inputs.files(
+            fileTree(repo.resolve("extension")) { include("*.js", "engine/**/*.js", "_locales/*/messages.json") },
+        )
         outputs.file(engineBundle)
     }
     register<Exec>("syncSecretFiles") {
