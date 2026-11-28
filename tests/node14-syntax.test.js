@@ -11,16 +11,15 @@ const fs = require("node:fs");
 const path = require("node:path");
 const espree = require("espree");
 const { build } = require("../tools/engine-bundle.js");
+const { codeFiles } = require("./load-vscode-extension.js");
+const { guardLibFiles } = require("../apps/vscode/build.js");
 
 const ROOT = path.join(__dirname, "..");
 const LOADED = [
   "apps/guard/bin/clotr-guard.js",
-  ...fs
-    .readdirSync(path.join(ROOT, "apps", "guard", "lib"))
-    .filter((name) => name.endsWith(".js"))
-    .map((name) => `apps/guard/lib/${name}`),
-  "apps/vscode/extension.js",
-  "apps/vscode/ignore-once.js",
+  // Guard's lib files as VS Code's build copies them, from the same list the build reads.
+  ...guardLibFiles(path.join(ROOT, "apps", "guard", "package.json")).map((file) => `apps/guard/${file}`),
+  ...codeFiles().map((file) => `apps/vscode/${file}`),
 ];
 
 // Methods newer than Node 14, called as `x.name(...)`.

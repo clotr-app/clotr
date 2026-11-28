@@ -30,6 +30,8 @@ To check this yourself, disconnect from the network, install Clotr, then choose 
 
 You can [rate Clotr on Open VSX](https://open-vsx.org/extension/clotr-app/clotr/reviews) or [report a problem](https://github.com/clotr-app/clotr/issues).
 
+Using it at work? Add your team to [ADOPTERS.md](https://github.com/clotr-app/clotr/blob/main/ADOPTERS.md).
+
 ## Building it
 
 Build steps are in the repository's [contributing guide](https://github.com/clotr-app/clotr/blob/main/CONTRIBUTING.md#working-on-the-code).

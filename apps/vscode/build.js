@@ -4,13 +4,15 @@
 const fs = require("node:fs");
 const path = require("node:path");
 
-function copyDirectory(source, destination) {
-  fs.mkdirSync(destination, { recursive: true });
-  for (const entry of fs.readdirSync(source, { withFileTypes: true })) {
-    const from = path.join(source, entry.name);
-    const to = path.join(destination, entry.name);
-    if (entry.isDirectory()) copyDirectory(from, to);
-    else fs.copyFileSync(from, to);
+// Guard's lib files as its package.json `files` list names them; none when that file is missing or unreadable.
+function guardLibFiles(packageJson) {
+  try {
+    const files = JSON.parse(fs.readFileSync(packageJson, "utf8")).files;
+    if (!Array.isArray(files)) return [];
+    // The MCP server's files ship in Guard's npm package, but the extension never runs them.
+    return files.filter((file) => file.startsWith("lib/") && !file.startsWith("lib/mcp-server/"));
+  } catch {
+    return [];
   }
 }
 
@@ -25,27 +27,23 @@ function build({ outDir = __dirname, repoRoot = path.resolve(__dirname, "../..")
     const { build: buildEngine } = require(bundleTool);
     const bundle = buildEngine().text;
     fs.rmSync(guardDestination, { recursive: true, force: true });
-    fs.mkdirSync(path.join(guardDestination, "bin"), { recursive: true });
-    fs.mkdirSync(path.join(guardDestination, "dist"), { recursive: true });
-    fs.copyFileSync(
-      path.join(guardSource, "bin", "clotr-guard.js"),
-      path.join(guardDestination, "bin", "clotr-guard.js"),
-    );
-    copyDirectory(path.join(guardSource, "lib"), path.join(guardDestination, "lib"));
-    fs.copyFileSync(path.join(guardSource, "package.json"), path.join(guardDestination, "package.json"));
+    const libFiles = guardLibFiles(path.join(guardSource, "package.json"));
+    if (libFiles.length === 0) throw new Error("Guard's package.json lists no lib files to package.");
+    for (const dir of ["bin", "lib", "dist"]) fs.mkdirSync(path.join(guardDestination, dir), { recursive: true });
+    for (const file of ["bin/clotr-guard.js", ...libFiles, "package.json"]) {
+      // Guard's lib files sit in folders, so each one's folder is made first.
+      fs.mkdirSync(path.dirname(path.join(guardDestination, file)), { recursive: true });
+      fs.copyFileSync(path.join(guardSource, file), path.join(guardDestination, file));
+    }
     fs.writeFileSync(path.join(guardDestination, "dist", "clotr-engine.js"), bundle);
     fs.copyFileSync(license, path.join(outDir, "LICENSE"));
     return { bundlePath: path.join(guardDestination, "dist", "clotr-engine.js") };
   }
 
-  const required = [
-    "bin/clotr-guard.js",
-    "lib/engine.js",
-    "lib/secret-files.js",
-    "package.json",
-    "dist/clotr-engine.js",
-  ];
+  const libFiles = guardLibFiles(path.join(guardDestination, "package.json"));
+  const required = ["bin/clotr-guard.js", ...libFiles, "package.json", "dist/clotr-engine.js"];
   if (
+    libFiles.length > 0 &&
     required.every((file) => fs.existsSync(path.join(guardDestination, file))) &&
     fs.existsSync(path.join(outDir, "LICENSE"))
   ) {
@@ -56,4 +54,4 @@ function build({ outDir = __dirname, repoRoot = path.resolve(__dirname, "../..")
 
 if (require.main === module) build();
 
-module.exports = { build };
+module.exports = { build, guardLibFiles };

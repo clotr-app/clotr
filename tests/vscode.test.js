@@ -5,7 +5,6 @@ const assert = require("node:assert/strict");
 const fs = require("node:fs");
 const os = require("node:os");
 const path = require("node:path");
-const Module = require("node:module");
 const vm = require("node:vm");
 const { inflateRawSync } = require("node:zlib");
 const { EventEmitter: NodeEventEmitter } = require("node:events");
@@ -17,6 +16,14 @@ const guard = require("../apps/guard/bin/clotr-guard.js");
 const { build: buildVscode } = require("../apps/vscode/build.js");
 const { makeSecrets } = require("./fixtures/secrets.js");
 const { PHONE_LIST_FALSE_ALARM } = require("./fixtures/engine-corpus.js");
+const {
+  codeFiles,
+  codeSource,
+  copyShippedFiles,
+  loadVscodeExtension,
+  requireCalls,
+  reachedFiles,
+} = require("./load-vscode-extension.js");
 
 const ROOT = path.join(__dirname, "..");
 const APP = path.join(ROOT, "apps", "vscode");
@@ -27,11 +34,21 @@ const currentBundle = build().text;
 buildVscode();
 assert.equal(fs.readFileSync(BUNDLE, "utf8"), currentBundle, "VS Code's engine bundle is stale");
 
+// Guard's lib files from its package.json `files` list, which is what the build copies, as paths in the built copy.
+function guardLibFiles() {
+  const pkg = JSON.parse(fs.readFileSync(path.join(ROOT, "apps", "guard", "package.json"), "utf8"));
+  // The build skips lib/mcp-server/, which the extension never runs, so it isn't in the built copy.
+  return pkg.files
+    .filter((file) => file.startsWith("lib/") && !file.startsWith("lib/mcp-server/"))
+    .sort()
+    .map((file) => `guard/${file}`);
+}
+
 test("VS Code runtime and its bundled Guard have no network calls", () => {
   const files = [
-    path.join(APP, "extension.js"),
+    ...codeFiles().map((file) => path.join(APP, file)),
     path.join(APP, "guard", "bin", "clotr-guard.js"),
-    path.join(APP, "guard", "lib", "text-checks", "engine-loader.js"),
+    ...guardLibFiles().map((file) => path.join(APP, file)),
   ];
   const network = /\b(?:fetch|XMLHttpRequest|WebSocket)\b|node:https?|https?\.request|net\.connect|axios|got\s*\(/i;
   for (const file of files) assert.doesNotMatch(fs.readFileSync(file, "utf8"), network, path.relative(ROOT, file));
@@ -164,7 +181,7 @@ test(
   { skip: !fs.existsSync(VSIX) },
   () => {
     const manifest = JSON.parse(readZipEntry(VSIX, "extension/package.json"));
-    assert.equal(manifest.version, "0.3.1");
+    assert.equal(manifest.version, "0.3.2");
     assert.equal(manifest.engines.vscode, "^1.57.0");
     assert.deepEqual(manifest.extensionKind, ["workspace"]);
     assert.equal(manifest.icon, "icon.png");
@@ -200,10 +217,10 @@ test(
 
 // Open VSX shows the version beside the README, and the engine build changes with every batch, so neither
 // number is typed into the README, where it would go stale.
-test("VS Code is 0.3.1 and its README leaves version numbers to the extension listing", () => {
+test("VS Code is 0.3.2 and its README leaves version numbers to the extension listing", () => {
   const editor = JSON.parse(fs.readFileSync(path.join(APP, "package.json"), "utf8"));
   const readme = fs.readFileSync(path.join(APP, "README.md"), "utf8");
-  assert.equal(editor.version, "0.3.1");
+  assert.equal(editor.version, "0.3.2");
   assert.doesNotMatch(readme, /^Version \d/m);
   assert.doesNotMatch(readme, /engine \d+\.\d+\.\d+/i);
 });
@@ -275,7 +292,7 @@ test("Guard's Node.js minimum is stated consistently in English and Spanish", ()
 });
 
 test("VS Code stores detection state in workspace storage and never asks Settings Sync to copy it", () => {
-  const source = fs.readFileSync(path.join(APP, "extension.js"), "utf8");
+  const source = codeSource();
   assert.match(source, /const state = context\.workspaceState/);
   assert.doesNotMatch(source, /setKeysForSync|globalState\.(?:get|update)\(["'](?:salt|ignored|disabledFiles)["']/);
   for (const language of [require("../apps/vscode/package.nls.json"), require("../apps/vscode/package.nls.es.json")]) {
@@ -298,7 +315,7 @@ test("the Open VSX listing has its install metadata, icon, banner, and repositor
   assert.equal(dimensions[0], dimensions[1]);
   const packageIgnore = fs.readFileSync(path.join(APP, ".vscodeignore"), "utf8");
   assert.match(packageIgnore, /^!icon\.png$/m);
-  assert.match(packageIgnore, /^!ignore-once\.js$/m);
+  assert.match(packageIgnore, /^!src\/\*\*$/m);
   assert.match(packageIgnore, /^!images\/\*\*$/m);
 
   assert.deepEqual(editor.categories, ["AI", "Linters", "Other"]);
@@ -375,12 +392,12 @@ test("Open VSX hosts use the workspace host and the VS Code 1.57 API floor", () 
   const editor = JSON.parse(fs.readFileSync(path.join(APP, "package.json"), "utf8"));
   assert.equal(editor.engines.vscode, "^1.57.0");
   assert.deepEqual(editor.extensionKind, ["workspace"]);
-  for (const file of ["extension.js", "guard/bin/clotr-guard.js"]) {
+  for (const file of [...codeFiles(), "guard/bin/clotr-guard.js", ...guardLibFiles()]) {
     const source = fs.readFileSync(path.join(APP, file), "utf8");
     assert.doesNotMatch(source, /\.at\(/, `${file} runs on the VS Code 1.57 Node host`);
     assert.doesNotMatch(source, /Object\.hasOwn|structuredClone|fs\.rmSync/, `${file} runs on Node 12`);
   }
-  const source = fs.readFileSync(path.join(APP, "extension.js"), "utf8");
+  const source = codeSource();
   assert.match(source, /vscode\.env\.appName/);
   assert.match(source, /vscode\.env\.uriScheme/);
   assert.doesNotMatch(source, /diagnostic\.data/, "Diagnostic.data is newer than the supported VS Code API floor");
@@ -388,14 +405,7 @@ test("Open VSX hosts use the workspace host and the VS Code 1.57 API floor", () 
 });
 
 test("finding: VS Code 1.57's Node 14 host can load the extension", () => {
-  for (const file of [
-    "extension.js",
-    "guard/bin/clotr-guard.js",
-    "guard/lib/clotrignore.js",
-    "guard/lib/text-checks/engine-loader.js",
-    "guard/lib/secret-files.js",
-    "guard/dist/clotr-engine.js",
-  ]) {
+  for (const file of [...codeFiles(), "guard/bin/clotr-guard.js", ...guardLibFiles(), "guard/dist/clotr-engine.js"]) {
     const source = fs.readFileSync(path.join(APP, file), "utf8");
     const imports = source.match(/^const .* = require\(["']node:/gm) || [];
     assert.deepEqual(imports, [], `${file} uses the Node 14.18-only module prefix`);
@@ -404,6 +414,34 @@ test("finding: VS Code 1.57's Node 14 host can load the extension", () => {
       /\|\|=|\?\?=|&&=|\.at\(|Object\.hasOwn|\.replaceAll\(|\.toSorted\(|\.findLast(?:Index)?\(/,
       `${file} uses syntax or an API newer than the extension host`,
     );
+  }
+});
+
+test("the extension's code files name their own folder only through bundled-guard.js", () => {
+  // __dirname is the folder of the file it's written in, so a line that moves into src/ would silently change it.
+  for (const file of codeFiles().filter((name) => name.startsWith("src/") && name !== "src/bundled-guard.js")) {
+    assert.doesNotMatch(fs.readFileSync(path.join(APP, file), "utf8"), /\b__dirname\b/, file);
+  }
+});
+
+test("the extension's code files require only at their top level", () => {
+  for (const file of codeFiles()) {
+    const late = requireCalls(APP, file).filter((call) => call.inFunction);
+    assert.deepEqual(
+      late.map((call) => `${file}:${call.line}`),
+      [],
+      "a require inside a function would miss the tests' stand-ins",
+    );
+  }
+});
+
+test("every code file of the extension is reached from extension.js", () => {
+  assert.deepEqual(reachedFiles(), codeFiles());
+});
+
+test("only extension.js registers commands", () => {
+  for (const file of codeFiles().filter((name) => name !== "extension.js")) {
+    assert.doesNotMatch(fs.readFileSync(path.join(APP, file), "utf8"), /registerCommand/, file);
   }
 });
 
@@ -557,6 +595,20 @@ test("the VS Code package copies the repository license into its folder", () => 
   }
 });
 
+test("a prebuilt VS Code folder missing a listed Guard lib file fails the build", () => {
+  const packageRoot = fs.mkdtempSync(path.join(os.tmpdir(), "clotr-vscode-prebuilt-"));
+  try {
+    buildVscode({ outDir: packageRoot, repoRoot: ROOT });
+    fs.rmSync(path.join(packageRoot, "guard", "lib", "text-checks", "engine-loader.js"));
+    assert.throws(
+      () => buildVscode({ outDir: packageRoot, repoRoot: path.join(packageRoot, "missing-source") }),
+      /missing Guard's bundled runtime/,
+    );
+  } finally {
+    fs.rmSync(packageRoot, { recursive: true, force: true });
+  }
+});
+
 test("the VSIX package lists its Guard runtime without the MCP binary", () => {
   const packageRoot = fs.mkdtempSync(path.join(os.tmpdir(), "clotr-vscode-packed-files-"));
   try {
@@ -570,20 +622,14 @@ test("the VSIX package lists its Guard runtime without the MCP binary", () => {
       }
     };
     visit(packageRoot);
-    // The build copies Guard's whole lib folder, so the list reads that folder.
-    const guardLib = path.join(ROOT, "apps", "guard", "lib");
-    const libFiles = fs
-      .readdirSync(guardLib, { recursive: true })
-      .filter((entry) => fs.statSync(path.join(guardLib, entry)).isFile())
-      .map((entry) => `guard/lib/${entry.split(path.sep).join("/")}`);
     assert.deepEqual(files.sort(), [
       "LICENSE",
       "guard/bin/clotr-guard.js",
       "guard/dist/clotr-engine.js",
-      ...libFiles.sort(),
+      ...guardLibFiles(),
       "guard/package.json",
     ]);
-    const packageInputs = ["extension.js", "package.json", "package.nls.json", "package.nls.es.json"].map((file) => [
+    const packageInputs = [...codeFiles(), "package.json", "package.nls.json", "package.nls.es.json"].map((file) => [
       file,
       fs.readFileSync(path.join(APP, file), "utf8"),
     ]);
@@ -941,10 +987,11 @@ function fakeVscode(
     fireTextChange(document) {
       textChangeListener?.({ document });
     },
-    fireClose(document) {
+    // VS Code's close event is the document itself; { wrapped: true } sends a { document } wrapper instead.
+    fireClose(document, { wrapped = false } = {}) {
       const index = documents.indexOf(document);
       if (index >= 0) documents.splice(index, 1);
-      closeDocumentListener?.({ document });
+      closeDocumentListener?.(wrapped ? { document } : document);
     },
     fireOpen(document) {
       if (!documents.includes(document)) documents.push(document);
@@ -979,20 +1026,10 @@ function allowGitIgnoreApiToAnswer(fake, root) {
 }
 
 async function activateExtension(fake, { spawnSync: spawnSyncMock, spawn: spawnMock } = {}) {
-  const extFile = path.join(APP, "extension.js");
-  const extModule = new Module(extFile, module);
-  extModule.filename = extFile;
-  extModule.paths = Module._nodeModulePaths(APP);
-  extModule.require = (name) => {
-    if (name === "vscode") return fake.vscode;
-    if (name === "node:child_process" || name === "child_process") {
-      return {
-        ...require("child_process"),
-        ...(spawnSyncMock ? { spawnSync: spawnSyncMock } : {}),
-        ...(spawnMock ? { spawn: spawnMock } : {}),
-      };
-    }
-    return name.startsWith(".") ? require(path.resolve(APP, name)) : require(name);
+  const childProcess = {
+    ...require("child_process"),
+    ...(spawnSyncMock ? { spawnSync: spawnSyncMock } : {}),
+    ...(spawnMock ? { spawn: spawnMock } : {}),
   };
   const createContext = vm.createContext;
   vm.createContext = (...args) => {
@@ -1000,9 +1037,8 @@ async function activateExtension(fake, { spawnSync: spawnSyncMock, spawn: spawnM
     return fake.engineContext;
   };
   try {
-    extModule._compile(fs.readFileSync(extFile, "utf8"), extFile);
-    fake.extensionApi = extModule.exports;
-    return await extModule.exports.activate(fake.context);
+    fake.extensionApi = loadVscodeExtension({ vscode: fake.vscode, childProcess });
+    return await fake.extensionApi.activate(fake.context);
   } finally {
     vm.createContext = createContext;
   }
@@ -1043,47 +1079,16 @@ test("VS Code never takes Node or npm from the opened workspace PATH", async () 
 });
 
 async function activateContainedExtension(root, fake) {
-  const extFile = path.join(root, "extension.js");
-  const extModule = new Module(extFile, module);
-  extModule.filename = extFile;
-  extModule.paths = Module._nodeModulePaths(root);
-  const originalLoad = Module._load;
-  const inside = (target) => {
-    const relative = path.relative(root, target);
-    return (
-      relative === "" || (!relative.startsWith(`..${path.sep}`) && relative !== ".." && !path.isAbsolute(relative))
-    );
-  };
-  Module._load = function (request, parent, isMain) {
-    if (request === "vscode") return fake.vscode;
-    if (Module.isBuiltin(request)) return originalLoad.call(this, request, parent, isMain);
-    const resolved = Module._resolveFilename(request, parent, isMain);
-    if (inside(parent?.filename || "") && !inside(resolved)) {
-      throw new Error(`Extension dependency escaped its folder: ${request}`);
-    }
-    return originalLoad.call(this, request, parent, isMain);
-  };
-  try {
-    extModule._compile(fs.readFileSync(extFile, "utf8"), extFile);
-    return await extModule.exports.activate(fake.context);
-  } finally {
-    Module._load = originalLoad;
-  }
+  const api = loadVscodeExtension({ root, vscode: fake.vscode, contained: true });
+  return await api.activate(fake.context);
 }
 
 test("the packaged VS Code extension loads with every dependency inside its folder", async () => {
   const packageRoot = fs.mkdtempSync(path.join(os.tmpdir(), "clotr-vscode-package-"));
   try {
-    for (const file of [
-      "extension.js",
-      "ignore-once.js",
-      "package.json",
-      "package.nls.json",
-      "package.nls.es.json",
-      "README.md",
-      "build.js",
-      ".vscodeignore",
-    ]) {
+    copyShippedFiles(packageRoot);
+    // The build's own files too, as in the source folder.
+    for (const file of ["build.js", ".vscodeignore"]) {
       fs.copyFileSync(path.join(APP, file), path.join(packageRoot, file));
     }
     buildVscode({ outDir: packageRoot, repoRoot: ROOT });
@@ -1144,6 +1149,23 @@ test("Ignore this one lasts until the file closes and suppresses only that occur
   await waitFor(() => fake.entries.get(doc.uri.toString())?.length === 2, "findings after the file reopens");
   assert.equal(fake.entries.get(doc.uri.toString()).length, 2);
 });
+
+for (const wrapped of [false, true]) {
+  const shape = wrapped ? "a { document } wrapper" : "the document itself";
+  test(`VS Code drops a closed document's diagnostics when the close event carries ${shape}`, async () => {
+    const fake = fakeVscode([]);
+    const doc = fake.mkDocument("C:/project/app.js", `const token = "${KEY}";`);
+    fake.vscode.workspace.textDocuments.push(doc);
+    await activateExtension(fake);
+    const tree = fake.treeViews.get("clotr.findings").treeDataProvider;
+    assert.equal(fake.entries.get(doc.uri.toString()).length, 1, "the open document showed its finding");
+    assert.equal(fake.statusItems[0].text, "$(shield) Clotr · 1 file · 1 finding");
+    fake.fireClose(doc, { wrapped });
+    assert.equal(fake.entries.has(doc.uri.toString()), false, "closing it took its diagnostics away");
+    assert.deepEqual(tree.getChildren(), []);
+    assert.equal(fake.statusItems[0].text, "$(shield) Clotr · 0 files");
+  });
+}
 
 test("Guard child processes yield to the editor and time out without blocking", async () => {
   const fake = fakeVscode([]);
@@ -1243,6 +1265,18 @@ test("the .clotrignore quick fix writes only a salted fingerprint and quiets tha
     vscodeGuard.addIgnoredValue = originalAddIgnoredValue;
     fs.rmSync(root, { recursive: true, force: true });
   }
+});
+
+// It reads only VS Code's own file, so it lives with VS Code's tests and moves when that file does.
+test("the VS Code quick fix writes .clotrignore through Guard's shared writer", () => {
+  const source = fs.readFileSync(path.join(APP, "src", "findings-and-quick-fixes", "quick-fixes.js"), "utf8");
+  const body = source.slice(
+    source.indexOf("async function addToClotrIgnore"),
+    source.indexOf("async function moveToEnv"),
+  );
+  assert.match(body, /guard\.addIgnoredValue\(/);
+  assert.match(body, /guard\.addIgnoredValue\(root, finding\.value, finding\.kind\)/);
+  assert.doesNotMatch(body, /writeSync|openSync|valueFingerprint/, "no second writer for the same file");
 });
 
 test("Move to .env replaces a quoted JavaScript value and writes the local environment entry", async () => {
@@ -1348,7 +1382,8 @@ test("VS Code keeps each split ID with its own ignore fingerprint and file range
   try {
     const text = `employee number ${other}\nemployee number ${mine}`;
     const document = fakeVscode([], {}, {}, root).mkDocument(path.join(root, "ids.txt"), text);
-    const fake = fakeVscode([document], {}, {}, root);
+    // A saved ID is a personal detail, so it's marked in a file only with the setting on.
+    const fake = fakeVscode([document], {}, { personalDetailsInFiles: true }, root);
     await activateExtension(fake);
     const value = {
       kind: "value",
@@ -1632,7 +1667,7 @@ test("the .clotrignore cache invalidates on create, change, and delete", async (
 });
 
 test("stale ignored occurrence entries are removed while active ignores remain", (t) => {
-  const { pruneIgnoredOnce } = require("../apps/vscode/ignore-once.js");
+  const { pruneIgnoredOnce } = require("../apps/vscode/src/open-files/ignore-once.js");
   const staleCount = 10_000;
   const ignored = new Map(Array.from({ length: staleCount }, (_, index) => [`stale-${index}`, `fp-${index}`]));
   ignored.set("active-one", "fp-one");
@@ -2028,6 +2063,87 @@ test("personal details in ordinary files are off unless enabled", async () => {
   assert.equal([...enabled.entries.values()].flat().length, 1);
 });
 
+// The kinds the extension held back before it read the engine's personal group. They stay quiet with the setting off.
+const OLD_PERSONAL_WORDS =
+  /email|phone|person|name|address|ssn|social|passport|license.?plate|national.?id|account.?id|student.?id|birth|dob|vin|ip.?address/i;
+// Card, gift-card and bank numbers sit in the personal group, but they're money, so they're checked like a credential.
+const MONEY_KINDS = new Set(["credit_card", "card_code", "gift_card", "bank_account"]);
+
+// Opens one file per engine kind, with the engine's detect stubbed so each file finds exactly its own kind once, and returns
+// the kinds that got a mark. Stubbing lets the walk cover every kind, including ones that need a vault or a picture.
+async function markedKinds(settings) {
+  const fake = fakeVscode([], {}, { minSeverity: "low", ...settings });
+  await activateExtension(fake);
+  const context = fake.engineContext;
+  // Copied out of the engine's realm so deepEqual compares plain arrays.
+  const patterns = [...context.Clotr.PATTERNS];
+  const kinds = patterns.map((pattern) => pattern.id);
+  const sample = (kind) => `sample-${kind.replace(/_/g, "-")}-0001`;
+  // The same shape the engine's detect returns, at high severity so the severity setting never hides one.
+  context.Clotr.detect = (text) =>
+    patterns
+      .filter((pattern) => text.includes(sample(pattern.id)))
+      .map(({ id, group, secret, name }) => ({ id, group, secret, name, severity: "high", matches: [sample(id)] }));
+  const documents = kinds.map((kind) => fake.mkDocument(`C:/project/${kind}.txt`, `value = "${sample(kind)}";`));
+  for (const document of documents) fake.fireOpen(document);
+  await waitFor(
+    () => documents.every((document) => fake.entries.has(document.uri.toString())),
+    "every kind's file checked",
+  );
+  const marked = new Set();
+  for (const [index, document] of documents.entries()) {
+    for (const diagnostic of fake.entries.get(document.uri.toString())) {
+      assert.equal(diagnostic.code, kinds[index]);
+      marked.add(diagnostic.code);
+    }
+  }
+  return { kinds, marked, patterns };
+}
+
+test("with personal details off, no kind in the engine's personal group is marked, except money", async () => {
+  const { patterns, marked } = await markedKinds({});
+  const personal = patterns.filter((pattern) => pattern.group === "personal").map((pattern) => pattern.id);
+  assert.ok(personal.length >= 26, "the engine still has its personal group");
+  const loud = personal.filter((kind) => !MONEY_KINDS.has(kind) && marked.has(kind));
+  assert.deepEqual(loud, []);
+  for (const kind of MONEY_KINDS) assert.ok(marked.has(kind), `${kind} is still marked`);
+});
+
+test("with personal details off, kinds outside the personal group are marked and the old words stay quiet", async () => {
+  const { patterns, marked } = await markedKinds({});
+  for (const { id, group } of patterns) {
+    const held = (group === "personal" && !MONEY_KINDS.has(id)) || OLD_PERSONAL_WORDS.test(id);
+    assert.equal(marked.has(id), !held, id);
+  }
+});
+
+test("with personal details on, every engine kind is marked", async () => {
+  const { kinds, marked } = await markedKinds({ personalDetailsInFiles: true });
+  assert.deepEqual(
+    kinds.filter((kind) => !marked.has(kind)),
+    [],
+  );
+});
+
+test("an insurance member ID, a driver's licence and a medical record wait for the personal details setting", async () => {
+  const content = "insurance member id W123456789\ndriver license D1234567\nmedical record number MRN 12345678\n";
+  const quiet = fakeVscode([]);
+  quiet.vscode.workspace.textDocuments.push(quiet.mkDocument("C:/project/ids.js", content));
+  await activateExtension(quiet);
+  assert.deepEqual(
+    [...quiet.entries.values()].flat().map((diagnostic) => diagnostic.code),
+    [],
+  );
+  const enabled = fakeVscode([], {}, { personalDetailsInFiles: true });
+  enabled.vscode.workspace.textDocuments.push(enabled.mkDocument("C:/project/ids.js", content));
+  await activateExtension(enabled);
+  assert.deepEqual([...new Set([...enabled.entries.values()].flat().map((diagnostic) => diagnostic.code))].sort(), [
+    "drivers_license",
+    "insurance_id",
+    "medical_record",
+  ]);
+});
+
 test("clipboard result explains that findings below the selected severity pass", async () => {
   const fake = fakeVscode([]);
   fake.clipboard.value = "Email hello@example.com";
@@ -2418,16 +2534,7 @@ test("Guard setup rejects Node versions below 20 and accepts Node 20", async () 
 function packageFolder(extensions, version) {
   const root = path.join(extensions, `clotr-app.clotr-${version}`);
   fs.mkdirSync(root, { recursive: true });
-  for (const file of [
-    "extension.js",
-    "ignore-once.js",
-    "package.json",
-    "package.nls.json",
-    "package.nls.es.json",
-    "README.md",
-  ]) {
-    fs.copyFileSync(path.join(APP, file), path.join(root, file));
-  }
+  copyShippedFiles(root);
   const manifest = JSON.parse(fs.readFileSync(path.join(root, "package.json"), "utf8"));
   fs.writeFileSync(path.join(root, "package.json"), JSON.stringify({ ...manifest, version }));
   buildVscode({ outDir: root, repoRoot: ROOT });
@@ -2470,73 +2577,637 @@ test("Guard setup uses a global Guard first and the copy inside the extension on
   }
 });
 
-test("VS Code asks before setting Guard up again and its button runs the setup flow", async () => {
-  const scratch = fs.mkdtempSync(path.join(os.tmpdir(), "clotr-vscode-update-"));
+// Two versions of the extension side by side, and Guard set up from the older one's copy in a scratch home.
+function guardUpdateFixture(prefix) {
+  const scratch = fs.mkdtempSync(path.join(os.tmpdir(), prefix));
   const extensions = path.join(scratch, "extensions");
+  const before = packageFolder(extensions, "0.0.1");
+  const after = packageFolder(extensions, "0.0.2");
   const home = path.join(scratch, "home");
-  const workspace = path.join(scratch, "project with space");
+  const oldScript = path.join(before, "guard", "bin", "clotr-guard.js");
+  const newScript = path.join(after, "guard", "bin", "clotr-guard.js");
+  const setUpOld = (args, cwd = scratch) => {
+    const env = { ...process.env, HOME: home, USERPROFILE: home };
+    const result = spawnSync(process.execPath, [oldScript, ...args], { cwd, env, encoding: "utf8" });
+    assert.equal(result.status, 0, result.stderr);
+  };
+  const repo = (name) => {
+    const folder = path.join(scratch, name);
+    fs.mkdirSync(folder, { recursive: true });
+    assert.equal(spawnSync("git", ["init", "-q"], { cwd: folder }).status, 0);
+    return folder;
+  };
+  // A window of the new version starting, with the version the last one recorded.
+  const start = async (workspace, globalValues, setUp = () => {}) => {
+    const fake = fakeVscode([], {}, {}, workspace, globalValues);
+    fake.context.clotrGuardHome = home;
+    fake.setInformationChoice(undefined);
+    setUp(fake);
+    await activateContainedExtension(after, fake);
+    return fake;
+  };
+  return { scratch, home, before, after, oldScript, newScript, setUpOld, repo, start };
+}
+
+const GUARD_MOVED = "Clotr Guard moved since the last update. Set it up again?";
+
+// Waits as waitFor does, but a message in any of these windows, such as the question after a quiet update fails, ends
+// the wait at once with its words. Nothing answers it here, so waiting would only run out the 30 s.
+async function waitUnlessAsked(windows, condition, what) {
+  const asked = () => windows.flatMap((window) => window.vscode.window.messages);
+  await waitFor(() => condition() || asked().length > 0, what);
+  if (!condition()) throw new Error(`Asked "${asked().join('" and "')}" while waiting for ${what}`);
+}
+
+test("after an update Clotr points its own hooks at the new Guard without asking and leaves the rest as it was", async () => {
+  const fixture = guardUpdateFixture("clotr-vscode-update-");
+  const { home, oldScript, newScript } = fixture;
   try {
-    const before = packageFolder(extensions, "0.0.1");
-    const after = packageFolder(extensions, "0.0.2");
-    fs.mkdirSync(workspace, { recursive: true });
-    assert.equal(spawnSync("git", ["init", "-q"], { cwd: workspace }).status, 0);
+    const workspace = fixture.repo("project with space");
     const first = fakeVscode([], {}, {}, workspace);
     first.context.clotrGuardHome = home;
-    await activateContainedExtension(before, first);
-    assert.deepEqual(first.vscode.window.messages, []);
     first.setPicks([
       (items) => items.find((item) => item.remove === false),
       (items) => items.filter((item) => ["claude", "codex"].includes(item.tool)),
     ]);
+    await activateContainedExtension(fixture.before, first);
     await first.commands.get("clotr.setupGuard")();
-    const oldScript = path.join(before, "guard", "bin", "clotr-guard.js");
-    const newScript = path.join(after, "guard", "bin", "clotr-guard.js");
     assert.deepEqual(guard.managedHooks("claude", { home }), [
       { script: oldScript, minimum: "medium", includePersonalDetails: false },
     ]);
-    assert.deepEqual(guard.managedHooks("codex", { home }), [
-      { script: oldScript, minimum: "medium", includePersonalDetails: false },
-    ]);
 
-    const settingsFiles = [path.join(home, ".claude", "settings.json"), path.join(home, ".codex", "hooks.json")];
-    const beforePrompt = settingsFiles.map((file) => fs.readFileSync(file));
-    const second = fakeVscode([], {}, {}, workspace);
-    second.context.clotrGuardHome = home;
-    second.globalValues.extensionVersion = "0.0.1";
-    second.setInformationChoice(undefined);
-    await activateContainedExtension(after, second);
-    await waitFor(() => second.vscode.window.messages.length > 0, "the Guard repair prompt");
-    assert.deepEqual(second.vscode.window.messages, ["Clotr Guard moved since the last update. Set it up again?"]);
-    assert.deepEqual(second.vscode.window.messageCalls[0].choices, ["Set it up again"]);
+    // The person's own setting, another tool's hook ahead of Clotr's and a Clotr hook edited by hand.
+    const claudeFile = path.join(home, ".claude", "settings.json");
+    const claude = JSON.parse(fs.readFileSync(claudeFile, "utf8"));
+    claude.model = "opus";
+    claude.hooks.UserPromptSubmit.unshift(
+      { hooks: [{ type: "command", command: "echo another tool" }] },
+      { hooks: [{ type: "command", command: `node "${oldScript}" hook claude --min-severity low; echo mine` }] },
+    );
+    fs.writeFileSync(claudeFile, `${JSON.stringify(claude, null, 2)}\n`);
+    const settingsFiles = [claudeFile, path.join(home, ".codex", "hooks.json")];
+    const beforeUpdate = settingsFiles.map((file) => fs.readFileSync(file, "utf8"));
+    // Clotr's hooks name Guard as an argument in Claude Code's settings and inside a quoted command in Codex's. Both
+    // files are JSON, so a Windows path shows there with its backslashes doubled.
+    const named = (script) => [`${JSON.stringify(script)},`, JSON.stringify(`'${script}'`).slice(1, -1)];
+    assert.ok(beforeUpdate.every((text) => named(oldScript).some((name) => text.includes(name))));
+    const expected = beforeUpdate.map((text) =>
+      named(oldScript).reduce((result, name, index) => result.split(name).join(named(newScript)[index]), text),
+    );
+
+    // Two windows of the new version start together.
+    const globalValues = { welcomeShown: true, extensionVersion: "0.0.1" };
+    const windows = await Promise.all([fixture.start(workspace, globalValues), fixture.start(workspace, globalValues)]);
+    await waitUnlessAsked(windows, () => globalValues.extensionVersion === "0.0.2", "the update marked done");
+    await new Promise((resolve) => setTimeout(resolve, 200));
+    for (const window of windows) {
+      assert.deepEqual(window.vscode.window.messages, []);
+      assert.equal(window.quickPicks.length, 0);
+    }
     assert.deepEqual(
-      settingsFiles.map((file) => fs.readFileSync(file)),
-      beforePrompt,
+      settingsFiles.map((file) => fs.readFileSync(file, "utf8")),
+      expected,
     );
+    for (const tool of ["claude", "codex"]) {
+      assert.deepEqual(guard.managedHooks(tool, { home }), [
+        { script: newScript, minimum: "medium", includePersonalDetails: false },
+      ]);
+    }
+    assert.equal(fs.existsSync(path.join(home, ".gemini")), false, "an assistant with no Clotr hooks gets none");
+    assert.equal(fs.existsSync(path.join(home, ".cursor")), false, "an assistant with no Clotr hooks gets none");
 
-    const clicked = fakeVscode([], {}, {}, workspace);
-    clicked.context.clotrGuardHome = home;
-    clicked.globalValues.extensionVersion = "0.0.1";
-    clicked.setInformationChoice("Set it up again");
-    clicked.setPicks([
-      (items) => items.find((item) => item.remove === false),
-      (items) => items.filter((item) => ["claude", "codex"].includes(item.tool)),
-    ]);
-    await activateContainedExtension(after, clicked);
-    await waitFor(
-      () => clicked.vscode.window.messages.includes(require("../apps/vscode/package.nls.json").guardUpdated),
-      "Guard setup",
+    // The next start finds nothing to do.
+    const next = await fixture.start(workspace, globalValues);
+    await new Promise((resolve) => setTimeout(resolve, 200));
+    assert.deepEqual(next.vscode.window.messages, []);
+    assert.deepEqual(
+      settingsFiles.map((file) => fs.readFileSync(file, "utf8")),
+      expected,
     );
+  } finally {
+    fs.rmSync(fixture.scratch, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 });
+  }
+});
+
+test("hooks rewritten after an update keep their own options, not the settings of the moment", async () => {
+  const fixture = guardUpdateFixture("clotr-vscode-update-options-");
+  const { home, newScript } = fixture;
+  try {
+    fs.mkdirSync(path.join(home, ".claude"), { recursive: true });
+    fs.mkdirSync(path.join(home, ".codex"), { recursive: true });
+    fixture.setUpOld(["setup", "claude", "--min-severity", "high", "--personal-details"]);
+    fixture.setUpOld(["setup", "codex", "--min-severity", "low"]);
+    if (process.platform !== "win32") fixture.setUpOld(["setup", "cline", "--personal-details"]);
+    const clineBefore = guard.managedHooks("cline", { home });
+    const globalValues = { welcomeShown: true, extensionVersion: "0.0.1" };
+    const fake = await fixture.start(null, globalValues, (window) => {
+      window.config.minSeverity = "medium";
+      window.config.personalDetailsInFiles = true;
+    });
+    await waitFor(() => globalValues.extensionVersion === "0.0.2", "the update marked done");
+    assert.deepEqual(fake.vscode.window.messages, []);
+    assert.deepEqual(guard.managedHooks("claude", { home }), [
+      { script: newScript, minimum: "high", includePersonalDetails: true },
+    ]);
+    assert.deepEqual(guard.managedHooks("codex", { home }), [
+      { script: newScript, minimum: "low", includePersonalDetails: false },
+    ]);
+    if (process.platform !== "win32") {
+      assert.equal(clineBefore.length, 1);
+      assert.deepEqual(guard.managedHooks("cline", { home }), [{ ...clineBefore[0], script: newScript }]);
+    }
+  } finally {
+    fs.rmSync(fixture.scratch, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 });
+  }
+});
+
+test("each workspace's Git hook is rewritten in every window, and never in an untrusted one", async () => {
+  const fixture = guardUpdateFixture("clotr-vscode-update-git-");
+  const { home, oldScript, newScript } = fixture;
+  try {
+    const repoA = fixture.repo("repo-a");
+    const repoB = fixture.repo("repo-b");
+    fs.mkdirSync(path.join(home, ".claude"), { recursive: true });
+    fixture.setUpOld(["setup", "claude"], repoA);
+    fixture.setUpOld(["setup", "git", "--project"], repoA);
+    fixture.setUpOld(["setup", "git", "--project"], repoB);
+    const hookOf = (repo) => fs.readFileSync(path.join(repo, ".git", "hooks", "pre-commit"), "utf8");
+    const hookB = hookOf(repoB);
+    assert.equal(guard.gitHookScript(hookB), oldScript);
+
+    // An untrusted window: the assistant's hook in the home folder moves, the workspace's Git hook isn't touched.
+    const globalValues = { welcomeShown: true, extensionVersion: "0.0.1" };
+    const untrusted = await fixture.start(repoB, globalValues, (window) => {
+      window.vscode.workspace.isTrusted = false;
+    });
+    await waitUnlessAsked([untrusted], () => globalValues.extensionVersion === "0.0.2", "the update marked done");
+    await new Promise((resolve) => setTimeout(resolve, 200));
+    assert.deepEqual(untrusted.vscode.window.messages, []);
     assert.deepEqual(
       guard.managedHooks("claude", { home }).map((entry) => entry.script),
       [newScript],
     );
+    assert.equal(hookOf(repoB), hookB);
+
+    // Later windows, after the update is marked done, still rewrite their own repository's hook.
+    for (const repo of [repoA, repoB]) {
+      const window = await fixture.start(repo, globalValues);
+      await waitUnlessAsked([window], () => guard.gitHookScript(hookOf(repo)) === newScript, "the Git hook rewritten");
+      await new Promise((resolve) => setTimeout(resolve, 100));
+      assert.deepEqual(window.vscode.window.messages, []);
+    }
+  } finally {
+    fs.rmSync(fixture.scratch, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 });
+  }
+});
+
+// Windows refuses to replace a file while another process has it open, such as a second window's Guard reading the
+// same settings. The new Guard copy here refuses the first replaces of each file that has a marker beside it, the same
+// way: once, or as many times as given (Infinity refuses them all). The marker holds the refusals left.
+function refuseFirstReplace(fixture, files, times = 1) {
+  const cli = path.join(fixture.after, "guard", "bin", "clotr-guard.js");
+  const lines = fs.readFileSync(cli, "utf8").split("\n");
+  const refuse = `{
+  const fs = require("fs");
+  const rename = fs.renameSync;
+  fs.renameSync = (from, to) => {
+    const marker = \`\${to}.refuse\`;
+    let left;
+    try {
+      left = Number(fs.readFileSync(marker, "utf8"));
+    } catch {
+      return rename(from, to);
+    }
+    if (left > 1) fs.writeFileSync(marker, String(left - 1));
+    else fs.unlinkSync(marker);
+    throw Object.assign(new Error("EPERM: operation not permitted, rename"), { code: "EPERM" });
+  };
+}`;
+  lines.splice(3, 0, refuse);
+  fs.writeFileSync(cli, lines.join("\n"));
+  for (const file of files) fs.writeFileSync(`${file}.refuse`, String(times));
+  return () => files.filter((file) => fs.existsSync(`${file}.refuse`));
+}
+
+test("a Guard run the system refuses once is tried again, so the update still finishes without asking", async () => {
+  const fixture = guardUpdateFixture("clotr-vscode-update-refused-");
+  const { home, newScript } = fixture;
+  try {
+    const repo = fixture.repo("repo");
+    fs.mkdirSync(path.join(home, ".claude"), { recursive: true });
+    fixture.setUpOld(["setup", "claude"], repo);
+    fixture.setUpOld(["setup", "git", "--project"], repo);
+    const hook = path.join(repo, ".git", "hooks", "pre-commit");
+    const unused = refuseFirstReplace(fixture, [path.join(home, ".claude", "settings.json"), hook]);
+
+    const globalValues = { welcomeShown: true, extensionVersion: "0.0.1" };
+    const window = await fixture.start(repo, globalValues);
+    const rewritten = () => guard.gitHookScript(fs.readFileSync(hook, "utf8")) === newScript;
+    await waitUnlessAsked([window], rewritten, "the hooks rewritten");
+    await new Promise((resolve) => setTimeout(resolve, 100));
+    assert.deepEqual(unused(), [], "each file was refused once");
+    assert.deepEqual(window.vscode.window.messages, []);
+    assert.equal(globalValues.extensionVersion, "0.0.2");
+    assert.deepEqual(
+      guard.managedHooks("claude", { home }).map((entry) => entry.script),
+      [newScript],
+    );
+  } finally {
+    fs.rmSync(fixture.scratch, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 });
+  }
+});
+
+test("a question while an update test waits ends the wait at once with its words", async () => {
+  const fixture = guardUpdateFixture("clotr-vscode-update-asked-");
+  const { home } = fixture;
+  try {
+    fs.mkdirSync(path.join(home, ".claude"), { recursive: true });
+    fixture.setUpOld(["setup", "claude"]);
+    // Every replace is refused, however many times the extension tries, so the window asks.
+    refuseFirstReplace(fixture, [path.join(home, ".claude", "settings.json")], Infinity);
+    const globalValues = { welcomeShown: true, extensionVersion: "0.0.1" };
+    const window = await fixture.start(null, globalValues);
+    await assert.rejects(
+      waitUnlessAsked([window], () => globalValues.extensionVersion === "0.0.2", "the update marked done"),
+      { message: `Asked "${GUARD_MOVED}" while waiting for the update marked done` },
+    );
+    assert.equal(globalValues.extensionVersion, "0.0.1");
+  } finally {
+    fs.rmSync(fixture.scratch, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 });
+  }
+});
+
+test("when Node.js is missing or Guard fails, the question shows and comes back until the hooks are set up", async () => {
+  const fixture = guardUpdateFixture("clotr-vscode-update-fail-");
+  const { home, oldScript } = fixture;
+  const failingGuard = path.join(GLOBAL_MODULES, "clotr-guard", "bin", "clotr-guard.js");
+  try {
+    const workspace = fixture.repo("repo");
+    fs.mkdirSync(path.join(home, ".claude"), { recursive: true });
+    fixture.setUpOld(["setup", "claude"]);
+    const claudeFile = path.join(home, ".claude", "settings.json");
+    const before = fs.readFileSync(claudeFile, "utf8");
+    const globalValues = { welcomeShown: true, extensionVersion: "0.0.1" };
+
+    const noNode = await fixture.start(workspace, globalValues, (window) => {
+      window.context.clotrNodeCommand = "clotr-no-such-node-command";
+    });
+    await waitFor(() => noNode.vscode.window.messages.length > 0, "the question");
+    assert.deepEqual(noNode.vscode.window.messages, [GUARD_MOVED]);
+    assert.equal(globalValues.extensionVersion, "0.0.1", "a closed question isn't counted as answered");
+    assert.equal(fs.readFileSync(claudeFile, "utf8"), before);
+
+    fs.mkdirSync(path.dirname(failingGuard), { recursive: true });
+    fs.writeFileSync(failingGuard, "process.exit(3);\n");
+    const failing = await fixture.start(workspace, globalValues, (window) => {
+      window.setInformationChoice("Set it up again");
+      window.setPicks([
+        (items) => items.find((item) => item.remove === false),
+        (items) => items.filter((item) => item.tool === "claude"),
+      ]);
+    });
+    await waitFor(() => failing.vscode.window.messages.length > 1, "the question and the error");
+    assert.deepEqual(failing.vscode.window.messages, [GUARD_MOVED, "Clotr couldn't preview that change."]);
+    assert.equal(globalValues.extensionVersion, "0.0.1");
+    assert.equal(fs.readFileSync(claudeFile, "utf8"), before);
+    assert.deepEqual(
+      guard.managedHooks("claude", { home }).map((entry) => entry.script),
+      [oldScript],
+    );
+  } finally {
+    fs.rmSync(path.join(GLOBAL_MODULES, "clotr-guard"), { recursive: true, force: true });
+    fs.rmSync(fixture.scratch, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 });
+  }
+});
+
+test("hooks with two sets of options are left for the question, and Escape anywhere in it leaves the update open", async () => {
+  const fixture = guardUpdateFixture("clotr-vscode-update-mixed-");
+  const { home, oldScript, newScript } = fixture;
+  try {
+    const workspace = fixture.repo("repo");
+    fs.mkdirSync(path.join(home, ".claude"), { recursive: true });
+    fs.mkdirSync(path.join(home, ".codex"), { recursive: true });
+    fixture.setUpOld(["setup", "claude", "--min-severity", "high"]);
+    fixture.setUpOld(["setup", "codex"]);
+    const claudeFile = path.join(home, ".claude", "settings.json");
+    const claude = JSON.parse(fs.readFileSync(claudeFile, "utf8"));
+    claude.hooks.PreToolUse[0].hooks[0].args[4] = "low";
+    fs.writeFileSync(claudeFile, `${JSON.stringify(claude, null, 2)}\n`);
+    const before = fs.readFileSync(claudeFile, "utf8");
+    assert.equal(guard.managedHooks("claude", { home }).length, 2);
+    const globalValues = { welcomeShown: true, extensionVersion: "0.0.1" };
+    const setUpAgain =
+      (...picks) =>
+      (window) => {
+        window.setInformationChoice("Set it up again");
+        window.setPicks(picks);
+        window.setWarningChoice(undefined);
+      };
+    const setUp = (items) => items.find((item) => item.remove === false);
+    const claudeOnly = (items) => items.filter((item) => item.tool === "claude");
+    for (const answer of [
+      (window) => window.setInformationChoice(undefined),
+      setUpAgain(() => undefined),
+      setUpAgain(setUp, () => undefined),
+      setUpAgain(setUp, claudeOnly),
+    ]) {
+      const window = await fixture.start(workspace, globalValues, answer);
+      await waitFor(() => window.vscode.window.messages.includes(GUARD_MOVED), "the question");
+      await new Promise((resolve) => setTimeout(resolve, 200));
+      assert.equal(globalValues.extensionVersion, "0.0.1");
+      assert.equal(fs.readFileSync(claudeFile, "utf8"), before);
+    }
     assert.deepEqual(
       guard.managedHooks("codex", { home }).map((entry) => entry.script),
       [newScript],
+      "the assistant with one set of options moves without the question",
     );
-    assert.equal(clicked.quickPicks.length, 2);
+    assert.deepEqual(
+      guard.managedHooks("claude", { home }).map((entry) => entry.script),
+      [oldScript, oldScript],
+    );
+
+    const yes = await fixture.start(workspace, globalValues, (window) => {
+      setUpAgain(setUp, claudeOnly)(window);
+      window.setWarningChoice("Apply changes");
+    });
+    await waitFor(() => globalValues.extensionVersion === "0.0.2", "the update marked done");
+    assert.ok(yes.vscode.window.messages.includes("Clotr Guard is set up."));
+    assert.deepEqual(
+      guard.managedHooks("claude", { home }).map((entry) => entry.script),
+      [newScript],
+    );
   } finally {
-    fs.rmSync(scratch, { recursive: true, force: true });
+    fs.rmSync(fixture.scratch, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 });
+  }
+});
+
+// Waits until a window either asks or marks the update done, then a little longer for anything after it.
+async function settled(window, globalValues) {
+  await waitFor(
+    () => window.vscode.window.messages.length > 0 || globalValues.extensionVersion === "0.0.2",
+    "the question or the update marked done",
+  );
+  await new Promise((resolve) => setTimeout(resolve, 300));
+}
+
+// A small shell script standing in for a program, for the cases that watch what runs and from where.
+function shellStub(file, body) {
+  fs.mkdirSync(path.dirname(file), { recursive: true });
+  fs.writeFileSync(file, `#!/bin/sh\n${body}\n`, { mode: 0o755 });
+  return file;
+}
+
+const posixOnly = process.platform === "win32" ? "shell stand-ins need a POSIX shell" : false;
+
+test(
+  "a Guard run that fails partway leaves the update open and asks, whatever the files say after",
+  { skip: posixOnly },
+  async (t) => {
+    // Guard writes Cline's first hook file, then fails on the second, so a read afterwards finds nothing stale.
+    const cases = [
+      {
+        name: "the second hook file is a link to a file kept elsewhere",
+        skip: false,
+        break: (fixture, file) => {
+          const kept = path.join(fixture.scratch, "dotfiles", "PreToolUse");
+          fs.mkdirSync(path.dirname(kept), { recursive: true });
+          fs.renameSync(file, kept);
+          fs.symlinkSync(kept, file);
+        },
+        fix: (file) => fs.renameSync(fs.readlinkSync(file), file),
+      },
+      {
+        name: "the second hook file can't be read",
+        skip:
+          process.getuid?.() === 0 ? "root reads a file with no permissions, so this runs only as another user" : false,
+        break: (_fixture, file) => fs.chmodSync(file, 0o000),
+        fix: (file) => fs.chmodSync(file, 0o644),
+      },
+    ];
+    for (const entry of cases) {
+      await t.test(entry.name, { skip: entry.skip }, async () => {
+        const fixture = guardUpdateFixture("clotr-vscode-update-partway-");
+        const { home } = fixture;
+        try {
+          const workspace = fixture.repo("repo");
+          fixture.setUpOld(["setup", "cline"]);
+          const second = path.join(home, "Documents", "Cline", "Hooks", "PreToolUse");
+          assert.ok(fs.existsSync(second));
+          fs.rmSync(fixture.before, { recursive: true, force: true });
+          entry.break(fixture, second);
+          const globalValues = { welcomeShown: true, extensionVersion: "0.0.1" };
+          for (let start = 0; start < 2; start++) {
+            const window = await fixture.start(workspace, globalValues);
+            await settled(window, globalValues);
+            assert.deepEqual(window.vscode.window.messages, [GUARD_MOVED]);
+            assert.equal(globalValues.extensionVersion, "0.0.1", "a half-done rewrite isn't counted as done");
+          }
+
+          // Once the file is fixed, a yes to the question sets Cline up again and the update is done.
+          entry.fix(second);
+          const yes = await fixture.start(workspace, globalValues, (window) => {
+            window.setInformationChoice("Set it up again");
+            window.setPicks([
+              (items) => items.find((item) => item.remove === false),
+              (items) => items.filter((item) => item.tool === "cline"),
+            ]);
+            window.setWarningChoice("Apply changes");
+          });
+          await waitFor(() => globalValues.extensionVersion === "0.0.2", "the update marked done");
+          assert.ok(yes.vscode.window.messages.includes("Clotr Guard is set up."));
+          assert.equal(globalValues.guardRewriteFailed, undefined);
+          assert.deepEqual(
+            guard.managedHooks("cline", { home }).map((hook) => hook.script),
+            [fixture.newScript],
+          );
+        } finally {
+          fs.rmSync(fixture.scratch, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 });
+        }
+      });
+    }
+  },
+);
+
+test("a Guard that won't start leaves the update open and asks", { skip: posixOnly }, async () => {
+  const fixture = guardUpdateFixture("clotr-vscode-update-nostart-");
+  const { home, oldScript } = fixture;
+  try {
+    const workspace = fixture.repo("repo");
+    fs.mkdirSync(path.join(home, ".claude"), { recursive: true });
+    fixture.setUpOld(["setup", "claude"]);
+    // A node that answers its version once and is gone when Guard is started with it.
+    const node = shellStub(
+      path.join(fixture.scratch, "vanishing", "node"),
+      `rm -f "$0"\nexec "${process.execPath}" "$@"`,
+    );
+    const globalValues = { welcomeShown: true, extensionVersion: "0.0.1" };
+    const window = await fixture.start(workspace, globalValues, (fake) => {
+      fake.context.clotrNodeCommand = node;
+    });
+    await settled(window, globalValues);
+    assert.deepEqual(window.vscode.window.messages, [GUARD_MOVED]);
+    assert.equal(globalValues.extensionVersion, "0.0.1");
+    assert.deepEqual(
+      guard.managedHooks("claude", { home }).map((entry) => entry.script),
+      [oldScript],
+    );
+  } finally {
+    fs.rmSync(fixture.scratch, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 });
+  }
+});
+
+test(
+  "in an untrusted workspace no node or npm from it runs, and no Guard it names goes into a hook",
+  { skip: posixOnly },
+  async () => {
+    const fixture = guardUpdateFixture("clotr-vscode-update-untrusted-node-");
+    const { home, newScript } = fixture;
+    const originalPath = process.env.PATH;
+    try {
+      const workspace = fixture.repo("untrusted");
+      fs.mkdirSync(path.join(home, ".claude"), { recursive: true });
+      fixture.setUpOld(["setup", "claude"]);
+      const log = path.join(fixture.scratch, "ran.log");
+      // The workspace's own node first on PATH, as a tool like direnv puts it, and a Guard it would name as global.
+      const inside = path.join(workspace, "tools", "bin");
+      const evilRoot = path.join(workspace, "evil-root");
+      shellStub(path.join(inside, "node"), `echo "workspace node" >> "${log}"\necho "${evilRoot}"`);
+      shellStub(path.join(inside, "npm"), `echo "workspace npm" >> "${log}"\necho "${evilRoot}"`);
+      const evilGuard = path.join(evilRoot, "clotr-guard", "bin", "clotr-guard.js");
+      fs.mkdirSync(path.dirname(evilGuard), { recursive: true });
+      fs.writeFileSync(evilGuard, `require("node:fs").appendFileSync(${JSON.stringify(log)}, "workspace guard\\n");\n`);
+      // Outside the workspace, the real node and an npm that starts through "env node", as npm-cli.js does.
+      const outside = path.join(fixture.scratch, "outside-bin");
+      fs.mkdirSync(outside);
+      fs.symlinkSync(process.execPath, path.join(outside, "node"));
+      fs.writeFileSync(
+        path.join(outside, "npm"),
+        `#!/usr/bin/env node\nconsole.log(${JSON.stringify(NPM_PREFIX)});\n`,
+        {
+          mode: 0o755,
+        },
+      );
+      process.env.PATH = [inside, outside, originalPath].join(path.delimiter);
+      const globalValues = { welcomeShown: true, extensionVersion: "0.0.1" };
+      const window = await fixture.start(workspace, globalValues, (fake) => {
+        fake.vscode.workspace.isTrusted = false;
+      });
+      await settled(window, globalValues);
+      assert.equal(fs.existsSync(log) ? fs.readFileSync(log, "utf8") : "", "");
+      assert.deepEqual(window.vscode.window.messages, []);
+      assert.deepEqual(
+        guard.managedHooks("claude", { home }).map((entry) => entry.script),
+        [newScript],
+      );
+    } finally {
+      process.env.PATH = originalPath;
+      fs.rmSync(fixture.scratch, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 });
+    }
+  },
+);
+
+test(
+  "Node and Guard run from the extension's own folder, not the workspace or the editor's",
+  { skip: posixOnly },
+  async () => {
+    const fixture = guardUpdateFixture("clotr-vscode-update-cwd-");
+    const { home, newScript } = fixture;
+    try {
+      const workspace = fixture.repo("repo");
+      fs.mkdirSync(path.join(home, ".claude"), { recursive: true });
+      fixture.setUpOld(["setup", "claude"]);
+      const log = path.join(fixture.scratch, "node-cwd.log");
+      const node = shellStub(
+        path.join(fixture.scratch, "logging", "node"),
+        `echo "$(pwd -P) $1" >> "${log}"\nexec "${process.execPath}" "$@"`,
+      );
+      const globalValues = { welcomeShown: true, extensionVersion: "0.0.1" };
+      const window = await fixture.start(workspace, globalValues, (fake) => {
+        fake.context.clotrNodeCommand = node;
+      });
+      await settled(window, globalValues);
+      assert.deepEqual(window.vscode.window.messages, []);
+      assert.deepEqual(
+        guard.managedHooks("claude", { home }).map((entry) => entry.script),
+        [newScript],
+      );
+      const runs = fs.readFileSync(log, "utf8").trim().split("\n");
+      const folder = fs.realpathSync(fixture.after);
+      assert.deepEqual(
+        runs.map((line) => line.split(" ")),
+        [
+          [folder, "--version"],
+          [folder, newScript],
+        ],
+      );
+    } finally {
+      fs.rmSync(fixture.scratch, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 });
+    }
+  },
+);
+
+test("an untrusted workspace that holds several folders, the extension or the home folder gets the question", async () => {
+  const fixture = guardUpdateFixture("clotr-vscode-update-untrusted-skip-");
+  const { home, oldScript } = fixture;
+  // os.homedir() reads HOME on Linux and macOS and USERPROFILE on Windows, so the home folder moves through both.
+  const originalHome = { HOME: process.env.HOME, USERPROFILE: process.env.USERPROFILE };
+  const moveHome = (values) => {
+    for (const [name, value] of Object.entries(values)) {
+      if (value === undefined) delete process.env[name];
+      else process.env[name] = value;
+    }
+  };
+  try {
+    fs.mkdirSync(path.join(home, ".claude"), { recursive: true });
+    fixture.setUpOld(["setup", "claude"]);
+    const holdsHome = fixture.repo("holds-home");
+    const me = path.join(holdsHome, "me");
+    fs.mkdirSync(me);
+    const cases = [
+      [fixture.repo("first"), (fake) => fake.vscode.workspace.workspaceFolders.push({ uri: { fsPath: home } })],
+      [fixture.scratch, () => {}],
+      [holdsHome, () => moveHome({ HOME: me, USERPROFILE: me })],
+    ];
+    for (const [workspace, setUp] of cases) {
+      const globalValues = { welcomeShown: true, extensionVersion: "0.0.1" };
+      const window = await fixture.start(workspace, globalValues, (fake) => {
+        fake.vscode.workspace.isTrusted = false;
+        setUp(fake);
+      });
+      await settled(window, globalValues);
+      moveHome(originalHome);
+      assert.deepEqual(window.vscode.window.messages, [GUARD_MOVED], workspace);
+      assert.equal(globalValues.extensionVersion, "0.0.1");
+      assert.deepEqual(
+        guard.managedHooks("claude", { home }).map((entry) => entry.script),
+        [oldScript],
+      );
+    }
+  } finally {
+    moveHome(originalHome);
+    fs.rmSync(fixture.scratch, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 });
+  }
+});
+
+test("Cline's hooks are left alone after an update on Windows, where they don't run", async () => {
+  const fixture = guardUpdateFixture("clotr-vscode-update-cline-windows-");
+  const { home, oldScript } = fixture;
+  try {
+    // Guard's setup won't write Cline's hooks on Windows, so the old Guard writes them as it does on Linux and macOS.
+    require(oldScript).updateClineHooks({ home, cwd: fixture.scratch, platform: "linux" });
+    const globalValues = { welcomeShown: true, extensionVersion: "0.0.1" };
+    const window = await fixture.start(null, globalValues, (fake) => {
+      fake.context.clotrPlatform = "win32";
+    });
+    await settled(window, globalValues);
+    assert.deepEqual(window.vscode.window.messages, []);
+    assert.deepEqual(
+      guard.managedHooks("cline", { home }).map((entry) => entry.script),
+      [oldScript],
+    );
+  } finally {
+    fs.rmSync(fixture.scratch, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 });
   }
 });
 
@@ -2765,50 +3436,6 @@ test("a .clotrignore change checks open files again without an edit", async (t) 
   await waitFor(() => fake.entries.get(doc.uri.toString())?.length === 0, "the finding quieted again", 5000);
 });
 
-test("the Guard repair prompt comes back until answered and checks each workspace's Git hook", async () => {
-  const scratch = fs.mkdtempSync(path.join(os.tmpdir(), "clotr-vscode-repair-"));
-  const extensions = path.join(scratch, "extensions");
-  const home = path.join(scratch, "home");
-  const repoA = path.join(scratch, "repo-a");
-  const repoB = path.join(scratch, "repo-b");
-  const moved = "Clotr Guard moved since the last update. Set it up again?";
-  try {
-    const before = packageFolder(extensions, "0.0.1");
-    const after = packageFolder(extensions, "0.0.2");
-    const oldScript = path.join(before, "guard", "bin", "clotr-guard.js");
-    const env = { ...process.env, HOME: home, USERPROFILE: home };
-    for (const repo of [repoA, repoB]) {
-      fs.mkdirSync(repo, { recursive: true });
-      assert.equal(spawnSync("git", ["init", "-q"], { cwd: repo }).status, 0);
-    }
-    fs.mkdirSync(path.join(home, ".claude"), { recursive: true });
-    for (const [args, cwd] of [
-      [["setup", "claude"], repoA],
-      [["setup", "git", "--project"], repoB],
-    ]) {
-      const result = spawnSync(process.execPath, [oldScript, ...args], { cwd, env, encoding: "utf8" });
-      assert.equal(result.status, 0, result.stderr);
-    }
-    const globalValues = { welcomeShown: true, extensionVersion: "0.0.1" };
-    const activate = async (workspace) => {
-      const fake = fakeVscode([], {}, {}, workspace, globalValues);
-      fake.context.clotrGuardHome = home;
-      fake.setInformationChoice(undefined);
-      await activateContainedExtension(after, fake);
-      await new Promise((resolve) => setTimeout(resolve, 200));
-      return fake.vscode.window.messages;
-    };
-    assert.deepEqual(await activate(repoA), [moved]);
-    assert.equal(globalValues.extensionVersion, "0.0.1", "a dismissed prompt isn't counted as answered");
-    assert.deepEqual(await activate(repoA), [moved], "the prompt comes back after a dismissal");
-    // Another window, after the assistants were set up again: its repository's Git hook still names the old folder.
-    globalValues.extensionVersion = "0.0.2";
-    assert.deepEqual(await activate(repoB), [moved]);
-  } finally {
-    fs.rmSync(scratch, { recursive: true, force: true });
-  }
-});
-
 test("without the Git extension, .gitignore anchors and folder rules decide the secret-file note as Git would", async () => {
   const cases = [
     { rules: "/.env\n", file: "sub/.env", note: true },
@@ -2915,4 +3542,230 @@ test("without the Git extension, a nested repository's secret file isn't hidden 
   assert.equal(await gitIgnoreFallbackNote(outer, "nested/.env"), true);
   assert.equal(await gitIgnoreFallbackNote({ ...outer, "nested/.gitignore": ".env\n" }, "nested/.env"), false);
   assert.equal(await gitIgnoreFallbackNote({ ".gitignore": ".env\n", "nested/keep": "" }, "nested/.env"), false);
+});
+
+// The skip list's regex before it moved to Guard's glob walker, kept here so every answer can be compared with it.
+function previousSkipListMatch(pattern, value) {
+  const escaped = pattern
+    .split("**/")
+    .map((part) =>
+      part
+        .split("**")
+        .map((section) =>
+          section
+            .replace(/[.+^${}()|[\]\\]/g, "\\$&")
+            .replace(/\*/g, "[^/]*")
+            .replace(/\?/g, "[^/]"),
+        )
+        .join(".*"),
+    )
+    .join("(?:.*/)?");
+  return new RegExp(`^${escaped}$`, "i").test(value);
+}
+
+const DEFAULT_SKIP_LIST =
+  require("../apps/vscode/package.json").contributes.configuration.properties["clotr.skipList"].default;
+// A star-heavy pattern of the kind that held a check for over 30 seconds, and a long path it doesn't match.
+const STAR_HEAVY_SKIP = `${"*a".repeat(16)}*b`;
+const LONG_A_PATH = `${"a".repeat(60)}/${"a".repeat(60)}.js`;
+
+async function skipListAnswer(pattern, relativePath) {
+  const root = path.join(os.tmpdir(), "clotr-vscode-skip-list");
+  const fake = fakeVscode([], {}, { skipList: [pattern] }, root);
+  fake.vscode.workspace.textDocuments.push(
+    fake.mkDocument(path.join(root, ...relativePath.split("/")), `const token = "${KEY}";`),
+  );
+  const started = performance.now();
+  await activateExtension(fake);
+  const elapsed = performance.now() - started;
+  return { skipped: (fake.entries.get([...fake.entries.keys()][0]) || []).length === 0, elapsed };
+}
+
+// The extension's own skip-list matcher, loaded once through a stand-in VS Code.
+let loadedSkipListMatcher;
+async function skipListMatcher() {
+  if (!loadedSkipListMatcher) {
+    const fake = fakeVscode([]);
+    await activateExtension(fake);
+    loadedSkipListMatcher = fake.extensionApi.skipListMatches;
+  }
+  return loadedSkipListMatcher;
+}
+
+async function timedSkipListMatch(pattern, relativePath) {
+  const skipListMatches = await skipListMatcher();
+  const started = performance.now();
+  const matched = skipListMatches(pattern, relativePath);
+  return { matched, elapsed: performance.now() - started };
+}
+
+test("a star-heavy skipList pattern lets the file be checked without a stall", async () => {
+  const { skipped } = await skipListAnswer(STAR_HEAVY_SKIP, LONG_A_PATH);
+  assert.equal(skipped, false);
+  const { matched, elapsed } = await timedSkipListMatch(STAR_HEAVY_SKIP, LONG_A_PATH);
+  assert.equal(matched, false);
+  assert.ok(elapsed < 500, `the pattern took ${Math.round(elapsed)} ms`);
+});
+
+// One star-heavy pattern per form people write in settings, each with the answer the old regex gave.
+const STAR_HEAVY_FORMS = [
+  { form: "**", pattern: `**/${"*a".repeat(16)}*b/**`, value: `src/${"a".repeat(60)}/x.js` },
+  { form: "*", pattern: `${"*a".repeat(16)}*.js`, value: `${"a".repeat(60)}.ts` },
+  { form: "?", pattern: `${"*a?".repeat(12)}*b`, value: "a".repeat(80) },
+  { form: "braces", pattern: `${"*a".repeat(16)}*.{js,ts}`, value: `${"a".repeat(60)}.js` },
+  { form: "character classes", pattern: `${"*a".repeat(16)}*[bc]`, value: `${"a".repeat(60)}b` },
+];
+
+for (const { form, pattern, value } of STAR_HEAVY_FORMS) {
+  test(`a star-heavy skipList pattern with ${form} answers as before without a stall`, async () => {
+    const { matched, elapsed } = await timedSkipListMatch(pattern, value);
+    assert.equal(matched, false);
+    assert.ok(elapsed < 500, `the pattern took ${Math.round(elapsed)} ms`);
+  });
+}
+
+// Paths each default pattern should and shouldn't match, in the cases and depths people have.
+function skipListPaths() {
+  const names = DEFAULT_SKIP_LIST.flatMap((pattern) => {
+    const name = pattern.replace(/^\*\*\//, "").replace(/\/\*\*$/, "");
+    const filled = name.replace(/\*/g, "pkg");
+    return [filled, filled.toUpperCase(), `x${filled}`, `${filled}x`, filled.slice(1)];
+  });
+  const paths = new Set(["", "a", "app.js", "src/app.js", ".env", ".env.local", "src/.env", "a\nb/x.js", "a/b\n/c"]);
+  for (const name of names) {
+    for (const shape of [name, `${name}/a.js`, `src/${name}`, `src/${name}/deep/a.js`, `src\n/${name}/a`]) {
+      paths.add(shape);
+    }
+  }
+  return [...paths];
+}
+
+test("every default skipList pattern answers as the old regex did for every test path", async () => {
+  const skipListMatches = await skipListMatcher();
+  assert.equal(DEFAULT_SKIP_LIST.length, 46);
+  const paths = skipListPaths();
+  for (const pattern of DEFAULT_SKIP_LIST) {
+    for (const value of paths) {
+      assert.equal(skipListMatches(pattern, value), previousSkipListMatch(pattern, value), `${pattern} on ${value}`);
+    }
+  }
+  assert.equal(skipListMatches("**/node_modules/**", "web/node_modules/left-pad/index.js"), true);
+  assert.equal(skipListMatches("**/DerivedData/**", "ios/deriveddata/Build/a.swift"), true);
+  assert.equal(skipListMatches("**/*.min.js", "public/app.min.js"), true);
+  assert.equal(skipListMatches("**/*.min.js", "public/app.js"), false);
+});
+
+test("skipList patterns of every form answer as the old regex did", async () => {
+  const skipListMatches = await skipListMatcher();
+  const forms = [
+    "**",
+    "*",
+    "?",
+    "**/",
+    "/**",
+    "***",
+    "***/x",
+    "a/***",
+    "a**b",
+    "**a**",
+    "*/**/*",
+    "a?c",
+    "?/?",
+    "{a,b}.js",
+    "*.{js,ts}",
+    "[ab].js",
+    "[!a]*",
+    "[a-z]",
+    "\\*.js",
+    "a\\b",
+    "a.b",
+    "a+b",
+    "(a|b)",
+    "^a$",
+    "x/**/y",
+    "**/x/**/y/**",
+    "Ab",
+    "µ",
+    "ſ",
+    "K",
+    "ß",
+    "İ",
+    "ı",
+    "Σ",
+    "ς",
+    "??",
+    "\u{1f600}",
+  ];
+  const values = [
+    "",
+    "a",
+    "b",
+    "x",
+    "x/y",
+    "x/a/b/y",
+    "a/b",
+    "ab",
+    "aXb",
+    "a/b/c",
+    "a.js",
+    "b.js",
+    "{a,b}.js",
+    "x.js",
+    "x.ts",
+    "[ab].js",
+    "[!a]",
+    "z",
+    "*.js",
+    "\\*.js",
+    "a\\b",
+    "a.b",
+    "axb",
+    "a+b",
+    "(a|b)",
+    "^a$",
+    "AB",
+    "aB",
+    "μ",
+    "Μ",
+    "µ",
+    "s",
+    "S",
+    "k",
+    "K",
+    "ẞ",
+    "SS",
+    "i",
+    "I",
+    "σ",
+    "ς",
+    "Σ",
+    "a\nb",
+    "x\n/y",
+    " ",
+    "a/ /y",
+    "\ud800",
+    "\u{1f600}",
+  ];
+  for (const pattern of forms) {
+    for (const value of values) {
+      assert.equal(skipListMatches(pattern, value), previousSkipListMatch(pattern, value), `${pattern} on ${value}`);
+    }
+  }
+});
+
+test("random skipList patterns answer as the old regex did", async () => {
+  const skipListMatches = await skipListMatcher();
+  let seed = 20261113;
+  const random = (limit) => {
+    seed = (seed * 1103515245 + 12345) % 2147483648;
+    return seed % limit;
+  };
+  const patternParts = ["*", "**", "**/", "?", "/", "a", "A", "b", ".", "[", "]", "{", "}", ",", "\\", "!", "-", "\n"];
+  const valueParts = ["a", "A", "b", "/", ".", "[", "]", "{", "}", ",", "\\", "!", "-", "\n", "ab", "a/b"];
+  const draw = (parts, length) => Array.from({ length }, () => parts[random(parts.length)]).join("");
+  for (let round = 0; round < 3000; round += 1) {
+    const pattern = draw(patternParts, 1 + random(6));
+    const value = draw(valueParts, random(7));
+    assert.equal(skipListMatches(pattern, value), previousSkipListMatch(pattern, value), `${pattern} on ${value}`);
+  }
 });
